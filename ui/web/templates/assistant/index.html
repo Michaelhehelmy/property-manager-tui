@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Manager Assistant</h2>
+<p class="muted">English chat grounded in <strong>real backend data</strong> (read-only). <strong>Core AI</strong> (deterministic tools) fetches facts; optional <strong>talking model</strong> polishes replies.</p>
+
+<div style="display:grid; grid-template-columns: minmax(320px, 1.35fr) minmax(260px, 0.65fr); gap:14px; align-items:start;">
+  <div class="panel" style="min-height:60vh;">
+    <div style="display:flex; justify-content:space-between; gap:10px; align-items:center; margin-bottom:8px;">
+      <strong>Conversation</strong>
+      <span class="muted" style="font-size:12px">mode=<code>{{ llm.response_mode }}</code> · provider=<code>{{ llm.provider }}</code>{% if llm.enabled %} · model <code>{{ llm.model }}</code>{% endif %}</span>
+    </div>
+
+    {% if assistant_locked %}
+      <div class="flash error">Assistant is locked because <code>assistant_require_unlock</code> is enabled. <a href="/unlock?next=/assistant">Unlock</a> to use it (sensitive financial/guest data).</div>
+    {% else %}
+      <div id="assistant-messages" style="height:48vh; overflow:auto; border:1px solid var(--muted); padding:12px; border-radius:10px; background:#11111b; margin-bottom:10px;">
+        {% include "assistant/_messages.html" %}
+      </div>
+
+      <form hx-post="/assistant/ask" hx-target="#assistant-messages" hx-swap="innerHTML" hx-on::after-request="if(event.detail.successful){this.reset(); var el=document.getElementById('assistant-messages'); if(el) el.scrollTop=el.scrollHeight;}">
+        <input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+        <label class="muted">Ask the manager assistant
+          <textarea name="message" rows="3" placeholder="e.g. What did guest #3 order most on their last visit?  |  P&amp;L for last month  |  find guest Ahmed  |  reservation #12 balance" required></textarea>
+        </label>
+        <div class="row">
+          <button type="submit">Send</button>
+        </div>
+      </form>
+      <form hx-post="/assistant/clear" hx-target="#assistant-messages" hx-swap="innerHTML" style="margin-top:8px">
+        <input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+        <button type="submit" class="warn">Clear chat</button>
+      </form>
+    {% endif %}
+  </div>
+
+  <aside class="panel" style="position:sticky; top:12px;">
+    <h3 style="margin-top:0">Core / Talking status</h3>
+    <div class="muted" style="font-size:13px; margin-bottom:10px">
+      <div><strong>Core AI (backend):</strong> deterministic routing + real DB/services tools (always grounded, read-only).</div>
+      <div style="margin-top:6px"><strong>Talking AI:</strong> {% if llm.enabled %}configured (<code>{{ llm.model }}</code>) — used for {{ llm.response_mode }} response polishing when available.{% else %}not configured — core answers shown directly. Set <code>assistant_llm_base_url</code> + <code>assistant_llm_model</code> in Settings (unlocked).{% endif %}</div>
+    </div>
+
+    {% if not assistant_locked %}
+    <h4 style="margin-bottom:6px">Quick prompts (real backend)</h4>
+    <div style="display:grid; gap:6px;">
+      {% for prompt in [
+        'What can you do?',
+        'Decision support for this month',
+        'P&L for last month',
+        'Cash flow for this month',
+        'VAT for last month',
+        'Occupancy for this month',
+        'List rate plans',
+        'Find guest '
+      ] %}
+      <form hx-post="/assistant/ask" hx-target="#assistant-messages" hx-swap="innerHTML" hx-on::after-request="var el=document.getElementById('assistant-messages'); if(el) el.scrollTop=el.scrollHeight;">
+        <input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+        <input type="hidden" name="message" value="{{ prompt }}{% if prompt.endswith(' ') %}Ahmed{% endif %}"/>
+        <button type="submit" style="width:100%; text-align:left; background:#313244; color:var(--text); font-weight:600; border:1px solid var(--muted);">{{ prompt }}{% if prompt.endswith(' ') %}<span class="muted">(edit name/ID)</span>{% endif %}</button>
+      </form>
+      {% endfor %}
+    </div>
+
+    <div style="margin-top:12px; padding:10px; border:1px solid var(--muted); border-radius:8px; background:#181825;">
+      <div class="muted" style="font-size:12px"><strong>Guest/order example</strong></div>
+      <code style="font-size:12px; white-space:pre-wrap">What did guest #3 order most on their last visit?</code>
+      <div class="muted" style="font-size:12px; margin-top:6px">Uses real <code>pos_tabs</code>/<code>reservations</code>/<code>guests</code> data (non-voided items, last checked-out visit).</div>
+    </div>
+    {% endif %}
+  </aside>
+</div>
+{% endblock %}

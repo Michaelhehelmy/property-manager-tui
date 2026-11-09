@@ -41,7 +41,7 @@ async def run_report(request: Request):
 async def analytics_export(request: Request):
     form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
     try:
-        res = services.export_analytics_preset(form.get("preset","management_pack"), form.get("start"), form.get("end"))
+        res = services.generate_unified_report(form.get("preset","management_pack"), form.get("start"), form.get("end"))
         deps.add_flash(request, f"Analytics export created: {', '.join(res.get('outputs',{}).keys())}", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")

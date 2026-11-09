@@ -12,7 +12,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Footer, Header, Static, TabbedContent, TabPane
 
 from .modals import BrandingWizardScreen, LanguageScreen, SetSuperPasswordScreen
-from .tabs import AccountingTab, FrontDeskTab, PosInventoryTab, ReservationsTab, SettingsTab
+from .tabs import AccountingTab, AssistantTab, FrontDeskTab, PosInventoryTab, ReservationsTab, SettingsTab
 
 if TYPE_CHECKING:
     from textual.timer import Timer
@@ -35,9 +35,9 @@ class LoadingScreen(ModalScreen[None]):
         self._hold = 0
         self._done = False
         self._tick_timer: Timer = self.set_interval(0.09, self._tick)
-        self._render()
+        self._update_display()
 
-    def _render(self) -> None:
+    def _update_display(self) -> None:
         try:
             widget = self.query_one("#loading_text", Static)
         except Exception:
@@ -95,7 +95,7 @@ class LoadingScreen(ModalScreen[None]):
         if self._done:
             return
         self._phase += 1
-        self._render()
+        self._update_display()
 
     def _stop_tick(self) -> None:
         timer = getattr(self, "_tick_timer", None)
@@ -163,6 +163,12 @@ class PropertyManagerApp(App[None]):
     #path_info { color: #a6adc8; margin: 1 0; }
     #crm_dialog #table, #folio_dialog #table { height: auto; max-height: 12; }
     #wiz_preview { min-height: 3; content-align: center middle; }
+    #assistant_log { height: 1fr; min-height: 12; background: #1e1e2e; border: solid #45475a; padding: 0 1; margin: 0 0 1 0; }
+    #assistant_split { height: 1fr; }
+    #assistant_side { width: 34; min-width: 28; height: 100%; border: solid #45475a; background: #24273a; padding: 1; margin: 0 1 0 0; overflow-y: auto; }
+    #assistant_side Button { width: 100%; margin: 0 0 1 0; min-width: 0; }
+    #assistant_main { width: 1fr; height: 100%; }
+    #assistant_input { margin: 0 0 1 0; }
     """
 
     BINDINGS = [("ctrl+l", "language", "Language")]
@@ -180,6 +186,8 @@ class PropertyManagerApp(App[None]):
                 yield PosInventoryTab()
             with TabPane(t("Accounting"), id="tab_acct"):
                 yield AccountingTab()
+            with TabPane("🤖 " + t("Manager Assistant"), id="tab_assistant"):
+                yield AssistantTab()
             with TabPane(f"⚙ {t('Settings')}", id="tab_set"):
                 yield SettingsTab()
         yield Footer()

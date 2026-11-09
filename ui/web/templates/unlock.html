@@ -6,5 +6,7 @@
   <input type="hidden" name="next" value="{{ next }}"/>
   <label>Super password<input type="password" name="password" required autofocus/></label>
   <button type="submit">Unlock</button>
-</form></div>
+</form>
+<p style="margin-top:12px"><a href="/unlock/recovery?next={{ next }}">Forgot password? Use a recovery code</a></p>
+</div>
 {% endblock %}

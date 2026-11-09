@@ -21,6 +21,31 @@ async def unlock_post(request: Request):
         r=deps.redirect("/unlock")
     deps.save_session(r, deps.get_session(request)); return r
 
+
+@router.get("/unlock/recovery")
+def unlock_recovery_page(request: Request, next: str = "/"):
+    return render(request, "unlock_recovery.html", {"title": "Recover Access", "next": next})
+
+
+@router.post("/unlock/recovery")
+async def unlock_recovery_post(request: Request):
+    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    nxt = str(form.get("next") or "/")
+    if not nxt.startswith("/") or nxt.startswith("//"):
+        nxt = "/"
+    try:
+        services.use_recovery_code(form.get("code", ""), form.get("new_password", ""), form.get("confirm_password", ""))
+        if not services.unlock_session(form.get("new_password", "")):
+            services.touch_session()
+        deps.get_session(request)["unlocked"] = True
+        deps.add_flash(request, "Password reset with recovery code. Unlocked.", "success")
+        r = deps.redirect(nxt)
+    except Exception as e:
+        deps.add_flash(request, str(e), "error")
+        from urllib.parse import quote
+        r = deps.redirect("/unlock/recovery?next=" + quote(nxt, safe="/"))
+    deps.save_session(r, deps.get_session(request)); return r
+
 @router.post("/lock")
 async def lock_post(request: Request):
     form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
@@ -76,3 +101,72 @@ async def demo_preset(request: Request):
         deps.add_flash(request, f"Demo preset applied: {res['created']}", "success")
     except Exception as e: deps.add_flash(request, str(e), "error")
     r=deps.redirect("/settings"); deps.save_session(r, deps.get_session(request)); return r
+
+
+@router.post("/settings/reset")
+async def reset_settings(request: Request):
+    deps.require_unlock(request)
+    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    try:
+        if str(form.get("confirm", "")).strip().upper() != "RESET DEFAULTS":
+            raise ValueError("Confirmation text must be exactly: RESET DEFAULTS")
+        services.reset_to_defaults(form.get("password", ""))
+        deps.add_flash(request, "Settings reset to defaults (schema/language preserved).", "success")
+    except Exception as e:
+        deps.add_flash(request, str(e), "error")
+    r=deps.redirect("/settings"); deps.save_session(r, deps.get_session(request)); return r
+
+
+@router.get("/settings/rate-plans")
+def rate_plans(request: Request):
+    plans = []
+    for p in services.get_all_rate_plans():
+        try:
+            usage = services.count_reservations_using_plan(p["id"])
+        except Exception:
+            usage = None
+        plans.append({"id": p["id"], "name": p["name"], "price_modifier": p["price_modifier"], "usage_count": usage})
+    return render(request, "settings/rate_plans.html", {"title": "Rate Plans", "plans": plans})
+
+
+@router.post("/settings/rate-plans/add")
+async def rate_plan_add(request: Request):
+    deps.require_unlock(request)
+    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    try:
+        services.add_rate_plan(form.get("name", ""), float(form.get("modifier") or 0), form.get("password", ""))
+        deps.add_flash(request, "Rate plan added.", "success")
+    except Exception as e:
+        deps.add_flash(request, str(e), "error")
+    r = deps.redirect("/settings/rate-plans"); deps.save_session(r, deps.get_session(request)); return r
+
+
+@router.post("/settings/rate-plans/{plan_id}/edit")
+async def rate_plan_edit(request: Request, plan_id: int):
+    deps.require_unlock(request)
+    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    try:
+        services.update_rate_plan(plan_id, form.get("name", ""), float(form.get("modifier") or 0), form.get("password", ""))
+        deps.add_flash(request, "Rate plan updated.", "success")
+    except Exception as e:
+        deps.add_flash(request, str(e), "error")
+    r = deps.redirect("/settings/rate-plans"); deps.save_session(r, deps.get_session(request)); return r
+
+
+@router.post("/settings/rate-plans/{plan_id}/delete")
+async def rate_plan_delete(request: Request, plan_id: int):
+    deps.require_unlock(request)
+    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    try:
+        services.delete_rate_plan(plan_id, form.get("password", ""))
+        deps.add_flash(request, "Rate plan deleted.", "success")
+    except Exception as e:
+        deps.add_flash(request, str(e), "error")
+    r = deps.redirect("/settings/rate-plans"); deps.save_session(r, deps.get_session(request)); return r
+
+
+@router.get("/settings/health")
+def settings_health(request: Request):
+    deps.require_unlock(request)
+    result = services.verify_ledger_integrity()
+    return render(request, "settings/health.html", {"title": "Health Check", "result": result})

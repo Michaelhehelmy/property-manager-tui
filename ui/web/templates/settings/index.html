@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <h2>Settings / Branding</h2>
+<p><a href="/settings/rate-plans">Manage Rate Plans</a> (add/edit/delete with real backend validation) · <a href="/settings/health">Ledger/Data Health Check</a> (read-only, unlock required)</p>
 <div class="grid grid-2">
   <div class="panel"><h3>Branding & animation (wizard fields)</h3>
     <p class="muted">Gift: {{ brand.gift }}</p>
@@ -22,6 +23,14 @@
       <input type="password" name="password" placeholder="Super password"/>
       <button class="warn">Apply demo preset</button>
     </form>
+    <hr style="margin:14px 0;border:none;border-top:1px solid #e2e8f0"/>
+    <h3>Reset settings to defaults</h3>
+    <p class="muted">Requires unlock + super password + confirmation text <code>RESET DEFAULTS</code>. Preserves schema/language.</p>
+    <form method="post" action="/settings/reset"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+      <input name="confirm" placeholder="RESET DEFAULTS"/>
+      <input type="password" name="password" placeholder="Super password"/>
+      <button class="danger">Reset to defaults</button>
+    </form>
   </div>
 </div>
 <div class="panel"><h3>Settings catalog (unlock + password to save)</h3>
@@ -34,7 +43,7 @@
     <td>{% if spec[1] == 'bool' %}<select name="{{k}}"><option value="true" {% if values.get(k)=='true' %}selected{% endif %}>true</option><option value="false" {% if values.get(k)!='true' %}selected{% endif %}>false</option></select>
     {% elif spec[1] == 'enum' %}<select name="{{k}}">{% for o in spec[5] %}<option value="{{o}}" {% if values.get(k)==o %}selected{% endif %}>{{o}}</option>{% endfor %}</select>
     {% elif spec[1] == 'text' %}<textarea name="{{k}}">{{values.get(k,'')}}</textarea>
-    {% else %}<input name="{{k}}" value="{{values.get(k,'')}}"/>{% endif %}</td></tr>
+    {% else %}<input name="{{k}}" value="{{values.get(k,'')}}" {% if 'api_key' in k or 'password' in k or 'secret' in k %}type="password" autocomplete="off"{% endif %}/>{% endif %}</td></tr>
     {% endif %}
     {% endfor %}</table>
     <label>Super password (required to save)<input type="password" name="password"/></label>

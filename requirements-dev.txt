@@ -1,0 +1,3 @@
+# Dev/test dependencies for property-manager-tui
+pytest>=7.0
+httpx>=0.24

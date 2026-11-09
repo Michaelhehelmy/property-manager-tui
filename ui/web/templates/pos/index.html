@@ -1,26 +1,74 @@
 {% extends "base.html" %}
 {% block content %}
 <h2>POS / Inventory</h2>
+<p class="muted">Reservation POS posts items immediately to the folio (real backend). Walk-in uses a <strong>multi-item cart</strong> committed atomically via <code>complete_walkin_sale</code> with a linked receipt.</p>
+
 <div class="grid grid-2">
-  <div class="panel"><h3>Add POS item to reservation</h3>
+  <div class="panel"><h3>Add POS item to reservation (immediate)</h3>
     <form method="post" action="/pos/add"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
-      <label>Reservation<select name="reservation_id"><option value="">Walk-in (use walk-in form)</option>{% for r in reservations %}<option value="{{r['id']}}">#{{r['id']}} {{r['guest_name']}} ({{r['status']}})</option>{% endfor %}</select></label>
-      <label>Description<input name="desc" required/></label>
-      <div class="row"><label>Qty<input name="qty" type="number" value="1"/></label><label>Unit price<input name="price" type="number" step="0.01" required/></label><label>Inventory ID (opt)<input name="inv_id" type="number"/></label></div>
-      <button type="submit">Add item</button>
-    </form>
-    <h3>Atomic walk-in sale (single item quick)</h3>
-    <form method="post" action="/pos/walkin"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
-      <label>Description<input name="desc" value="Walk-in item"/></label>
-      <div class="row"><label>Qty<input name="qty" type="number" value="1"/></label><label>Unit price<input name="price" type="number" step="0.01" required/></label><label>Inventory ID (opt)<input name="inv_id"/></label></div>
-      <div class="row"><label>Method<select name="method"><option>Cash</option><option>Card</option><option>Bank Transfer</option></select></label><label>Notes<input name="notes"/></label></div>
-      <button class="ok" type="submit">Complete walk-in sale</button>
+      <label>Reservation<select name="reservation_id" required>
+        <option value="">Select reservation</option>
+        {% for r in reservations %}<option value="{{r['id']}}">#{{r['id']}} {{r['guest_name']}} ({{r['status']}})</option>{% endfor %}
+      </select></label>
+      <label>Description<input name="desc" required placeholder="Item description"/></label>
+      <div class="row"><label>Qty<input name="qty" type="number" value="1" min="1"/></label><label>Unit price<input name="price" type="number" step="0.01" required/></label><label>Inventory ID (opt)<input name="inv_id" type="number" placeholder="optional"/></label></div>
+      <button type="submit">Add to reservation</button>
     </form>
   </div>
-  <div class="panel"><h3>Inventory</h3>
-    <form method="get" class="row"><input name="q" value="{{q}}" placeholder="Search"/><div style="flex:0"><button>Search</button></div></form>
-    <table><tr><th>ID</th><th>Name</th><th>Cat</th><th>Stock</th><th>Sell</th></tr>
-    {% for i in inv %}<tr><td>{{i['id']}}</td><td>{{i.item_name}}</td><td>{{i['category']}}</td><td>{{i['stock_qty']}}</td><td>{{i['selling_price']}}</td></tr>{% else %}<tr><td colspan="5" class="muted">No items</td></tr>{% endfor %}</table>
+
+  <div class="panel"><h3>Walk-in cart ({{ cart|length }} items) — same atomic sale</h3>
+    <table>
+      <tr><th>Item</th><th>Qty</th><th>Unit</th><th>Tax</th><th>Gross</th><th></th></tr>
+      {% for it in cart %}
+      <tr>
+        <td>{{it.desc}}{% if it.inv_id %} <span class="muted">[inv {{it.inv_id}}]</span>{% endif %}</td>
+        <td>{{it.qty}}</td><td>{{"%.2f"|format(it.price)}}</td><td>{{"%.2f"|format(it.tax)}}</td><td>{{"%.2f"|format(it.gross)}}</td>
+        <td>
+          <form method="post" action="/pos/cart/remove" class="inline"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><input type="hidden" name="idx" value="{{it.idx}}"/><button class="err">Remove</button></form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="muted">Cart is empty. Add items below.</td></tr>
+      {% endfor %}
+      <tr><th colspan="4">TOTAL</th><th colspan="2">{{"%.2f"|format(cart_total)}} EGP</th></tr>
+    </table>
+    <div class="row" style="margin-top:8px">
+      <form method="post" action="/pos/cart/clear" class="inline"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><button class="warn" type="submit">Clear cart</button></form>
+    </div>
+    <h4>Checkout (atomic: all items + one payment)</h4>
+    <form method="post" action="/pos/walkin"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+      <div class="row"><label>Method<select name="method"><option>Cash</option><option>Card</option><option>Bank Transfer</option><option>OTA</option></select></label><label>Notes<input name="notes" placeholder="optional"/></label></div>
+      <button class="ok" type="submit" {% if not cart %}disabled{% endif %}>Complete walk-in sale &amp; get receipt</button>
+    </form>
+  </div>
+</div>
+
+<div class="grid grid-2">
+  <div class="panel"><h3>Add custom item to walk-in cart</h3>
+    <form method="post" action="/pos/cart/add"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+      <label>Description<input name="desc" required/></label>
+      <div class="row"><label>Qty<input name="qty" type="number" value="1" min="1"/></label><label>Unit price<input name="price" type="number" step="0.01" required/></label></div>
+      <input type="hidden" name="inv_id" value=""/>
+      <button type="submit">Add to cart</button>
+    </form>
+  </div>
+  <div class="panel"><h3>Inventory (add to cart)</h3>
+    <form method="get" class="row"><input name="q" value="{{q}}" placeholder="Search inventory"/><div style="flex:0"><button>Search</button></div></form>
+    <table><tr><th>ID</th><th>Name</th><th>Sell</th><th>Stock</th><th>Qty</th><th></th></tr>
+    {% for i in inv %}
+    <tr>
+      <td>{{i['id']}}</td><td>{{i['item_name']}}</td><td>{{"%.2f"|format(i['selling_price'] or 0)}}</td><td>{{i['stock_qty']}}</td>
+      <td colspan="2">
+        <form method="post" action="/pos/cart/add" class="inline"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+          <input type="hidden" name="desc" value="{{i['item_name']}}"/>
+          <input type="hidden" name="price" value="{{i['selling_price'] or 0}}"/>
+          <input type="hidden" name="inv_id" value="{{i['id']}}"/>
+          <input name="qty" type="number" value="1" min="1" style="width:64px;display:inline-block"/>
+          <button type="submit">Add</button>
+        </form>
+      </td>
+    </tr>
+    {% else %}<tr><td colspan="6" class="muted">No items</td></tr>{% endfor %}</table>
     <details><summary>Restock (password)</summary>
       <form method="post" action="/inventory/restock"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
         <div class="row"><label>Item ID<input name="item_id" type="number" required/></label><label>Qty<input name="qty" type="number" step="0.01" required/></label><label>Unit cost<input name="unit_cost" type="number" step="0.01" value="0"/></label></div>
@@ -35,6 +83,27 @@
         <input type="password" name="password" placeholder="Super password"/><button>Add item</button>
       </form>
     </details>
+  </div>
+</div>
+
+<div class="grid grid-2">
+  <div class="panel"><h3>Recent walk-in POS lines (no reservation)</h3>
+    <table><tr><th>ID</th><th>At</th><th>Item</th><th>Qty</th><th>Gross-ish</th><th>Action</th></tr>
+    {% for p in walkin_pos %}{% if not p['voided_at'] %}
+    <tr>
+      <td>{{p['id']}}</td><td class="muted">{{p['created_at']}}</td><td>{{p['item_description']}}</td><td>{{p['quantity']}}</td>
+      <td>{{"%.2f"|format((p['quantity']*p['unit_price']) + (p['tax_amount'] or 0))}}</td>
+      <td>
+        <form method="post" action="/pos/void/{{p['id']}}" class="inline"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><input type="hidden" name="next" value="/pos"/><input type="password" name="password" placeholder="Pwd" style="width:90px;display:inline-block"/><button class="err">Void</button></form>
+      </td>
+    </tr>
+    {% endif %}{% else %}<tr><td colspan="6" class="muted">None</td></tr>{% endfor %}</table>
+  </div>
+  <div class="panel"><h3>Recent walk-in payments</h3>
+    <table><tr><th>ID</th><th>At</th><th>Amount</th><th>Method</th><th>Notes</th></tr>
+    {% for p in walkin_payments %}{% if not p['voided_at'] %}
+    <tr><td>{{p['id']}}</td><td class="muted">{{p['at']}}</td><td>{{"%.2f"|format(p['amount'])}}</td><td>{{p['method']}}</td><td>{{p['notes']}}</td></tr>
+    {% endif %}{% else %}<tr><td colspan="5" class="muted">None</td></tr>{% endfor %}</table>
   </div>
 </div>
 {% endblock %}

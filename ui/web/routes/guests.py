@@ -15,8 +15,11 @@ def guest_detail(gid: int, request: Request):
     g = services.get_guest_by_id(gid)
     if not g:
         deps.add_flash(request, "Guest not found", "error"); return deps.redirect("/guests")
+    if isinstance(g, dict) and "canonical_name" not in g and "name" in g:
+        g = {**g, "canonical_name": g["name"]}
     hist = services.get_guest_history_by_id(gid)
-    return render(request, "guests/detail.html", {"title": f"Guest {g['canonical_name']}", "g": g, "hist": hist})
+    guest_name = g.get("canonical_name") or g.get("name") or ""
+    return render(request, "guests/detail.html", {"title": f"Guest {guest_name}", "g": g, "hist": hist})
 
 @router.post("/guests/{gid}/update")
 async def guest_update(gid: int, request: Request):

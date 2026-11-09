@@ -10,10 +10,20 @@ from fastapi import HTTPException, Request
 from fastapi.responses import RedirectResponse
 from itsdangerous import BadSignature, URLSafeSerializer
 
+import os
+import sys
 from app_core import paths, services
 
 SESSION_COOKIE = "pm_session"
-SECRET_KEY = "pm-web-local-dev-secret-change-me"  # for localhost MVP; override via env in real use
+# Phase 0.1: load secret from env for deployment; keep explicit dev fallback for localhost MVP.
+_SECRET_ENV = "PM_WEB_SECRET_KEY"
+SECRET_KEY = os.environ.get(_SECRET_ENV) or "pm-web-local-dev-secret-change-me"
+if not os.environ.get(_SECRET_ENV):
+    print(
+        f"[pm-web] WARNING: {_SECRET_ENV} not set; using insecure development secret. "
+        "Set PM_WEB_SECRET_KEY for any non-local/shared deployment.",
+        file=sys.stderr,
+    )
 _serializer = URLSafeSerializer(SECRET_KEY, salt="pm-session")
 
 
@@ -82,7 +92,9 @@ def unlock(request: Request, password: str) -> bool:
     if services.verify_password(password):
         get_session(request)["unlocked"] = True
         try:
-            services.touch_session()
+            # Keep backend in-process session aligned when available (single-worker MVP).
+            if not services.unlock_session(password):
+                services.touch_session()
         except Exception:
             pass
         return True

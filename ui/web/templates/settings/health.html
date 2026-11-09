@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Ledger / Data Integrity Health Check</h2>
+<p class="muted">Read-only checks (Phase 0.4). Real backend: <code>services.verify_ledger_integrity()</code>. Ledger is append-only — investigate issues before manual edits.</p>
+<div class="panel">
+  {% if result.ok %}
+    <div class="flash success"><strong>OK</strong> — no integrity issues detected by these checks. Checked at {{ result.checked_at }}.</div>
+  {% else %}
+    <div class="flash error"><strong>Issues found</strong> ({{ result.issues|length }}). Checked at {{ result.checked_at }}.</div>
+  {% endif %}
+</div>
+<div class="grid grid-2">
+  <div class="panel"><h3>Stats</h3>
+    <table>{% for k,v in result.stats.items() %}<tr><th>{{k}}</th><td>{{v}}</td></tr>{% else %}<tr><td class="muted">None</td></tr>{% endfor %}</table>
+  </div>
+  <div class="panel"><h3>Warnings</h3>
+    {% if result.warnings %}<pre>{{ result.warnings | tojson(indent=2) }}</pre>{% else %}<p class="muted">No warnings.</p>{% endif %}
+  </div>
+</div>
+<div class="panel"><h3>Issues</h3>
+  {% if result.issues %}<pre>{{ result.issues | tojson(indent=2) }}</pre>{% else %}<p class="muted">No issues.</p>{% endif %}
+</div>
+<div class="panel"><h3>Note</h3><p class="muted">{{ result.note }}</p></div>
+<p><a href="/settings">← Back to Settings</a></p>
+{% endblock %}

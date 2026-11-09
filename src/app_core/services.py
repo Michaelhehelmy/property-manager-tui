@@ -1,4 +1,4 @@
-"""Sukoon Camp — business logic, ledger, validation, security."""
+"""Property manager — business logic, ledger, validation, security."""
 import hashlib
 import secrets
 import os
@@ -110,6 +110,15 @@ SETTINGS_CATALOG = {
     "default_printer": ("Default Printer", "str", "", "system", "cups:Name, win:Name, raw:host:port"),
     "lockout_attempts": ("Lockout After N Failures", "int", "5", "system", ""),
     "lockout_minutes": ("Lockout Duration (min)", "int", "15", "system", ""),
+    "assistant_response_mode": ("Assistant Response Mode", "enum", "talking", "system",
+                                "core=grounded backend facts; talking=core facts rephrased by talking model when available; full_llm=LLM tool-calling conversation",
+                                ["core", "talking", "full_llm"]),
+    "assistant_provider": ("Assistant Tool/LLM Provider", "enum", "auto", "system", "Used for full_llm/talking when an OpenAI-compatible endpoint is configured",
+                           ["auto", "deterministic_only", "openai_compatible"]),
+    "assistant_llm_base_url": ("Assistant LLM Base URL", "str", "", "system", "OpenAI-compatible endpoint for talking/full_llm (e.g. http://127.0.0.1:8080/v1)"),
+    "assistant_llm_model": ("Assistant LLM Model", "str", "", "system", "Model name for talking/full_llm"),
+    "assistant_llm_api_key": ("Assistant LLM API Key", "str", "", "system", "Optional; leave blank for local endpoints"),
+    "assistant_require_unlock": ("Assistant Requires Unlock", "bool", "true", "system", "Gate chat access to sensitive manager data"),
     "schema_version": ("Schema Version", "internal", "4", "system", ""),
 }
 
@@ -590,6 +599,34 @@ def verify_recovery_code(code):
     return bool(row)
 
 
+def use_recovery_code(code, new_password, confirm_password):
+    """Consume a recovery code and set a new super password."""
+    code_norm = (code or "").strip().upper()
+    if not code_norm:
+        raise ValueError("Recovery code is required.")
+    if new_password != confirm_password:
+        raise ValueError("Passwords do not match.")
+    if not new_password or len(new_password) < 6:
+        raise ValueError("Password must be at least 6 characters.")
+    ch = hashlib.sha256(code_norm.encode()).hexdigest()
+    key = f"recovery_{ch}"
+    from .db import connect, transaction
+    conn = connect()
+    row = conn.execute("SELECT 1 FROM app_metadata WHERE key=?", (key,)).fetchone()
+    if not row:
+        raise ValueError("Invalid or already-used recovery code.")
+    salt = secrets.token_hex(16)
+    pw_hash = _scrypt_hash(new_password, salt)
+    with transaction() as c:
+        c.execute("DELETE FROM app_metadata WHERE key=?", (key,))
+        c.execute("INSERT OR REPLACE INTO app_metadata (key, value) VALUES ('super_password_salt', ?)", (salt,))
+        c.execute("INSERT OR REPLACE INTO app_metadata (key, value) VALUES ('super_password_hash', ?)", (pw_hash,))
+        c.execute("INSERT OR REPLACE INTO app_metadata (key, value) VALUES ('failed_attempts', '0')")
+        c.execute("INSERT OR REPLACE INTO app_metadata (key, value) VALUES ('lockout_until', '')")
+    _audit("recovery_code_used")
+    return True
+
+
 # In-memory session (per-run)
 def unlock_session(password):
     if not verify_password(password):
@@ -844,6 +881,107 @@ def get_guest_history_by_id(guest_id):
         FROM reservations r JOIN rooms rm ON r.room_id = rm.id
         WHERE r.guest_id=? ORDER BY r.check_in_date DESC
     """, (guest_id,)).fetchall()
+
+
+def assistant_find_guests(query, limit=10):
+    """Read-only guest search for manager assistant (real backend)."""
+    q = (query or "").strip()
+    if not q:
+        return []
+    limit = max(1, min(int(limit or 10), 25))
+    rows = get_all_guests(q)
+    out = []
+    for r in rows[:limit]:
+        out.append({
+            "id": r["id"], "name": r["canonical_name"], "phone": r["phone"], "email": r["email"],
+            "stays": r["stays"], "last_stay": r["last_stay"], "total_billed": round(float(r["total"] or 0), 2),
+        })
+    return out
+
+
+def assistant_get_guest_last_visit(guest_id):
+    """Return the guest's last visit reservation (real backend)."""
+    from .db import connect
+    guest = get_guest_by_id(guest_id)
+    if not guest:
+        return None
+    row = connect().execute("""
+        SELECT r.id, r.guest_id, r.guest_name, rm.room_number, r.check_in_date, r.check_out_date,
+               r.status, r.agreed_nightly_rate, r.tax_amount, rp.name AS rate_plan_name
+        FROM reservations r
+        JOIN rooms rm ON r.room_id = rm.id
+        LEFT JOIN rate_plans rp ON r.rate_plan_id = rp.id
+        WHERE r.guest_id=? AND r.status != 'Deleted'
+        ORDER BY CASE WHEN r.status='Checked Out' THEN 0 ELSE 1 END,
+                 r.check_out_date DESC, r.check_in_date DESC, r.id DESC
+        LIMIT 1
+    """, (guest_id,)).fetchone()
+    if not row:
+        return {"guest": guest, "last_visit": None, "reason": "No reservations found for this guest."}
+    return {
+        "guest": guest,
+        "last_visit": {k: row[k] for k in row.keys()},
+        "definition": "Most recent Checked Out reservation by check-out date; otherwise most recent non-deleted reservation.",
+    }
+
+
+def assistant_get_top_items_for_reservation(reservation_id, limit=5):
+    """Top ordered POS items for a reservation, excluding voided items (real backend)."""
+    from .db import connect
+    rid = int(reservation_id)
+    limit = max(1, min(int(limit or 5), 25))
+    rows = connect().execute("""
+        SELECT COALESCE(NULLIF(item_description, ''), 'Item') AS item_name,
+               COALESCE(inventory_item_id, 0) AS inventory_item_id,
+               SUM(quantity) AS total_qty,
+               ROUND(SUM(quantity * unit_price), 2) AS net_amount,
+               ROUND(SUM(tax_amount), 2) AS tax_amount
+        FROM pos_tabs
+        WHERE reservation_id=? AND voided_at IS NULL
+        GROUP BY COALESCE(inventory_item_id, 0), COALESCE(NULLIF(item_description, ''), 'Item')
+        ORDER BY total_qty DESC, net_amount DESC, item_name ASC
+        LIMIT ?
+    """, (rid, limit)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def assistant_get_top_items_last_visit(guest_id, limit=5):
+    """What a guest ordered most on their last visit (real backend)."""
+    visit = assistant_get_guest_last_visit(guest_id)
+    if not visit or not visit.get("last_visit"):
+        return {"guest": (visit or {}).get("guest") or get_guest_by_id(guest_id), "last_visit": None, "items": [], "reason": (visit or {}).get("reason") or "No last visit found."}
+    rid = visit["last_visit"]["id"]
+    items = assistant_get_top_items_for_reservation(rid, limit=limit)
+    return {
+        "guest": visit["guest"],
+        "last_visit": visit["last_visit"],
+        "reservation_id": rid,
+        "items": items,
+        "note": "Non-voided POS items for the last visit reservation, ranked by total quantity." if items else "No non-voided POS items found for the last visit.",
+    }
+
+
+def assistant_reservation_summary(reservation_id):
+    """Read-only reservation summary with balance and POS totals (real backend)."""
+    from .db import connect
+    rid = int(reservation_id)
+    row = connect().execute("""
+        SELECT r.*, rm.room_number, rp.name AS rate_plan_name, g.canonical_name AS guest_canonical_name
+        FROM reservations r
+        JOIN rooms rm ON r.room_id = rm.id
+        LEFT JOIN rate_plans rp ON r.rate_plan_id = rp.id
+        LEFT JOIN guests g ON r.guest_id = g.id
+        WHERE r.id=?
+    """, (rid,)).fetchone()
+    if not row:
+        return None
+    bal = None
+    try:
+        bal = calculate_guest_balance(rid)
+    except Exception as e:
+        bal = {"error": str(e)}
+    pos_count = connect().execute("SELECT COUNT(*) FROM pos_tabs WHERE reservation_id=? AND voided_at IS NULL", (rid,)).fetchone()[0]
+    return {"reservation": {k: row[k] for k in row.keys()}, "balance": bal, "active_pos_item_lines": pos_count}
 
 
 def update_guest(guest_id, name, phone, email, notes, password):
@@ -1422,8 +1560,15 @@ def complete_walkin_sale(items, method, notes="", payment_type="Payment"):
         _post(cur, "WALKIN_PAY", pid, "PAYMENT", "", 0, 0, 0, 0, method,
               f"{payment_type or 'Payment'} via {method} (walk-in)", gross_override=total_gross)
         _audit("walkin_sale", "payment", pid, f"{total_gross} via {method} items={len(pos_ids)}")
+    receipt_text = generate_walkin_receipt_text(receipt_items, total_gross, method, payment_id=pid)
+    try:
+        receipt_path = save_walkin_receipt_file(receipt_text, pid)
+    except Exception:
+        receipt_path = ""
     return {"total_gross": total_gross, "pos_ids": pos_ids, "payment_id": pid,
-            "receipt_items": receipt_items, "method": method}
+            "receipt_items": receipt_items, "method": method,
+            "receipt_text": receipt_text, "receipt_path": receipt_path,
+            "receipt_name": Path(receipt_path).name if receipt_path else ""}
 
 
 def get_pos_items(reservation_id):
@@ -1935,6 +2080,42 @@ def save_invoice_file(text, reservation_id, currency):
     return str(path)
 
 
+def generate_walkin_receipt_text(receipt_items, total_gross, method, payment_id=None, when=None):
+    """Receipt text for an atomic walk-in sale (many items on same receipt)."""
+    W = 48
+    display_name = (get_app_display_name() or "Property Manager").upper()
+    when = when or datetime.now()
+    ref = f"Payment #{payment_id}" if payment_id else "Walk-in"
+    lines = ["=" * W, f"{display_name} — WALK-IN RECEIPT".center(W), "=" * W,
+             when.strftime("%Y-%m-%d %H:%M"),
+             f"Ref: {ref}",
+             "-" * W]
+    for it in receipt_items or []:
+        desc = it.get("desc") or it.get("item_description") or "Item"
+        qty = it.get("qty", it.get("quantity", 1))
+        price = float(it.get("price", it.get("unit_price", 0)) or 0)
+        gross = float(it.get("gross", 0) or 0)
+        if gross == 0 and price:
+            try:
+                gross = float(qty) * price
+            except Exception:
+                gross = 0
+        lines.append(f"  {desc}  x{qty}  @ {price:.2f}  = {gross:.2f}")
+    lines += ["-" * W, f"  TOTAL: {float(total_gross):.2f} EGP",
+              f"  Paid by: {method}", "=" * W,
+              "", "Thank you!", "=" * W]
+    return "\n".join(lines)
+
+
+def save_walkin_receipt_file(text, payment_id):
+    """Save walk-in receipt with distinct naming (avoids reservation invoice_Res00000 ambiguity)."""
+    INVOICE_DIR.mkdir(exist_ok=True)
+    safe_id = int(payment_id) if payment_id else 0
+    path = INVOICE_DIR / f"walkin_receipt_Pay{safe_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+    path.write_text(text, encoding="utf-8")
+    return str(path)
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # PRINTING
 # ═══════════════════════════════════════════════════════════════════════════
@@ -2329,6 +2510,126 @@ def backup_now():
     return str(dst_path)
 
 
+
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# INTEGRITY / HEALTH (Phase 0.4, read-only)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def list_walkin_pos(limit=200):
+    """Non-voided walk-in POS lines (reservation_id IS NULL), for management/void flows."""
+    from .db import connect
+    return connect().execute("""
+        SELECT p.id, p.created_at, p.item_description, p.quantity, p.unit_price, p.tax_amount,
+               p.inventory_item_id, p.voided_at
+        FROM pos_tabs p
+        WHERE p.reservation_id IS NULL
+        ORDER BY p.id DESC LIMIT ?
+    """, (int(limit or 200),)).fetchall()
+
+
+def list_walkin_payments(limit=100):
+    """Walk-in payments (reservation_id IS NULL)."""
+    from .db import connect
+    return connect().execute("""
+        SELECT id, at, amount, method, payment_type, notes, voided_at
+        FROM payments
+        WHERE reservation_id IS NULL
+        ORDER BY id DESC LIMIT ?
+    """, (int(limit or 100),)).fetchall()
+
+
+def verify_ledger_integrity():
+    """Read-only health check: ledger/ref consistency and basic money sanity."""
+    from .db import connect
+    conn = connect()
+    issues = []
+    warnings = []
+    stats = {}
+
+    # Basic counts
+    for name, q in [
+        ("ledger_rows", "SELECT COUNT(*) FROM general_ledger"),
+        ("reservations", "SELECT COUNT(*) FROM reservations"),
+        ("pos_rows", "SELECT COUNT(*) FROM pos_tabs"),
+        ("payments", "SELECT COUNT(*) FROM payments"),
+        ("void_reversals", "SELECT COUNT(*) FROM general_ledger WHERE reverses_id IS NOT NULL"),
+    ]:
+        try:
+            stats[name] = conn.execute(q).fetchone()[0]
+        except Exception as e:
+            warnings.append(f"stat {name}: {e}")
+
+    # POS ledger refs should point to existing pos_tabs (when POS/VOID_POS rows exist)
+    try:
+        rows = conn.execute("""
+            SELECT DISTINCT l.ref_id FROM general_ledger l
+            WHERE l.ref_type='POS' AND l.ref_id NOT IN (SELECT id FROM pos_tabs)
+            LIMIT 20
+        """).fetchall()
+        if rows:
+            issues.append({"type": "orphan_ledger_pos_ref", "detail": f"ledger POS refs missing pos_tabs ids (sample): {[r[0] for r in rows]}"})
+    except Exception as e:
+        warnings.append(f"pos ref check: {e}")
+
+    # RES ledger refs should point to existing reservations
+    try:
+        rows = conn.execute("""
+            SELECT DISTINCT l.ref_id FROM general_ledger l
+            WHERE l.ref_type='RES' AND l.ref_id NOT IN (SELECT id FROM reservations)
+            LIMIT 20
+        """).fetchall()
+        if rows:
+            issues.append({"type": "orphan_ledger_res_ref", "detail": f"ledger RES refs missing reservation ids (sample): {[r[0] for r in rows]}"})
+    except Exception as e:
+        warnings.append(f"res ref check: {e}")
+
+    # PAY/WALKIN_PAY ledger refs should point to existing payments
+    try:
+        rows = conn.execute("""
+            SELECT DISTINCT l.ref_type, l.ref_id FROM general_ledger l
+            WHERE l.ref_type IN ('PAY','WALKIN_PAY') AND l.ref_id NOT IN (SELECT id FROM payments)
+            LIMIT 20
+        """).fetchall()
+        if rows:
+            issues.append({"type": "orphan_ledger_payment_ref", "detail": f"ledger payment refs missing payments (sample): {[(r[0],r[1]) for r in rows]}"})
+    except Exception as e:
+        warnings.append(f"payment ref check: {e}")
+
+    # Active reservation POS linkage sanity (pos_tabs.reservation_id -> reservation exists when not null)
+    try:
+        rows = conn.execute("""
+            SELECT p.id, p.reservation_id FROM pos_tabs p
+            WHERE p.reservation_id IS NOT NULL AND p.reservation_id NOT IN (SELECT id FROM reservations)
+            LIMIT 20
+        """).fetchall()
+        if rows:
+            issues.append({"type": "orphan_pos_reservation", "detail": f"pos_tabs with missing reservation_id (sample): {[(r[0],r[1]) for r in rows]}"})
+    except Exception as e:
+        warnings.append(f"pos reservation check: {e}")
+
+    # Reservation balance sanity sample (non-negative gross charge accumulation can still yield negative due to overpayment; flag extreme anomalies)
+    try:
+        bad = []
+        for r in conn.execute("SELECT id FROM reservations WHERE status IN ('Reserved','Checked In','Checked Out') ORDER BY id DESC LIMIT 100").fetchall():
+            bal = calculate_guest_balance(r["id"])
+            if bal < -100000 or bal > 10000000:
+                bad.append({"reservation_id": r["id"], "balance": bal})
+        if bad:
+            warnings.append({"type": "balance_outlier_sample", "detail": bad[:10]})
+        stats["balances_sampled"] = min(100, stats.get("reservations", 0))
+    except Exception as e:
+        warnings.append(f"balance sample: {e}")
+
+    return {
+        "ok": len(issues) == 0,
+        "issues": issues,
+        "warnings": warnings,
+        "stats": stats,
+        "checked_at": datetime.now().isoformat(timespec="seconds"),
+        "note": "Read-only checks. Investigate issues before manual data edits; ledger is append-only.",
+    }
 
 # ═══════════════════════════════════════════════════════════════════════════
 # ANALYTICS, UNIFIED REPORTS, EXPORT PRESETS (read-only / guarded)

@@ -10,7 +10,8 @@ def test_invoice_no_attribution(clean_db):
     text = services.generate_invoice_text(rid)
     assert "Gifted with love" not in text
     assert "Michael Helmy" not in text
-    assert "Sukoon Camp" in text  # Property name still shows
+    # Configured property/app display name still shows (defaults to "My Property" in fresh DB)
+    assert services.get_app_display_name() in text or services.get_setting("property_name", "") in text
 
 
 def test_invoice_usd_view_no_attribution(clean_db):

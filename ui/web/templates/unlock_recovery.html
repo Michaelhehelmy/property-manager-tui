@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="panel" style="max-width:560px"><h2>Recover access with recovery code</h2>
+<p class="muted">Enter one unused recovery code and set a new super password. The code will be consumed.</p>
+<form method="post" action="/unlock/recovery">
+  <input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+  <input type="hidden" name="next" value="{{ next }}"/>
+  <label>Recovery code<input name="code" required autofocus autocomplete="off"/></label>
+  <label>New super password<input type="password" name="new_password" required/></label>
+  <label>Confirm new password<input type="password" name="confirm_password" required/></label>
+  <button type="submit" class="warn">Reset password & unlock</button>
+</form>
+<p style="margin-top:12px"><a href="/unlock?next={{ next }}">Back to password unlock</a></p>
+</div>
+{% endblock %}

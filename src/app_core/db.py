@@ -1,4 +1,4 @@
-"""Sukoon Camp — database layer. Single persistent connection with WAL."""
+"""Property manager — database layer. Single persistent connection with WAL."""
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
