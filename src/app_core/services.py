@@ -1317,9 +1317,7 @@ def estimate_cancellation_outcome(rid, mode):
     }
 
 
-def cancel_reservation(rid, password):
-    if not verify_password(password):
-        raise PermissionError("Invalid super password.")
+def cancel_reservation(rid, password=None):
     from .db import connect, transaction
     row = connect().execute("SELECT status FROM reservations WHERE id=?", (rid,)).fetchone()
     if not row:
@@ -1344,9 +1342,7 @@ def cancel_reservation(rid, password):
     _audit("reservation_cancel", "reservation", rid, f"policy={policy} refund={refund}")
 
 
-def mark_no_show(rid, password):
-    if not verify_password(password):
-        raise PermissionError("Invalid super password.")
+def mark_no_show(rid, password=None):
     from .db import connect, transaction
     row = connect().execute("SELECT status FROM reservations WHERE id=?", (rid,)).fetchone()
     if not row:
@@ -1394,9 +1390,7 @@ def _void_pos_item_inner(cur, pos_row):
     cur.execute("UPDATE pos_tabs SET voided_at=datetime('now','localtime') WHERE id=?", (pid,))
 
 
-def modify_reservation(rid, new_rate, new_ci, new_co, new_room_id, password):
-    if not verify_password(password):
-        raise PermissionError("Invalid super password.")
+def modify_reservation(rid, new_rate, new_ci, new_co, new_room_id, password=None):
     try:
         d1 = datetime.strptime(new_ci, DATE_FMT)
         d2 = datetime.strptime(new_co, DATE_FMT)
@@ -1438,10 +1432,8 @@ def modify_reservation(rid, new_rate, new_ci, new_co, new_room_id, password):
     _audit("reservation_modify", "reservation", rid, f"rate={new_rate} room={new_room_id}")
 
 
-def delete_reservation(rid, password):
+def delete_reservation(rid, password=None):
     """Only allowed for Reserved with no payments/POS."""
-    if not verify_password(password):
-        raise PermissionError("Invalid super password.")
     from .db import transaction
     with transaction() as conn:
         row = conn.execute("SELECT status FROM reservations WHERE id=?", (rid,)).fetchone()

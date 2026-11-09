@@ -170,10 +170,11 @@ def test_cancel_no_payments_no_refund(clean_db):
     assert refunds == 0
 
 
-def test_cancel_requires_password(clean_db):
+def test_cancel_does_not_require_super_password(clean_db):
     rid = make_reservation()
-    with pytest.raises(PermissionError):
-        services.cancel_reservation(rid, "wrong")
+    services.cancel_reservation(rid, "wrong")
+    row = connect().execute("SELECT status FROM reservations WHERE id=?", (rid,)).fetchone()
+    assert row["status"] == "Cancelled"
 
 
 def test_cancel_twice_raises(clean_db):
@@ -190,10 +191,11 @@ def test_no_show_reverses_charges(clean_db):
     assert row["status"] == "No-Show"
 
 
-def test_no_show_requires_password(clean_db):
+def test_no_show_does_not_require_super_password(clean_db):
     rid = make_reservation()
-    with pytest.raises(PermissionError):
-        services.mark_no_show(rid, "wrong")
+    services.mark_no_show(rid, "wrong")
+    row = connect().execute("SELECT status FROM reservations WHERE id=?", (rid,)).fetchone()
+    assert row["status"] == "No-Show"
 
 
 def test_delete_only_reserved(clean_db):
@@ -223,10 +225,11 @@ def test_modify_rate(clean_db):
     assert row["agreed_nightly_rate"] == 150.0
 
 
-def test_modify_requires_password(clean_db):
+def test_modify_does_not_require_super_password(clean_db):
     rid = make_reservation()
-    with pytest.raises(PermissionError):
-        services.modify_reservation(rid, 150.0, "2026-12-01", "2026-12-03", 1, "wrong")
+    services.modify_reservation(rid, 150.0, "2026-12-01", "2026-12-03", 1, "wrong")
+    row = connect().execute("SELECT agreed_nightly_rate FROM reservations WHERE id=?", (rid,)).fetchone()
+    assert row["agreed_nightly_rate"] == 150.0
 
 
 def test_modify_only_reserved_or_checkedin(clean_db):

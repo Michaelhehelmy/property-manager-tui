@@ -338,10 +338,11 @@ def test_cancel_not_found(clean_db):
         services.cancel_reservation(9999, "testpass")
 
 
-def test_cancel_wrong_password(clean_db):
+def test_cancel_no_password_required(clean_db):
     rid = make_reservation()
-    with pytest.raises(PermissionError):
-        services.cancel_reservation(rid, "wrong")
+    services.cancel_reservation(rid)  # super password not required for reservation ops
+    r = services.get_reservation(rid)
+    assert r["status"] == "Cancelled"
 
 
 def test_cancel_already_cancelled(clean_db):
@@ -351,10 +352,11 @@ def test_cancel_already_cancelled(clean_db):
         services.cancel_reservation(rid, "testpass")
 
 
-def test_no_show_wrong_password(clean_db):
-    rid = make_reservation()
-    with pytest.raises(PermissionError):
-        services.mark_no_show(rid, "wrong")
+def test_no_show_no_password_required(clean_db):
+    rid = make_reservation(ci="2020-01-01", co="2020-01-02")
+    services.mark_no_show(rid, "wrong")  # password ignored
+    r = services.get_reservation(rid)
+    assert r["status"] in ("No-Show", "No Show")
 
 
 def test_no_show_not_found(clean_db):
@@ -367,10 +369,11 @@ def test_delete_not_found(clean_db):
         services.delete_reservation(9999, "testpass")
 
 
-def test_delete_wrong_password(clean_db):
+def test_delete_no_password_required(clean_db):
     rid = make_reservation()
-    with pytest.raises(PermissionError):
-        services.delete_reservation(rid, "wrong")
+    services.delete_reservation(rid, "wrong")  # password ignored; Reserved/no payments/POS
+    r = services.get_reservation(rid)
+    assert r["status"] == "Deleted"
 
 
 def test_delete_checked_in_reservation(clean_db):
@@ -398,10 +401,11 @@ def test_modify_not_found(clean_db):
         services.modify_reservation(9999, 100, "2026-12-01", "2026-12-03", 1, "testpass")
 
 
-def test_modify_wrong_password(clean_db):
+def test_modify_no_password_required(clean_db):
     rid = make_reservation()
-    with pytest.raises(PermissionError):
-        services.modify_reservation(rid, 100, "2026-12-01", "2026-12-03", 1, "wrong")
+    services.modify_reservation(rid, 100, "2026-12-01", "2026-12-03", 1, "wrong")
+    r = services.get_reservation(rid)
+    assert float(r["agreed_nightly_rate"]) == 100.0
 
 
 def test_modify_bad_dates(clean_db):
