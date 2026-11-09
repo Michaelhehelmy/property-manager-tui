@@ -1,0 +1,33 @@
+# Local/runtime data (do not commit)
+property_manager.db
+property_manager.db-*
+*.db-shm
+*.db-wal
+exports/
+invoices/
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+*.egg-info/
+dist/
+build/
+.eggs/
+.venv/
+venv/
+ENV/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
