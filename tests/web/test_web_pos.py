@@ -113,3 +113,54 @@ def test_pos_void_restock_inventory(client, monkeypatch):
     monkeypatch.setattr(pr.services, "add_inventory_item", lambda *a, **k: (_ for _ in ()).throw(ValueError("x")))
     r = client.post("/inventory/add", data={"csrf": token, "name": "N"}, follow_redirects=True)
     assert r.status_code == 200
+
+
+def test_pos_recipe_management_and_parser(client, monkeypatch):
+    import ui.web.routes.pos_inventory as pr
+
+    # parser formats: blank/comment/colon/semicolon/comma
+    comps = pr._parse_recipe_components("1,2\n#c\n\n2:0.5;3,1.25\nbadline")
+    assert comps == [
+        {"ingredient_item_id": "1", "qty_per_sale": "2"},
+        {"ingredient_item_id": "2", "qty_per_sale": "0.5"},
+        {"ingredient_item_id": "3", "qty_per_sale": "1.25"},
+    ]
+    assert pr._parse_recipe_components("") == []
+
+    token = set_session(client, unlocked=True)
+    calls = {}
+    monkeypatch.setattr(pr.services, "set_recipe_components", lambda mid, comps, pw: calls.setdefault("set", (mid, comps, pw)) or [])
+    r = client.post("/recipes/set", data={"csrf": token, "menu_item_id": "10", "components": "2,1\n3:0.5", "password": "testpass"}, follow_redirects=True)
+    assert r.status_code == 200 and calls["set"][0] == 10 and len(calls["set"][1]) == 2
+    monkeypatch.setattr(pr.services, "set_recipe_components", lambda *a, **k: (_ for _ in ()).throw(ValueError("bad recipe")))
+    r = client.post("/recipes/set", data={"csrf": token, "menu_item_id": "10", "components": "2,1", "password": "x"}, follow_redirects=True)
+    assert r.status_code == 200
+
+    monkeypatch.setattr(pr.services, "clear_recipe_components", lambda mid, pw: calls.setdefault("clear", (mid, pw)) or True)
+    r = client.post("/recipes/clear", data={"csrf": token, "menu_item_id": "10", "password": "testpass"}, follow_redirects=True)
+    assert r.status_code == 200 and calls["clear"][0] == 10
+    monkeypatch.setattr(pr.services, "clear_recipe_components", lambda *a, **k: (_ for _ in ()).throw(ValueError("x")))
+    r = client.post("/recipes/clear", data={"csrf": token, "menu_item_id": "10", "password": "x"}, follow_redirects=True)
+    assert r.status_code == 200
+
+
+def test_pos_get_recipe_counts_exception_branch(client, monkeypatch):
+    import ui.web.routes.pos_inventory as pr
+    monkeypatch.setattr(pr.services, "search_inventory", lambda q: [{"id": 1, "item_name": "Meal", "selling_price": 5, "stock_qty": 1}])
+    monkeypatch.setattr(pr.services, "list_walkin_pos", lambda limit=30: [])
+    monkeypatch.setattr(pr.services, "list_walkin_payments", lambda limit=20: [])
+    real_connect = pr.connect
+    class _Res:
+        def fetchall(self):
+            return []
+    class FakeConn:
+        def execute(self, sql, *a, **k):
+            s = str(sql)
+            if "recipe_components" in s:
+                raise RuntimeError("no recipes")
+            if "FROM reservations" in s:
+                return _Res()
+            return real_connect().execute(sql, *a, **k)
+    monkeypatch.setattr(pr, "connect", lambda: FakeConn())
+    r = client.get("/pos")
+    assert r.status_code == 200 and "Meal" in r.text

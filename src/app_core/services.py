@@ -1468,6 +1468,20 @@ def get_reservation(rid):
 # POS
 # ═══════════════════════════════════════════════════════════════════════════
 
+def _recipe_components(conn, menu_item_id):
+    try:
+        return conn.execute("""
+            SELECT rc.ingredient_item_id, rc.qty_per_sale,
+                   i.item_name, i.unit, i.stock_qty, i.unit_cost, i.active
+            FROM recipe_components rc
+            JOIN inventory i ON i.id = rc.ingredient_item_id
+            WHERE rc.menu_item_id = ?
+            ORDER BY i.item_name, rc.ingredient_item_id
+        """, (menu_item_id,)).fetchall()
+    except Exception:
+        return []
+
+
 def _add_pos_item_tx(conn, reservation_id, desc, qty, price, inv_id=None):
     """Insert a POS item and related ledger/stock inside an existing transaction."""
     if not isinstance(qty, int) or qty <= 0:
@@ -1493,15 +1507,34 @@ def _add_pos_item_tx(conn, reservation_id, desc, qty, price, inv_id=None):
     tax = calculate_tax(net, 0)
     cur = conn.cursor()
     cost_at_sale = 0.0
+    recipe = []
     if inv_id:
-        inv = conn.execute("SELECT stock_qty, unit_cost, active FROM inventory WHERE id=?",
+        inv = conn.execute("SELECT stock_qty, unit_cost, active, item_name FROM inventory WHERE id=?",
                            (inv_id,)).fetchone()
         if not inv or not inv["active"]:
             raise ValueError("Inventory item not found or inactive.")
         allow_neg = get_setting("allow_negative_stock", "true") == "true"
-        if not allow_neg and inv["stock_qty"] < qty:
-            raise ValueError(f"Insufficient stock: {inv['stock_qty']} available, {qty} requested.")
-        cost_at_sale = inv["unit_cost"] or 0
+        recipe = _recipe_components(conn, inv_id)
+        if recipe:
+            # Meal/menu item with recipe: deduct ingredients, not meal stock.
+            missing = []
+            total_cost_per_unit = 0.0
+            for c in recipe:
+                need = float(c["qty_per_sale"] or 0) * qty
+                if need <= 0:
+                    raise ValueError(f"Invalid recipe quantity for ingredient '{c['item_name']}'.")
+                if not c["active"]:
+                    raise ValueError(f"Recipe ingredient '{c['item_name']}' is inactive.")
+                if (not allow_neg) and float(c["stock_qty"] or 0) < need:
+                    missing.append(f"{c['item_name']} (need {need:g}, have {float(c['stock_qty'] or 0):g})")
+                total_cost_per_unit += float(c["unit_cost"] or 0) * float(c["qty_per_sale"] or 0)
+            if missing:
+                raise ValueError("Insufficient ingredient stock: " + "; ".join(missing))
+            cost_at_sale = round(total_cost_per_unit, 6)
+        else:
+            if not allow_neg and inv["stock_qty"] < qty:
+                raise ValueError(f"Insufficient stock: {inv['stock_qty']} available, {qty} requested.")
+            cost_at_sale = inv["unit_cost"] or 0
 
     rid = None if is_walkin else reservation_id
     cur.execute("""INSERT INTO pos_tabs
@@ -1512,15 +1545,27 @@ def _add_pos_item_tx(conn, reservation_id, desc, qty, price, inv_id=None):
     _post(cur, "POS", pid, "CHARGE", "F&B",
           tax["net"], tax["service"], tax["vat"], tax["city_tax"], "",
           f"POS: {desc.strip()} x{qty}")
-    if inv_id and cost_at_sale > 0:
+    if inv_id and recipe:
         cogs = round(cost_at_sale * qty, 2)
-        _post(cur, "POS", pid, "COGS", "COGS", cogs, 0, 0, 0, "",
-              f"COGS POS #{pid}: {desc.strip()} x{qty}")
-    if inv_id:
+        if cogs > 0:
+            _post(cur, "POS", pid, "COGS", "COGS", cogs, 0, 0, 0, "",
+                  f"COGS POS #{pid} (recipe): {desc.strip()} x{qty}")
+        for c in recipe:
+            need = float(c["qty_per_sale"] or 0) * qty
+            conn.execute("UPDATE inventory SET stock_qty = stock_qty - ? WHERE id=?", (need, c["ingredient_item_id"]))
+            conn.execute("""INSERT INTO inventory_logs (item_id, change_type, quantity, reference)
+                           VALUES (?, 'OUT', ?, ?)""",
+                         (c["ingredient_item_id"], need, f"POS #{pid} recipe: {desc.strip()} x{qty}"))
+    elif inv_id:
+        if cost_at_sale > 0:
+            cogs = round(cost_at_sale * qty, 2)
+            _post(cur, "POS", pid, "COGS", "COGS", cogs, 0, 0, 0, "",
+                  f"COGS POS #{pid}: {desc.strip()} x{qty}")
         conn.execute("UPDATE inventory SET stock_qty = stock_qty - ? WHERE id=?", (qty, inv_id))
         conn.execute("""INSERT INTO inventory_logs (item_id, change_type, quantity, reference)
                        VALUES (?, 'OUT', ?, ?)""", (inv_id, qty, f"POS #{pid}"))
-    return {"pos_id": pid, "gross": round(tax["gross"], 2), "tax": round(tax["service"] + tax["vat"] + tax["city_tax"], 2)}
+    return {"pos_id": pid, "gross": round(tax["gross"], 2), "tax": round(tax["service"] + tax["vat"] + tax["city_tax"], 2),
+            "recipe_deducted": bool(inv_id and recipe)}
 
 
 def add_pos_item(reservation_id, desc, qty, price, inv_id=None):
@@ -1702,8 +1747,80 @@ def delete_inventory_item(item_id, password):
     if row["stock_qty"] != 0:
         raise ValueError("Cannot delete item with non-zero stock.")
     with transaction() as conn:
+        conn.execute("DELETE FROM recipe_components WHERE menu_item_id=? OR ingredient_item_id=?", (item_id, item_id))
         conn.execute("UPDATE inventory SET active=0 WHERE id=?", (item_id,))
     _audit("inventory_delete", "inventory", item_id, "")
+
+
+def get_recipe_components(menu_item_id):
+    """Return recipe/BOM components for a sellable menu inventory item."""
+    from .db import connect
+    rows = connect().execute("""
+        SELECT rc.menu_item_id, rc.ingredient_item_id, rc.qty_per_sale,
+               i.item_name AS ingredient_name, i.unit, i.stock_qty, i.unit_cost, i.active
+        FROM recipe_components rc
+        JOIN inventory i ON i.id = rc.ingredient_item_id
+        WHERE rc.menu_item_id = ?
+        ORDER BY i.item_name, rc.ingredient_item_id
+    """, (menu_item_id,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def set_recipe_components(menu_item_id, components, password):
+    """Replace recipe components for a menu item. components=[{ingredient_item_id, qty_per_sale}]."""
+    if not verify_password(password):
+        raise PermissionError("Invalid super password.")
+    from .db import connect, transaction
+    conn = connect()
+    menu = conn.execute("SELECT id, item_name, active FROM inventory WHERE id=?", (menu_item_id,)).fetchone()
+    if not menu:
+        raise ValueError("Menu item not found.")
+    norm = []
+    seen = set()
+    for c in (components or []):
+        iid = c.get("ingredient_item_id", c.get("inv_id", c.get("id")))
+        q = c.get("qty_per_sale", c.get("qty", c.get("quantity")))
+        try:
+            iid = int(iid); q = float(q)
+        except Exception:
+            raise ValueError("Each component needs numeric ingredient_item_id and qty_per_sale.")
+        if iid == int(menu_item_id):
+            raise ValueError("A menu item cannot include itself as an ingredient.")
+        if iid in seen:
+            raise ValueError("Duplicate ingredient in recipe.")
+        if q <= 0:
+            raise ValueError("qty_per_sale must be greater than 0.")
+        ing = conn.execute("SELECT id, item_name, active FROM inventory WHERE id=?", (iid,)).fetchone()
+        if not ing:
+            raise ValueError(f"Ingredient #{iid} not found.")
+        norm.append((iid, q))
+        seen.add(iid)
+    with transaction() as c2:
+        c2.execute("DELETE FROM recipe_components WHERE menu_item_id=?", (menu_item_id,))
+        for iid, q in norm:
+            c2.execute("""INSERT INTO recipe_components (menu_item_id, ingredient_item_id, qty_per_sale)
+                          VALUES (?, ?, ?)""", (menu_item_id, iid, q))
+    _audit("recipe_set", "inventory", menu_item_id, f"{menu['item_name']}: {len(norm)} components")
+    return get_recipe_components(menu_item_id)
+
+
+def clear_recipe_components(menu_item_id, password):
+    if not verify_password(password):
+        raise PermissionError("Invalid super password.")
+    from .db import transaction
+    with transaction() as conn:
+        conn.execute("DELETE FROM recipe_components WHERE menu_item_id=?", (menu_item_id,))
+    _audit("recipe_clear", "inventory", menu_item_id)
+    return True
+
+
+def inventory_has_recipe(inv_id):
+    try:
+        from .db import connect
+        row = connect().execute("SELECT 1 FROM recipe_components WHERE menu_item_id=? LIMIT 1", (inv_id,)).fetchone()
+        return bool(row)
+    except Exception:
+        return False
 
 
 def restock_inventory(item_id, qty, unit_cost=0.0, password=""):

@@ -52,12 +52,13 @@
       <button type="submit">Add to cart</button>
     </form>
   </div>
-  <div class="panel"><h3>Inventory (add to cart)</h3>
+  <div class="panel"><h3>Inventory (add to cart) — meals with recipes auto-deduct ingredients</h3>
     <form method="get" class="row"><input name="q" value="{{q}}" placeholder="Search inventory"/><div style="flex:0"><button>Search</button></div></form>
-    <table><tr><th>ID</th><th>Name</th><th>Sell</th><th>Stock</th><th>Qty</th><th></th></tr>
+    <table><tr><th>ID</th><th>Name</th><th>Sell</th><th>Stock</th><th>Recipe</th><th>Qty</th><th></th></tr>
     {% for i in inv %}
     <tr>
       <td>{{i['id']}}</td><td>{{i['item_name']}}</td><td>{{"%.2f"|format(i['selling_price'] or 0)}}</td><td>{{i['stock_qty']}}</td>
+      <td>{% if i.get('recipe_components') %}<span class="ok">{{i['recipe_components']}} ingr.</span>{% else %}<span class="muted">—</span>{% endif %}</td>
       <td colspan="2">
         <form method="post" action="/pos/cart/add" class="inline"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
           <input type="hidden" name="desc" value="{{i['item_name']}}"/>
@@ -68,7 +69,7 @@
         </form>
       </td>
     </tr>
-    {% else %}<tr><td colspan="6" class="muted">No items</td></tr>{% endfor %}</table>
+    {% else %}<tr><td colspan="7" class="muted">No items</td></tr>{% endfor %}</table>
     <details><summary>Restock (password)</summary>
       <form method="post" action="/inventory/restock"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
         <div class="row"><label>Item ID<input name="item_id" type="number" required/></label><label>Qty<input name="qty" type="number" step="0.01" required/></label><label>Unit cost<input name="unit_cost" type="number" step="0.01" value="0"/></label></div>
@@ -81,6 +82,18 @@
         <div class="row"><label>Stock<input name="stock" type="number" step="0.01" value="0"/></label><label>Unit cost<input name="unit_cost" type="number" step="0.01" value="0"/></label><label>Selling<input name="selling_price" type="number" step="0.01" value="0"/></label></div>
         <div class="row"><label>Low<input name="low" type="number" step="0.01" value="0"/></label><label>Over<input name="over" type="number" step="0.01" value="0"/></label></div>
         <input type="password" name="password" placeholder="Super password"/><button>Add item</button>
+      </form>
+    </details>
+    <details><summary>Meal recipe / auto ingredient deduction (password)</summary>
+      <p class="muted">Define ingredients for a sellable meal/menu inventory item. When the meal is sold in POS (by Inventory ID), its ingredients are auto-deducted and meal stock is not deducted. Components format: one per line <code>ingredient_id,qty_per_sale</code>.</p>
+      <form method="post" action="/recipes/set"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+        <label>Meal/Menu inventory ID<input name="menu_item_id" type="number" required/></label>
+        <label>Components<textarea name="components" rows="3" placeholder="2,1&#10;3,0.5"></textarea></label>
+        <input type="password" name="password" placeholder="Super password"/><button class="ok">Save recipe</button>
+      </form>
+      <form method="post" action="/recipes/clear" style="margin-top:8px"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+        <label>Meal/Menu inventory ID<input name="menu_item_id" type="number" required/></label>
+        <input type="password" name="password" placeholder="Super password"/><button class="warn">Clear recipe</button>
       </form>
     </details>
   </div>

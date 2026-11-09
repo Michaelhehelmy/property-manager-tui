@@ -51,6 +51,12 @@ def create_app(*, init_db: bool = True, run_startup: bool = True) -> FastAPI:
     app.include_router(assistant.router)
     app.include_router(settings_branding.router)
     app.include_router(files.router)
+
+    @app.get("/health")
+    @app.get("/healthz")
+    def health_probe():
+        return {"ok": True, "status": "healthy", "service": "property-manager-web"}
+
     return app
 
 

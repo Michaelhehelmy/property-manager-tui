@@ -8,7 +8,7 @@ from . import paths
 DATA_DIR = paths.DATA_DIR
 BASE_DIR = paths.BASE_DIR
 DB_PATH = paths.DB_PATH
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 _conn = None
 
@@ -129,6 +129,18 @@ CREATE TABLE inventory_logs (
 );
 CREATE INDEX idx_invlogs_item ON inventory_logs(item_id);
 
+CREATE TABLE recipe_components (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    menu_item_id INTEGER NOT NULL,
+    ingredient_item_id INTEGER NOT NULL,
+    qty_per_sale REAL NOT NULL,
+    FOREIGN KEY (menu_item_id) REFERENCES inventory(id) ON DELETE CASCADE,
+    FOREIGN KEY (ingredient_item_id) REFERENCES inventory(id),
+    UNIQUE(menu_item_id, ingredient_item_id)
+);
+CREATE INDEX idx_recipe_menu ON recipe_components(menu_item_id);
+CREATE INDEX idx_recipe_ing ON recipe_components(ingredient_item_id);
+
 CREATE TABLE pos_tabs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     reservation_id INTEGER,
@@ -217,6 +229,22 @@ CREATE TABLE app_metadata (
 """
 
 
+def _migrate_to_5(conn):
+    conn.executescript("""
+    CREATE TABLE IF NOT EXISTS recipe_components (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        menu_item_id INTEGER NOT NULL,
+        ingredient_item_id INTEGER NOT NULL,
+        qty_per_sale REAL NOT NULL,
+        FOREIGN KEY (menu_item_id) REFERENCES inventory(id) ON DELETE CASCADE,
+        FOREIGN KEY (ingredient_item_id) REFERENCES inventory(id),
+        UNIQUE(menu_item_id, ingredient_item_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_recipe_menu ON recipe_components(menu_item_id);
+    CREATE INDEX IF NOT EXISTS idx_recipe_ing ON recipe_components(ingredient_item_id);
+    """)
+
+
 def migrate():
     conn = connect()
     version = conn.execute("PRAGMA user_version").fetchone()[0]
@@ -226,6 +254,8 @@ def migrate():
         conn.commit()
         return "created"
     if version < SCHEMA_VERSION:
+        if version < 5:
+            _migrate_to_5(conn)
         conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
         conn.commit()
         return "upgraded"

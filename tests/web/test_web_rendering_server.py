@@ -88,6 +88,17 @@ def test_static_dir_missing_branch(web_env, monkeypatch):
     # /static not mounted; app still works
     assert app is not None
 
+
+def test_health_probes(web_env):
+    app = create_app(init_db=False, run_startup=False)
+    with TestClient(app) as c:
+        for path in ("/health", "/healthz"):
+            r = c.get(path)
+            assert r.status_code == 200
+            data = r.json()
+            assert data.get("ok") is True
+            assert data.get("status") == "healthy"
+
 import importlib
 import sys
 

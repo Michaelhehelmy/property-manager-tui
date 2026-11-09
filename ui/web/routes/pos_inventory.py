@@ -55,9 +55,20 @@ def pos(request: Request, q: str = ""):
     cart, cart_total = _cart_view(cart_raw)
     walkin_pos = services.list_walkin_pos(limit=30)
     walkin_payments = services.list_walkin_payments(limit=20)
+    recipe_counts = {}
+    try:
+        rows = connect().execute("SELECT menu_item_id, COUNT(*) n FROM recipe_components GROUP BY menu_item_id").fetchall()
+        recipe_counts = {int(r["menu_item_id"]): int(r["n"]) for r in rows}
+    except Exception:
+        recipe_counts = {}
+    inv_view = []
+    for i in inv:
+        d = {k: i[k] for k in i.keys()} if hasattr(i, "keys") else dict(i)
+        d["recipe_components"] = recipe_counts.get(int(d["id"]), 0)
+        inv_view.append(d)
     return render(request, "pos/index.html", {
         "title": "POS / Inventory",
-        "inv": inv,
+        "inv": inv_view,
         "reservations": res,
         "q": q,
         "cart": cart,
@@ -187,6 +198,44 @@ async def inv_add(request: Request):
         services.add_inventory_item(form.get("name", ""), form.get("category", ""), form.get("unit", ""), float(form.get("stock") or 0),
             float(form.get("unit_cost") or 0), float(form.get("selling_price") or 0), float(form.get("low") or 0), float(form.get("over") or 0), form.get("password", ""))
         deps.add_flash(request, "Inventory item added", "success")
+    except Exception as e:
+        deps.add_flash(request, str(e), "error")
+    r = deps.redirect("/pos"); deps.save_session(r, deps.get_session(request)); return r
+
+
+def _parse_recipe_components(text: str):
+    comps = []
+    for line in (text or "").replace(";", "\n").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        line = line.replace(":", ",")
+        parts = [p.strip() for p in line.split(",") if p.strip()]
+        if len(parts) >= 2:
+            comps.append({"ingredient_item_id": parts[0], "qty_per_sale": parts[1]})
+    return comps
+
+
+@router.post("/recipes/set")
+async def recipe_set(request: Request):
+    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    try:
+        menu_id = int(form.get("menu_item_id") or form.get("item_id") or 0)
+        comps = _parse_recipe_components(form.get("components") or "")
+        services.set_recipe_components(menu_id, comps, form.get("password", ""))
+        deps.add_flash(request, f"Recipe saved ({len(comps)} ingredients). Selling this meal auto-deducts ingredients.", "success")
+    except Exception as e:
+        deps.add_flash(request, str(e), "error")
+    r = deps.redirect("/pos"); deps.save_session(r, deps.get_session(request)); return r
+
+
+@router.post("/recipes/clear")
+async def recipe_clear(request: Request):
+    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    try:
+        menu_id = int(form.get("menu_item_id") or form.get("item_id") or 0)
+        services.clear_recipe_components(menu_id, form.get("password", ""))
+        deps.add_flash(request, "Recipe cleared. Item uses normal stock deduction when sold.", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
     r = deps.redirect("/pos"); deps.save_session(r, deps.get_session(request)); return r
