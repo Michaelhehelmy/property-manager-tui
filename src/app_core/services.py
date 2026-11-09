@@ -1823,6 +1823,181 @@ def inventory_has_recipe(inv_id):
         return False
 
 
+def _normalize_meal_ingredients(conn, ingredients, exclude_inventory_id=None):
+    norm = []
+    seen = set()
+    for c in (ingredients or []):
+        iid = c.get("inventory_item_id", c.get("ingredient_item_id", c.get("inv_id", c.get("id"))))
+        q = c.get("qty_per_sale", c.get("qty", c.get("quantity")))
+        note = (c.get("note") or c.get("notes") or "").strip()
+        try:
+            iid = int(iid); q = float(q)
+        except Exception:
+            raise ValueError("Each ingredient needs numeric inventory_item_id and qty_per_sale.")
+        if exclude_inventory_id is not None and iid == int(exclude_inventory_id):
+            raise ValueError("Meal cannot include its own linked item as an ingredient.")
+        if iid in seen:
+            raise ValueError("Duplicate ingredient in meal.")
+        if q <= 0:
+            raise ValueError("Ingredient qty_per_sale must be greater than 0.")
+        ing = conn.execute("SELECT id, item_name, active FROM inventory WHERE id=?", (iid,)).fetchone()
+        if not ing:
+            raise ValueError(f"Ingredient inventory item #{iid} not found.")
+        norm.append({"inventory_item_id": iid, "qty_per_sale": q, "note": note, "ingredient_name": ing["item_name"]})
+        seen.add(iid)
+    return norm
+
+
+def _sync_meal_to_inventory(conn, meal_id, name, category, selling_price, ingredients):
+    """Ensure meal has a linked sellable inventory item and recipe_components for auto deduction."""
+    meal = conn.execute("SELECT linked_inventory_id FROM meals WHERE id=?", (meal_id,)).fetchone()
+    linked_id = meal["linked_inventory_id"] if meal else None
+    if linked_id:
+        exists = conn.execute("SELECT id FROM inventory WHERE id=?", (linked_id,)).fetchone()
+        if not exists:
+            linked_id = None
+    if not linked_id:
+        conflict = conn.execute("SELECT id FROM inventory WHERE item_name=? COLLATE NOCASE", (name.strip(),)).fetchone()
+        if conflict:
+            # reuse if it looks like an unlinked meal slot? safer to error
+            used = conn.execute("SELECT id FROM meals WHERE linked_inventory_id=?", (conflict["id"],)).fetchone()
+            if used and int(used["id"]) != int(meal_id):
+                raise ValueError(f"Inventory item name '{name}' is already used by another meal.")
+            linked_id = conflict["id"]
+            conn.execute("UPDATE inventory SET category=?, selling_price=?, active=1 WHERE id=?",
+                         (category or "Meals", float(selling_price or 0), linked_id))
+        else:
+            cur = conn.cursor()
+            cur.execute("""INSERT INTO inventory
+                (item_name, category, unit, stock_qty, unit_cost, selling_price, low_stock_threshold, overstock_threshold, active)
+                VALUES (?, ?, 'portion', 0, 0, ?, 0, 0, 1)""",
+                (name.strip(), category or "Meals", float(selling_price or 0)))
+            linked_id = cur.lastrowid
+    else:
+        conn.execute("UPDATE inventory SET item_name=?, category=?, selling_price=?, active=1 WHERE id=?",
+                     (name.strip(), category or "Meals", float(selling_price or 0), linked_id))
+    conn.execute("UPDATE meals SET linked_inventory_id=?, updated_at=datetime('now','localtime') WHERE id=?",
+                 (linked_id, meal_id))
+    # sync recipe_components for deduction engine
+    conn.execute("DELETE FROM recipe_components WHERE menu_item_id=?", (linked_id,))
+    for ing in ingredients:
+        conn.execute("""INSERT INTO recipe_components (menu_item_id, ingredient_item_id, qty_per_sale)
+                        VALUES (?, ?, ?)""", (linked_id, ing["inventory_item_id"], ing["qty_per_sale"]))
+    return linked_id
+
+
+def create_meal(name, description, preparation, selling_price, ingredients, password, category="Meals"):
+    if not verify_password(password):
+        raise PermissionError("Invalid super password.")
+    if not name or not str(name).strip():
+        raise ValueError("Meal name is required.")
+    try:
+        price = float(selling_price or 0)
+    except Exception:
+        raise ValueError("Selling price must be a number.")
+    if price < 0:
+        raise ValueError("Selling price cannot be negative.")
+    from .db import connect, transaction
+    conn = connect()
+    norm = _normalize_meal_ingredients(conn, ingredients)
+    with transaction() as c2:
+        try:
+            cur = c2.cursor()
+            cur.execute("""INSERT INTO meals (name, description, preparation, selling_price, category, active)
+                           VALUES (?, ?, ?, ?, ?, 1)""",
+                        (str(name).strip(), (description or "").strip(), (preparation or "").strip(), price, (category or "Meals").strip() or "Meals"))
+            meal_id = cur.lastrowid
+        except Exception as e:
+            if "UNIQUE" in str(e).upper():
+                raise ValueError("A meal with this name already exists.")
+            raise
+        for ing in norm:
+            c2.execute("""INSERT INTO meal_ingredients (meal_id, inventory_item_id, qty_per_sale, note)
+                          VALUES (?, ?, ?, ?)""", (meal_id, ing["inventory_item_id"], ing["qty_per_sale"], ing["note"]))
+        linked_id = _sync_meal_to_inventory(c2, meal_id, name, category, price, norm)
+    _audit("meal_create", "meal", meal_id, name)
+    return {"id": meal_id, "linked_inventory_id": linked_id}
+
+
+def update_meal(meal_id, name, description, preparation, selling_price, ingredients, password, category="Meals", active=1):
+    if not verify_password(password):
+        raise PermissionError("Invalid super password.")
+    if not name or not str(name).strip():
+        raise ValueError("Meal name is required.")
+    try:
+        price = float(selling_price or 0)
+    except Exception:
+        raise ValueError("Selling price must be a number.")
+    from .db import connect, transaction
+    conn = connect()
+    row = conn.execute("SELECT * FROM meals WHERE id=?", (meal_id,)).fetchone()
+    if not row:
+        raise ValueError("Meal not found.")
+    norm = _normalize_meal_ingredients(conn, ingredients, exclude_inventory_id=row["linked_inventory_id"])
+    with transaction() as c2:
+        try:
+            c2.execute("""UPDATE meals SET name=?, description=?, preparation=?, selling_price=?, category=?, active=?, updated_at=datetime('now','localtime')
+                          WHERE id=?""",
+                       (str(name).strip(), (description or "").strip(), (preparation or "").strip(), price, (category or "Meals").strip() or "Meals", 1 if active else 0, meal_id))
+        except Exception as e:
+            if "UNIQUE" in str(e).upper():
+                raise ValueError("A meal with this name already exists.")
+            raise
+        c2.execute("DELETE FROM meal_ingredients WHERE meal_id=?", (meal_id,))
+        for ing in norm:
+            c2.execute("""INSERT INTO meal_ingredients (meal_id, inventory_item_id, qty_per_sale, note)
+                          VALUES (?, ?, ?, ?)""", (meal_id, ing["inventory_item_id"], ing["qty_per_sale"], ing["note"]))
+        linked_id = _sync_meal_to_inventory(c2, meal_id, name, category, price, norm)
+        if not active and linked_id:
+            c2.execute("UPDATE inventory SET active=0 WHERE id=?", (linked_id,))
+            c2.execute("DELETE FROM recipe_components WHERE menu_item_id=?", (linked_id,))
+    _audit("meal_update", "meal", meal_id, name)
+    return {"id": meal_id, "linked_inventory_id": linked_id}
+
+
+def list_meals(active_only=False):
+    from .db import connect
+    q = """SELECT m.*, (SELECT COUNT(*) FROM meal_ingredients mi WHERE mi.meal_id=m.id) AS ingredient_count
+           FROM meals m"""
+    params = []
+    if active_only:
+        q += " WHERE m.active=1"
+    q += " ORDER BY m.name COLLATE NOCASE, m.id"
+    return [dict(r) for r in connect().execute(q, params).fetchall()]
+
+
+def get_meal(meal_id):
+    from .db import connect
+    m = connect().execute("SELECT * FROM meals WHERE id=?", (meal_id,)).fetchone()
+    if not m:
+        return None
+    ings = connect().execute("""
+        SELECT mi.inventory_item_id, mi.qty_per_sale, mi.note, i.item_name, i.unit, i.stock_qty, i.active
+        FROM meal_ingredients mi JOIN inventory i ON i.id=mi.inventory_item_id
+        WHERE mi.meal_id=? ORDER BY i.item_name, mi.inventory_item_id
+    """, (meal_id,)).fetchall()
+    d = dict(m)
+    d["ingredients"] = [dict(r) for r in ings]
+    return d
+
+
+def delete_meal(meal_id, password):
+    if not verify_password(password):
+        raise PermissionError("Invalid super password.")
+    from .db import connect, transaction
+    m = connect().execute("SELECT name, linked_inventory_id FROM meals WHERE id=?", (meal_id,)).fetchone()
+    if not m:
+        raise ValueError("Meal not found.")
+    with transaction() as c2:
+        if m["linked_inventory_id"]:
+            c2.execute("DELETE FROM recipe_components WHERE menu_item_id=?", (m["linked_inventory_id"],))
+            c2.execute("UPDATE inventory SET active=0 WHERE id=?", (m["linked_inventory_id"],))
+        c2.execute("DELETE FROM meal_ingredients WHERE meal_id=?", (meal_id,))
+        c2.execute("DELETE FROM meals WHERE id=?", (meal_id,))
+    _audit("meal_delete", "meal", meal_id, m["name"])
+    return True
+
+
 def restock_inventory(item_id, qty, unit_cost=0.0, password=""):
     if not verify_password(password):
         raise PermissionError("Invalid super password.")

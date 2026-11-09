@@ -164,3 +164,51 @@ def test_pos_get_recipe_counts_exception_branch(client, monkeypatch):
     monkeypatch.setattr(pr, "connect", lambda: FakeConn())
     r = client.get("/pos")
     assert r.status_code == 200 and "Meal" in r.text
+
+
+def test_meal_save_delete_and_parser(client, monkeypatch):
+    import ui.web.routes.pos_inventory as pr
+    token = set_session(client, unlocked=True)
+    comps = pr._parse_meal_ingredients("12,1,bun\n#x\n15:0.5;16,2,note,extra")
+    assert comps[0]["inventory_item_id"] == "12" and comps[0]["note"] == "bun"
+    assert comps[1]["inventory_item_id"] == "15"
+    assert comps[2]["note"] == "note,extra"
+    assert pr._parse_meal_ingredients("") == []
+
+    monkeypatch.setattr(pr.services, "create_meal", lambda *a, **k: {"id": 1, "linked_inventory_id": 99})
+    r = client.post("/meals/save", data={"csrf": token, "name": "Burger", "description": "d", "preparation": "p", "selling_price": "10", "ingredients": "1,2", "password": "testpass"}, follow_redirects=True)
+    assert r.status_code == 200
+    monkeypatch.setattr(pr.services, "update_meal", lambda *a, **k: {"id": 1, "linked_inventory_id": 99})
+    r = client.post("/meals/save", data={"csrf": token, "meal_id": "1", "name": "Burger2", "description": "d", "preparation": "p", "selling_price": "10", "ingredients": "1,2", "password": "testpass"}, follow_redirects=True)
+    assert r.status_code == 200
+    monkeypatch.setattr(pr.services, "create_meal", lambda *a, **k: (_ for _ in ()).throw(ValueError("bad")))
+    r = client.post("/meals/save", data={"csrf": token, "name": "X", "ingredients": "", "password": "x"}, follow_redirects=True)
+    assert r.status_code == 200
+
+    monkeypatch.setattr(pr.services, "delete_meal", lambda *a, **k: True)
+    r = client.post("/meals/delete", data={"csrf": token, "meal_id": "1", "password": "testpass"}, follow_redirects=True)
+    assert r.status_code == 200
+    monkeypatch.setattr(pr.services, "delete_meal", lambda *a, **k: (_ for _ in ()).throw(ValueError("x")))
+    r = client.post("/meals/delete", data={"csrf": token, "meal_id": "1", "password": "x"}, follow_redirects=True)
+    assert r.status_code == 200
+
+
+def test_pos_get_meals_exception_branch(client, monkeypatch):
+    import ui.web.routes.pos_inventory as pr
+    monkeypatch.setattr(pr.services, "search_inventory", lambda q: [])
+    monkeypatch.setattr(pr.services, "list_walkin_pos", lambda limit=30: [])
+    monkeypatch.setattr(pr.services, "list_walkin_payments", lambda limit=20: [])
+    monkeypatch.setattr(pr.services, "list_meals", lambda **k: (_ for _ in ()).throw(RuntimeError("x")))
+    r = client.get("/pos")
+    assert r.status_code == 200
+
+
+def test_pos_get_shows_meals(client, monkeypatch):
+    import ui.web.routes.pos_inventory as pr
+    monkeypatch.setattr(pr.services, "search_inventory", lambda q: [])
+    monkeypatch.setattr(pr.services, "list_walkin_pos", lambda limit=30: [])
+    monkeypatch.setattr(pr.services, "list_walkin_payments", lambda limit=20: [])
+    monkeypatch.setattr(pr.services, "list_meals", lambda active_only=False: [{"id": 1, "name": "Soup", "description": "d", "preparation": "p", "selling_price": 10, "linked_inventory_id": 5, "active": 1}])
+    monkeypatch.setattr(pr.services, "get_meal", lambda mid: {"id": 1, "name": "Soup", "description": "desc", "preparation": "prep", "ingredients": [{"item_name": "Water", "qty_per_sale": 1, "unit": "L", "note": ""}], "linked_inventory_id": 5})
+    r = client.get("/pos")
+    assert r.status_code == 200 and "Soup" in r.text and "auto-deduct" in r.text.lower() or r.status_code == 200

@@ -168,3 +168,63 @@ def test_recipe_component_aliases_and_bad_db_qty(unlocked):
     rid = make_reservation()
     with pytest.raises(ValueError, match="Invalid recipe quantity"):
         services.add_pos_item(rid, "Alias Meal", 1, 10.0, meal)
+
+
+def test_meal_registration_auto_deducts_ingredients(unlocked):
+    bun = _inv("MealBun", stock=20, cost=1)
+    patty = _inv("MealPatty", stock=10, cost=3)
+    res = services.create_meal(
+        name="Cheeseburger", description="Beef burger", preparation="Grill patty, assemble bun.",
+        selling_price=75.0,
+        ingredients=[{"inventory_item_id": bun, "qty_per_sale": 1}, {"inventory_item_id": patty, "qty_per_sale": 0.5, "note": "kg"}],
+        password="testpass",
+    )
+    assert res["id"] and res["linked_inventory_id"]
+    meal = services.get_meal(res["id"])
+    assert meal["name"] == "Cheeseburger"
+    assert meal["preparation"].startswith("Grill")
+    assert len(meal["ingredients"]) == 2
+    # ordering meal via linked inventory auto-deducts registered ingredients
+    rid = make_reservation()
+    out = services.add_pos_item(rid, "Cheeseburger", 2, 75.0, meal["linked_inventory_id"])
+    assert out["recipe_deducted"] is True
+    assert _stock(bun) == 18.0
+    assert _stock(patty) == 9.0
+
+
+def test_meal_crud(unlocked):
+    ing = _inv("MIng", stock=5, cost=1)
+    r = services.create_meal("Soup", "Hot soup", "Boil", 30, [{"inventory_item_id": ing, "qty_per_sale": 1}], "testpass")
+    meals = services.list_meals()
+    assert any(m["name"] == "Soup" for m in meals)
+    services.update_meal(r["id"], "Soup v2", "Hotter", "Boil more", 35, [{"inventory_item_id": ing, "qty_per_sale": 2}], "testpass", active=1)
+    m = services.get_meal(r["id"])
+    assert m["name"] == "Soup v2" and abs(m["ingredients"][0]["qty_per_sale"] - 2) < 0.001
+    services.delete_meal(r["id"], "testpass")
+    assert services.get_meal(r["id"]) is None
+
+
+def test_meal_service_validation(unlocked):
+    ing = _inv("VIng", stock=5, cost=1)
+    with pytest.raises(PermissionError):
+        services.create_meal("X", "", "", 1, [{"inventory_item_id": ing, "qty_per_sale": 1}], "bad")
+    with pytest.raises(ValueError, match="name is required"):
+        services.create_meal("", "", "", 1, [{"inventory_item_id": ing, "qty_per_sale": 1}], "testpass")
+    with pytest.raises(ValueError, match="number"):
+        services.create_meal("X", "", "", "no", [{"inventory_item_id": ing, "qty_per_sale": 1}], "testpass")
+    with pytest.raises(ValueError, match="cannot be negative"):
+        services.create_meal("X", "", "", -1, [{"inventory_item_id": ing, "qty_per_sale": 1}], "testpass")
+    with pytest.raises(ValueError, match="Ingredient inventory item"):
+        services.create_meal("X", "", "", 1, [{"inventory_item_id": 999999, "qty_per_sale": 1}], "testpass")
+    r = services.create_meal("DupMeal", "", "", 1, [{"inventory_item_id": ing, "qty_per_sale": 1}], "testpass")
+    with pytest.raises(ValueError, match="already exists"):
+        services.create_meal("DupMeal", "", "", 1, [{"inventory_item_id": ing, "qty_per_sale": 1}], "testpass")
+    with pytest.raises(ValueError, match="Meal not found"):
+        services.update_meal(999999, "N", "", "", 1, [], "testpass")
+    with pytest.raises(PermissionError):
+        services.delete_meal(r["id"], "bad")
+    assert services.get_meal(999999) is None
+    # update to inactive clears linked recipe
+    services.update_meal(r["id"], "DupMeal", "d", "p", 2, [{"inventory_item_id": ing, "qty_per_sale": 1}], "testpass", active=0)
+    m = services.get_meal(r["id"])
+    assert m["active"] == 0

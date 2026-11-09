@@ -99,6 +99,31 @@
   </div>
 </div>
 
+<div class="panel"><h3>Registered Meals (name, description, ingredients, preparation) — auto-deduct on order</h3>
+  <p class="muted">Register a meal once. When staff orders it in POS using its linked <strong>Inventory/POS ID</strong>, the registered ingredients are deducted from inventory automatically.</p>
+  <details open><summary>Register / update meal (password)</summary>
+    <form method="post" action="/meals/save"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+      <label>Meal ID (leave empty to create new)<input name="meal_id" type="number" placeholder="new"/></label>
+      <div class="row"><label>Name<input name="name" required/></label><label>Category<input name="category" value="Meals"/></label><label>Selling price<input name="selling_price" type="number" step="0.01" value="0"/></label></div>
+      <label>Description<textarea name="description" rows="2" placeholder="What is this meal?"></textarea></label>
+      <label>How to prepare<textarea name="preparation" rows="3" placeholder="Preparation steps"></textarea></label>
+      <label>Ingredients (one per line: <code>ingredient_inventory_id,qty_per_sale,optional note</code>)<textarea name="ingredients" rows="4" placeholder="12,1,bun&#10;15,0.2,patty kg"></textarea></label>
+      <input type="password" name="password" placeholder="Super password"/><button class="ok">Save meal</button>
+    </form>
+  </details>
+  <table><tr><th>Meal</th><th>POS ID</th><th>Price</th><th>Ingredients</th><th>Preparation</th><th>Action</th></tr>
+  {% for m in meals or [] %}
+  <tr>
+    <td><strong>{{m['name']}}</strong><div class="muted">{{m.get('description') or ''}}</div></td>
+    <td>{% if m.get('linked_inventory_id') %}<code>{{m['linked_inventory_id']}}</code>{% else %}<span class="muted">—</span>{% endif %}</td>
+    <td>{{"%.2f"|format(m.get('selling_price') or 0)}}</td>
+    <td>{% for ing in m.get('ingredients') or [] %}<div>{{ing['item_name']}}: {{ing['qty_per_sale']}} {{ing.get('unit') or ''}}{% if ing.get('note') %} <span class="muted">({{ing['note']}})</span>{% endif %}</div>{% else %}<span class="muted">No ingredients</span>{% endfor %}</td>
+    <td class="muted" style="max-width:260px">{{(m.get('preparation') or '')[:120]}}{% if (m.get('preparation') or '')|length > 120 %}…{% endif %}</td>
+    <td><form method="post" action="/meals/delete" class="inline"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><input type="hidden" name="meal_id" value="{{m['id']}}"/><input type="password" name="password" placeholder="Pwd" style="width:90px;display:inline-block"/><button class="err">Delete</button></form></td>
+  </tr>
+  {% else %}<tr><td colspan="6" class="muted">No meals registered yet.</td></tr>{% endfor %}</table>
+</div>
+
 <div class="grid grid-2">
   <div class="panel"><h3>Recent walk-in POS lines (no reservation)</h3>
     <table><tr><th>ID</th><th>At</th><th>Item</th><th>Qty</th><th>Gross-ish</th><th>Action</th></tr>

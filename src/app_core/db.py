@@ -8,7 +8,7 @@ from . import paths
 DATA_DIR = paths.DATA_DIR
 BASE_DIR = paths.BASE_DIR
 DB_PATH = paths.DB_PATH
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 _conn = None
 
@@ -141,6 +141,33 @@ CREATE TABLE recipe_components (
 CREATE INDEX idx_recipe_menu ON recipe_components(menu_item_id);
 CREATE INDEX idx_recipe_ing ON recipe_components(ingredient_item_id);
 
+CREATE TABLE meals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    description TEXT NOT NULL DEFAULT '',
+    preparation TEXT NOT NULL DEFAULT '',
+    selling_price REAL NOT NULL DEFAULT 0,
+    category TEXT NOT NULL DEFAULT 'Meals',
+    active INTEGER NOT NULL DEFAULT 1,
+    linked_inventory_id INTEGER,
+    created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    FOREIGN KEY (linked_inventory_id) REFERENCES inventory(id)
+);
+CREATE INDEX idx_meals_active ON meals(active);
+
+CREATE TABLE meal_ingredients (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    meal_id INTEGER NOT NULL,
+    inventory_item_id INTEGER NOT NULL,
+    qty_per_sale REAL NOT NULL,
+    note TEXT NOT NULL DEFAULT '',
+    FOREIGN KEY (meal_id) REFERENCES meals(id) ON DELETE CASCADE,
+    FOREIGN KEY (inventory_item_id) REFERENCES inventory(id),
+    UNIQUE(meal_id, inventory_item_id)
+);
+CREATE INDEX idx_meal_ing_meal ON meal_ingredients(meal_id);
+
 CREATE TABLE pos_tabs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     reservation_id INTEGER,
@@ -245,6 +272,36 @@ def _migrate_to_5(conn):
     """)
 
 
+def _migrate_to_6(conn):
+    conn.executescript("""
+    CREATE TABLE IF NOT EXISTS meals (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        description TEXT NOT NULL DEFAULT '',
+        preparation TEXT NOT NULL DEFAULT '',
+        selling_price REAL NOT NULL DEFAULT 0,
+        category TEXT NOT NULL DEFAULT 'Meals',
+        active INTEGER NOT NULL DEFAULT 1,
+        linked_inventory_id INTEGER,
+        created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+        FOREIGN KEY (linked_inventory_id) REFERENCES inventory(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_meals_active ON meals(active);
+    CREATE TABLE IF NOT EXISTS meal_ingredients (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        meal_id INTEGER NOT NULL,
+        inventory_item_id INTEGER NOT NULL,
+        qty_per_sale REAL NOT NULL,
+        note TEXT NOT NULL DEFAULT '',
+        FOREIGN KEY (meal_id) REFERENCES meals(id) ON DELETE CASCADE,
+        FOREIGN KEY (inventory_item_id) REFERENCES inventory(id),
+        UNIQUE(meal_id, inventory_item_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_meal_ing_meal ON meal_ingredients(meal_id);
+    """)
+
+
 def migrate():
     conn = connect()
     version = conn.execute("PRAGMA user_version").fetchone()[0]
@@ -256,6 +313,8 @@ def migrate():
     if version < SCHEMA_VERSION:
         if version < 5:
             _migrate_to_5(conn)
+        if version < 6:
+            _migrate_to_6(conn)
         conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
         conn.commit()
         return "upgraded"

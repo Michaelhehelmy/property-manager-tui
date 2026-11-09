@@ -66,6 +66,15 @@ def pos(request: Request, q: str = ""):
         d = {k: i[k] for k in i.keys()} if hasattr(i, "keys") else dict(i)
         d["recipe_components"] = recipe_counts.get(int(d["id"]), 0)
         inv_view.append(d)
+    try:
+        meals = services.list_meals(active_only=False)
+        for m in meals:
+            full = services.get_meal(m["id"]) or m
+            m["ingredients"] = full.get("ingredients", [])
+            m["preparation"] = full.get("preparation", m.get("preparation", ""))
+            m["description"] = full.get("description", m.get("description", ""))
+    except Exception:
+        meals = []
     return render(request, "pos/index.html", {
         "title": "POS / Inventory",
         "inv": inv_view,
@@ -75,6 +84,7 @@ def pos(request: Request, q: str = ""):
         "cart_total": cart_total,
         "walkin_pos": walkin_pos,
         "walkin_payments": walkin_payments,
+        "meals": meals,
     })
 
 
@@ -236,6 +246,53 @@ async def recipe_clear(request: Request):
         menu_id = int(form.get("menu_item_id") or form.get("item_id") or 0)
         services.clear_recipe_components(menu_id, form.get("password", ""))
         deps.add_flash(request, "Recipe cleared. Item uses normal stock deduction when sold.", "success")
+    except Exception as e:
+        deps.add_flash(request, str(e), "error")
+    r = deps.redirect("/pos"); deps.save_session(r, deps.get_session(request)); return r
+
+
+def _parse_meal_ingredients(text: str):
+    comps = []
+    for line in (text or "").replace(";", "\n").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        line = line.replace(":", ",")
+        parts = [p.strip() for p in line.split(",")]
+        if len(parts) >= 2 and parts[0] and parts[1]:
+            comps.append({"inventory_item_id": parts[0], "qty_per_sale": parts[1], "note": ",".join(parts[2:]).strip() if len(parts) > 2 else ""})
+    return comps
+
+
+@router.post("/meals/save")
+async def meal_save(request: Request):
+    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    try:
+        meal_id = (form.get("meal_id") or "").strip()
+        name = form.get("name", "")
+        desc = form.get("description", "")
+        prep = form.get("preparation", "")
+        price = form.get("selling_price") or 0
+        category = form.get("category") or "Meals"
+        pw = form.get("password", "")
+        ings = _parse_meal_ingredients(form.get("ingredients") or "")
+        if meal_id:
+            services.update_meal(int(meal_id), name, desc, prep, price, ings, pw, category=category, active=1)
+            deps.add_flash(request, "Meal updated. Registered ingredients will auto-deduct when ordered.", "success")
+        else:
+            res = services.create_meal(name, desc, prep, price, ings, pw, category=category)
+            deps.add_flash(request, f"Meal registered (POS inventory #{res.get('linked_inventory_id')}). Ingredients auto-deduct on order.", "success")
+    except Exception as e:
+        deps.add_flash(request, str(e), "error")
+    r = deps.redirect("/pos"); deps.save_session(r, deps.get_session(request)); return r
+
+
+@router.post("/meals/delete")
+async def meal_delete(request: Request):
+    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    try:
+        services.delete_meal(int(form.get("meal_id") or 0), form.get("password", ""))
+        deps.add_flash(request, "Meal deleted.", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
     r = deps.redirect("/pos"); deps.save_session(r, deps.get_session(request)); return r
