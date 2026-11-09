@@ -1,7 +1,7 @@
 """Gift attribution: immutable, tamper-detected."""
 import pytest
-import services
-from db import connect, transaction
+from app_core import services
+from app_core.db import connect, transaction
 
 
 def test_attribution_valid(clean_db):

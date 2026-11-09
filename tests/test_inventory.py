@@ -1,7 +1,7 @@
 """Inventory: CRUD, restock, warnings, soft delete."""
 import pytest
-import services
-from db import connect
+from app_core import services
+from app_core.db import connect
 
 
 def test_add_item(clean_db):
@@ -23,7 +23,7 @@ def test_update_item(clean_db):
 
 
 def test_delete_zero_stock_item(clean_db):
-    from db import transaction
+    from app_core.db import transaction
     with transaction() as c:
         c.execute("INSERT INTO inventory (item_name, category, stock_qty, unit) VALUES ('Empty', 'Test', 0, 'pcs')")
         iid = c.execute("SELECT last_insert_rowid()").fetchone()[0]
@@ -79,7 +79,7 @@ def test_weighted_average_cost(clean_db):
 
 
 def test_warnings_low_stock(clean_db):
-    from db import transaction
+    from app_core.db import transaction
     with transaction() as c:
         c.execute("UPDATE inventory SET stock_qty=2 WHERE id=1")  # Water below threshold
     warns = services.get_inventory_warnings()
@@ -87,7 +87,7 @@ def test_warnings_low_stock(clean_db):
 
 
 def test_warnings_negative_stock(clean_db):
-    from db import transaction
+    from app_core.db import transaction
     with transaction() as c:
         c.execute("UPDATE inventory SET stock_qty=-5 WHERE id=1")
     warns = services.get_inventory_warnings()
@@ -95,7 +95,7 @@ def test_warnings_negative_stock(clean_db):
 
 
 def test_warnings_overstock(clean_db):
-    from db import transaction
+    from app_core.db import transaction
     with transaction() as c:
         c.execute("UPDATE inventory SET stock_qty=500 WHERE id=1")
     warns = services.get_inventory_warnings()
@@ -114,7 +114,7 @@ def test_search_inventory_filters_category(clean_db):
 
 
 def test_search_inventory_filters_negative_stock(clean_db):
-    from db import transaction
+    from app_core.db import transaction
     with transaction() as c:
         c.execute("UPDATE inventory SET stock_qty=-5 WHERE id=1")
     rows = services.search_inventory("", "", "Negative")
@@ -122,7 +122,7 @@ def test_search_inventory_filters_negative_stock(clean_db):
 
 
 def test_soft_deleted_hidden_from_search(clean_db):
-    from db import transaction
+    from app_core.db import transaction
     with transaction() as c:
         c.execute("INSERT INTO inventory (item_name, category, stock_qty, unit) VALUES ('Temp', 'Test', 0, 'pcs')")
         iid = c.execute("SELECT last_insert_rowid()").fetchone()[0]

@@ -1,6 +1,6 @@
 """Authentication: password, lockout, session, recovery."""
 import pytest
-import services
+from app_core import services
 from datetime import timedelta
 
 
@@ -11,7 +11,7 @@ def test_has_password_after_set(clean_db):
 def test_password_too_short_raises(clean_db):
     services._session["unlocked"] = False
     # Already has password from fixture — but let's test fresh
-    from db import transaction
+    from app_core.db import transaction
     with transaction() as c:
         c.execute("DELETE FROM app_metadata WHERE key IN ('super_password_hash','super_password_salt')")
     with pytest.raises(ValueError):

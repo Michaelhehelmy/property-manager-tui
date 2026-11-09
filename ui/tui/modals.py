@@ -5,8 +5,8 @@ from textual.widgets import Static, Button, Input, RichLog, DataTable, Select, C
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from rich.text import Text
-import services
-from services import t, fmt, selected_id, SETTINGS_CATALOG
+from app_core import services
+from app_core.services import t, fmt, selected_id, SETTINGS_CATALOG
 
 try:
     import plotext as _plt

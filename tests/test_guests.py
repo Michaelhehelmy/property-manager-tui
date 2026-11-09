@@ -1,6 +1,6 @@
 """Guest CRM: matching, Arabic normalization, merge."""
 import pytest
-import services
+from app_core import services
 from conftest import get_guest_count
 
 
@@ -90,7 +90,7 @@ def test_get_all_guests_search(clean_db):
 def test_duplicate_suggestions_bucketing(clean_db):
     services.find_or_create_guest("Ahmed Hassan")
     # Force second one with a slightly different spelling
-    from db import transaction
+    from app_core.db import transaction
     with transaction() as c:
         c.execute("INSERT INTO guests (canonical_name, phone) VALUES (?, ?)",
                   ("Ahmed Hasan", ""))
@@ -100,7 +100,7 @@ def test_duplicate_suggestions_bucketing(clean_db):
 
 def test_merge_guests(clean_db):
     gid1, _, _ = services.find_or_create_guest("Ahmed Hassan")
-    from db import transaction, connect
+    from app_core.db import transaction, connect
     with transaction() as c:
         c.execute("INSERT INTO guests (canonical_name, phone) VALUES (?, ?)",
                   ("Ahmed Hasan", ""))

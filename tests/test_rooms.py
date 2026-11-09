@@ -1,7 +1,7 @@
 """Rooms + rate plans — every function, every branch."""
 import pytest
-import services
-from db import connect
+from app_core import services
+from app_core.db import connect
 
 
 # ═══════════════════════════════════════════════════════════════════════════

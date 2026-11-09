@@ -5,9 +5,9 @@ from textual.widgets import (Static, DataTable, Button, Input, RichLog, Select,
                               RadioSet, RadioButton, Checkbox, Collapsible, TabbedContent, TabPane)
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual import events
-import services
-from services import t, fmt, selected_id
-from modals import (
+from app_core import services
+from app_core.services import t, fmt, selected_id
+from .modals import (
     ErrorModal, ConfirmModal, ProtectedModal, UnlockSettingsModal, SetSuperPasswordScreen,
     RecoveryCodesScreen, ChangePasswordModal, DeleteReservationScreen, ModifyReservationScreen,
     VoidItemScreen, CancelConfirmScreen, RefundScreen, OverrideCheckoutModal,
@@ -169,7 +169,7 @@ class FrontDeskTab(VerticalScroll):
             table.add_columns("ID", t("Room"), t("Room Type"), t("Base Price"), t("Status"),
                               "Next Guest", "Next In")
             for r in services.get_all_rooms():
-                from db import connect
+                from app_core.db import connect
                 nxt = connect().execute("""SELECT guest_name, check_in_date FROM reservations
                     WHERE room_id=? AND status IN ('Reserved','Checked In')
                     AND check_in_date >= date('now','localtime') ORDER BY check_in_date LIMIT 1""",
@@ -364,7 +364,7 @@ class ReservationsTab(VerticalScroll):
         table.clear(columns=True)
         table.add_columns("ID", t("Guest"), t("Source"), t("Room"), t("Agreed Nightly Rate"),
                           "In", "Out", t("Status"), "")
-        from db import connect
+        from app_core.db import connect
         sql = """SELECT r.id, r.guest_name, r.source, rm.room_number, r.agreed_nightly_rate,
                         r.check_in_date, r.check_out_date, r.status, r.guest_id,
                         (SELECT COUNT(*) FROM reservations WHERE guest_id=r.guest_id) AS stays
@@ -645,7 +645,7 @@ class NewOrderTab(VerticalScroll):
         if self._res_id:
             bd = services.get_balance_breakdown(self._res_id)
             if bd:
-                from db import connect
+                from app_core.db import connect
                 r = connect().execute("SELECT guest_name, room_id FROM reservations WHERE id=?",
                                       (self._res_id,)).fetchone()
                 if r:
@@ -702,7 +702,7 @@ class NewOrderTab(VerticalScroll):
 
     def _add_from_grid(self, item_name, qty):
         try:
-            from db import connect
+            from app_core.db import connect
             row = connect().execute("SELECT id, selling_price FROM inventory WHERE item_name=? AND active=1",
                                     (item_name,)).fetchone()
             if not row:
@@ -899,7 +899,7 @@ class InventorySubTab(VerticalScroll):
                 item = self._sel_item()
                 if item:
                     # Fetch full record with thresholds from DB
-                    from db import connect
+                    from app_core.db import connect
                     full = connect().execute("""SELECT id, item_name, category, unit, stock_qty,
                                                        unit_cost, selling_price, low_stock_threshold,
                                                        overstock_threshold FROM inventory WHERE id=?""",

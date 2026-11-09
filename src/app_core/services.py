@@ -13,11 +13,12 @@ import shutil
 from datetime import datetime, timedelta
 from pathlib import Path
 
-import db
+from . import db, paths
 
-BASE_DIR = db.BASE_DIR
-EXPORT_DIR = BASE_DIR / "exports"
-INVOICE_DIR = BASE_DIR / "invoices"
+BASE_DIR = paths.BASE_DIR
+DATA_DIR = paths.DATA_DIR
+EXPORT_DIR = paths.EXPORT_DIR
+INVOICE_DIR = paths.INVOICE_DIR
 CURRENCY = "EGP"
 DATE_FMT = "%Y-%m-%d"
 
@@ -255,7 +256,7 @@ def migrate_branding_if_needed():
 
 
 def _ensure_metadata():
-    from db import transaction
+    from .db import transaction
     with transaction() as conn:
         conn.execute(
             "INSERT OR IGNORE INTO app_metadata (key, value, hash_signature) VALUES ('gift_attribution', ?, ?)",
@@ -271,7 +272,7 @@ def apply_branding_settings(display_name, tagline="", animation="reveal", sync_p
         animation = "reveal"
     attribution = gift_attribution_for(display_name)
     sig = gift_hash_for(attribution)
-    from db import transaction
+    from .db import transaction
     with transaction() as conn:
         conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('app_display_name', ?)", (display_name,))
         conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('app_tagline', ?)", ((tagline or "").strip(),))
@@ -288,7 +289,7 @@ def apply_branding_settings(display_name, tagline="", animation="reveal", sync_p
 
 
 def _seed_defaults():
-    from db import transaction
+    from .db import transaction
     with transaction() as conn:
         for key, spec in SETTINGS_CATALOG.items():
             conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (key, spec[2]))
@@ -313,19 +314,19 @@ def _seed_defaults():
 # ═══════════════════════════════════════════════════════════════════════════
 
 def get_setting(key, default=""):
-    from db import connect
+    from .db import connect
     row = connect().execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
     return row["value"] if row else default
 
 
 def set_setting(key, value):
-    from db import transaction
+    from .db import transaction
     with transaction() as conn:
         conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, str(value)))
 
 
 def get_all_settings():
-    from db import connect
+    from .db import connect
     return {r["key"]: r["value"] for r in connect().execute("SELECT key, value FROM settings").fetchall()}
 
 
@@ -377,7 +378,7 @@ def save_settings(changes, password):
             normalized[key] = norm
     if errors:
         return 0, errors
-    from db import transaction
+    from .db import transaction
     with transaction() as conn:
         for key, val in normalized.items():
             conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, val))
@@ -388,7 +389,7 @@ def save_settings(changes, password):
 def reset_to_defaults(password):
     if not verify_password(password):
         raise PermissionError("Invalid super password.")
-    from db import transaction
+    from .db import transaction
     with transaction() as conn:
         for key, spec in SETTINGS_CATALOG.items():
             if key in ("schema_version", "language"):
@@ -425,7 +426,7 @@ def import_settings_from_json(filepath, password):
             staging[key] = norm
     if errors:
         return {"ok": False, "errors": errors, "skipped": skipped, "changes": {}}  # pragma: no cover
-    from db import transaction
+    from .db import transaction
     with transaction() as conn:
         for k, v in staging.items():
             conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (k, v))
@@ -457,7 +458,7 @@ def calculate_tax(net, nights):
 
 def _audit(action, target_type="", target_id="", details=""):
     try:
-        from db import transaction
+        from .db import transaction
         with transaction() as conn:
             conn.execute(
                 "INSERT INTO audit_log (action, target_type, target_id, details) VALUES (?, ?, ?, ?)",
@@ -467,7 +468,7 @@ def _audit(action, target_type="", target_id="", details=""):
 
 
 def get_audit_log(limit=200):
-    from db import connect
+    from .db import connect
     return connect().execute(
         "SELECT id, at, actor, action, target_type, target_id, details FROM audit_log ORDER BY id DESC LIMIT ?",
         (limit,)).fetchall()
@@ -487,7 +488,7 @@ def _scrypt_hash(password, salt_hex):
 
 
 def has_super_password():
-    from db import connect
+    from .db import connect
     row = connect().execute("SELECT value FROM app_metadata WHERE key='super_password_hash'").fetchone()
     return bool(row and row["value"])
 
@@ -499,7 +500,7 @@ def set_super_password(password):
         raise ValueError("Super password is already set.")
     salt = secrets.token_hex(16)
     pw_hash = _scrypt_hash(password, salt)
-    from db import transaction
+    from .db import transaction
     with transaction() as conn:
         conn.execute("INSERT OR REPLACE INTO app_metadata (key, value) VALUES ('super_password_salt', ?)", (salt,))
         conn.execute("INSERT OR REPLACE INTO app_metadata (key, value) VALUES ('super_password_hash', ?)", (pw_hash,))
@@ -515,7 +516,7 @@ def set_super_password(password):
 def verify_password(password):
     if not password:
         return False
-    from db import connect, transaction
+    from .db import connect, transaction
     conn = connect()
     rows = {r["key"]: r["value"] for r in conn.execute(
         "SELECT key, value FROM app_metadata WHERE key IN ('super_password_salt','super_password_hash','failed_attempts','lockout_until')")}
@@ -558,7 +559,7 @@ def change_password(current, new, confirm):
         raise ValueError("New password must differ.")
     salt = secrets.token_hex(16)
     pw_hash = _scrypt_hash(new, salt)
-    from db import transaction
+    from .db import transaction
     with transaction() as conn:
         conn.execute("UPDATE app_metadata SET value=? WHERE key='super_password_salt'", (salt,))
         conn.execute("UPDATE app_metadata SET value=? WHERE key='super_password_hash'", (pw_hash,))
@@ -568,7 +569,7 @@ def change_password(current, new, confirm):
 def generate_recovery_codes(password):
     if not verify_password(password):
         raise PermissionError("Invalid super password.")
-    from db import transaction
+    from .db import transaction
     codes = []
     with transaction() as conn:
         conn.execute("DELETE FROM app_metadata WHERE key LIKE 'recovery_%'")
@@ -583,7 +584,7 @@ def generate_recovery_codes(password):
 
 def verify_recovery_code(code):
     ch = hashlib.sha256(code.strip().upper().encode()).hexdigest()
-    from db import connect
+    from .db import connect
     row = connect().execute("SELECT 1 FROM app_metadata WHERE key=?", (f"recovery_{ch}",)).fetchone()
     return bool(row)
 
@@ -759,7 +760,7 @@ def _name_score(a, b):
 def find_guest_matches(name, phone="", email="", threshold=0.82):
     if not name or not name.strip():
         return []
-    from db import connect
+    from .db import connect
     p_norm = _norm_phone(phone)
     e_norm = (email or "").lower().strip()
     candidates = connect().execute("SELECT id, canonical_name, phone, email FROM guests").fetchall()
@@ -789,7 +790,7 @@ def find_or_create_guest(name, phone="", email=""):
     matches = find_guest_matches(name, phone, email, threshold=0.95)
     if matches:
         return matches[0]["id"], matches[0]["name"], False
-    from db import transaction
+    from .db import transaction
     with transaction() as conn:
         cur = conn.execute(
             "INSERT INTO guests (canonical_name, phone, email) VALUES (?, ?, ?)",
@@ -798,7 +799,7 @@ def find_or_create_guest(name, phone="", email=""):
 
 
 def get_all_guests(search=""):
-    from db import connect
+    from .db import connect
     q = f"%{search}%" if search else None
     if q:
         return connect().execute("""
@@ -825,7 +826,7 @@ def get_all_guests(search=""):
 
 
 def get_guest_by_id(guest_id):
-    from db import connect
+    from .db import connect
     row = connect().execute(
         "SELECT id, canonical_name, phone, email, notes FROM guests WHERE id=?", (guest_id,)).fetchone()
     if not row:
@@ -835,7 +836,7 @@ def get_guest_by_id(guest_id):
 
 
 def get_guest_history_by_id(guest_id):
-    from db import connect
+    from .db import connect
     return connect().execute("""
         SELECT r.id, rm.room_number, r.check_in_date, r.check_out_date, r.status,
                r.agreed_nightly_rate, r.tax_amount
@@ -849,7 +850,7 @@ def update_guest(guest_id, name, phone, email, notes, password):
         raise PermissionError("Invalid super password.")
     if not name or not name.strip():
         raise ValueError("Name is required.")
-    from db import transaction
+    from .db import transaction
     with transaction() as conn:
         conn.execute("""UPDATE guests SET canonical_name=?, phone=?, email=?, notes=?,
                         updated_at=datetime('now','localtime') WHERE id=?""",
@@ -859,7 +860,7 @@ def update_guest(guest_id, name, phone, email, notes, password):
 
 def get_duplicate_suggestions():
     """Fast: only compares same first-letter + same phone-tail buckets."""
-    from db import connect
+    from .db import connect
     guests = connect().execute("SELECT id, canonical_name, phone FROM guests").fetchall()
     buckets = {}
     for g in guests:
@@ -892,7 +893,7 @@ def merge_guests(winner_id, loser_id, password):
     l = get_guest_by_id(loser_id)
     if not w or not l:
         raise ValueError("Guest not found.")
-    from db import transaction
+    from .db import transaction
     with transaction() as conn:
         cur = conn.execute("UPDATE reservations SET guest_id=? WHERE guest_id=?", (winner_id, loser_id))
         moved = cur.rowcount
@@ -909,13 +910,13 @@ def merge_guests(winner_id, loser_id, password):
 # ═══════════════════════════════════════════════════════════════════════════
 
 def get_all_rooms():
-    from db import connect
+    from .db import connect
     return connect().execute(
         "SELECT id, room_number, room_type, base_price, housekeeping_status FROM rooms ORDER BY room_number").fetchall()
 
 
 def get_room(room_id):
-    from db import connect
+    from .db import connect
     row = connect().execute(
         "SELECT id, room_number, room_type, base_price, housekeeping_status FROM rooms WHERE id=?",
         (room_id,)).fetchone()
@@ -928,7 +929,7 @@ def get_room(room_id):
 def update_housekeeping_status(room_id, status):
     if status not in ("Clean", "Dirty", "Maintenance"):
         raise ValueError("Invalid status.")
-    from db import transaction
+    from .db import transaction
     with transaction() as conn:
         conn.execute("UPDATE rooms SET housekeeping_status=? WHERE id=?", (status, room_id))
 
@@ -938,7 +939,7 @@ def update_room_price(room_id, new_price, password):
         raise PermissionError("Invalid super password.")
     if new_price < 0:
         raise ValueError("Price cannot be negative.")
-    from db import transaction
+    from .db import transaction
     with transaction() as conn:
         conn.execute("UPDATE rooms SET base_price=? WHERE id=?", (new_price, room_id))
     _audit("room_price_change", "room", room_id, f"new={new_price}")
@@ -949,7 +950,7 @@ def update_room_type(room_id, new_type, password):
         raise PermissionError("Invalid super password.")
     if not new_type or not new_type.strip():
         raise ValueError("Type cannot be empty.")
-    from db import transaction
+    from .db import transaction
     with transaction() as conn:
         conn.execute("UPDATE rooms SET room_type=? WHERE id=?", (new_type.strip(), room_id))
     _audit("room_type_change", "room", room_id, new_type)
@@ -960,7 +961,7 @@ def update_room_type(room_id, new_type, password):
 # ═══════════════════════════════════════════════════════════════════════════
 
 def get_all_rate_plans():
-    from db import connect
+    from .db import connect
     return connect().execute("SELECT id, name, price_modifier FROM rate_plans ORDER BY id").fetchall()
 
 
@@ -969,7 +970,7 @@ def add_rate_plan(name, modifier, password):
         raise PermissionError("Invalid super password.")
     if not name or not name.strip():
         raise ValueError("Name is required.")
-    from db import connect, transaction
+    from .db import connect, transaction
     if connect().execute("SELECT 1 FROM rate_plans WHERE LOWER(name)=LOWER(?)", (name.strip(),)).fetchone():
         raise ValueError("Name already exists.")
     with transaction() as conn:
@@ -983,7 +984,7 @@ def update_rate_plan(plan_id, name, modifier, password):
         raise PermissionError("Invalid super password.")
     if not name or not name.strip():
         raise ValueError("Name is required.")
-    from db import connect, transaction
+    from .db import connect, transaction
     if connect().execute("SELECT 1 FROM rate_plans WHERE LOWER(name)=LOWER(?) AND id!=?",
                          (name.strip(), plan_id)).fetchone():
         raise ValueError("Name already exists.")
@@ -996,7 +997,7 @@ def update_rate_plan(plan_id, name, modifier, password):
 def delete_rate_plan(plan_id, password):
     if not verify_password(password):
         raise PermissionError("Invalid super password.")
-    from db import connect, transaction
+    from .db import connect, transaction
     used = connect().execute("SELECT COUNT(*) FROM reservations WHERE rate_plan_id=?", (plan_id,)).fetchone()[0]
     if used > 0:
         raise ValueError(f"Cannot delete: {used} reservations use it.")
@@ -1011,7 +1012,7 @@ def delete_rate_plan(plan_id, password):
 
 
 def count_reservations_using_plan(plan_id):
-    from db import connect
+    from .db import connect
     return connect().execute(
         "SELECT COUNT(*) FROM reservations WHERE rate_plan_id=?", (plan_id,)
     ).fetchone()[0]
@@ -1033,7 +1034,7 @@ def _nights(ci, co):
 
 
 def check_room_availability(room_id, ci, co, exclude_res_id=None):
-    from db import connect
+    from .db import connect
     q = """SELECT COUNT(*) FROM reservations WHERE room_id=?
            AND status IN ('Reserved','Checked In')
            AND NOT (check_out_date <= ? OR check_in_date >= ?)"""
@@ -1077,7 +1078,7 @@ def create_reservation(guest_name, source, room_id, rate_plan_id, agreed_nightly
         raise ValueError("Deposit cannot be negative.")
 
     tax = calculate_tax(agreed_nightly_rate * nights, nights)
-    from db import transaction
+    from .db import transaction
     with transaction() as conn:
         cur = conn.execute("""INSERT INTO reservations
             (guest_id, guest_name, source, room_id, rate_plan_id, agreed_nightly_rate, tax_amount,
@@ -1102,7 +1103,7 @@ def create_reservation(guest_name, source, room_id, rate_plan_id, agreed_nightly
 
 
 def update_reservation_status(rid, new_status):
-    from db import connect, transaction
+    from .db import connect, transaction
     row = connect().execute("SELECT status, room_id FROM reservations WHERE id=?", (rid,)).fetchone()
     if not row:
         raise ValueError("Reservation not found.")
@@ -1156,7 +1157,7 @@ def _cancellation_refund_amount(cur, rid, policy):
 
 def estimate_cancellation_outcome(rid, mode):
     """Pure estimate for UI: no mutation, mirrors cancel/no-show policy math."""
-    from db import connect
+    from .db import connect
     conn = connect()
     row = conn.execute(
         "SELECT status, agreed_nightly_rate FROM reservations WHERE id=?",
@@ -1180,7 +1181,7 @@ def estimate_cancellation_outcome(rid, mode):
 def cancel_reservation(rid, password):
     if not verify_password(password):
         raise PermissionError("Invalid super password.")
-    from db import connect, transaction
+    from .db import connect, transaction
     row = connect().execute("SELECT status FROM reservations WHERE id=?", (rid,)).fetchone()
     if not row:
         raise ValueError("Reservation not found.")
@@ -1207,7 +1208,7 @@ def cancel_reservation(rid, password):
 def mark_no_show(rid, password):
     if not verify_password(password):
         raise PermissionError("Invalid super password.")
-    from db import connect, transaction
+    from .db import connect, transaction
     row = connect().execute("SELECT status FROM reservations WHERE id=?", (rid,)).fetchone()
     if not row:
         raise ValueError("Reservation not found.")
@@ -1274,7 +1275,7 @@ def modify_reservation(rid, new_rate, new_ci, new_co, new_room_id, password):
     allow_over = get_setting("allow_overbooking", "false") == "true"
     if not allow_over and not check_room_availability(new_room_id, new_ci, new_co, exclude_res_id=rid):
         raise ValueError("Room not available.")
-    from db import connect, transaction
+    from .db import connect, transaction
     row = connect().execute(
         "SELECT status, room_id, agreed_nightly_rate, tax_amount FROM reservations WHERE id=?",
         (rid,)).fetchone()
@@ -1302,7 +1303,7 @@ def delete_reservation(rid, password):
     """Only allowed for Reserved with no payments/POS."""
     if not verify_password(password):
         raise PermissionError("Invalid super password.")
-    from db import transaction
+    from .db import transaction
     with transaction() as conn:
         row = conn.execute("SELECT status FROM reservations WHERE id=?", (rid,)).fetchone()
         if not row:
@@ -1320,7 +1321,7 @@ def delete_reservation(rid, password):
 
 
 def get_reservation(rid):
-    from db import connect
+    from .db import connect
     return connect().execute("SELECT * FROM reservations WHERE id=?", (rid,)).fetchone()
 
 
@@ -1384,7 +1385,7 @@ def _add_pos_item_tx(conn, reservation_id, desc, qty, price, inv_id=None):
 
 
 def add_pos_item(reservation_id, desc, qty, price, inv_id=None):
-    from db import transaction
+    from .db import transaction
     with transaction() as conn:
         return _add_pos_item_tx(conn, reservation_id, desc, qty, price, inv_id)
 
@@ -1395,7 +1396,7 @@ def complete_walkin_sale(items, method, notes="", payment_type="Payment"):
         raise ValueError("Cart is empty.")
     if not isinstance(method, str) or not method.strip():
         raise ValueError("Select a payment method.")
-    from db import transaction
+    from .db import transaction
     with transaction() as conn:
         cur = conn.cursor()
         pos_ids = []
@@ -1425,7 +1426,7 @@ def complete_walkin_sale(items, method, notes="", payment_type="Payment"):
 
 
 def get_pos_items(reservation_id):
-    from db import connect
+    from .db import connect
     return connect().execute("""
         SELECT id, item_description, quantity, unit_price, tax_amount, voided_at
         FROM pos_tabs WHERE reservation_id=? AND voided_at IS NULL ORDER BY id
@@ -1435,7 +1436,7 @@ def get_pos_items(reservation_id):
 def void_pos_item(pos_id, password):
     if not verify_password(password):
         raise PermissionError("Invalid super password.")
-    from db import connect, transaction
+    from .db import connect, transaction
     row = connect().execute("SELECT * FROM pos_tabs WHERE id=? AND voided_at IS NULL", (pos_id,)).fetchone()
     if not row:
         raise ValueError("POS item not found or already voided.")
@@ -1476,18 +1477,18 @@ def search_inventory(query="", category="", stock_filter=""):
     elif stock_filter == "Negative":
         sql += " AND stock_qty < 0"
     sql += " ORDER BY item_name"
-    from db import connect
+    from .db import connect
     return connect().execute(sql, params).fetchall()
 
 
 def get_inventory_categories():
-    from db import connect
+    from .db import connect
     return [r["category"] for r in connect().execute(
         "SELECT DISTINCT category FROM inventory WHERE active=1 ORDER BY category").fetchall()]
 
 
 def get_inventory_warnings():
-    from db import connect
+    from .db import connect
     low = float(get_setting("low_stock_threshold", "5"))
     over = float(get_setting("overstock_threshold", "100"))
     items = connect().execute(
@@ -1506,7 +1507,7 @@ def get_inventory_warnings():
 
 
 def get_recent_inventory_logs(limit=20):
-    from db import connect  # pragma: no cover
+    from .db import connect  # pragma: no cover
     return connect().execute("""
         SELECT l.at, i.item_name, l.change_type, l.quantity, l.reference
         FROM inventory_logs l JOIN inventory i ON l.item_id = i.id
@@ -1519,7 +1520,7 @@ def add_inventory_item(name, category, unit, stock, unit_cost, selling_price, lo
         raise PermissionError("Invalid super password.")
     if not name or not name.strip():
         raise ValueError("Name is required.")
-    from db import transaction
+    from .db import transaction
     with transaction() as conn:
         conn.execute("""INSERT INTO inventory
             (item_name, category, unit, stock_qty, unit_cost, selling_price,
@@ -1535,7 +1536,7 @@ def update_inventory_item(item_id, name, category, unit, selling_price, low, ove
         raise PermissionError("Invalid super password.")
     if not name or not name.strip():
         raise ValueError("Name is required.")
-    from db import transaction
+    from .db import transaction
     with transaction() as conn:
         conn.execute("""UPDATE inventory SET item_name=?, category=?, unit=?,
                         selling_price=?, low_stock_threshold=?, overstock_threshold=?
@@ -1548,7 +1549,7 @@ def update_inventory_item(item_id, name, category, unit, selling_price, low, ove
 def delete_inventory_item(item_id, password):
     if not verify_password(password):
         raise PermissionError("Invalid super password.")
-    from db import connect, transaction
+    from .db import connect, transaction
     row = connect().execute("SELECT stock_qty FROM inventory WHERE id=?", (item_id,)).fetchone()
     if not row:
         raise ValueError("Item not found.")
@@ -1568,7 +1569,7 @@ def restock_inventory(item_id, qty, unit_cost=0.0, password=""):
         raise ValueError("Quantity must be positive.")
     if unit_cost < 0:
         raise ValueError("Unit cost cannot be negative.")
-    from db import connect, transaction
+    from .db import connect, transaction
     with transaction() as conn:
         cur = conn.cursor()
         row = conn.execute("SELECT stock_qty, unit_cost, item_name FROM inventory WHERE id=?", (item_id,)).fetchone()
@@ -1597,7 +1598,7 @@ def record_payment(reservation_id, amount, method, notes="", payment_type="Payme
         raise ValueError("Payment amount must be positive.")
     if reservation_id is not None and not isinstance(reservation_id, int):
         raise ValueError("Invalid reservation ID.")
-    from db import connect, transaction
+    from .db import connect, transaction
     if reservation_id is not None:
         r = connect().execute("SELECT status FROM reservations WHERE id=?", (reservation_id,)).fetchone()
         if not r:
@@ -1622,7 +1623,7 @@ def record_refund(reservation_id, amount, method, notes, password):
         raise PermissionError("Invalid super password.")
     if amount <= 0:
         raise ValueError("Refund amount must be positive.")
-    from db import transaction
+    from .db import transaction
     with transaction() as conn:
         cur = conn.cursor()
         paid = conn.execute(
@@ -1645,7 +1646,7 @@ def record_refund(reservation_id, amount, method, notes, password):
 # ═══════════════════════════════════════════════════════════════════════════
 
 def get_expense_categories():
-    from db import connect
+    from .db import connect
     return connect().execute("SELECT id, category_name FROM expense_categories ORDER BY category_name").fetchall()
 
 
@@ -1656,7 +1657,7 @@ def record_operational_expense(cat_id, param, amount, tax_amount=0.0, notes="", 
         raise ValueError("VAT cannot be negative.")
     if not isinstance(cat_id, int):
         raise ValueError("Invalid category.")
-    from db import transaction
+    from .db import transaction
     with transaction() as conn:
         cur = conn.cursor()
         conn.execute("""INSERT INTO operational_expenses
@@ -1673,7 +1674,7 @@ def record_operational_expense(cat_id, param, amount, tax_amount=0.0, notes="", 
 def void_expense(expense_id, password):
     if not verify_password(password):
         raise PermissionError("Invalid super password.")
-    from db import connect, transaction
+    from .db import connect, transaction
     row = connect().execute("SELECT * FROM operational_expenses WHERE id=? AND voided_at IS NULL",
                             (expense_id,)).fetchone()
     if not row:
@@ -1687,7 +1688,7 @@ def void_expense(expense_id, password):
 
 
 def get_recent_expenses(limit=50):
-    from db import connect
+    from .db import connect
     return connect().execute("""
         SELECT e.id, e.at, c.category_name, e.parameter_name, e.net_amount, e.vat_amount, e.method, e.notes
         FROM operational_expenses e JOIN expense_categories c ON e.category_id = c.id
@@ -1700,7 +1701,7 @@ def get_recent_expenses(limit=50):
 # ═══════════════════════════════════════════════════════════════════════════
 
 def calculate_guest_balance(rid):
-    from db import connect
+    from .db import connect
     conn = connect()
     r = conn.execute("SELECT status FROM reservations WHERE id=?", (rid,)).fetchone()
     if not r or r["status"] in ("Cancelled", "No-Show", "Deleted"):
@@ -1713,7 +1714,7 @@ def calculate_guest_balance(rid):
 
 
 def get_balance_breakdown(rid):
-    from db import connect
+    from .db import connect
     conn = connect()
     r = conn.execute("SELECT status FROM reservations WHERE id=?", (rid,)).fetchone()
     if not r:
@@ -1745,7 +1746,7 @@ def get_balance_breakdown(rid):
 # ═══════════════════════════════════════════════════════════════════════════
 
 def get_general_ledger_summary():
-    from db import connect
+    from .db import connect
     conn = connect()
     charge_types = _net_types(("CHARGE",))
     exp_types = _net_types(("EXPENSE",))
@@ -1800,7 +1801,7 @@ def get_general_ledger_summary():
 
 
 def get_recent_ledger(limit=100):
-    from db import connect
+    from .db import connect
     return connect().execute("""
         SELECT id, at, ref_type, ref_id, entry_type, category, gross, vat, description
         FROM general_ledger ORDER BY id DESC LIMIT ?
@@ -1808,7 +1809,7 @@ def get_recent_ledger(limit=100):
 
 
 def verify_app_attribution():
-    from db import connect
+    from .db import connect
     row = connect().execute("SELECT value, hash_signature FROM app_metadata WHERE key='gift_attribution'").fetchone()
     if not row:
         return False, "Attribution record missing."
@@ -1827,7 +1828,7 @@ def verify_app_attribution():
 # ═══════════════════════════════════════════════════════════════════════════
 
 def generate_invoice_text(reservation_id, currency=CURRENCY):
-    from db import connect
+    from .db import connect
     conn = connect()
     r = conn.execute("""
         SELECT r.*, rm.room_number, rm.room_type FROM reservations r
@@ -2017,7 +2018,7 @@ def test_print(printer=None):
 # ═══════════════════════════════════════════════════════════════════════════
 
 def get_front_desk_summary():
-    from db import connect
+    from .db import connect
     today = datetime.now().strftime(DATE_FMT)
     conn = connect()
     total = conn.execute("SELECT COUNT(*) FROM rooms").fetchone()[0]
@@ -2038,7 +2039,7 @@ def get_front_desk_summary():
 
 
 def get_rooms_available_between(ci, co):
-    from db import connect
+    from .db import connect
     return connect().execute("""SELECT r.id, r.room_number, r.room_type, r.base_price, r.housekeeping_status
         FROM rooms r WHERE r.id NOT IN (
             SELECT room_id FROM reservations WHERE status IN ('Reserved','Checked In')
@@ -2047,7 +2048,7 @@ def get_rooms_available_between(ci, co):
 
 
 def get_upcoming_reservations_for_room(room_id):
-    from db import connect
+    from .db import connect
     today = datetime.now().strftime(DATE_FMT)
     return connect().execute("""SELECT id, guest_name, check_in_date, check_out_date, status, agreed_nightly_rate
         FROM reservations WHERE room_id=? AND check_in_date >= ?
@@ -2055,7 +2056,7 @@ def get_upcoming_reservations_for_room(room_id):
 
 
 def get_occupancy_for_window(start, end):
-    from db import connect
+    from .db import connect
     d1 = datetime.strptime(start, DATE_FMT)
     d2 = datetime.strptime(end, DATE_FMT)
     days = max(1, (d2 - d1).days + 1)
@@ -2089,7 +2090,7 @@ def get_occupancy_for_window(start, end):
 # ═══════════════════════════════════════════════════════════════════════════
 
 def get_daily_revenue_expense_series(start, end):
-    from db import connect
+    from .db import connect
     conn = connect()
     charge_types = _net_types(("CHARGE",))
     cost_types = _net_types(("EXPENSE", "COGS"))
@@ -2123,7 +2124,7 @@ def get_daily_profit_series(start, end):
 
 
 def get_payment_method_dict(start, end):
-    from db import connect
+    from .db import connect
     types = _net_types(("PAYMENT", "REFUND"))
     ph = ",".join("?" * len(types))
     return {r[0]: round(r[1] or 0, 2) for r in connect().execute(
@@ -2136,7 +2137,7 @@ def get_payment_method_dict(start, end):
 
 
 def get_daily_occupancy_series(start, end):
-    from db import connect
+    from .db import connect
     d1 = datetime.strptime(start, DATE_FMT)
     d2 = datetime.strptime(end, DATE_FMT)
     total_rooms = connect().execute("SELECT COUNT(*) FROM rooms").fetchone()[0]
@@ -2153,7 +2154,7 @@ def get_daily_occupancy_series(start, end):
 
 
 def get_occupancy_heatmap_data(start, end):
-    from db import connect
+    from .db import connect
     d1 = datetime.strptime(start, DATE_FMT)
     d2 = datetime.strptime(end, DATE_FMT)
     dates = []
@@ -2184,7 +2185,7 @@ def _range_where(start, end, col="at"):
 
 
 def report_pl_statement(start, end):
-    from db import connect
+    from .db import connect
     conn = connect()
     where, params = _range_where(start, end)
     charge_types = _net_types(("CHARGE",))
@@ -2227,7 +2228,7 @@ def report_pl_statement(start, end):
 
 
 def report_cash_flow(start, end):
-    from db import connect
+    from .db import connect
     conn = connect()
     where, params = _range_where(start, end)
     cash_types = _net_types(("PAYMENT", "REFUND", "EXPENSE", "ASSET_IN"))
@@ -2259,7 +2260,7 @@ def report_payment_methods(start, end):
 
 
 def report_vat(start, end):
-    from db import connect
+    from .db import connect
     conn = connect()
     where, params = _range_where(start, end)
     out_types = _net_types(("CHARGE",))
@@ -2291,7 +2292,7 @@ def report_occupancy(start, end):
 
 
 def report_daily_ops(date):
-    from db import connect
+    from .db import connect
     arr = connect().execute("SELECT id, guest_name FROM reservations WHERE check_in_date=? AND status IN ('Reserved','Checked In')",
                             (date,)).fetchall()
     dep = connect().execute("SELECT id, guest_name FROM reservations WHERE check_out_date=? AND status IN ('Reserved','Checked In')",
@@ -2607,7 +2608,7 @@ def generate_unified_report(preset="management_pack", start=None, end=None, form
 
 
 def has_operational_data():
-    from db import connect
+    from .db import connect
     c = connect()
     checks = [
         ("reservations", "SELECT 1 FROM reservations LIMIT 1"),
@@ -2646,7 +2647,7 @@ def apply_demo_data_preset(name, password, confirm_text, allow_existing=False):
     if allow_existing and not verify_password(password):
         raise PermissionError("Invalid super password.")
 
-    from db import connect, transaction
+    from .db import connect, transaction
     conn = connect()
     rooms = conn.execute("SELECT id, base_price FROM rooms ORDER BY id").fetchall()
     inv = conn.execute("SELECT id, selling_price, unit_cost FROM inventory WHERE active=1 ORDER BY id").fetchall()

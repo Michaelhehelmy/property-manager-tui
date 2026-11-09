@@ -1,7 +1,7 @@
 """Final coverage closure — every reachable error branch."""
 import pytest
-import services
-from db import connect
+from app_core import services
+from app_core.db import connect
 from conftest import make_reservation
 
 
@@ -137,7 +137,7 @@ def test_pos_nonexistent_inventory(clean_db):
 
 
 def test_pos_inactive_inventory(clean_db):
-    from db import transaction
+    from app_core.db import transaction
     with transaction() as c:
         c.execute("INSERT INTO inventory (item_name, category, stock_qty, unit, active) VALUES ('Dead', 'X', 10, 'pcs', 0)")
         iid = c.execute("SELECT last_insert_rowid()").fetchone()[0]
@@ -218,7 +218,7 @@ def test_delete_inventory_nonzero_stock(clean_db):
 
 
 def test_delete_inventory_wrong_password(clean_db):
-    from db import transaction
+    from app_core.db import transaction
     with transaction() as c:
         c.execute("INSERT INTO inventory (item_name, category, stock_qty, unit) VALUES ('Empty', 'X', 0, 'pcs')")
         iid = c.execute("SELECT last_insert_rowid()").fetchone()[0]
@@ -614,7 +614,7 @@ def test_balance_noshow(clean_db):
 # ═══════════════════════════════════════════════════════════════════════════
 
 def test_attribution_tampered(clean_db):
-    from db import transaction
+    from app_core.db import transaction
     with transaction() as c:
         c.execute("UPDATE app_metadata SET value='X' WHERE key='gift_attribution'")
     ok, _ = services.verify_app_attribution()
@@ -622,7 +622,7 @@ def test_attribution_tampered(clean_db):
 
 
 def test_attribution_missing(clean_db):
-    from db import transaction
+    from app_core.db import transaction
     with transaction() as c:
         c.execute("DELETE FROM app_metadata WHERE key='gift_attribution'")
     ok, _ = services.verify_app_attribution()

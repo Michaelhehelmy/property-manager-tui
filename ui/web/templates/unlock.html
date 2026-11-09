@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="panel" style="max-width:520px"><h2>Unlock protected actions</h2>
+<form method="post" action="/unlock">
+  <input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+  <input type="hidden" name="next" value="{{ next }}"/>
+  <label>Super password<input type="password" name="password" required autofocus/></label>
+  <button type="submit">Unlock</button>
+</form></div>
+{% endblock %}

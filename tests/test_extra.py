@@ -1,8 +1,8 @@
 """Final coverage closure — every reachable branch."""
 import pytest
-import services
-import db
-from db import connect, transaction
+from app_core import services
+from app_core import db
+from app_core.db import connect, transaction
 from conftest import make_reservation
 from datetime import datetime, timedelta
 from unittest.mock import patch

@@ -4,15 +4,15 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import services
-from services import get_app_display_name, get_app_tagline, get_loading_animation, get_gift_attribution, is_branding_configured, set_language, t
+from app_core import services
+from app_core.services import get_app_display_name, get_app_tagline, get_loading_animation, get_gift_attribution, is_branding_configured, set_language, t
 from textual.app import App, ComposeResult
 from textual.containers import Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Footer, Header, Static, TabbedContent, TabPane
 
-from modals import BrandingWizardScreen, LanguageScreen, SetSuperPasswordScreen
-from tabs import AccountingTab, FrontDeskTab, PosInventoryTab, ReservationsTab, SettingsTab
+from .modals import BrandingWizardScreen, LanguageScreen, SetSuperPasswordScreen
+from .tabs import AccountingTab, FrontDeskTab, PosInventoryTab, ReservationsTab, SettingsTab
 
 if TYPE_CHECKING:
     from textual.timer import Timer

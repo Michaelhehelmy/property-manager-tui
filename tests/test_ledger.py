@@ -1,7 +1,7 @@
 """Ledger integrity: append-only, ref_type separation, no double-counting."""
 import pytest
-import services
-from db import connect
+from app_core import services
+from app_core.db import connect
 from conftest import make_reservation, count_ledger, sum_ledger
 
 

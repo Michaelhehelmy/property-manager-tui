@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Guests</h2>
+<div class="panel"><form method="get" class="row"><input name="q" value="{{q}}" placeholder="Search name/phone/email"/><div style="flex:0"><button type="submit">Search</button></div></form></div>
+<div class="panel"><table><tr><th>ID</th><th>Name</th><th>Phone</th><th>Email</th><th>Stays</th><th></th></tr>
+{% for r in rows %}<tr><td>{{r['id']}}</td><td>{{r['canonical_name']}}</td><td>{{r['phone']}}</td><td>{{r['email']}}</td><td>{{r['stays'] or ''}}</td><td><a class="btn" href="/guests/{{r['id']}}">Open</a></td></tr>
+{% else %}<tr><td colspan="6" class="muted">No guests</td></tr>{% endfor %}</table></div>
+{% endblock %}

@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Guest: {{ g['canonical_name'] }} (#{{g['id']}})</h2>
+<div class="grid grid-2">
+  <div class="panel"><h3>Edit (requires unlock/password)</h3>
+    <form method="post" action="/guests/{{g['id']}}/update"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+      <label>Name<input name="name" value="{{g['canonical_name']}}"/></label>
+      <label>Phone<input name="phone" value="{{g['phone']}}"/></label>
+      <label>Email<input name="email" value="{{g['email']}}"/></label>
+      <label>Notes<textarea name="notes">{{g['notes']}}</textarea></label>
+      <label>Super password<input type="password" name="password"/></label>
+      <button type="submit">Update</button>
+    </form></div>
+  <div class="panel"><h3>History</h3><table><tr><th>Res</th><th>Room</th><th>Dates</th><th>Status</th><th>Rate</th></tr>
+  {% for h in hist %}<tr><td><a href="/reservations/{{h['id']}}">#{{h['id']}}</a></td><td>{{h['room_number']}}</td><td>{{h['check_in_date']}} → {{h['check_out_date']}}</td><td>{{h['status']}}</td><td>{{h['agreed_nightly_rate']}}</td></tr>
+  {% else %}<tr><td colspan="5" class="muted">No history</td></tr>{% endfor %}</table></div>
+</div>
+{% endblock %}

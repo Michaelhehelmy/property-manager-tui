@@ -1,7 +1,7 @@
 """Settings catalog, validation, save, reset, import/export."""
 import pytest
-import services
-from services import SETTINGS_CATALOG
+from app_core import services
+from app_core.services import SETTINGS_CATALOG
 
 
 def test_catalog_complete(clean_db):

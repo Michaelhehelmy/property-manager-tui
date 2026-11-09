@@ -1,7 +1,7 @@
 """Printers — all OS branches with mocks."""
 import pytest
 from unittest.mock import MagicMock, patch
-import services
+from app_core import services
 
 
 # ── list_printers ────────────────────────────────────────────────────────

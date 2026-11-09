@@ -1,8 +1,8 @@
 """Invoice generation — all scenarios, EGP and USD."""
 import os
 import pytest
-import services
-from db import connect
+from app_core import services
+from app_core.db import connect
 from conftest import make_reservation
 
 

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>{{ title or brand_name }} — Web UI</title>
+  <link rel="stylesheet" href="/static/app.css"/>
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+</head>
+<body>
+<div class="layout">
+  <nav>
+    <h1>{{ brand_name }}</h1>
+    <div class="gift">★ {{ gift }}</div>
+    <a href="/">Dashboard</a>
+    <a href="/reservations">Reservations</a>
+    <a href="/guests">Guests</a>
+    <a href="/pos">POS / Inventory</a>
+    <a href="/accounting">Accounting</a>
+    <a href="/reports">Reports & Analytics</a>
+    <a href="/settings">Settings / Branding</a>
+    <hr style="border-color:#45475a"/>
+    {% if unlocked %}
+    <form method="post" action="/lock" class="inline"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><button class="warn" type="submit">Lock</button></form>
+    {% else %}
+    <a href="/unlock">Unlock (protected actions)</a>
+    {% endif %}
+  </nav>
+  <main>
+    {% for f in flashes %}<div class="flash {{ f.level }}">{{ f.message }}</div>{% endfor %}
+    {% block content %}{% endblock %}
+  </main>
+</div>
+</body>
+</html>

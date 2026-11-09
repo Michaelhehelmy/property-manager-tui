@@ -1,7 +1,7 @@
 """Additional tests to close remaining coverage branches."""
 import pytest
-import services
-from db import connect
+from app_core import services
+from app_core.db import connect
 from conftest import make_reservation
 
 

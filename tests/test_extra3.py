@@ -1,8 +1,8 @@
 """Closes remaining reachable branches."""
 import pytest
 from unittest.mock import patch, MagicMock
-import services
-from db import connect
+from app_core import services
+from app_core.db import connect
 from conftest import make_reservation
 
 
@@ -146,7 +146,7 @@ def test_backup_sqlite_valid(clean_db):
 
 def test_verify_lockout_expires(clean_db):
     """Lockout timestamp in the past = not locked."""
-    from db import transaction
+    from app_core.db import transaction
     from datetime import datetime, timedelta
     with transaction() as c:
         past = (datetime.now() - timedelta(hours=1)).isoformat()
@@ -156,7 +156,7 @@ def test_verify_lockout_expires(clean_db):
 
 def test_verify_lockout_bad_format(clean_db):
     """Corrupt lockout_until is ignored."""
-    from db import transaction
+    from app_core.db import transaction
     with transaction() as c:
         c.execute("INSERT OR REPLACE INTO app_metadata (key, value) VALUES ('lockout_until', 'garbage')")
     assert services.verify_password("testpass") is True
@@ -263,7 +263,7 @@ def test_recovery_code_wrong(clean_db):
 # ═══════════════════════════════════════════════════════════════════════════
 
 def test_attribution_tampered(clean_db):
-    from db import transaction
+    from app_core.db import transaction
     with transaction() as c:
         c.execute("UPDATE app_metadata SET value='Hacked' WHERE key='gift_attribution'")
     ok, msg = services.verify_app_attribution()

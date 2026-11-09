@@ -3,8 +3,11 @@ import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 
-BASE_DIR = Path(__file__).resolve().parent
-DB_PATH = BASE_DIR / "property_manager.db"
+from . import paths
+
+DATA_DIR = paths.DATA_DIR
+BASE_DIR = paths.BASE_DIR
+DB_PATH = paths.DB_PATH
 SCHEMA_VERSION = 4
 
 _conn = None

@@ -31,3 +31,9 @@ Thumbs.db
 *.swp
 *.swo
 *~
+
+# Restructured data dir (runtime)
+data/property_manager.db
+data/property_manager.db-*
+data/exports/
+data/invoices/

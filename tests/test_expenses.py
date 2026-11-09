@@ -1,7 +1,7 @@
 """Expenses: record, void."""
 import pytest
-import services
-from db import connect
+from app_core import services
+from app_core.db import connect
 
 
 def test_record_expense(clean_db):

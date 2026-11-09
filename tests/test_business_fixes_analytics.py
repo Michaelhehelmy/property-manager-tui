@@ -2,8 +2,8 @@
 import json
 from pathlib import Path
 import pytest
-import services
-import db
+from app_core import services
+from app_core import db
 from conftest import make_reservation
 
 

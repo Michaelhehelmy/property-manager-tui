@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Settings / Branding</h2>
+<div class="grid grid-2">
+  <div class="panel"><h3>Branding & animation (wizard fields)</h3>
+    <p class="muted">Gift: {{ brand.gift }}</p>
+    <form method="post" action="/settings/branding"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+      <label>Display name<input name="display_name" value="{{brand.name}}" required/></label>
+      <label>Tagline<input name="tagline" value="{{brand.tagline}}"/></label>
+      <label>Loading animation<select name="animation">
+        {% for v in ['reveal','typewriter','wave','pulse','none'] %}<option value="{{v}}" {% if brand.animation==v %}selected{% endif %}>{{v}}</option>{% endfor %}
+      </select></label>
+      <button type="submit">Apply branding</button>
+    </form>
+    <form method="post" action="/settings/backup" style="margin-top:10px"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><button>Backup now</button></form>
+  </div>
+  <div class="panel"><h3>Guarded demo data preset</h3>
+    <p class="muted">Requires unlock + super password + confirmation text <code>APPLY DEMO DATA</code>. Refused when operational data exists.</p>
+    <form method="post" action="/settings/demo-preset"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+      <label>Preset<select name="preset"><option value="analysis_small">analysis_small</option></select></label>
+      <input name="confirm" placeholder="APPLY DEMO DATA"/>
+      <input type="password" name="password" placeholder="Super password"/>
+      <button class="warn">Apply demo preset</button>
+    </form>
+  </div>
+</div>
+<div class="panel"><h3>Settings catalog (unlock + password to save)</h3>
+  <p class="muted">Edit values supported by <code>services.save_settings</code>. Sensitive save requires super password.</p>
+  <form method="post" action="/settings/save"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+    <table><tr><th>Key</th><th>Label</th><th>Value</th></tr>
+    {% for k, spec in catalog.items() %}
+    {% if spec[1] != 'internal' %}
+    <tr><td><code>{{k}}</code></td><td>{{spec[0]}}<div class="muted">{{spec[4]}}</div></td>
+    <td>{% if spec[1] == 'bool' %}<select name="{{k}}"><option value="true" {% if values.get(k)=='true' %}selected{% endif %}>true</option><option value="false" {% if values.get(k)!='true' %}selected{% endif %}>false</option></select>
+    {% elif spec[1] == 'enum' %}<select name="{{k}}">{% for o in spec[5] %}<option value="{{o}}" {% if values.get(k)==o %}selected{% endif %}>{{o}}</option>{% endfor %}</select>
+    {% elif spec[1] == 'text' %}<textarea name="{{k}}">{{values.get(k,'')}}</textarea>
+    {% else %}<input name="{{k}}" value="{{values.get(k,'')}}"/>{% endif %}</td></tr>
+    {% endif %}
+    {% endfor %}</table>
+    <label>Super password (required to save)<input type="password" name="password"/></label>
+    <button type="submit">Save settings</button>
+  </form>
+</div>
+{% endblock %}

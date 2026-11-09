@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Accounting</h2>
+<div class="grid grid-4">
+  <div class="panel"><div class="muted">Billed revenue</div><div class="stat">{{ "%.2f"|format(summary.billed_revenue) }}</div></div>
+  <div class="panel"><div class="muted">Expenses+COGS</div><div class="stat">{{ "%.2f"|format(summary.expenses) }}</div></div>
+  <div class="panel"><div class="muted">Net profit</div><div class="stat">{{ "%.2f"|format(summary.net_profit) }}</div></div>
+  <div class="panel"><div class="muted">A/R</div><div class="stat">{{ "%.2f"|format(summary.ar_balance) }}</div></div>
+</div>
+<div class="grid grid-2">
+  <div class="panel"><h3>Record expense</h3>
+    <form method="post" action="/accounting/expense"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+      <label>Category<select name="cat_id">{% for c in cats %}<option value="{{c['id']}}">{{c['category_name']}}</option>{% endfor %}</select></label>
+      <label>Parameter<input name="param" required/></label>
+      <div class="row"><label>Net amount<input name="amount" type="number" step="0.01" required/></label><label>VAT<input name="vat" type="number" step="0.01" value="0"/></label><label>Method<select name="method"><option>Cash</option><option>Card</option><option>Bank Transfer</option></select></label></div>
+      <label>Notes<input name="notes"/></label><button class="err">Record expense</button>
+    </form>
+    <h3>Record payment / refund</h3>
+    <form method="post" action="/accounting/payment"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+      <label>Reservation<select name="reservation_id"><option value="">(walk-in/none)</option>{% for r in reservations %}<option value="{{r['id']}}">#{{r['id']}} {{r['guest_name']}}</option>{% endfor %}</select></label>
+      <div class="row"><label>Amount<input name="amount" type="number" step="0.01"/></label><label>Method<select name="method"><option>Cash</option><option>Card</option><option>OTA</option><option>Bank Transfer</option></select></label><label>Type<select name="payment_type"><option>Payment</option><option>Deposit</option></select></label></div>
+      <input name="notes" placeholder="Notes"/><button class="ok">Record payment</button>
+    </form>
+    <details><summary>Refund (password)</summary>
+      <form method="post" action="/accounting/refund"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+        <label>Reservation ID<input name="reservation_id" type="number" required/></label>
+        <div class="row"><label>Amount<input name="amount" type="number" step="0.01"/></label><label>Method<select name="method"><option>Cash</option><option>Card</option><option>Bank Transfer</option></select></label></div>
+        <input name="notes" placeholder="Notes"/><input type="password" name="password" placeholder="Super password"/><button class="err">Refund</button>
+      </form>
+    </details>
+  </div>
+  <div class="panel"><h3>Recent expenses</h3>
+    <table><tr><th>ID</th><th>Date</th><th>Cat</th><th>Param</th><th>Net</th><th></th></tr>
+    {% for e in expenses %}<tr><td>{{e['id']}}</td><td>{{e['at']}}</td><td>{{e['category_name']}}</td><td>{{e['parameter_name']}}</td><td>{{e['net_amount']}}</td>
+      <td><form method="post" action="/accounting/expense/{{e['id']}}/void" class="inline"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><input type="password" name="password" placeholder="Pwd" style="width:90px"/><button class="err">Void</button></form></td></tr>
+    {% else %}<tr><td colspan="6" class="muted">None</td></tr>{% endfor %}</table>
+  </div>
+</div>
+<div class="panel"><h3>Recent ledger</h3><table><tr><th>ID</th><th>Date</th><th>Type</th><th>Category</th><th>Net</th><th>VAT</th><th>Gross</th><th>Description</th></tr>
+{% for r in ledger %}<tr><td>{{r['id']}}</td><td>{{r['at']}}</td><td>{{r['entry_type']}}</td><td>{{r['category']}}</td><td>{{r['net']}}</td><td>{{r['vat']}}</td><td>{{r['gross']}}</td><td>{{r['description']}}</td></tr>
+{% else %}<tr><td colspan="8" class="muted">None</td></tr>{% endfor %}</table></div>
+{% endblock %}

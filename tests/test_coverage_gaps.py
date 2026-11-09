@@ -1,9 +1,9 @@
 """Closes every remaining branch + internal function."""
 import pytest
 from unittest.mock import patch, MagicMock
-import services
-import db
-from db import connect, transaction
+from app_core import services
+from app_core import db
+from app_core.db import connect, transaction
 from conftest import make_reservation
 
 
@@ -334,7 +334,7 @@ def test_void_custom_item_no_inventory(clean_db):
 
 
 def test_add_pos_inactive_inventory_item(clean_db):
-    from db import transaction
+    from app_core.db import transaction
     with transaction() as c:
         c.execute("INSERT INTO inventory (item_name, category, stock_qty, unit, active) VALUES ('Dead', 'Test', 10, 'pcs', 0)")
         iid = c.execute("SELECT last_insert_rowid()").fetchone()[0]

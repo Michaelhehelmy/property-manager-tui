@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Reservations</h2>
+<div class="panel"><form method="get" class="row"><input name="q" value="{{q}}" placeholder="Search guest / id / room"/><div style="flex:0"><button type="submit">Search</button></div></form></div>
+<details class="panel"><summary><strong>Create reservation</strong></summary>
+  <form method="post" action="/reservations/create"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+    <div class="row"><label>Guest<input name="guest_name" required/></label><label>Source<input name="source" value="Direct"/></label></div>
+    <div class="row"><label>Room<select name="room_id">{% for r in rooms %}<option value="{{r['id']}}">{{r['room_number']}} — {{r['room_type']}} ({{r['base_price']}})</option>{% endfor %}</select></label>
+    <label>Rate plan<select name="rate_plan_id"><option value="">(none)</option>{% for p in plans %}<option value="{{p['id']}}">{{p['name']}}</option>{% endfor %}</select></label></div>
+    <div class="row"><label>Check-in<input type="date" name="check_in" value="{{today}}" required/></label><label>Check-out<input type="date" name="check_out" value="{{tomorrow}}" required/></label>
+    <label>Nightly rate<input name="rate" type="number" step="0.01" required/></label><label>Deposit<input name="deposit" type="number" step="0.01" value="0"/></label></div>
+    <button type="submit">Create</button>
+  </form>
+</details>
+<div class="panel"><table><tr><th>ID</th><th>Guest</th><th>Room</th><th>Dates</th><th>Status</th><th>Rate</th><th></th></tr>
+{% for r in rows %}<tr><td>#{{r['id']}}</td><td>{{r['guest_name']}}</td><td>{{r['room_number'] or r.room_id}}</td><td>{{r['check_in_date']}} → {{r['check_out_date']}}</td><td>{{r['status']}}</td><td>{{r['agreed_nightly_rate']}}</td><td><a class="btn" href="/reservations/{{r['id']}}">Open</a></td></tr>
+{% else %}<tr><td colspan="7" class="muted">No reservations</td></tr>{% endfor %}</table></div>
+{% endblock %}
