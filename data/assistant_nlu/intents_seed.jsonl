@@ -198,3 +198,13 @@
 {"text":"Compare-ish: payment methods breakdown for last month and P&L for last month.","label":"compound_multi_intent"}
 {"text":"Search for ‘Sara’, and for the most likely match tell me her last visit.","label":"compound_multi_intent"}
 {"text":"Reservation #20 summary, its balance, and whether the guest had previous stays—whatever the data shows.","label":"compound_multi_intent"}
+{"text": "how many guests i have", "label": "property_stats"}
+{"text": "total guests in the system?", "label": "property_stats"}
+{"text": "how many reservations do we have right now", "label": "property_stats"}
+{"text": "what's the total number of rooms and bookings?", "label": "property_stats"}
+{"text": "can you give me quick property stats like guest count and in-house", "label": "property_stats"}
+{"text": "how many arrivals and departures today?", "label": "property_stats"}
+{"text": "number of checked in guests currently", "label": "property_stats"}
+{"text": "overall counts: guests, rooms, reservations", "label": "property_stats"}
+{"text": "how many customers do we have on file", "label": "property_stats"}
+{"text": "reservation count by status and total guests please", "label": "property_stats"}

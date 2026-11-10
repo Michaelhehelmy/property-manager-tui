@@ -47,6 +47,27 @@ ACTION=run MODE=web HOST=0.0.0.0 PORT=8000 sh scripts/setup.sh
 
 **Options (env vars):** `MODE=auto|tui|web|both`, `ACTION=setup|run|deploy`, `SKIP_WEB=auto|0|1`, `INSTALL_DIR`, `REPO_URL`, `BRANCH`, `HOST`, `PORT`, `INSTALL_DEV=1`, `RUN_TESTS=1`.
 
+### Windows (PowerShell)
+
+Use `scripts/setup_windows.ps1` (or `scripts/setup_windows.cmd` wrapper). Requires **Python 3.10+** in PATH and **Git for Windows** (for clone/update).
+
+```powershell
+# Setup (from repo checkout, or will clone/update into %USERPROFILE%\property-manager-tui)
+powershell -ExecutionPolicy Bypass -File scripts\setup_windows.ps1
+
+# Setup + run (TUI or Web)
+powershell -ExecutionPolicy Bypass -File scripts\setup_windows.ps1 -Action deploy -Mode tui
+powershell -ExecutionPolicy Bypass -File scripts\setup_windows.ps1 -Action deploy -Mode web -BindHost 0.0.0.0 -Port 8000
+
+# Run later
+powershell -ExecutionPolicy Bypass -File scripts\setup_windows.ps1 -Action run -Mode tui
+powershell -ExecutionPolicy Bypass -File scripts\setup_windows.ps1 -Action run -Mode web
+```
+
+CMD wrapper examples: `scripts\setup_windows.cmd -Action deploy -Mode tui`
+
+Parameters/env vars: `-Action`/`ACTION` (setup|run|deploy), `-Mode`/`MODE` (auto|tui|web|both), `-SkipWeb`/`SKIP_WEB`, `-InstallDir`/`INSTALL_DIR`, `-BindHost`/`HOST`, `-Port`/`PORT`, `-InstallDev`, `-RunTests`. For LAN access run web with `-BindHost 0.0.0.0` and set `$env:PM_WEB_SECRET_KEY` to a strong secret.
+
 ## Run on iSH or iOS terminal apps
 
 Choose based on what your iOS terminal provides:
