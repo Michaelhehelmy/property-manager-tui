@@ -54,8 +54,10 @@ async def lock_post(request: Request):
 
 @router.get("/settings")
 def settings(request: Request):
+    rooms = services.get_all_rooms()
     return render(request, "settings/index.html", {"title":"Settings / Branding",
         "catalog": services.SETTINGS_CATALOG, "values": services.get_all_settings(),
+        "rooms": rooms,
         "brand": {"name": services.get_app_display_name(), "tagline": services.get_app_tagline(),
                   "animation": services.get_loading_animation(), "configured": services.is_branding_configured(),
                   "gift": services.get_gift_attribution()}})
@@ -170,3 +172,69 @@ def settings_health(request: Request):
     deps.require_unlock(request)
     result = services.verify_ledger_integrity()
     return render(request, "settings/health.html", {"title": "Health Check", "result": result})
+
+
+
+@router.post("/settings/seed/export")
+async def seed_export(request: Request):
+    deps.require_unlock(request)
+    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    try:
+        path = services.export_seed_config()
+        name = Path(path).name
+        deps.add_flash(request, f"Seed config exported: {name}. Download it, edit JSON, then upload for first-time seed.", "success")
+        r = deps.redirect(f"/files/export/{name}")
+    except Exception as e:
+        deps.add_flash(request, str(e), "error")
+        r = deps.redirect("/settings")
+    deps.save_session(r, deps.get_session(request)); return r
+
+
+@router.post("/settings/seed/import")
+async def seed_import(request: Request):
+    deps.require_unlock(request)
+    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    upload = form.get("seed_file")
+    try:
+        if upload is None or not getattr(upload, "filename", ""):
+            raise ValueError("Select a seed config JSON file to upload.")
+        import tempfile, shutil
+        suffix = Path(getattr(upload, "filename", "seed.json")).suffix or ".json"
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            data = await upload.read()
+            tmp.write(data)
+            tmp_path = tmp.name
+        try:
+            res = services.import_seed_config(tmp_path, form.get("password", ""), form.get("confirm", ""))
+            deps.add_flash(request, f"Seed config applied (first-time setup): {res.get('summary', {})}", "success")
+        finally:
+            try:
+                Path(tmp_path).unlink()
+            except Exception:
+                pass
+    except Exception as e:
+        deps.add_flash(request, str(e), "error")
+    r = deps.redirect("/settings"); deps.save_session(r, deps.get_session(request)); return r
+
+
+@router.post("/settings/rooms/add")
+async def room_add(request: Request):
+    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    try:
+        rid = services.add_room(form.get("room_number", ""), form.get("room_type", ""), form.get("base_price", 0), form.get("housekeeping_status", "Clean"))
+        deps.add_flash(request, f"Room added (#{rid}).", "success")
+    except Exception as e:
+        deps.add_flash(request, str(e), "error")
+    r = deps.redirect("/settings"); deps.save_session(r, deps.get_session(request)); return r
+
+
+@router.post("/settings/rooms/{room_id}/delete")
+async def room_delete(request: Request, room_id: int):
+    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    try:
+        services.delete_room(room_id)
+        deps.add_flash(request, "Room deleted.", "success")
+    except Exception as e:
+        deps.add_flash(request, str(e), "error")
+    r = deps.redirect("/settings"); deps.save_session(r, deps.get_session(request)); return r
+

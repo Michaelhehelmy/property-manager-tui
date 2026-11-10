@@ -15,8 +15,20 @@
     </form>
     <form method="post" action="/settings/backup" style="margin-top:10px"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><button>Backup now</button></form>
   </div>
-  <div class="panel"><h3>Guarded demo data preset</h3>
-    <p class="muted">Requires unlock + super password + confirmation text <code>APPLY DEMO DATA</code>. Refused when operational data exists.</p>
+  <div class="panel"><h3>First-time seed / master data (export → edit → upload)</h3>
+    <p class="muted">Export editable JSON for rooms, rate plans, inventory, expense categories, and meals. Edit it, then upload to apply as your first seed. Requires unlock + super password + confirmation text <code>APPLY SEED CONFIG</code>. Allowed only when there is no operational data (reservations/payments/POS/expenses).</p>
+    <form method="post" action="/settings/seed/export" style="margin-bottom:10px"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+      <button type="submit">Export seed config JSON (download)</button>
+    </form>
+    <form method="post" action="/settings/seed/import" enctype="multipart/form-data"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+      <label>Seed config file<input type="file" name="seed_file" accept=".json,application/json" required/></label>
+      <input name="confirm" placeholder="APPLY SEED CONFIG"/>
+      <input type="password" name="password" placeholder="Super password"/>
+      <button class="warn" type="submit">Upload & apply seed config</button>
+    </form>
+    <hr style="margin:14px 0;border:none;border-top:1px solid #e2e8f0"/>
+    <h3>Guarded demo data preset</h3>
+    <p class="muted">Synthetic operational demo (reservations/POS/payments/expenses). Requires unlock + super password + confirmation text <code>APPLY DEMO DATA</code>. Refused when operational data exists.</p>
     <form method="post" action="/settings/demo-preset"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
       <label>Preset<select name="preset"><option value="analysis_small">analysis_small</option></select></label>
       <input name="confirm" placeholder="APPLY DEMO DATA"/>
@@ -33,6 +45,27 @@
     </form>
   </div>
 </div>
+
+<div class="panel" style="margin-top:14px"><h3>Rooms (modify later: add / remove)</h3>
+  <p class="muted">Add rooms anytime. Deleting a room is blocked if it is referenced by reservations; change type/price from existing flows or database-safe operations as needed.</p>
+  <form method="post" action="/settings/rooms/add" style="margin-bottom:12px"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+    <div class="grid grid-4">
+      <label>Room number<input name="room_number" required/></label>
+      <label>Type<input name="room_type" value="Standard Room" required/></label>
+      <label>Base price<input name="base_price" type="number" step="0.01" min="0" value="0"/></label>
+      <label>Housekeeping<select name="housekeeping_status"><option>Clean</option><option>Dirty</option><option>Inspected</option><option>Out of Order</option></select></label>
+    </div>
+    <button type="submit">Add room</button>
+  </form>
+  <table><tr><th>ID</th><th>Number</th><th>Type</th><th>Base price</th><th>HK</th><th>Action</th></tr>
+  {% for r in rooms %}
+    <tr><td>{{r.id}}</td><td>{{r.room_number}}</td><td>{{r.room_type}}</td><td>{{"%.2f"|format(r.base_price or 0)}}</td><td>{{r.housekeeping_status}}</td>
+    <td><form method="post" action="/settings/rooms/{{r.id}}/delete" onsubmit="return confirm('Delete room {{r.room_number}}? This fails if referenced by reservations.');"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><button class="danger" type="submit">Delete</button></form></td></tr>
+  {% else %}
+    <tr><td colspan="6" class="muted">No rooms.</td></tr>
+  {% endfor %}</table>
+</div>
+
 <div class="panel"><h3>Settings catalog (unlock + password to save)</h3>
   <p class="muted">Edit values supported by <code>services.save_settings</code>. Sensitive save requires super password.</p>
   <form method="post" action="/settings/save"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>

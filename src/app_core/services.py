@@ -3292,6 +3292,288 @@ def apply_demo_data_preset(name, password, confirm_text, allow_existing=False):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# SEED / MASTER DATA CONFIG (export-edit-upload for first-time setup)
+# ═══════════════════════════════════════════════════════════════════════════
+
+SEED_CONFIG_FORMAT = "pm_seed_config"
+SEED_CONFIG_VERSION = 1
+
+
+def export_seed_config():
+    """Export editable master/seed data (rooms, rate plans, inventory, expense categories, meals) to JSON."""
+    EXPORT_DIR.mkdir(exist_ok=True)
+    conn = connect()
+    rooms = [dict(r) for r in conn.execute(
+        "SELECT room_number, room_type, base_price, housekeeping_status FROM rooms ORDER BY room_number").fetchall()]
+    plans = [dict(r) for r in conn.execute(
+        "SELECT name, price_modifier FROM rate_plans ORDER BY name").fetchall()]
+    inv = [dict(r) for r in conn.execute(
+        """SELECT item_name, category, stock_qty, unit, unit_cost, selling_price,
+                  low_stock_threshold, overstock_threshold, active
+           FROM inventory ORDER BY category, item_name""").fetchall()]
+    cats = [r[0] for r in conn.execute(
+        "SELECT category_name FROM expense_categories ORDER BY category_name").fetchall()]
+    meals = []
+    for m in conn.execute(
+        """SELECT id, name, description, preparation, selling_price, category, active
+           FROM meals ORDER BY name""").fetchall():
+        ings = [dict(r) for r in conn.execute(
+            """SELECT i.item_name AS inventory_item_name, mi.qty_per_sale, mi.note
+               FROM meal_ingredients mi JOIN inventory i ON i.id = mi.inventory_item_id
+               WHERE mi.meal_id = ? ORDER BY i.item_name""", (m["id"],)).fetchall()]
+        meals.append({
+            "name": m["name"], "description": m["description"] or "", "preparation": m["preparation"] or "",
+            "selling_price": float(m["selling_price"] or 0), "category": m["category"] or "Meals",
+            "active": int(m["active"] or 0), "ingredients": ings,
+        })
+    data = {
+        "format": SEED_CONFIG_FORMAT,
+        "version": SEED_CONFIG_VERSION,
+        "exported_at": datetime.now().strftime(DATETIME_FMT),
+        "rooms": rooms,
+        "rate_plans": plans,
+        "inventory": inv,
+        "expense_categories": cats,
+        "meals": meals,
+    }
+    path = EXPORT_DIR / f"seed_config_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    _audit("seed_config_export", "db", "", str(path))
+    return str(path)
+
+
+def import_seed_config(filepath, password, confirm_text):
+    """Apply uploaded seed/master config JSON. Intended for first-time setup/customization.
+
+    Guarded: requires super password + confirmation text 'APPLY SEED CONFIG'.
+    Refused when operational data exists (reservations/payments/POS/expenses), to avoid
+    breaking references. Replaces master data (rooms/rate plans/inventory/categories/meals).
+    """
+    if not verify_password(password):
+        raise PermissionError("Invalid super password.")
+    if str(confirm_text).strip().upper() != "APPLY SEED CONFIG":
+        raise ValueError("Confirmation text must be exactly: APPLY SEED CONFIG")
+    if has_operational_data():
+        raise ValueError("Database has operational data. Seed config import is only allowed before operational data exists (use backups/room management instead).")
+    p = Path(filepath)
+    if not p.exists():
+        raise ValueError(f"File not found: {filepath}")
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except Exception as e:
+        raise ValueError(f"Invalid JSON: {e}")
+    if not isinstance(data, dict):
+        raise ValueError("Seed config must be a JSON object.")
+    rooms = data.get("rooms") or []
+    plans = data.get("rate_plans") or []
+    inv = data.get("inventory") or []
+    cats = data.get("expense_categories") or []
+    meals = data.get("meals") or []
+    if not isinstance(rooms, list) or not isinstance(plans, list) or not isinstance(inv, list) or not isinstance(cats, list) or not isinstance(meals, list):
+        raise ValueError("rooms/rate_plans/inventory/expense_categories/meals must be lists.")
+
+    seen_rooms = set()
+    norm_rooms = []
+    for r in rooms:
+        rn = str((r or {}).get("room_number", "")).strip()
+        if not rn:
+            raise ValueError("Each room requires room_number.")
+        if rn in seen_rooms:
+            raise ValueError(f"Duplicate room_number: {rn}")
+        seen_rooms.add(rn)
+        norm_rooms.append({
+            "room_number": rn,
+            "room_type": str((r or {}).get("room_type", "Standard") or "Standard").strip(),
+            "base_price": float((r or {}).get("base_price", 0) or 0),
+            "housekeeping_status": str((r or {}).get("housekeeping_status", "Clean") or "Clean").strip() or "Clean",
+        })
+
+    seen_plans = set()
+    norm_plans = []
+    for pl in plans:
+        name = str((pl or {}).get("name", "")).strip()
+        if not name:
+            raise ValueError("Each rate plan requires name.")
+        if name in seen_plans:
+            raise ValueError(f"Duplicate rate plan: {name}")
+        seen_plans.add(name)
+        norm_plans.append({"name": name, "price_modifier": float((pl or {}).get("price_modifier", 0) or 0)})
+
+    seen_items = set()
+    norm_inv = []
+    for it in inv:
+        name = str((it or {}).get("item_name", "")).strip()
+        if not name:
+            raise ValueError("Each inventory item requires item_name.")
+        key = name.lower()
+        if key in seen_items:
+            raise ValueError(f"Duplicate inventory item_name: {name}")
+        seen_items.add(key)
+        norm_inv.append({
+            "item_name": name,
+            "category": str((it or {}).get("category", "General") or "General").strip(),
+            "stock_qty": float((it or {}).get("stock_qty", 0) or 0),
+            "unit": str((it or {}).get("unit", "pcs") or "pcs").strip(),
+            "unit_cost": float((it or {}).get("unit_cost", 0) or 0),
+            "selling_price": float((it or {}).get("selling_price", 0) or 0),
+            "low_stock_threshold": (it or {}).get("low_stock_threshold", None),
+            "overstock_threshold": (it or {}).get("overstock_threshold", None),
+            "active": 1 if int((it or {}).get("active", 1) or 0) else 0,
+        })
+
+    norm_cats = []
+    seen_cats = set()
+    for c in cats:
+        name = str(c).strip()
+        if not name:
+            continue
+        if name in seen_cats:
+            continue
+        seen_cats.add(name)
+        norm_cats.append(name)
+
+    norm_meals = []
+    seen_meals = set()
+    for m in meals:
+        name = str((m or {}).get("name", "")).strip()
+        if not name:
+            continue
+        if name.lower() in seen_meals:
+            raise ValueError(f"Duplicate meal name: {name}")
+        seen_meals.add(name.lower())
+        ings = []
+        for ing in ((m or {}).get("ingredients") or []):
+            iname = str((ing or {}).get("inventory_item_name") or (ing or {}).get("item_name") or "").strip()
+            if not iname:
+                continue
+            ings.append({
+                "inventory_item_name": iname,
+                "qty_per_sale": float((ing or {}).get("qty_per_sale", 0) or 0),
+                "note": str((ing or {}).get("note", "") or ""),
+            })
+        norm_meals.append({
+            "name": name,
+            "description": str((m or {}).get("description", "") or ""),
+            "preparation": str((m or {}).get("preparation", "") or ""),
+            "selling_price": float((m or {}).get("selling_price", 0) or 0),
+            "category": str((m or {}).get("category", "Meals") or "Meals"),
+            "active": 1 if int((m or {}).get("active", 1) or 0) else 0,
+            "ingredients": ings,
+        })
+
+    conn = connect()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute("DELETE FROM meal_ingredients")
+        conn.execute("DELETE FROM meals")
+        conn.execute("DELETE FROM recipe_components")
+        conn.execute("DELETE FROM inventory_logs")
+        conn.execute("DELETE FROM inventory")
+        conn.execute("DELETE FROM expense_categories")
+        conn.execute("DELETE FROM rate_plans")
+        conn.execute("DELETE FROM rooms")
+
+        for r in norm_rooms:
+            conn.execute(
+                "INSERT INTO rooms (room_number, room_type, base_price, housekeeping_status) VALUES (?, ?, ?, ?)",
+                (r["room_number"], r["room_type"], r["base_price"], r["housekeeping_status"]))
+        for pl in norm_plans:
+            conn.execute("INSERT INTO rate_plans (name, price_modifier) VALUES (?, ?)", (pl["name"], pl["price_modifier"]))
+        for it in norm_inv:
+            conn.execute(
+                """INSERT INTO inventory (item_name, category, stock_qty, unit, unit_cost, selling_price, low_stock_threshold, overstock_threshold, active)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (it["item_name"], it["category"], it["stock_qty"], it["unit"], it["unit_cost"], it["selling_price"],
+                 it["low_stock_threshold"], it["overstock_threshold"], it["active"]))
+        for c in norm_cats:
+            conn.execute("INSERT OR IGNORE INTO expense_categories (category_name) VALUES (?)", (c,))
+
+        inv_name_to_id = {r["item_name"].strip().lower(): r["id"] for r in conn.execute("SELECT id, item_name FROM inventory").fetchall()}
+        for m in norm_meals:
+            cur = conn.execute(
+                """INSERT INTO meals (name, description, preparation, selling_price, category, active, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, datetime('now','localtime'), datetime('now','localtime'))""",
+                (m["name"], m["description"], m["preparation"], m["selling_price"], m["category"], m["active"]))
+            meal_id = cur.lastrowid
+            for ing in m["ingredients"]:
+                iid = inv_name_to_id.get(ing["inventory_item_name"].strip().lower())
+                if iid is None:
+                    raise ValueError(f"Meal '{m['name']}' ingredient not found in inventory: {ing['inventory_item_name']}")
+                conn.execute(
+                    "INSERT OR REPLACE INTO meal_ingredients (meal_id, inventory_item_id, qty_per_sale, note) VALUES (?, ?, ?, ?)",
+                    (meal_id, iid, float(ing["qty_per_sale"] or 0), ing["note"] or ""))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+    try:
+        conn2 = connect()
+        for row in conn2.execute("SELECT id, name, category, selling_price FROM meals").fetchall():
+            ings = [dict(r) for r in conn2.execute(
+                "SELECT inventory_item_id, qty_per_sale, note FROM meal_ingredients WHERE meal_id=?",
+                (row["id"],)).fetchall()]
+            with transaction() as c2:
+                _sync_meal_to_inventory(c2, row["id"], row["name"], row["category"] or "Meals", float(row["selling_price"] or 0), ings)
+    except Exception:
+        pass
+
+    summary = {"rooms": len(norm_rooms), "rate_plans": len(norm_plans), "inventory": len(norm_inv),
+               "expense_categories": len(norm_cats), "meals": len(norm_meals)}
+    _audit("seed_config_import", "db", "", json.dumps(summary, ensure_ascii=False))
+    return {"ok": True, "summary": summary}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# ROOMS (master data management)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def add_room(room_number, room_type, base_price, housekeeping_status="Clean"):
+    rn = str(room_number or "").strip()
+    rt = str(room_type or "").strip()
+    if not rn:
+        raise ValueError("Room number is required.")
+    if not rt:
+        raise ValueError("Room type is required.")
+    try:
+        price = float(base_price)
+    except Exception:
+        raise ValueError("Base price must be a number.")
+    if price < 0:
+        raise ValueError("Base price cannot be negative.")
+    status = str(housekeeping_status or "Clean").strip() or "Clean"
+    from .db import transaction
+    try:
+        with transaction() as conn:
+            cur = conn.execute(
+                "INSERT INTO rooms (room_number, room_type, base_price, housekeeping_status) VALUES (?, ?, ?, ?)",
+                (rn, rt, price, status))
+            rid = cur.lastrowid
+    except sqlite3.IntegrityError:
+        raise ValueError(f"Room number already exists: {rn}")
+    _audit("room_add", "room", str(rid), rn)
+    return rid
+
+
+def delete_room(room_id):
+    rid = int(room_id)
+    row = connect().execute("SELECT id, room_number FROM rooms WHERE id=?", (rid,)).fetchone()
+    if not row:
+        raise ValueError("Room not found.")
+    ref = connect().execute("SELECT 1 FROM reservations WHERE room_id=? LIMIT 1", (rid,)).fetchone()
+    if ref:
+        raise ValueError("Cannot delete room: it is referenced by reservations.")
+    from .db import transaction
+    try:
+        with transaction() as conn:
+            conn.execute("DELETE FROM rooms WHERE id=?", (rid,))
+    except sqlite3.IntegrityError:
+        raise ValueError("Cannot delete room: it is referenced by other records.")
+    _audit("room_delete", "room", str(rid), row["room_number"])
+    return True
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # UI HELPERS
 # ═══════════════════════════════════════════════════════════════════════════
 
