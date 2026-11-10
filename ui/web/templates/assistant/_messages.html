@@ -1,7 +1,8 @@
 {% if not history %}
-  <div class="muted">No messages yet. Core backend is ready. Try: <code>what did guest #1 order most on their last visit?</code>, <code>P&amp;L for last month</code>, <code>decision support this month</code>, <code>find guest Sara</code>.</div>
+  <div class="muted">No messages yet. Core backend is ready (grounded, read-only). Try: <code>what did guest #1 order most on their last visit?</code>, <code>P&amp;L for last month</code>, <code>decision support this month</code>, <code>find guest Sara</code>.</div>
 {% endif %}
 {% for m in history %}
+  {% set idx = loop.index0 %}
   {% if m.role == 'user' %}
     <div style="margin:10px 0; display:flex; justify-content:flex-end;">
       <div style="max-width:92%; padding:10px 12px; border-radius:12px 12px 4px 12px; background:#1e3a5f; border:1px solid #2b4c77;">
@@ -11,9 +12,53 @@
     </div>
   {% elif m.role == 'assistant' %}
     <div style="margin:10px 0; display:flex; justify-content:flex-start;">
-      <div style="max-width:96%; padding:10px 12px; border-radius:12px 12px 12px 4px; background:#18281d; border:1px solid #254431;">
+      <div style="max-width:98%; padding:10px 12px; border-radius:12px 12px 12px 4px; background:#18281d; border:1px solid #254431;">
         <div style="font-size:12px; color:var(--ok); font-weight:700; margin-bottom:4px;">Assistant {% if m.meta %}<span class="muted" style="font-weight:500">· {{ m.meta }}</span>{% endif %}</div>
         <div style="white-space:pre-wrap">{{ m.content }}</div>
+        <div style="margin-top:8px; padding-top:8px; border-top:1px dashed #2f4b3a; font-size:12px;" class="muted">
+          Was this helpful?
+          <div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; align-items:center;">
+            <form hx-post="/assistant/feedback" hx-target="#assistant-messages" hx-swap="innerHTML" style="display:inline; margin:0;">
+              <input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+              <input type="hidden" name="msg_index" value="{{ idx }}"/>
+              <input type="hidden" name="rating" value="1"/>
+              <button type="submit" style="padding:2px 8px; font-size:12px;">👍 Helpful</button>
+            </form>
+            <form hx-post="/assistant/feedback" hx-target="#assistant-messages" hx-swap="innerHTML" style="display:inline; margin:0;">
+              <input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+              <input type="hidden" name="msg_index" value="{{ idx }}"/>
+              <input type="hidden" name="rating" value="-1"/>
+              <button type="submit" style="padding:2px 8px; font-size:12px;" class="warn">👎 Not helpful</button>
+            </form>
+            {% if m.feedback %}
+              <span class="ok">Feedback saved{% if m.feedback.corrected_intent %} (correct: {{ m.feedback.corrected_intent }}){% endif %}</span>
+            {% endif %}
+          </div>
+          <details style="margin-top:6px;">
+            <summary style="cursor:pointer;">Correct / improve this answer</summary>
+            <form hx-post="/assistant/feedback" hx-target="#assistant-messages" hx-swap="innerHTML" style="margin-top:6px; display:grid; gap:6px;">
+              <input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+              <input type="hidden" name="msg_index" value="{{ idx }}"/>
+              <input type="hidden" name="rating" value="-1"/>
+              <label>Correct intent/situation
+                <select name="corrected_intent">
+                  <option value="">(keep predicted: {{ m.intent or '?' }})</option>
+                  {% for it in intents or [] %}
+                    <option value="{{ it }}">{{ it }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              <label>Note / what was wrong (optional)
+                <input name="user_note" placeholder="e.g. should be guest last visit, guest_id 3"/>
+              </label>
+              <label>Corrected slots JSON (optional, advanced)
+                <input name="corrected_slots_json" placeholder='{"guest_id": 3, "date_start":"2026-01-01", "date_end":"2026-01-31"}'/>
+              </label>
+              <button type="submit" class="warn">Save correction (learn instantly)</button>
+            </form>
+            <div class="muted" style="margin-top:4px;">Corrections are stored locally and used for instant exemplar matching and as training data for SetFit/sklearn retraining.</div>
+          </details>
+        </div>
       </div>
     </div>
   {% endif %}

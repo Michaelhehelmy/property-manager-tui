@@ -8,7 +8,7 @@ from . import paths
 DATA_DIR = paths.DATA_DIR
 BASE_DIR = paths.BASE_DIR
 DB_PATH = paths.DB_PATH
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 _conn = None
 
@@ -253,6 +253,25 @@ CREATE TABLE app_metadata (
     value TEXT NOT NULL,
     hash_signature TEXT NOT NULL DEFAULT ''
 );
+
+CREATE TABLE assistant_feedback (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    message TEXT NOT NULL,
+    predicted_intent TEXT NOT NULL DEFAULT '',
+    corrected_intent TEXT NOT NULL DEFAULT '',
+    confidence REAL,
+    slots_json TEXT NOT NULL DEFAULT '{}',
+    corrected_slots_json TEXT NOT NULL DEFAULT '{}',
+    tools_used_json TEXT NOT NULL DEFAULT '[]',
+    answer_preview TEXT NOT NULL DEFAULT '',
+    rating INTEGER NOT NULL DEFAULT 0,
+    user_note TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'new',
+    source TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX idx_assist_fb_created ON assistant_feedback(created_at);
+CREATE INDEX idx_assist_fb_intent ON assistant_feedback(corrected_intent);
 """
 
 
@@ -302,6 +321,30 @@ def _migrate_to_6(conn):
     """)
 
 
+def _migrate_to_7(conn):
+    conn.executescript("""
+    CREATE TABLE IF NOT EXISTS assistant_feedback (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+        message TEXT NOT NULL,
+        predicted_intent TEXT NOT NULL DEFAULT '',
+        corrected_intent TEXT NOT NULL DEFAULT '',
+        confidence REAL,
+        slots_json TEXT NOT NULL DEFAULT '{}',
+        corrected_slots_json TEXT NOT NULL DEFAULT '{}',
+        tools_used_json TEXT NOT NULL DEFAULT '[]',
+        answer_preview TEXT NOT NULL DEFAULT '',
+        rating INTEGER NOT NULL DEFAULT 0,
+        user_note TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'new',
+        source TEXT NOT NULL DEFAULT ''
+    );
+    CREATE INDEX IF NOT EXISTS idx_assist_fb_created ON assistant_feedback(created_at);
+    CREATE INDEX IF NOT EXISTS idx_assist_fb_intent ON assistant_feedback(corrected_intent);
+    """)
+
+
+
 def migrate():
     conn = connect()
     version = conn.execute("PRAGMA user_version").fetchone()[0]
@@ -315,6 +358,8 @@ def migrate():
             _migrate_to_5(conn)
         if version < 6:
             _migrate_to_6(conn)
+        if version < 7:
+            _migrate_to_7(conn)
         conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
         conn.commit()
         return "upgraded"

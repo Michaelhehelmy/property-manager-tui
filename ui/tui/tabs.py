@@ -16,7 +16,7 @@ from .modals import (
     EditRoomFieldScreen, RatePlanEditScreen, RatePlanDeleteScreen, GuestEditScreen,
     GuestMergeModal, GuestCRMModal, GuestHistoryModal, InvoiceScreen, WalkInReceiptScreen,
     ReportScreen, ChartScreen, ViewFolioScreen, ReviewChangesModal, ImportSettingsModal,
-    AuditLogScreen, LanguageScreen, ApplyDemoDataModal, BrandingWizardScreen,
+    AuditLogScreen, LanguageScreen, ApplyDemoDataModal, BrandingWizardScreen, AssistantCorrectionModal,
 )
 
 PAYMENT_METHODS = ["Cash", "Card", "OTA", "Bank Transfer"]
@@ -1514,6 +1514,10 @@ class AssistantTab(Vertical):
                 for i, (label, _) in enumerate(self.QUICK_PROMPTS):
                     yield Button(label, id=f"assistant_q_{i}", variant="primary")
                 yield Button("Capabilities", id="assistant_caps", variant="primary")
+                yield Static("Evaluate last answer:", classes="help")
+                yield Button("👍 Helpful", id="assistant_fb_up", variant="success")
+                yield Button("👎 Not helpful", id="assistant_fb_down", variant="warning")
+                yield Button("✏ Correct intent", id="assistant_fb_correct", variant="primary")
                 yield Button("Unlock", id="assistant_unlock", variant="warning")
             with Vertical(id="assistant_main"):
                 yield RichLog(id="assistant_log", highlight=False, markup=False, wrap=True)
@@ -1522,6 +1526,7 @@ class AssistantTab(Vertical):
                     yield Button("Send", id="assistant_send", variant="success")
                     yield Button("Clear", id="assistant_clear", variant="error")
         self._history = []
+        self._last_result = None
 
     def on_mount(self):
         self._refresh_gate()
@@ -1577,8 +1582,15 @@ class AssistantTab(Vertical):
                 self.app.push_screen(UnlockSettingsModal(), callback=lambda ok: self._after_unlock(ok))
             elif bid == "assistant_clear":
                 self._history = []
+                self._last_result = None
                 self._log().clear()
                 self._write_system("Chat cleared.")
+            elif bid == "assistant_fb_up":
+                self._record_feedback(rating=1)
+            elif bid == "assistant_fb_down":
+                self._record_feedback(rating=-1)
+            elif bid == "assistant_fb_correct":
+                self._open_correction()
             elif bid == "assistant_caps":
                 self._ask("what can you do?")
             elif bid == "assistant_send":
@@ -1613,6 +1625,49 @@ class AssistantTab(Vertical):
         except Exception:  # pragma: no cover - defensive/widget-state branch
             pass  # pragma: no cover - defensive/widget-state branch
 
+
+
+    def _record_feedback(self, rating=0, corrected_intent="", corrected_slots=None, note=""):
+        res = getattr(self, "_last_result", None)
+        if not res:
+            self.app.notify("No assistant answer to rate yet.", severity="warning")
+            return
+        msg = res.get("user_message") or getattr(self, "_last_user_message", "")
+        if not msg:
+            for m in reversed(self._history):
+                if m.get("role") == "user":
+                    msg = m.get("content", ""); break
+        try:
+            assistant_backend.record_feedback(
+                message=msg,
+                predicted_intent=res.get("intent") or "",
+                corrected_intent=corrected_intent or "",
+                rating=int(rating or 0),
+                confidence=res.get("confidence"),
+                slots=res.get("slots") or {},
+                corrected_slots=corrected_slots or {},
+                tools_used=res.get("tools_used") or [],
+                answer=res.get("answer") or "",
+                user_note=note or "",
+                source=res.get("source") or "",
+            )
+            self.app.notify("Feedback saved (instant exemplar learning + retraining data).")
+        except Exception as exc:
+            self.app.notify(f"Could not save feedback: {exc}", severity="error")
+
+    def _open_correction(self):
+        res = getattr(self, "_last_result", None)
+        if not res:
+            self.app.notify("No assistant answer to correct yet.", severity="warning")
+            return
+        pred = res.get("intent") or ""
+        def _after(data):
+            if not data:
+                return
+            self._record_feedback(rating=-1, corrected_intent=data.get("corrected_intent",""), corrected_slots=data.get("slots") or {}, note=data.get("note",""))
+        self.app.push_screen(AssistantCorrectionModal(pred), callback=_after)
+
+
     def _after_unlock(self, ok):
         if ok == "recovery":
             self.app.push_screen(RecoveryResetModal(), callback=self._after_unlock)
@@ -1626,22 +1681,28 @@ class AssistantTab(Vertical):
             return
         self._log().write("\nYou: " + message)
         self._history.append({"role": "user", "content": message})
+        self._last_user_message = message
         self.app.notify("Core backend working...", severity="information", timeout=2)
         history_snapshot = list(self._history[:-1])
 
         def _work():
             try:
                 result = assistant_backend.chat(message, history=history_snapshot)
-                self.app.call_from_thread(lambda: self._render_result(result))  # pragma: no cover - call_from_thread lambda (worker scheduling)
+                self.app.call_from_thread(lambda: self._render_result(result, message))  # pragma: no cover - call_from_thread lambda (worker scheduling)
             except Exception as exc:
-                self.app.call_from_thread(lambda: self._render_result({"ok": False, "source": "error", "tools_used": [], "answer": f"Assistant error: {exc}"}))
+                self.app.call_from_thread(lambda: self._render_result({"ok": False, "source": "error", "tools_used": [], "answer": f"Assistant error: {exc}"}, message))
 
         self.run_worker(_work, thread=True, exclusive=False)
 
-    def _render_result(self, result):
-        answer = (result or {}).get("answer") or "(no answer)"
-        source = (result or {}).get("source", "?")
-        tools = ",".join((result or {}).get("tools_used") or []) or "-"
-        self._history.append({"role": "assistant", "content": answer})
-        self._log().write(f"Assistant [{source}; tools={tools}]:\n{answer}\n")
+    def _render_result(self, result, user_message=""):
+        result = result or {}
+        answer = result.get("answer") or "(no answer)"
+        source = result.get("source", "?")
+        intent = result.get("intent", "?")
+        conf = result.get("confidence")
+        tools = ",".join(result.get("tools_used") or []) or "-"
+        self._history.append({"role": "assistant", "content": answer, "intent": intent, "confidence": conf, "tools_used": result.get("tools_used") or [], "slots": result.get("slots") or {}, "user_message": user_message or getattr(self, "_last_user_message", "")})
+        self._last_result = result
+        conf_s = f"{conf:.2f}" if isinstance(conf, (int, float)) else "?"
+        self._log().write(f"Assistant [intent={intent} conf={conf_s} source={source}; tools={tools}]:\n{answer}\n")
         self._refresh_gate()
