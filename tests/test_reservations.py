@@ -244,3 +244,22 @@ def test_modify_occupied_room_raises(clean_db):
     rid = make_reservation(ci="2026-12-01", co="2026-12-03", room_id=1)
     with pytest.raises(ValueError):
         services.modify_reservation(rid, 100.0, "2026-12-05", "2026-12-08", 2, "testpass")
+
+def test_cancel_paid_reservation_requires_password(clean_db):
+    rid = make_reservation(deposit=100.0)
+    with pytest.raises(PermissionError, match="paid or partially paid"):
+        services.cancel_reservation(rid)
+    with pytest.raises(PermissionError, match="paid or partially paid"):
+        services.cancel_reservation(rid, "wrong")
+    services.cancel_reservation(rid, "testpass")
+    row = connect().execute("SELECT status FROM reservations WHERE id=?", (rid,)).fetchone()
+    assert row["status"] == "Cancelled"
+
+
+def test_no_show_paid_reservation_requires_password(clean_db):
+    rid = make_reservation(ci="2020-01-01", co="2020-01-02", deposit=50.0)
+    with pytest.raises(PermissionError, match="paid or partially paid"):
+        services.mark_no_show(rid)
+    services.mark_no_show(rid, "testpass")
+    row = connect().execute("SELECT status FROM reservations WHERE id=?", (rid,)).fetchone()
+    assert row["status"] == "No-Show"

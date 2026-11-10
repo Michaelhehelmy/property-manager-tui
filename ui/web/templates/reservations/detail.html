@@ -19,8 +19,9 @@
       </form>
     </details>
     <details><summary>Cancel / No-show / Delete</summary>
-      <form method="post" action="/reservations/{{r['id']}}/cancel" class="inline"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><button class="err">Cancel</button></form>
-      <form method="post" action="/reservations/{{r['id']}}/noshow" class="inline"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><button class="err">No-show</button></form>
+      <p class="muted">Super password is required to cancel or mark no-show for paid/partially paid reservations. Unpaid reservations do not require a password.</p>
+      <form method="post" action="/reservations/{{r['id']}}/cancel" class="inline"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><input type="password" name="password" placeholder="Password (if paid/partial)"/><button class="err">Cancel</button></form>
+      <form method="post" action="/reservations/{{r['id']}}/noshow" class="inline"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><input type="password" name="password" placeholder="Password (if paid/partial)"/><button class="err">No-show</button></form>
       <form method="post" action="/reservations/{{r['id']}}/delete" class="inline"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><button class="err">Delete</button></form>
     </details>
   </div>

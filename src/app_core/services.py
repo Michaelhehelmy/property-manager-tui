@@ -1317,6 +1317,14 @@ def estimate_cancellation_outcome(rid, mode):
     }
 
 
+def _reservation_has_payments(rid, conn=None):
+    from .db import connect as _connect
+    c = conn or _connect()
+    return bool(c.execute(
+        "SELECT 1 FROM payments WHERE reservation_id=? AND voided_at IS NULL LIMIT 1", (rid,)
+    ).fetchone())
+
+
 def cancel_reservation(rid, password=None):
     from .db import connect, transaction
     row = connect().execute("SELECT status FROM reservations WHERE id=?", (rid,)).fetchone()
@@ -1324,6 +1332,8 @@ def cancel_reservation(rid, password=None):
         raise ValueError("Reservation not found.")
     if "Cancelled" not in STATUS_TRANSITIONS.get(row["status"], []):
         raise ValueError(f"Cannot cancel a '{row['status']}' reservation.")
+    if _reservation_has_payments(rid) and not verify_password(password or ""):
+        raise PermissionError("Super password required to cancel a paid or partially paid reservation.")
     policy = get_setting("cancel_policy", "full_refund")
     with transaction() as conn:
         cur = conn.cursor()
@@ -1349,6 +1359,8 @@ def mark_no_show(rid, password=None):
         raise ValueError("Reservation not found.")
     if "No-Show" not in STATUS_TRANSITIONS.get(row["status"], []):
         raise ValueError(f"Cannot mark '{row['status']}' as no-show.")  # pragma: no cover
+    if _reservation_has_payments(rid) and not verify_password(password or ""):
+        raise PermissionError("Super password required to mark a paid or partially paid reservation as no-show.")
     policy = get_setting("noshow_policy", "keep_first_night")
     with transaction() as conn:
         cur = conn.cursor()
