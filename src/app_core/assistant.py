@@ -30,7 +30,7 @@ INTENT_LABELS = [
     "capabilities_help", "report_pl", "report_cash_flow", "report_vat", "report_payment_methods",
     "report_occupancy", "report_daily_ops", "decision_support", "guest_search", "guest_profile",
     "guest_last_visit", "guest_top_items_last_visit", "reservation_summary", "reservation_balance",
-    "rate_plans", "occupancy_summary", "ledger_integrity", "ambiguous_needs_clarification",
+    "rate_plans", "occupancy_summary", "ledger_integrity", "property_stats", "ambiguous_needs_clarification",
     "unsupported_or_unsafe", "compound_multi_intent",
 ]
 
@@ -358,6 +358,26 @@ def tool_verify_ledger_integrity(args=None):
         return {"ok": False, "error": str(e)}
 
 
+def tool_get_property_stats(args=None):
+    """Read-only quick counts/stats: guests, reservations by status, rooms, in-house etc."""
+    try:
+        from .db import connect
+        c = connect()
+        stats = {}
+        stats["guests_total"] = c.execute("SELECT COUNT(*) AS n FROM guests").fetchone()["n"]
+        stats["rooms_total"] = c.execute("SELECT COUNT(*) AS n FROM rooms").fetchone()["n"]
+        rows = c.execute("SELECT status, COUNT(*) AS n FROM reservations GROUP BY status").fetchall()
+        stats["reservations_by_status"] = {r["status"]: r["n"] for r in rows}
+        stats["reservations_total"] = sum(stats["reservations_by_status"].values())
+        stats["in_house"] = stats["reservations_by_status"].get("Checked In", 0)
+        today = datetime.now().strftime(DATE_FMT)
+        stats["arrivals_today"] = c.execute("SELECT COUNT(*) AS n FROM reservations WHERE check_in_date=? AND status IN ('Reserved','Checked In')", (today,)).fetchone()["n"]
+        stats["departures_today"] = c.execute("SELECT COUNT(*) AS n FROM reservations WHERE check_out_date=? AND status IN ('Reserved','Checked In')", (today,)).fetchone()["n"]
+        return {"stats": stats, "as_of": today}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 TOOLS = {
     "list_capabilities": {"fn": tool_list_capabilities, "description": "List what the assistant can answer using real backend data.", "parameters": {"type": "object", "properties": {}, "additionalProperties": False}},
     "search_guests": {"fn": tool_search_guests, "description": "Search guests by name/phone/email fragment.", "parameters": {"type": "object", "properties": {"query": {"type": "string"}, "limit": {"type": "integer"}}, "required": ["query"], "additionalProperties": False}},
@@ -371,6 +391,7 @@ TOOLS = {
     "list_rate_plans": {"fn": tool_list_rate_plans, "description": "List rate plans and reservation usage counts.", "parameters": {"type": "object", "properties": {}, "additionalProperties": False}},
     "get_occupancy_summary": {"fn": tool_get_occupancy_summary, "description": "Occupancy summary for a date range.", "parameters": {"type": "object", "properties": {"start": {"type": "string"}, "end": {"type": "string"}, "range": {"type": "string"}}, "additionalProperties": False}},
     "verify_ledger_integrity": {"fn": tool_verify_ledger_integrity, "description": "Read-only ledger/data integrity health check (orphans, basic sanity).", "parameters": {"type": "object", "properties": {}, "additionalProperties": False}},
+    "get_property_stats": {"fn": tool_get_property_stats, "description": "Read-only property stats/counts (guests total, rooms, reservations by status, in-house, arrivals/departures today).", "parameters": {"type": "object", "properties": {}, "additionalProperties": False}},
 }
 
 
@@ -652,6 +673,10 @@ def rule_classify(text: str, slots: dict | None = None) -> dict:
     if _has_any(tl, ["what can you do", "how can you help", "capabilities", "your abilities", "what are you wired into", "menu of queries", "what tools", "how do i phrase", "boundaries start and end", "assist day to day"]):
         return {"intent": "capabilities_help", "confidence": 0.98, "slots": slots, "router": "rules"}
 
+    # property stats / counts
+    if _has_any(tl, ["how many guests", "number of guests", "total guests", "guest count", "guests do i have", "guests do we have", "how many customers", "how many reservations", "number of reservations", "total reservations", "reservation count", "how many rooms", "number of rooms", "total rooms", "how many bookings", "arrivals today", "departures today", "in house", "in-house count", "how many checked in", "property stats", "overall stats", "quick stats"]):
+        return {"intent": "property_stats", "confidence": 0.92, "slots": slots, "router": "rules"}
+
     # compound cues
     multi = sum(1 for m in ["p&l", "pnl", "profit and loss", "cash flow", "cashflow", "vat", "occupancy", "daily ops", "decision support", "rate plan", "health check", "integrity", "ledger"] if m in tl)
     guest_chain = (gid or gq or "guest #" in tl or "guest " in tl) and sum(1 for m in ["profile", "last visit", "last stay", "most recent", "ordered most", "top-ordered", "most ordered"] if m in tl) >= 2
@@ -874,6 +899,22 @@ def _execute_single(intent: str, text: str, slots: dict):
         data = execute_tool("verify_ledger_integrity", {}); tools_used.append("verify_ledger_integrity")
         status = "OK" if (data or {}).get("ok") else "ISSUES FOUND"
         return {"ok": True, "intent": intent, "tools_used": tools_used, "data": data, "answer": _format_data(f"Ledger/data integrity health check: {status}", data)}
+
+    if intent == "property_stats":
+        data = execute_tool("get_property_stats", {}); tools_used.append("get_property_stats")
+        stats = (data or {}).get("stats") or {}
+        lines = ["Property stats (real backend data):"]
+        if stats:
+            if "guests_total" in stats: lines.append(f"- Guests (total): {stats['guests_total']}")
+            if "rooms_total" in stats: lines.append(f"- Rooms (total): {stats['rooms_total']}")
+            if "reservations_total" in stats: lines.append(f"- Reservations (total): {stats['reservations_total']}")
+            if "reservations_by_status" in stats: lines.append(f"- Reservations by status: {json.dumps(stats['reservations_by_status'], ensure_ascii=False)}")
+            if "in_house" in stats: lines.append(f"- In-house (Checked In): {stats['in_house']}")
+            if "arrivals_today" in stats: lines.append(f"- Arrivals today: {stats['arrivals_today']}")
+            if "departures_today" in stats: lines.append(f"- Departures today: {stats['departures_today']}")
+        else:
+            lines.append(_format_data("Stats", data))
+        return {"ok": True, "intent": intent, "tools_used": tools_used, "data": data, "answer": "\n".join(lines)}
 
     # fallback
     data = execute_tool("list_capabilities", {}); tools_used.append("list_capabilities")
@@ -1119,7 +1160,6 @@ def chat(message: str, history: list[dict] | None = None) -> dict:
     if intent == "compound_multi_intent":
         core = _execute_compound(message, slots)
     elif confidence < 0.45 and not strong and intent not in ("capabilities_help", "unsupported_or_unsafe"):
-        # try ML/LLM assisted if available, else clarify
         if config.get("enabled") and provider in ("auto", "openai_compatible") and mode != "core":
             res = llm_route(message, history=history, config=config)
             if res:
@@ -1130,7 +1170,14 @@ def chat(message: str, history: list[dict] | None = None) -> dict:
         core = _execute_single("ambiguous_needs_clarification", message, slots)
         core["intent"] = intent
     else:
-        core = _execute_single(intent, message, slots)
+        # if rules fell back to capabilities with very low confidence, don't spam capabilities as if matched
+        if intent == "capabilities_help" and confidence < 0.5 and cls.get("low_confidence"):
+            core = {"ok": True, "intent": "ambiguous_needs_clarification", "needs_clarification": True, "tools_used": [], "data": {"router_confidence": confidence},
+                    "answer": "I’m not confident I understood that request from the available data/tools. "
+                              "I can help with: reports (P&L, cash flow, VAT, payment methods, occupancy, daily ops), decision support, property stats/counts, guest search/profile/last visit/most-ordered last visit, reservation summary/balance, rate plans, occupancy summary, and ledger integrity. "
+                              "Please rephrase with specifics (guest/reservation ID, report type, or date range)."}
+        else:
+            core = _execute_single(intent, message, slots)
 
     core.setdefault("source", "core_deterministic")
     core["intent"] = core.get("intent") or intent
