@@ -10,7 +10,7 @@ from app_core.services import t, fmt, selected_id, SETTINGS_CATALOG
 from app_core import assistant as assistant_backend
 from .modals import (
     ErrorModal, ConfirmModal, ProtectedModal, UnlockSettingsModal, RecoveryResetModal, SetSuperPasswordScreen,
-    RecoveryCodesScreen, ChangePasswordModal, ResetDefaultsModal, DeleteReservationScreen, ModifyReservationScreen,
+    RecoveryCodesScreen, ChangePasswordModal, ResetDefaultsModal, ImportSeedConfigModal, AddRoomModal, DeleteReservationScreen, ModifyReservationScreen,
     VoidItemScreen, CancelConfirmScreen, RefundScreen, OverrideCheckoutModal,
     InventoryEditScreen, InventoryDeleteScreen, QtyInputScreen, VoidExpenseScreen,
     EditRoomFieldScreen, RatePlanEditScreen, RatePlanDeleteScreen, GuestEditScreen,
@@ -1262,6 +1262,15 @@ class SettingsTab(VerticalScroll):
         await coll_sec.mount(Button("🔒 " + t("Change Password"), id="unlocked_btn_change_pw", variant="warning"))
         await coll_sec.mount(Button("Audit Log", id="unlocked_btn_audit", variant="primary"))
 
+        coll_rooms = Collapsible(title="Rooms (Add / Remove)", collapsed=True)
+        await body.mount(coll_rooms)
+        await coll_rooms.mount(Static("Add rooms for new inventory/units. Delete is blocked if referenced by reservations.", classes="help"))
+        await coll_rooms.mount(DataTable(id="unlocked_rooms_table"))
+        rooms_row = Horizontal(classes="button_row")
+        await coll_rooms.mount(rooms_row)
+        await rooms_row.mount(Button("➕ Add Room", id="unlocked_btn_room_add", variant="primary"))
+        await rooms_row.mount(Button("Delete Room", id="unlocked_btn_room_del", variant="error"))
+
         coll_m = Collapsible(title=t("Maintenance"), collapsed=True)
         await body.mount(coll_m)
         await coll_m.mount(Static(f"DB: {services.db.DB_PATH}", classes="help"))
@@ -1277,10 +1286,13 @@ class SettingsTab(VerticalScroll):
         await m_row.mount(Button(t("Backup Now"), id="unlocked_btn_backup", variant="success"))
         await m_row.mount(Button("Branding / Animation", id="unlocked_btn_branding", variant="primary"))
         await m_row.mount(Button("Reset to Defaults", id="unlocked_btn_reset_defaults", variant="error"))
+        await m_row.mount(Button("Export Seed Config", id="unlocked_btn_seed_export", variant="primary"))
+        await m_row.mount(Button("Import Seed Config", id="unlocked_btn_seed_import", variant="warning"))
         await m_row.mount(Button("Health Check", id="unlocked_btn_health", variant="primary"))
         await m_row.mount(Button("Load Demo Data (Guarded)", id="unlocked_btn_demo_data", variant="warning"))
 
         self._reload_rp()
+        self._reload_rooms()
 
     def _reload_rp(self):
         try:
@@ -1289,6 +1301,18 @@ class SettingsTab(VerticalScroll):
             table.add_columns("ID", "Name", "Modifier")
             for r in services.get_all_rate_plans():
                 table.add_row(str(r["id"]), r["name"], f"{r['price_modifier']:+.2f} EGP")
+        except Exception:  # pragma: no cover - defensive/widget-state branch
+            pass  # pragma: no cover - defensive/widget-state branch
+
+
+    def _reload_rooms(self):
+        try:
+            table = self.query_one("#unlocked_rooms_table", DataTable)
+            table.clear(columns=True)
+            table.add_columns("ID", "Number", "Type", "Base", "HK")
+            for r in services.get_all_rooms():
+                table.add_row(str(r["id"]), r["room_number"], r["room_type"],
+                              f"{float(r['base_price'] or 0):.2f}", r["housekeeping_status"])
         except Exception:  # pragma: no cover - defensive/widget-state branch
             pass  # pragma: no cover - defensive/widget-state branch
 
@@ -1331,6 +1355,24 @@ class SettingsTab(VerticalScroll):
             elif bid == "unlocked_btn_backup":
                 path = services.backup_now()
                 self.app.notify(f"Backup: {path}")
+            elif bid == "unlocked_btn_seed_export":
+                try:
+                    p = services.export_seed_config()
+                    self.app.notify(f"Seed config exported: {p} (edit JSON, then use Import Seed Config for first-time seed)", timeout=8)
+                except Exception as exc:
+                    self.app.notify(str(exc), severity="error")
+            elif bid == "unlocked_btn_seed_import":
+                def _after_import(ok):
+                    if ok:
+                        try:
+                            self._reload_rp()
+                            self._reload_rooms()
+                        except Exception:
+                            pass
+                        self.app.refresh_all_tables()
+                        self.app.call_later(self._async_unlock)
+                        self.app.notify("Seed config applied.")
+                self.app.push_screen(ImportSeedConfigModal(), callback=_after_import)
             elif bid == "unlocked_btn_branding":
                 def _after(ok):
                     if ok:
@@ -1372,6 +1414,28 @@ class SettingsTab(VerticalScroll):
                     row = self.query_one("#unlocked_rp_table", DataTable).get_row_at(
                         self.query_one("#unlocked_rp_table", DataTable).cursor_row)
                     push_modal(self.app, RatePlanDeleteScreen(pid, row[1]), on_success=self._reload_rp)
+            elif bid == "unlocked_btn_room_add":
+                def _after_room(ok):
+                    if ok:
+                        self._reload_rooms()
+                        self.app.refresh_all_tables()
+                self.app.push_screen(AddRoomModal(), callback=_after_room)
+            elif bid == "unlocked_btn_room_del":
+                table = self.query_one("#unlocked_rooms_table", DataTable)
+                rid = selected_id(table)
+                if rid:
+                    row = table.get_row_at(table.cursor_row)
+                    room_no = row[1] if row else str(rid)
+                    def _do_delete(ok):
+                        if ok:
+                            try:
+                                services.delete_room(rid)
+                                self.app.notify("Room deleted.")
+                                self._reload_rooms()
+                                self.app.refresh_all_tables()
+                            except Exception as exc:
+                                self.app.notify(str(exc), severity="error")
+                    self.app.push_screen(ConfirmModal(f"Delete room {room_no} (#{rid})? Blocked if referenced by reservations."), callback=_do_delete)
             elif bid == "unlocked_btn_pr_detect":
                 detected = services.list_printers()
                 table = self.query_one("#unlocked_printer_table", DataTable)
@@ -1536,6 +1600,18 @@ class AssistantTab(Vertical):
             if msg:
                 e.input.value = ""
                 self._ask(msg)
+
+
+    def _reload_rooms(self):
+        try:
+            table = self.query_one("#unlocked_rooms_table", DataTable)
+            table.clear(columns=True)
+            table.add_columns("ID", "Number", "Type", "Base", "HK")
+            for r in services.get_all_rooms():
+                table.add_row(str(r["id"]), r["room_number"], r["room_type"],
+                              f"{float(r['base_price'] or 0):.2f}", r["housekeeping_status"])
+        except Exception:  # pragma: no cover - defensive/widget-state branch
+            pass  # pragma: no cover - defensive/widget-state branch
 
     def _after_unlock(self, ok):
         if ok == "recovery":

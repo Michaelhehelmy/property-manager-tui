@@ -1335,3 +1335,81 @@ class LanguageScreen(ModalScreen):
             pass
     def action_close(self):
         self.dismiss()
+
+
+class ImportSeedConfigModal(ModalScreen):
+    """Upload/apply editable seed/master config JSON (first-time setup)."""
+    BINDINGS = [("escape", "cancel", "Cancel")]
+
+    def compose(self):
+        with VerticalScroll(id="protected_modal"):
+            yield Static("📥 Import Seed Config (first-time setup)", classes="title")
+            yield Static(
+                "Applies rooms/rate plans/inventory/categories/meals from JSON. "
+                "Allowed only when there is no operational data. Type APPLY SEED CONFIG to confirm.",
+                classes="warn",
+            )
+            yield Input(placeholder="Full path to seed config JSON file", id="path")
+            yield Input(placeholder="Type: APPLY SEED CONFIG", id="confirm")
+            yield Input(placeholder=t("Super Password"), id="pw", password=True)
+            with Horizontal(classes="modal_buttons"):
+                yield Button("Import & Apply", id="btn_do", variant="warning")
+                yield Button(t("Cancel"), id="btn_cancel", variant="error")
+
+    def on_button_pressed(self, e):
+        if e.button.id == "btn_do":
+            try:
+                res = services.import_seed_config(
+                    self.query_one("#path", Input).value.strip(),
+                    self.query_one("#pw", Input).value,
+                    self.query_one("#confirm", Input).value,
+                )
+                summary = res.get("summary", {}) if isinstance(res, dict) else res
+                self.notify(f"Seed config applied: {summary}")
+                self.dismiss(True)
+            except Exception as exc:
+                self.notify(str(exc), severity="error")
+        elif e.button.id == "btn_cancel":
+            self.dismiss(False)
+
+    def action_cancel(self):
+        self.dismiss(False)
+
+
+class AddRoomModal(ModalScreen):
+    BINDINGS = [("escape", "cancel", "Cancel")]
+
+    def compose(self):
+        with VerticalScroll(id="protected_modal"):
+            yield Static("➕ " + t("Add Room"), classes="title")
+            yield Input(placeholder="Room number (e.g. 101)", id="room_number")
+            yield Input(placeholder="Room type (e.g. Standard Room)", id="room_type", value="Standard Room")
+            yield Input(placeholder="Base price", id="base_price", value="0")
+            yield Select([("Clean", "Clean"), ("Dirty", "Dirty"), ("Inspected", "Inspected"), ("Out of Order", "Out of Order")],
+                         id="hk", prompt="Housekeeping", value="Clean")
+            with Horizontal(classes="modal_buttons"):
+                yield Button(t("Save"), id="btn_save", variant="success")
+                yield Button(t("Cancel"), id="btn_cancel", variant="error")
+
+    def on_button_pressed(self, e):
+        if e.button.id == "btn_save":
+            try:
+                hk = self.query_one("#hk", Select).value
+                if not isinstance(hk, str):
+                    hk = "Clean"
+                rid = services.add_room(
+                    self.query_one("#room_number", Input).value,
+                    self.query_one("#room_type", Input).value,
+                    self.query_one("#base_price", Input).value or 0,
+                    hk,
+                )
+                self.notify(f"Room added (#{rid}).")
+                self.dismiss(True)
+            except Exception as exc:
+                self.notify(str(exc), severity="error")
+        elif e.button.id == "btn_cancel":
+            self.dismiss(False)
+
+    def action_cancel(self):
+        self.dismiss(False)
+
