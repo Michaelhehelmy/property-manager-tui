@@ -139,25 +139,86 @@ _SEED = {
     "rooms": [
         {"room_number": "101", "room_type": "Standard Room", "base_price": 50.0, "housekeeping_status": "Clean"},
         {"room_number": "102", "room_type": "Standard Room", "base_price": 50.0, "housekeeping_status": "Clean"},
-        {"room_number": "201", "room_type": "Sea View Suite", "base_price": 120.0, "housekeeping_status": "Clean"},
-        {"room_number": "301", "room_type": "Bungalow", "base_price": 90.0, "housekeeping_status": "Dirty"},
+        {"room_number": "103", "room_type": "Standard Room", "base_price": 55.0, "housekeeping_status": "Clean"},
+        {"room_number": "104", "room_type": "Twin Room", "base_price": 60.0, "housekeeping_status": "Clean"},
+        {"room_number": "201", "room_type": "Deluxe Room", "base_price": 85.0, "housekeeping_status": "Clean"},
+        {"room_number": "202", "room_type": "Deluxe Room", "base_price": 85.0, "housekeeping_status": "Dirty"},
+        {"room_number": "203", "room_type": "Sea View Suite", "base_price": 120.0, "housekeeping_status": "Clean"},
+        {"room_number": "301", "room_type": "Family Suite", "base_price": 140.0, "housekeeping_status": "Clean"},
+        {"room_number": "302", "room_type": "Bungalow", "base_price": 90.0, "housekeeping_status": "Clean"},
+        {"room_number": "401", "room_type": "Executive Suite", "base_price": 180.0, "housekeeping_status": "Inspected"},
     ],
     "rate_plans": [
         {"name": "Room Only", "price_modifier": 0.0},
         {"name": "Bed & Breakfast", "price_modifier": 20.0},
         {"name": "Half Board", "price_modifier": 45.0},
+        {"name": "Full Board", "price_modifier": 70.0},
+        {"name": "All Inclusive", "price_modifier": 110.0},
     ],
     "inventory": [
-        {"item_name": "Bottled Water (0.5L)", "category": "F&B", "stock_qty": 100.0, "unit": "pcs", "unit_cost": 3.0, "selling_price": 20.0},
-        {"item_name": "Espresso Coffee Beans", "category": "F&B", "stock_qty": 5.0, "unit": "kg", "unit_cost": 200.0, "selling_price": 300.0},
-        {"item_name": "Bed Sheet Set", "category": "Housekeeping", "stock_qty": 20.0, "unit": "sets", "unit_cost": 80.0, "selling_price": 150.0},
-        {"item_name": "Propane Gas Cylinder", "category": "Maintenance", "stock_qty": 3.0, "unit": "pcs", "unit_cost": 150.0, "selling_price": 250.0},
+        # F&B (some perishable/batch-tracked examples)
+        {"item_name": "Bottled Water (0.5L)", "category": "F&B", "stock_qty": 200.0, "unit": "pcs", "unit_cost": 3.0, "selling_price": 20.0, "sku": "FB-WATER-05", "barcode": "8901001", "track_batches": 1, "shelf_life_days": 365},
+        {"item_name": "Sparkling Water (0.75L)", "category": "F&B", "stock_qty": 80.0, "unit": "pcs", "unit_cost": 6.0, "selling_price": 35.0, "sku": "FB-WATER-SP", "barcode": "8901002", "track_batches": 1, "shelf_life_days": 365},
+        {"item_name": "Fresh Orange Juice", "category": "F&B", "stock_qty": 30.0, "unit": "bottle", "unit_cost": 12.0, "selling_price": 45.0, "sku": "FB-JUICE-OJ", "barcode": "8901003", "track_batches": 1, "shelf_life_days": 7},
+        {"item_name": "Milk (1L)", "category": "F&B", "stock_qty": 24.0, "unit": "L", "unit_cost": 18.0, "selling_price": 35.0, "sku": "FB-MILK-1L", "barcode": "8901004", "track_batches": 1, "shelf_life_days": 10},
+        {"item_name": "Espresso Coffee Beans", "category": "F&B", "stock_qty": 8.0, "unit": "kg", "unit_cost": 200.0, "selling_price": 300.0, "sku": "FB-COFFEE-BEAN", "barcode": "8901005", "track_batches": 1, "shelf_life_days": 180},
+        {"item_name": "Tea Bags (Box)", "category": "F&B", "stock_qty": 40.0, "unit": "box", "unit_cost": 25.0, "selling_price": 60.0, "sku": "FB-TEA-BOX", "barcode": "8901006"},
+        {"item_name": "Croissant", "category": "F&B", "stock_qty": 36.0, "unit": "pcs", "unit_cost": 8.0, "selling_price": 25.0, "sku": "FB-CROISSANT", "barcode": "8901007", "track_batches": 1, "shelf_life_days": 2},
+        {"item_name": "Chocolate Bar", "category": "F&B", "stock_qty": 60.0, "unit": "pcs", "unit_cost": 10.0, "selling_price": 30.0, "sku": "FB-CHOCO", "barcode": "8901008", "track_batches": 1, "shelf_life_days": 180},
+        # Housekeeping
+        {"item_name": "Bed Sheet Set", "category": "Housekeeping", "stock_qty": 40.0, "unit": "sets", "unit_cost": 80.0, "selling_price": 150.0, "sku": "HK-SHEET", "barcode": "8902001"},
+        {"item_name": "Bath Towel", "category": "Housekeeping", "stock_qty": 60.0, "unit": "pcs", "unit_cost": 35.0, "selling_price": 70.0, "sku": "HK-TOWEL", "barcode": "8902002"},
+        {"item_name": "Shampoo (Mini)", "category": "Housekeeping", "stock_qty": 120.0, "unit": "pcs", "unit_cost": 4.0, "selling_price": 15.0, "sku": "HK-SHAMPOO", "barcode": "8902003", "track_batches": 1, "shelf_life_days": 365},
+        {"item_name": "Soap Bar", "category": "Housekeeping", "stock_qty": 150.0, "unit": "pcs", "unit_cost": 3.0, "selling_price": 10.0, "sku": "HK-SOAP", "barcode": "8902004"},
+        # Maintenance
+        {"item_name": "Light Bulb (LED)", "category": "Maintenance", "stock_qty": 30.0, "unit": "pcs", "unit_cost": 20.0, "selling_price": 45.0, "sku": "MT-BULB", "barcode": "8903001"},
+        {"item_name": "Batteries (AA Pack)", "category": "Maintenance", "stock_qty": 25.0, "unit": "pack", "unit_cost": 30.0, "selling_price": 60.0, "sku": "MT-BATT-AA", "barcode": "8903002"},
+        {"item_name": "Propane Gas Cylinder", "category": "Maintenance", "stock_qty": 6.0, "unit": "pcs", "unit_cost": 150.0, "selling_price": 250.0, "sku": "MT-PROPANE", "barcode": "8903003"},
+        # Retail / Spa
+        {"item_name": "Sunscreen Lotion", "category": "Retail", "stock_qty": 20.0, "unit": "pcs", "unit_cost": 60.0, "selling_price": 120.0, "sku": "RT-SUN", "barcode": "8904001", "track_batches": 1, "shelf_life_days": 365},
+        {"item_name": "Beach Towel (Retail)", "category": "Retail", "stock_qty": 15.0, "unit": "pcs", "unit_cost": 70.0, "selling_price": 150.0, "sku": "RT-BEACH-TOWEL", "barcode": "8904002"},
+        {"item_name": "Massage Oil", "category": "Spa", "stock_qty": 10.0, "unit": "bottle", "unit_cost": 40.0, "selling_price": 90.0, "sku": "SP-OIL", "barcode": "8905001", "track_batches": 1, "shelf_life_days": 365},
     ],
     "expense_categories": [
         "Utilities (Water/Electricity)",
         "Maintenance & Repairs",
         "Supplies & Consumables",
         "Staff & Operational",
+        "Food & Beverage Supplies",
+        "Housekeeping Supplies",
+        "Marketing & Commissions",
+        "Transport & Fuel",
+        "Licenses & Fees",
+        "Miscellaneous",
+    ],
+    "activities": [
+        {"name": "Desert Safari", "description": "Guided desert excursion with sunset views", "category": "Trip", "unit_price": 150.0, "active": 1},
+        {"name": "Snorkeling Trip", "description": "Half-day snorkeling experience with equipment", "category": "Trip", "unit_price": 120.0, "active": 1},
+        {"name": "City Tour", "description": "Guided local city and culture tour", "category": "Trip", "unit_price": 90.0, "active": 1},
+        {"name": "Airport Transfer", "description": "One-way airport pickup or drop-off", "category": "Service", "unit_price": 45.0, "active": 1},
+        {"name": "Spa Massage (60 min)", "description": "Relaxing full-body massage session", "category": "Activity", "unit_price": 80.0, "active": 1},
+        {"name": "Laundry Service", "description": "Per-bag guest laundry service", "category": "Service", "unit_price": 25.0, "active": 1},
+    ],
+    "meals": [
+        {
+            "name": "Continental Breakfast", "description": "Croissant, juice, and coffee/tea",
+            "preparation": "Serve fresh croissant with orange juice and hot beverage.",
+            "selling_price": 60.0, "category": "Meals", "active": 1,
+            "ingredients": [
+                {"inventory_item_name": "Croissant", "qty_per_sale": 1, "note": "per serving"},
+                {"inventory_item_name": "Fresh Orange Juice", "qty_per_sale": 0.25, "note": "bottle portion"},
+                {"inventory_item_name": "Tea Bags (Box)", "qty_per_sale": 0.02, "note": "approx per cup"},
+            ],
+        },
+        {
+            "name": "Coffee & Water Combo", "description": "Bottled water and espresso serving",
+            "preparation": "Brew espresso from beans and serve with bottled water.",
+            "selling_price": 35.0, "category": "Meals", "active": 1,
+            "ingredients": [
+                {"inventory_item_name": "Bottled Water (0.5L)", "qty_per_sale": 1, "note": ""},
+                {"inventory_item_name": "Espresso Coffee Beans", "qty_per_sale": 0.02, "note": "kg per shot"},
+            ],
+        },
     ],
 }
 
@@ -313,23 +374,107 @@ def apply_branding_settings(display_name, tagline="", animation="reveal", sync_p
 
 def _seed_defaults():
     from .db import transaction
+    now_s = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with transaction() as conn:
         for key, spec in SETTINGS_CATALOG.items():
             conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (key, spec[2]))
-        for r in _SEED["rooms"]:
+        for r in _SEED.get("rooms", []):
             conn.execute(
                 "INSERT INTO rooms (room_number, room_type, base_price, housekeeping_status) VALUES (?, ?, ?, ?)",
-                (r["room_number"], r["room_type"], r["base_price"], r["housekeeping_status"]))
-        for p in _SEED["rate_plans"]:
+                (r["room_number"], r["room_type"], r["base_price"], r.get("housekeeping_status", "Clean")))
+        for p in _SEED.get("rate_plans", []):
             conn.execute("INSERT INTO rate_plans (name, price_modifier) VALUES (?, ?)",
                          (p["name"], p["price_modifier"]))
-        for i in _SEED["inventory"]:
+        for i in _SEED.get("inventory", []):
             conn.execute("""INSERT INTO inventory
-                (item_name, category, stock_qty, unit, unit_cost, selling_price)
-                VALUES (?, ?, ?, ?, ?, ?)""",
-                (i["item_name"], i["category"], i["stock_qty"], i["unit"], i["unit_cost"], i["selling_price"]))
-        for c in _SEED["expense_categories"]:
-            conn.execute("INSERT INTO expense_categories (category_name) VALUES (?)", (c,))
+                (item_name, category, stock_qty, unit, unit_cost, selling_price,
+                 low_stock_threshold, overstock_threshold, active, sku, barcode, barcode_type, track_batches, shelf_life_days, default_supplier)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (i["item_name"], i["category"], i.get("stock_qty", 0), i["unit"], i.get("unit_cost", 0), i.get("selling_price", 0),
+                 i.get("low_stock_threshold"), i.get("overstock_threshold"), int(i.get("active", 1)),
+                 (i.get("sku") or None), (i.get("barcode") or None), i.get("barcode_type", "code128"),
+                 int(i.get("track_batches", 0) or 0), i.get("shelf_life_days"), i.get("default_supplier", "")))
+            item_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+            qty = float(i.get("stock_qty") or 0)
+            if abs(qty) > 1e-9:
+                lot = f"SEED-{item_id}"
+                exp = None
+                try:
+                    sld = int(i.get("shelf_life_days")) if i.get("shelf_life_days") not in (None, "") else None
+                except Exception:
+                    sld = None
+                if sld and sld > 0:
+                    exp = (datetime.now() + timedelta(days=sld)).strftime(DATE_FMT)
+                conn.execute("""INSERT INTO inventory_batches
+                    (item_id, lot_code, barcode_value, barcode_type, quantity_received, quantity_remaining,
+                     unit_cost, received_at, expiry_date, supplier, reference, notes, status, payload_json)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (item_id, lot, lot, i.get("barcode_type", "code128"), qty, qty, float(i.get("unit_cost") or 0),
+                     now_s, exp, i.get("default_supplier", ""), "seed", "Initial seed stock", "active", "{}"))
+                bid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+                try:
+                    payload = json.dumps({"v": 1, "t": "lot", "item": item_id, "name": i["item_name"], "lot": lot, "recv": now_s, "exp": exp or "", "qty": qty, "rem": qty, "cost": float(i.get("unit_cost") or 0)}, separators=(",", ":"), ensure_ascii=False)
+                    conn.execute("UPDATE inventory_batches SET payload_json=? WHERE id=?", (payload, bid))
+                except Exception:
+                    pass
+                conn.execute("""INSERT INTO inventory_logs (item_id, change_type, quantity, reference, batch_id, unit_cost, balance_after)
+                               VALUES (?, 'OPENING', ?, 'seed opening batch', ?, ?, ?)""",
+                            (item_id, qty, bid, float(i.get("unit_cost") or 0), qty))
+        for c in _SEED.get("expense_categories", []):
+            conn.execute("INSERT OR IGNORE INTO expense_categories (category_name) VALUES (?)", (c,))
+        # activities
+        try:
+            for a in _SEED.get("activities", []):
+                conn.execute("""INSERT OR IGNORE INTO activities (name, description, category, unit_price, active, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, datetime('now','localtime'), datetime('now','localtime'))""",
+                    (a["name"], a.get("description", ""), a.get("category", "Trip"), float(a.get("unit_price", 0) or 0), int(a.get("active", 1) or 0)))
+        except Exception:
+            pass
+        # meals (resolve ingredient names) + sync to inventory/recipes
+        try:
+            inv_name_to_id = {r["item_name"].strip().lower(): r["id"] for r in conn.execute("SELECT id, item_name FROM inventory").fetchall()}
+            for m in _SEED.get("meals", []):
+                conn.execute("""INSERT INTO meals (name, description, preparation, selling_price, category, active, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, datetime('now','localtime'), datetime('now','localtime'))""",
+                    (m["name"], m.get("description", ""), m.get("preparation", ""), float(m.get("selling_price", 0) or 0), m.get("category", "Meals"), int(m.get("active", 1) or 0)))
+                meal_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+                norm_ings = []
+                for ing in (m.get("ingredients") or []):
+                    iname = str(ing.get("inventory_item_name") or ing.get("item_name") or "").strip().lower()
+                    iid = inv_name_to_id.get(iname)
+                    if iid is None:
+                        continue
+                    qps = float(ing.get("qty_per_sale", 0) or 0)
+                    conn.execute("INSERT OR REPLACE INTO meal_ingredients (meal_id, inventory_item_id, qty_per_sale, note) VALUES (?, ?, ?, ?)",
+                                 (meal_id, iid, qps, ing.get("note", "")))
+                    norm_ings.append({"inventory_item_id": iid, "qty_per_sale": qps, "note": ing.get("note", "")})
+                # best-effort sync meal -> sellable inventory item/recipe
+                try:
+                    menu_name = f"Meal: {m['name']}".strip()
+                    existing = conn.execute("SELECT id FROM inventory WHERE item_name=?", (menu_name,)).fetchone()
+                    inv_id = existing["id"] if existing else None
+                    # total ingredient unit cost
+                    total_uc = 0.0
+                    for ni in norm_ings:
+                        ruc = conn.execute("SELECT unit_cost FROM inventory WHERE id=?", (ni["inventory_item_id"],)).fetchone()
+                        total_uc += float((ruc["unit_cost"] if ruc else 0) or 0) * float(ni["qty_per_sale"] or 0)
+                    if inv_id:
+                        conn.execute("UPDATE inventory SET category=?, selling_price=?, unit_cost=?, active=? WHERE id=?",
+                                     (m.get("category", "Meals"), float(m.get("selling_price", 0) or 0), round(total_uc, 4), 1, inv_id))
+                    else:
+                        conn.execute("""INSERT INTO inventory (item_name, category, stock_qty, unit, unit_cost, selling_price, active)
+                                        VALUES (?, ?, 0, 'portion', ?, ?, 1)""",
+                                     (menu_name, m.get("category", "Meals"), round(total_uc, 4), float(m.get("selling_price", 0) or 0)))
+                        inv_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+                    conn.execute("UPDATE meals SET linked_inventory_id=? WHERE id=?", (inv_id, meal_id))
+                    conn.execute("DELETE FROM recipe_components WHERE menu_item_id=?", (inv_id,))
+                    for ni in norm_ings:
+                        conn.execute("INSERT OR REPLACE INTO recipe_components (menu_item_id, ingredient_item_id, qty_per_sale) VALUES (?,?,?)",
+                                     (inv_id, ni["inventory_item_id"], ni["qty_per_sale"]))
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -4067,9 +4212,23 @@ def has_operational_data():
 
 DEMO_DATA_PRESETS = {
     "analysis_small": {
-        "label": "Analysis Small (30 days, synthetic)",
-        "description": "Guarded synthetic reservations/POS/payments/expenses for analysis/model prototyping.",
-    }
+        "label": "Analysis Small (light synthetic)",
+        "description": "Small synthetic dataset: ~10 reservations with POS, payments, expenses for quick analysis.",
+        "reservations": 10, "days_back": 25, "days_forward": 10, "max_stay": 3,
+        "pos_per_res": 2, "book_activities": True, "expenses": 6,
+    },
+    "business_starter": {
+        "label": "Business Starter (recommended)",
+        "description": "Richer realistic demo: guests, past/current/future reservations (mixed statuses), POS items & booked activities, deposits/payments, and expenses across categories — ideal for seeding/loading business demo data.",
+        "reservations": 24, "days_back": 45, "days_forward": 20, "max_stay": 4,
+        "pos_per_res": 3, "book_activities": True, "expenses": 12,
+    },
+    "hospitality_full": {
+        "label": "Hospitality Full (comprehensive)",
+        "description": "Comprehensive demo dataset with higher volume across reservations, POS, activities, payments and expenses for demos, training, and reporting.",
+        "reservations": 40, "days_back": 60, "days_forward": 30, "max_stay": 5,
+        "pos_per_res": 4, "book_activities": True, "expenses": 20,
+    },
 }
 
 
@@ -4078,7 +4237,7 @@ def list_demo_data_presets():
 
 
 def apply_demo_data_preset(name, password, confirm_text, allow_existing=False):
-    """Guarded demo data loader for analysis/prototyping. Never silent."""
+    """Guarded demo data loader for analysis/prototyping and easier business-data seeding. Never silent."""
     if not verify_password(password):
         raise PermissionError("Invalid super password.")
     if name not in DEMO_DATA_PRESETS:
@@ -4086,54 +4245,162 @@ def apply_demo_data_preset(name, password, confirm_text, allow_existing=False):
     if str(confirm_text).strip().upper() != "APPLY DEMO DATA":
         raise ValueError('Confirmation text must be exactly: APPLY DEMO DATA')
     if has_operational_data() and not allow_existing:
-        raise ValueError("Database already has operational data. Refusing to apply demo preset.")
-    if allow_existing and not verify_password(password):
-        raise PermissionError("Invalid super password.")
+        raise ValueError("Database already has operational data. Refusing to apply demo preset. (Use on a fresh DB or after exporting/backing up.)")
 
-    from .db import connect, transaction
+    preset = DEMO_DATA_PRESETS[name]
+    from .db import connect
     conn = connect()
-    rooms = conn.execute("SELECT id, base_price FROM rooms ORDER BY id").fetchall()
-    inv = conn.execute("SELECT id, selling_price, unit_cost FROM inventory WHERE active=1 ORDER BY id").fetchall()
-    cats = conn.execute("SELECT id FROM expense_categories ORDER BY id").fetchall()
-    plans = conn.execute("SELECT id FROM rate_plans ORDER BY id").fetchall()
+    rooms = conn.execute("SELECT id, base_price, room_type FROM rooms ORDER BY id").fetchall()
+    inv = conn.execute("SELECT id, item_name, selling_price, unit_cost FROM inventory WHERE active=1 ORDER BY id").fetchall()
+    cats = conn.execute("SELECT id, category_name FROM expense_categories ORDER BY id").fetchall()
+    plans = conn.execute("SELECT id, name FROM rate_plans ORDER BY id").fetchall()
     if not rooms:
-        raise ValueError("No rooms available for demo preset.")
+        raise ValueError("No rooms available for demo preset. Add rooms (or import a seed config) first.")
+    activities = []
+    try:
+        activities = conn.execute("SELECT id, name, unit_price FROM activities WHERE active=1 ORDER BY id").fetchall()
+    except Exception:
+        activities = []
 
-    base = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=20)
-    created = {"reservations": 0, "pos_items": 0, "payments": 0, "expenses": 0}
-    # create synthetic stays
-    for i in range(8):
+    def _get(row, k, d=None):
+        try:
+            return row[k]
+        except Exception:
+            return d
+
+    n_res = int(preset.get("reservations", 12))
+    days_back = int(preset.get("days_back", 30))
+    days_forward = int(preset.get("days_forward", 14))
+    max_stay = max(1, int(preset.get("max_stay", 3)))
+    pos_per = max(0, int(preset.get("pos_per_res", 2)))
+    n_exp = int(preset.get("expenses", 8))
+    do_acts = bool(preset.get("book_activities", True)) and len(activities) > 0
+
+    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    created = {"guests": 0, "reservations": 0, "pos_items": 0, "activities_booked": 0, "payments": 0, "expenses": 0}
+    first_names = ["Ahmed", "Sara", "Mohamed", "Nour", "Omar", "Laila", "Youssef", "Mona", "Hassan", "Dina", "Karim", "Rana", "Ali", "Fatma", "Tamer", "Salma"]
+    last_names = ["Hassan", "Ali", "Ibrahim", "Mahmoud", "Sayed", "Fahmy", "Mostafa", "Khaled", "Adel", "Nabil", "Samir", "Farouk"]
+    sources = ["Direct", "Booking.com", "Expedia", "Walk-in", "Corporate", "Phone", "Website"]
+
+    res_ids = []
+    for i in range(n_res):
+        guest = f"{first_names[i % len(first_names)]} {last_names[(i // 2) % len(last_names)]}"
+        # spread stays across past/current/future
+        offset = -days_back + (i * max(1, (days_back + days_forward) // max(n_res, 1)))
+        ci_dt = today + timedelta(days=offset)
+        stay = 1 + (i % max_stay)
+        co_dt = ci_dt + timedelta(days=stay)
+        ci = ci_dt.strftime(DATE_FMT)
+        co = co_dt.strftime(DATE_FMT)
         room = rooms[i % len(rooms)]
-        ci = (base + timedelta(days=i * 2)).strftime(DATE_FMT)
-        co = (base + timedelta(days=i * 2 + 2)).strftime(DATE_FMT)
-        guest = f"Demo Guest {i+1}"
-        plan = plans[0]["id"] if plans else None
-        rid = create_reservation(guest, "Direct", room["id"], plan, float(room["base_price"] or 100), ci, co, 0.0)
+        plan = plans[i % len(plans)]["id"] if plans else None
+        base_price = float(_get(room, "base_price", 100) or 100)
+        # small price variation
+        rate = round(base_price + (i % 3) * 10, 2)
+        source = sources[i % len(sources)]
+        try:
+            rid = create_reservation(guest, source, _get(room, "id"), plan, rate, ci, co, 0.0)
+        except Exception:
+            # fallback: try a different room if unavailable
+            placed = False
+            for r2 in rooms:
+                try:
+                    rid = create_reservation(guest, source, _get(r2, "id"), plan, rate, ci, co, 0.0)
+                    placed = True
+                    break
+                except Exception:
+                    continue
+            if not placed:
+                continue
         created["reservations"] += 1
-        if i % 3 != 0:
-            record_payment(rid, round((room["base_price"] or 100) * 2 * 1.24, 2), "Cash", "Demo payment")
-            created["payments"] += 1
-        if inv and i % 2 == 0:
-            item = inv[i % len(inv)]
-            add_pos_item(rid, f"Demo POS {i+1}", 1 + (i % 2), float(item["selling_price"] or 10), item["id"])
-            created["pos_items"] += 1
-        if i % 4 == 0:
+        res_ids.append((rid, ci_dt, co_dt, stay, rate))
+
+        # POS items
+        if inv and pos_per > 0:
+            for j in range((i % pos_per) + 1):
+                item = inv[(i + j) % len(inv)]
+                qty = 1 + ((i + j) % 3)
+                try:
+                    add_pos_item(rid, str(_get(item, "item_name", "Item")), qty, float(_get(item, "selling_price", 10) or 10), _get(item, "id"))
+                    created["pos_items"] += 1
+                except Exception:
+                    pass
+
+        # book activities for some reservations
+        if do_acts and (i % 3 != 2):
+            act = activities[i % len(activities)]
             try:
-                update_reservation_status(rid, "Checked In")
+                book_activity(rid, _get(act, "id"), 1, _get(act, "name"), _get(act, "unit_price"))
+                created["activities_booked"] += 1
             except Exception:
                 pass
-        if i % 5 == 0:
-            try:
-                if connect().execute("SELECT status FROM reservations WHERE id=?", (rid,)).fetchone()["status"] == "Checked In":
+
+        # payments: deposit/full/partial depending on timing
+        try:
+            status_row = connect().execute("SELECT status FROM reservations WHERE id=?", (rid,)).fetchone()
+            status = status_row["status"] if status_row else "Reserved"
+            total_est = round(rate * stay * 1.24, 2)  # rough
+            paid = False
+            if co_dt < today - timedelta(days=1):
+                # past stay: likely fully paid
+                amt = max(10.0, round(total_est * (0.9 if i % 4 == 0 else 1.0), 2))
+                record_payment(rid, amt, "Card" if i % 2 == 0 else "Cash", "Demo settlement")
+                created["payments"] += 1
+                paid = True
+            elif ci_dt <= today <= co_dt:
+                # in-house: deposit/partial
+                amt = round(max(20.0, total_est * 0.5), 2)
+                record_payment(rid, amt, "Cash", "Demo deposit/partial")
+                created["payments"] += 1
+            elif i % 2 == 0:
+                # future with deposit
+                amt = round(max(20.0, total_est * 0.25), 2)
+                record_payment(rid, amt, "Bank Transfer", "Demo advance deposit")
+                created["payments"] += 1
+        except Exception:
+            pass
+
+    # set statuses: past -> checked out (if possible), current -> checked in, future -> reserved
+    for rid, ci_dt, co_dt, _stay, _rate in res_ids:
+        try:
+            if co_dt < today - timedelta(days=1):
+                try:
+                    update_reservation_status(rid, "Checked In")
+                except Exception:
+                    pass
+                try:
                     update_reservation_status(rid, "Checked Out")
+                except Exception:
+                    pass
+            elif ci_dt <= today <= co_dt:
+                try:
+                    update_reservation_status(rid, "Checked In")
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    # expenses spread across categories and recent days
+    if cats and n_exp > 0:
+        expense_names = ["Electricity bill", "Water supply", "Maintenance materials", "Cleaning supplies", "Staff meal supplies", "Fuel", "Laundry chemicals", "Marketing flyers", "License renewal", "Misc purchase", "Beverage restock", "Repairs"]
+        methods = ["Cash", "Card", "Bank Transfer"]
+        for i in range(n_exp):
+            cat = cats[i % len(cats)]
+            amt = round(50 + (i * 37) % 400 + (i * 13), 2)
+            try:
+                record_operational_expense(_get(cat, "id"), expense_names[i % len(expense_names)], amt, 0.0, f"Demo expense {i+1}", methods[i % len(methods)])
+                created["expenses"] += 1
             except Exception:
                 pass
-    if cats:
-        for i in range(4):
-            record_operational_expense(cats[i % len(cats)]["id"], f"Demo Expense {i+1}", 50 + i * 25, 0.0, "Demo", "Cash")
-            created["expenses"] += 1
-    _audit("demo_preset_apply", "db", "", f"{name} {created}")
-    return {"preset": name, "created": created}
+
+    # approximate guests count (unique names created via reservations)
+    try:
+        created["guests"] = connect().execute("SELECT COUNT(*) AS c FROM guests").fetchone()["c"]
+    except Exception:
+        pass
+
+    _audit("demo_preset_apply", "db", "", f"{name} {json.dumps(created, ensure_ascii=False)}")
+    return {"preset": name, "label": preset.get("label", name), "created": created}
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -4141,11 +4408,11 @@ def apply_demo_data_preset(name, password, confirm_text, allow_existing=False):
 # ═══════════════════════════════════════════════════════════════════════════
 
 SEED_CONFIG_FORMAT = "pm_seed_config"
-SEED_CONFIG_VERSION = 1
+SEED_CONFIG_VERSION = 2  # v2 adds inventory barcode/batch fields and activities
 
 
 def export_seed_config():
-    """Export editable master/seed data (rooms, rate plans, inventory, expense categories, meals) to JSON."""
+    """Export editable master/seed data (rooms, rate plans, inventory, expense categories, meals, activities) to JSON."""
     EXPORT_DIR.mkdir(exist_ok=True)
     conn = connect()
     rooms = [dict(r) for r in conn.execute(
@@ -4154,7 +4421,8 @@ def export_seed_config():
         "SELECT name, price_modifier FROM rate_plans ORDER BY name").fetchall()]
     inv = [dict(r) for r in conn.execute(
         """SELECT item_name, category, stock_qty, unit, unit_cost, selling_price,
-                  low_stock_threshold, overstock_threshold, active
+                  low_stock_threshold, overstock_threshold, active,
+                  sku, barcode, barcode_type, track_batches, shelf_life_days, default_supplier
            FROM inventory ORDER BY category, item_name""").fetchall()]
     cats = [r[0] for r in conn.execute(
         "SELECT category_name FROM expense_categories ORDER BY category_name").fetchall()]
@@ -4171,6 +4439,12 @@ def export_seed_config():
             "selling_price": float(m["selling_price"] or 0), "category": m["category"] or "Meals",
             "active": int(m["active"] or 0), "ingredients": ings,
         })
+    activities = []
+    try:
+        activities = [dict(r) for r in conn.execute(
+            "SELECT name, description, category, unit_price, active FROM activities ORDER BY name").fetchall()]
+    except Exception:
+        activities = []
     data = {
         "format": SEED_CONFIG_FORMAT,
         "version": SEED_CONFIG_VERSION,
@@ -4180,6 +4454,7 @@ def export_seed_config():
         "inventory": inv,
         "expense_categories": cats,
         "meals": meals,
+        "activities": activities,
     }
     path = EXPORT_DIR / f"seed_config_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -4214,8 +4489,9 @@ def import_seed_config(filepath, password, confirm_text):
     inv = data.get("inventory") or []
     cats = data.get("expense_categories") or []
     meals = data.get("meals") or []
-    if not isinstance(rooms, list) or not isinstance(plans, list) or not isinstance(inv, list) or not isinstance(cats, list) or not isinstance(meals, list):
-        raise ValueError("rooms/rate_plans/inventory/expense_categories/meals must be lists.")
+    activities = data.get("activities") or []
+    if not isinstance(rooms, list) or not isinstance(plans, list) or not isinstance(inv, list) or not isinstance(cats, list) or not isinstance(meals, list) or not isinstance(activities, list):
+        raise ValueError("rooms/rate_plans/inventory/expense_categories/meals/activities must be lists.")
 
     seen_rooms = set()
     norm_rooms = []
@@ -4254,6 +4530,11 @@ def import_seed_config(filepath, password, confirm_text):
         if key in seen_items:
             raise ValueError(f"Duplicate inventory item_name: {name}")
         seen_items.add(key)
+        sld = (it or {}).get("shelf_life_days", None)
+        try:
+            sld = int(sld) if sld not in (None, "") else None
+        except Exception:
+            sld = None
         norm_inv.append({
             "item_name": name,
             "category": str((it or {}).get("category", "General") or "General").strip(),
@@ -4264,6 +4545,12 @@ def import_seed_config(filepath, password, confirm_text):
             "low_stock_threshold": (it or {}).get("low_stock_threshold", None),
             "overstock_threshold": (it or {}).get("overstock_threshold", None),
             "active": 1 if int((it or {}).get("active", 1) or 0) else 0,
+            "sku": (str((it or {}).get("sku") or "").strip() or None),
+            "barcode": (str((it or {}).get("barcode") or "").strip() or None),
+            "barcode_type": str((it or {}).get("barcode_type") or "code128").strip() or "code128",
+            "track_batches": 1 if int((it or {}).get("track_batches", 0) or 0) else 0,
+            "shelf_life_days": sld,
+            "default_supplier": str((it or {}).get("default_supplier") or "").strip(),
         })
 
     norm_cats = []
@@ -4306,6 +4593,23 @@ def import_seed_config(filepath, password, confirm_text):
             "ingredients": ings,
         })
 
+    norm_activities = []
+    seen_acts = set()
+    for a in activities:
+        name = str((a or {}).get("name", "")).strip()
+        if not name:
+            continue
+        if name.lower() in seen_acts:
+            raise ValueError(f"Duplicate activity name: {name}")
+        seen_acts.add(name.lower())
+        norm_activities.append({
+            "name": name,
+            "description": str((a or {}).get("description", "") or ""),
+            "category": str((a or {}).get("category", "Trip") or "Trip"),
+            "unit_price": float((a or {}).get("unit_price", 0) or 0),
+            "active": 1 if int((a or {}).get("active", 1) or 0) else 0,
+        })
+
     conn = connect()
     try:
         conn.execute("BEGIN IMMEDIATE")
@@ -4313,10 +4617,15 @@ def import_seed_config(filepath, password, confirm_text):
         conn.execute("DELETE FROM meals")
         conn.execute("DELETE FROM recipe_components")
         conn.execute("DELETE FROM inventory_logs")
+        conn.execute("DELETE FROM inventory_batches")
         conn.execute("DELETE FROM inventory")
         conn.execute("DELETE FROM expense_categories")
         conn.execute("DELETE FROM rate_plans")
         conn.execute("DELETE FROM rooms")
+        try:
+            conn.execute("DELETE FROM activities")
+        except Exception:
+            pass
 
         for r in norm_rooms:
             conn.execute(
@@ -4326,12 +4635,46 @@ def import_seed_config(filepath, password, confirm_text):
             conn.execute("INSERT INTO rate_plans (name, price_modifier) VALUES (?, ?)", (pl["name"], pl["price_modifier"]))
         for it in norm_inv:
             conn.execute(
-                """INSERT INTO inventory (item_name, category, stock_qty, unit, unit_cost, selling_price, low_stock_threshold, overstock_threshold, active)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                """INSERT INTO inventory (item_name, category, stock_qty, unit, unit_cost, selling_price, low_stock_threshold, overstock_threshold, active,
+                                         sku, barcode, barcode_type, track_batches, shelf_life_days, default_supplier)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (it["item_name"], it["category"], it["stock_qty"], it["unit"], it["unit_cost"], it["selling_price"],
-                 it["low_stock_threshold"], it["overstock_threshold"], it["active"]))
+                 it["low_stock_threshold"], it["overstock_threshold"], it["active"],
+                 it.get("sku"), it.get("barcode"), it.get("barcode_type", "code128"), int(it.get("track_batches", 0) or 0),
+                 it.get("shelf_life_days"), it.get("default_supplier", "")))
+            item_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+            qty = float(it.get("stock_qty") or 0)
+            if abs(qty) > 1e-9:
+                lot = f"SEED-{item_id}"
+                exp = None
+                sld = it.get("shelf_life_days")
+                if sld and int(sld) > 0:
+                    exp = (datetime.now() + timedelta(days=int(sld))).strftime(DATE_FMT)
+                now_s = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                conn.execute("""INSERT INTO inventory_batches
+                    (item_id, lot_code, barcode_value, barcode_type, quantity_received, quantity_remaining,
+                     unit_cost, received_at, expiry_date, supplier, reference, notes, status, payload_json)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (item_id, lot, lot, it.get("barcode_type", "code128"), qty, qty, float(it.get("unit_cost") or 0),
+                     now_s, exp, it.get("default_supplier", ""), "seed_import", "Seed/import opening stock", "active", "{}"))
+                bid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+                try:
+                    payload = json.dumps({"v": 1, "t": "lot", "item": item_id, "name": it["item_name"], "lot": lot, "recv": now_s, "exp": exp or "", "qty": qty, "rem": qty, "cost": float(it.get("unit_cost") or 0)}, separators=(",", ":"), ensure_ascii=False)
+                    conn.execute("UPDATE inventory_batches SET payload_json=? WHERE id=?", (payload, bid))
+                except Exception:
+                    pass
+                conn.execute("""INSERT INTO inventory_logs (item_id, change_type, quantity, reference, batch_id, unit_cost, balance_after)
+                               VALUES (?, 'OPENING', ?, 'seed import opening batch', ?, ?, ?)""",
+                            (item_id, qty, bid, float(it.get("unit_cost") or 0), qty))
         for c in norm_cats:
             conn.execute("INSERT OR IGNORE INTO expense_categories (category_name) VALUES (?)", (c,))
+        for a in norm_activities:
+            try:
+                conn.execute("""INSERT OR IGNORE INTO activities (name, description, category, unit_price, active, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, datetime('now','localtime'), datetime('now','localtime'))""",
+                    (a["name"], a["description"], a["category"], float(a["unit_price"] or 0), int(a["active"] or 0)))
+            except Exception:
+                pass
 
         inv_name_to_id = {r["item_name"].strip().lower(): r["id"] for r in conn.execute("SELECT id, item_name FROM inventory").fetchall()}
         for m in norm_meals:
@@ -4364,7 +4707,7 @@ def import_seed_config(filepath, password, confirm_text):
         pass
 
     summary = {"rooms": len(norm_rooms), "rate_plans": len(norm_plans), "inventory": len(norm_inv),
-               "expense_categories": len(norm_cats), "meals": len(norm_meals)}
+               "expense_categories": len(norm_cats), "meals": len(norm_meals), "activities": len(norm_activities)}
     _audit("seed_config_import", "db", "", json.dumps(summary, ensure_ascii=False))
     return {"ok": True, "summary": summary}
 

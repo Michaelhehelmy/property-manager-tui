@@ -2,7 +2,7 @@
 {% block content %}
 <h2>Settings / Branding</h2>
 <p class="muted">Configure property, branding, master data, and maintenance. Protected actions require unlock/super password.</p>
-<details class="help-box"><summary>How to use Settings</summary><ul><li><strong>Branding & general:</strong> update property name/tagline and app settings (some changes may require unlock).</li><li><strong>Seed config (first-time / master data):</strong> <em>Export</em> current config to JSON, edit, then <em>Import/Apply</em> (requires unlock + super password + confirmation, and is only allowed when no operational data exists) — use this to seed rooms, rate plans, inventory, categories, meals.</li><li><strong>Rooms:</strong> add/remove rooms (removal blocked if referenced by reservations).</li><li><strong>Rate plans / backups / health:</strong> manage pricing plans, backups, and run health/integrity checks.</li></ul></details>
+<details class="help-box"><summary>How to use Settings</summary><ul><li><strong>Branding & general:</strong> update property name/tagline and app settings (some changes may require unlock).</li><li><strong>Seed config (first-time / master data):</strong> <em>Export</em> current config to JSON, edit, then <em>Import/Apply</em> (requires unlock + super password + confirmation, and is only allowed when no operational data exists) — use this to seed rooms, rate plans, inventory (incl. SKU/barcodes & batch/expiry fields), expense categories, meals, and activities.</li><li><strong>Demo data presets:</strong> load synthetic operational/business demo data (reservations, POS, booked activities, payments, expenses) on a DB with no operational data to explore the app quickly.</li><li><strong>Rooms:</strong> add/remove rooms (removal blocked if referenced by reservations).</li><li><strong>Rate plans / backups / health:</strong> manage pricing plans, backups, and run health/integrity checks.</li></ul></details>
 <p><a href="/settings/rate-plans">Manage Rate Plans</a> (add/edit/delete with real backend validation) · <a href="/settings/health">Ledger/Data Health Check</a> (read-only, unlock required)</p>
 <div class="grid grid-2">
   <div class="panel"><h3>Barcode / Label devices</h3>
@@ -23,7 +23,7 @@
     <form method="post" action="/settings/backup" style="margin-top:10px"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><button>Backup now</button></form>
   </div>
   <div class="panel"><h3>First-time seed / master data (export → edit → upload)</h3>
-    <p class="muted">Export editable JSON for rooms, rate plans, inventory, expense categories, and meals. Edit it, then upload to apply as your first seed. Requires unlock + super password + confirmation text <code>APPLY SEED CONFIG</code>. Allowed only when there is no operational data (reservations/payments/POS/expenses).</p>
+    <p class="muted">Export editable JSON for rooms, rate plans, inventory (incl. SKU/barcode, batch/expiry tracking fields), expense categories, meals, and activities. Edit it to match your business, then upload to apply as your first seed. Requires unlock + super password + confirmation text <code>APPLY SEED CONFIG</code>. Allowed only when there is no operational data (reservations/payments/POS/expenses).</p>
     <form method="post" action="/settings/seed/export" style="margin-bottom:10px"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
       <button type="submit">Export seed config JSON (download)</button>
     </form>
@@ -34,10 +34,20 @@
       <button class="warn" type="submit">Upload & apply seed config</button>
     </form>
     <hr style="margin:14px 0;border:none;border-top:1px solid #e2e8f0"/>
-    <h3>Guarded demo data preset</h3>
-    <p class="muted">Synthetic operational demo (reservations/POS/payments/expenses). Requires unlock + super password + confirmation text <code>APPLY DEMO DATA</code>. Refused when operational data exists.</p>
+    <h3>Guarded demo data preset (load business demo data)</h3>
+    <p class="muted">Loads synthetic but realistic operational data (guests, reservations across past/current/future with statuses, POS items, booked activities/trips, payments/deposits, and expenses) so you can explore reports and workflows quickly. Requires unlock + super password + confirmation text <code>APPLY DEMO DATA</code>. Refused when operational data already exists.</p>
     <form method="post" action="/settings/demo-preset"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
-      <label>Preset<select name="preset"><option value="analysis_small">analysis_small</option></select></label>
+      <label>Preset<select name="preset">
+        {% for p in (demo_presets or []) %}
+          <option value="{{p.key}}"{% if p.key=='business_starter' %} selected{% endif %}>{{p.label or p.key}}</option>
+        {% else %}
+          <option value="business_starter">Business Starter (recommended)</option>
+          <option value="analysis_small">Analysis Small</option>
+        {% endfor %}
+      </select></label>
+      <div class="muted" style="margin:4px 0 8px 0">
+        {% for p in (demo_presets or []) %}<div><strong>{{p.label or p.key}}</strong>: {{p.description}}</div>{% endfor %}
+      </div>
       <input name="confirm" placeholder="APPLY DEMO DATA"/>
       <input type="password" name="password" placeholder="Super password"/>
       <button class="warn">Apply demo preset</button>

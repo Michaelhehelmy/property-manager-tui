@@ -1352,7 +1352,7 @@ class AccountingTab(VerticalScroll):
 
 class SettingsTab(VerticalScroll):
     def compose(self):
-        yield Static("Settings & maintenance: branding, rate plans, rooms, seed config export/import, backups and health. Protected actions require unlock/super password. Hover controls for tips.", classes="help")
+        yield Static("Settings & maintenance: branding, rate plans, rooms, seed config export/import (incl. activities & barcode fields), demo data presets, backups and health. Protected actions require unlock/super password. Hover controls for tips.", classes="help")
         yield Static("⚙ " + t("Settings"), classes="title")
         yield Static("", id="lock_msg", classes="warn")
         yield Vertical(id="body")
@@ -1549,7 +1549,7 @@ class SettingsTab(VerticalScroll):
             elif bid == "unlocked_btn_seed_export":
                 try:
                     p = services.export_seed_config()
-                    self.app.notify(f"Seed config exported: {p} (edit JSON, then use Import Seed Config for first-time seed)", timeout=8)
+                    self.app.notify(f"Seed config exported: {p} (edit JSON incl. rooms/inventory/activities, then Import for first-time seed)", timeout=8)
                 except Exception as exc:
                     self.app.notify(str(exc), severity="error")
             elif bid == "unlocked_btn_seed_import":

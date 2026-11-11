@@ -55,9 +55,13 @@ async def lock_post(request: Request):
 @router.get("/settings")
 def settings(request: Request):
     rooms = services.get_all_rooms()
+    try:
+        demo_presets = services.list_demo_data_presets()
+    except Exception:
+        demo_presets = []
     return render(request, "settings/index.html", {"title":"Settings / Branding",
         "catalog": services.SETTINGS_CATALOG, "values": services.get_all_settings(),
-        "rooms": rooms,
+        "rooms": rooms, "demo_presets": demo_presets,
         "brand": {"name": services.get_app_display_name(), "tagline": services.get_app_tagline(),
                   "animation": services.get_loading_animation(), "configured": services.is_branding_configured(),
                   "gift": services.get_gift_attribution()}})
