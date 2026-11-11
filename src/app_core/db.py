@@ -1,14 +1,13 @@
 """Property manager — database layer. Single persistent connection with WAL."""
 import sqlite3
 from contextlib import contextmanager
-from pathlib import Path
 
 from . import paths
 
 DATA_DIR = paths.DATA_DIR
 BASE_DIR = paths.BASE_DIR
 DB_PATH = paths.DB_PATH
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 _conn = None
 
@@ -115,8 +114,40 @@ CREATE TABLE inventory (
     low_stock_threshold REAL,
     overstock_threshold REAL,
     active INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+    created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    sku TEXT,
+    barcode TEXT,
+    barcode_type TEXT NOT NULL DEFAULT 'code128',
+    track_batches INTEGER NOT NULL DEFAULT 0,
+    shelf_life_days INTEGER,
+    default_supplier TEXT NOT NULL DEFAULT ''
 );
+CREATE UNIQUE INDEX idx_inventory_sku ON inventory(sku) WHERE sku IS NOT NULL AND sku <> '';
+CREATE UNIQUE INDEX idx_inventory_barcode ON inventory(barcode) WHERE barcode IS NOT NULL AND barcode <> '';
+
+CREATE TABLE inventory_batches (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id INTEGER NOT NULL,
+    lot_code TEXT NOT NULL UNIQUE,
+    barcode_value TEXT,
+    barcode_type TEXT NOT NULL DEFAULT 'code128',
+    quantity_received REAL NOT NULL,
+    quantity_remaining REAL NOT NULL,
+    unit_cost REAL NOT NULL DEFAULT 0,
+    received_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    expiry_date TEXT,
+    supplier TEXT NOT NULL DEFAULT '',
+    reference TEXT NOT NULL DEFAULT '',
+    notes TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'active',
+    payload_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    FOREIGN KEY (item_id) REFERENCES inventory(id)
+);
+CREATE INDEX idx_batches_item ON inventory_batches(item_id);
+CREATE INDEX idx_batches_expiry ON inventory_batches(expiry_date);
+CREATE INDEX idx_batches_status ON inventory_batches(status);
+CREATE INDEX idx_batches_barcode ON inventory_batches(barcode_value);
 
 CREATE TABLE inventory_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -125,9 +156,14 @@ CREATE TABLE inventory_logs (
     quantity REAL NOT NULL,
     reference TEXT NOT NULL DEFAULT '',
     at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-    FOREIGN KEY (item_id) REFERENCES inventory(id)
+    batch_id INTEGER,
+    unit_cost REAL,
+    balance_after REAL,
+    FOREIGN KEY (item_id) REFERENCES inventory(id),
+    FOREIGN KEY (batch_id) REFERENCES inventory_batches(id)
 );
 CREATE INDEX idx_invlogs_item ON inventory_logs(item_id);
+CREATE INDEX idx_invlogs_batch ON inventory_logs(batch_id);
 
 CREATE TABLE recipe_components (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -192,12 +228,16 @@ CREATE TABLE pos_tabs (
     voided_at TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
     activity_id INTEGER,
+    batch_id INTEGER,
+    lot_code TEXT,
     FOREIGN KEY (reservation_id) REFERENCES reservations(id),
     FOREIGN KEY (inventory_item_id) REFERENCES inventory(id),
-    FOREIGN KEY (activity_id) REFERENCES activities(id)
+    FOREIGN KEY (activity_id) REFERENCES activities(id),
+    FOREIGN KEY (batch_id) REFERENCES inventory_batches(id)
 );
 CREATE INDEX idx_pos_res ON pos_tabs(reservation_id);
 CREATE INDEX idx_pos_activity ON pos_tabs(activity_id);
+CREATE INDEX idx_pos_batch ON pos_tabs(batch_id);
 
 CREATE TABLE expense_categories (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -359,7 +399,6 @@ def _migrate_to_7(conn):
     """)
 
 
-
 def _migrate_to_8(conn):
     conn.executescript("""
     CREATE TABLE IF NOT EXISTS activities (
@@ -374,12 +413,100 @@ def _migrate_to_8(conn):
     );
     CREATE INDEX IF NOT EXISTS idx_activities_active ON activities(active);
     """)
-    # add activity_id to pos_tabs if missing
     cols = [r[1] for r in conn.execute("PRAGMA table_info(pos_tabs)").fetchall()]
     if "activity_id" not in cols:
         conn.execute("ALTER TABLE pos_tabs ADD COLUMN activity_id INTEGER REFERENCES activities(id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_pos_activity ON pos_tabs(activity_id)")
 
+
+def _migrate_to_9(conn):
+    # inventory identity/barcode/batch tracking columns
+    inv_cols = [r[1] for r in conn.execute("PRAGMA table_info(inventory)").fetchall()]
+    def _add_inv(col, decl):
+        if col not in inv_cols:
+            conn.execute(f"ALTER TABLE inventory ADD COLUMN {col} {decl}")
+            inv_cols.append(col)
+    _add_inv("sku", "TEXT")
+    _add_inv("barcode", "TEXT")
+    _add_inv("barcode_type", "TEXT NOT NULL DEFAULT 'code128'")
+    _add_inv("track_batches", "INTEGER NOT NULL DEFAULT 0")
+    _add_inv("shelf_life_days", "INTEGER")
+    _add_inv("default_supplier", "TEXT NOT NULL DEFAULT ''")
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_inventory_sku ON inventory(sku) WHERE sku IS NOT NULL AND sku <> ''")
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_inventory_barcode ON inventory(barcode) WHERE barcode IS NOT NULL AND barcode <> ''")
+
+    conn.executescript("""
+    CREATE TABLE IF NOT EXISTS inventory_batches (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        item_id INTEGER NOT NULL,
+        lot_code TEXT NOT NULL UNIQUE,
+        barcode_value TEXT,
+        barcode_type TEXT NOT NULL DEFAULT 'code128',
+        quantity_received REAL NOT NULL,
+        quantity_remaining REAL NOT NULL,
+        unit_cost REAL NOT NULL DEFAULT 0,
+        received_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+        expiry_date TEXT,
+        supplier TEXT NOT NULL DEFAULT '',
+        reference TEXT NOT NULL DEFAULT '',
+        notes TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'active',
+        payload_json TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+        FOREIGN KEY (item_id) REFERENCES inventory(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_batches_item ON inventory_batches(item_id);
+    CREATE INDEX IF NOT EXISTS idx_batches_expiry ON inventory_batches(expiry_date);
+    CREATE INDEX IF NOT EXISTS idx_batches_status ON inventory_batches(status);
+    CREATE INDEX IF NOT EXISTS idx_batches_barcode ON inventory_batches(barcode_value);
+    """)
+
+    log_cols = [r[1] for r in conn.execute("PRAGMA table_info(inventory_logs)").fetchall()]
+    if "batch_id" not in log_cols:
+        conn.execute("ALTER TABLE inventory_logs ADD COLUMN batch_id INTEGER REFERENCES inventory_batches(id)")
+    if "unit_cost" not in log_cols:
+        conn.execute("ALTER TABLE inventory_logs ADD COLUMN unit_cost REAL")
+    if "balance_after" not in log_cols:
+        conn.execute("ALTER TABLE inventory_logs ADD COLUMN balance_after REAL")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_invlogs_batch ON inventory_logs(batch_id)")
+
+    pos_cols = [r[1] for r in conn.execute("PRAGMA table_info(pos_tabs)").fetchall()]
+    if "batch_id" not in pos_cols:
+        conn.execute("ALTER TABLE pos_tabs ADD COLUMN batch_id INTEGER REFERENCES inventory_batches(id)")
+    if "lot_code" not in pos_cols:
+        conn.execute("ALTER TABLE pos_tabs ADD COLUMN lot_code TEXT")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_pos_batch ON pos_tabs(batch_id)")
+
+    # Backfill legacy/opening batches for existing stock so traceability is consistent.
+    items = conn.execute("SELECT id, stock_qty, unit_cost, created_at FROM inventory").fetchall()
+    for it in items:
+        has = conn.execute("SELECT 1 FROM inventory_batches WHERE item_id=? LIMIT 1", (it["id"],)).fetchone()
+        if has:
+            continue
+        qty = float(it["stock_qty"] or 0)
+        if abs(qty) < 1e-9:
+            continue
+        received_at = conn.execute(
+            "SELECT MIN(at) AS at FROM inventory_logs WHERE item_id=?", (it["id"],)
+        ).fetchone()["at"] or it["created_at"] or ""
+        lot_code = f"LEGACY-{it['id']}"
+        # ensure uniqueness
+        if conn.execute("SELECT 1 FROM inventory_batches WHERE lot_code=?", (lot_code,)).fetchone():
+            lot_code = f"LEGACY-{it['id']}-{abs(hash((it['id'], received_at))) % 100000}"
+        conn.execute(
+            """INSERT INTO inventory_batches
+               (item_id, lot_code, barcode_value, barcode_type, quantity_received, quantity_remaining,
+                unit_cost, received_at, expiry_date, supplier, reference, notes, status, payload_json)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (it["id"], lot_code, lot_code, "code128", qty, qty, float(it["unit_cost"] or 0),
+             received_at or "1970-01-01 00:00:00", None, "", "legacy", "Opening/legacy stock backfill", "active", "{}")
+        )
+        bid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        conn.execute(
+            """INSERT INTO inventory_logs (item_id, change_type, quantity, reference, batch_id, unit_cost, balance_after)
+               VALUES (?, 'OPENING', ?, ?, ?, ?, ?)""",
+            (it["id"], qty, "legacy opening batch", bid, float(it["unit_cost"] or 0), qty)
+        )
 
 
 def migrate():
@@ -399,6 +526,8 @@ def migrate():
             _migrate_to_7(conn)
         if version < 8:
             _migrate_to_8(conn)
+        if version < 9:
+            _migrate_to_9(conn)
         conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
         conn.commit()
         return "upgraded"

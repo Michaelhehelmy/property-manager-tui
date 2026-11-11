@@ -5,6 +5,11 @@
 <details class="help-box"><summary>How to use Settings</summary><ul><li><strong>Branding & general:</strong> update property name/tagline and app settings (some changes may require unlock).</li><li><strong>Seed config (first-time / master data):</strong> <em>Export</em> current config to JSON, edit, then <em>Import/Apply</em> (requires unlock + super password + confirmation, and is only allowed when no operational data exists) — use this to seed rooms, rate plans, inventory, categories, meals.</li><li><strong>Rooms:</strong> add/remove rooms (removal blocked if referenced by reservations).</li><li><strong>Rate plans / backups / health:</strong> manage pricing plans, backups, and run health/integrity checks.</li></ul></details>
 <p><a href="/settings/rate-plans">Manage Rate Plans</a> (add/edit/delete with real backend validation) · <a href="/settings/health">Ledger/Data Health Check</a> (read-only, unlock required)</p>
 <div class="grid grid-2">
+  <div class="panel"><h3>Barcode / Label devices</h3>
+    <p class="muted">Configure scanner & label printer in the settings catalog below (barcode_*, label_printer, label_format, expiry policy). Keyboard-wedge scanners need no driver (scan into fields). Test label printing uses the configured label/default printer or saves to export.</p>
+    <form method="post" action="/settings/test-label"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><button type="submit">Test label print</button></form>
+  </div>
+
   <div class="panel"><h3>Branding & animation (wizard fields)</h3>
     <p class="muted">Gift: {{ brand.gift }}</p>
     <form method="post" action="/settings/branding"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>

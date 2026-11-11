@@ -40,10 +40,8 @@ def _cart_view(cart):
 
 
 @router.get("/pos")
-@router.get("/pos")
-def pos(request: Request, q: str = ""):
+def pos(request: Request, q: str = "", scan: str = "", batch_item: str = ""):
     cart = _get_cart(request)
-    # list active non-deleted reservations to target POS/folio
     reservations = connect().execute("""
         SELECT r.id, r.guest_name, r.status, rm.room_number
         FROM reservations r LEFT JOIN rooms rm ON r.room_id=rm.id
@@ -56,7 +54,38 @@ def pos(request: Request, q: str = ""):
         activity_stats = services.get_activity_stats()
     except Exception:
         activities, activity_stats = [], []
-    return render(request, "pos/index.html", {"title":"POS / Inventory","cart":cart,"cart_total":_cart_view(cart)["total"],"reservations":reservations,"inv":inv,"activities":activities,"activity_stats":activity_stats,"q":q})
+    try:
+        meals = services.list_meals(active_only=False) if hasattr(services, 'list_meals') else []
+    except Exception:
+        meals = []
+    walkin_pos = connect().execute("SELECT * FROM pos_tabs WHERE reservation_id IS NULL ORDER BY id DESC LIMIT 20").fetchall()
+    walkin_payments = connect().execute("SELECT * FROM payments WHERE reservation_id IS NULL ORDER BY id DESC LIMIT 20").fetchall()
+    scan_result = None
+    if scan:
+        try:
+            scan_result = services.resolve_barcode(scan)
+        except Exception as e:
+            scan_result = {"type": "error", "code": scan, "error": str(e)}
+    try:
+        expiring = services.get_expiring_batches(None, include_expired=True)
+    except Exception:
+        expiring = []
+    batches = []
+    try:
+        bi = int(batch_item) if batch_item else None
+    except Exception:
+        bi = None
+    try:
+        batches = services.list_inventory_batches(item_id=bi, include_depleted=False)
+    except Exception:
+        batches = []
+    return render(request, "pos/index.html", {
+        "title":"POS / Inventory",
+        "cart": _cart_view(cart)[0], "cart_lines": _cart_view(cart)[0], "cart_total": _cart_view(cart)[1],
+        "reservations": reservations, "inv": inv, "activities": activities, "activity_stats": activity_stats,
+        "q": q, "meals": meals, "walkin_pos": walkin_pos, "walkin_payments": walkin_payments,
+        "scan": scan, "scan_result": scan_result, "expiring_batches": expiring, "batches": batches, "batch_item": batch_item,
+    })
 
 
 @router.post("/pos/add")
@@ -66,7 +95,9 @@ async def pos_add(request: Request):
     try:
         rid = form.get("reservation_id"); rid = int(rid) if rid else None
         inv_id = form.get("inv_id"); inv_id = int(inv_id) if inv_id else None
-        services.add_pos_item(rid, form.get("desc", "Item"), int(form.get("qty") or 1), float(form.get("price") or 0), inv_id)
+        batch_id = form.get("batch_id"); batch_id = int(batch_id) if batch_id not in (None, "", "None") else None
+        lot_code = (form.get("lot_code") or "").strip() or None
+        services.add_pos_item(rid, form.get("desc", "Item"), int(form.get("qty") or 1), float(form.get("price") or 0), inv_id, batch_id=batch_id, lot_code=lot_code)
         deps.add_flash(request, "POS item added to reservation", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
@@ -82,12 +113,15 @@ async def cart_add(request: Request):
         price = float(form.get("price") or 0)
         inv_id = form.get("inv_id")
         inv_id = int(inv_id) if inv_id not in (None, "", "None") else None
+        batch_id = form.get("batch_id")
+        batch_id = int(batch_id) if batch_id not in (None, "", "None") else None
+        lot_code = (form.get("lot_code") or "").strip() or None
         if qty <= 0:
             raise ValueError("Quantity must be positive.")
         if price < 0:
             raise ValueError("Price cannot be negative.")
         cart = _get_cart(request)
-        cart.append({"desc": desc, "qty": qty, "price": price, "inv_id": inv_id})
+        cart.append({"desc": desc, "qty": qty, "price": price, "inv_id": inv_id, "batch_id": batch_id, "lot_code": lot_code})
         deps.get_session(request)["walkin_cart"] = cart
         deps.add_flash(request, f"Added to walk-in cart: {desc} x{qty}", "success")
     except Exception as e:
@@ -166,7 +200,7 @@ async def restock(request: Request):
     form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
     try:
         services.restock_inventory(int(form.get("item_id")), float(form.get("qty") or 0), float(form.get("unit_cost") or 0), form.get("password", ""))
-        deps.add_flash(request, "Inventory restocked", "success")
+        deps.add_flash(request, "Inventory restocked (batch recorded with received time)", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
     r = deps.redirect("/pos"); deps.save_session(r, deps.get_session(request)); return r
@@ -176,8 +210,12 @@ async def restock(request: Request):
 async def inv_add(request: Request):
     form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
     try:
-        services.add_inventory_item(form.get("name", ""), form.get("category", ""), form.get("unit", ""), float(form.get("stock") or 0),
-            float(form.get("unit_cost") or 0), float(form.get("selling_price") or 0), float(form.get("low") or 0), float(form.get("over") or 0), form.get("password", ""))
+        services.add_inventory_item(
+            form.get("name", ""), form.get("category", ""), form.get("unit", ""), float(form.get("stock") or 0),
+            float(form.get("unit_cost") or 0), float(form.get("selling_price") or 0), float(form.get("low") or 0), float(form.get("over") or 0), form.get("password", ""),
+            sku=form.get("sku",""), barcode=form.get("barcode",""), barcode_type=form.get("barcode_type","code128"),
+            track_batches=form.get("track_batches","0"), shelf_life_days=form.get("shelf_life_days") or None, default_supplier=form.get("default_supplier","")
+        )
         deps.add_flash(request, "Inventory item added", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
@@ -289,3 +327,51 @@ async def activity_toggle(aid: int, request: Request):
     except Exception as e:
         deps.add_flash(request, str(e), "error")
     r = deps.redirect("/pos"); deps.save_session(r, deps.get_session(request)); return r
+
+
+@router.post("/inventory/batch/receive")
+async def batch_receive(request: Request):
+    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    try:
+        batch = services.receive_inventory_batch(
+            int(form.get("item_id")), float(form.get("qty") or 0), float(form.get("unit_cost") or 0),
+            received_at=(form.get("received_at") or "").strip() or None,
+            expiry_date=(form.get("expiry_date") or "").strip() or None,
+            supplier=form.get("supplier", ""), reference=form.get("reference", ""), notes=form.get("notes", ""),
+            password=form.get("password", ""), print_label_after=bool(form.get("print_label"))
+        )
+        deps.add_flash(request, f"Batch received: lot {batch.get('lot_code')} (received {batch.get('received_at')}, expiry {batch.get('expiry_date') or 'n/a'})", "success")
+    except Exception as e:
+        deps.add_flash(request, str(e), "error")
+    r = deps.redirect("/pos"); deps.save_session(r, deps.get_session(request)); return r
+
+
+@router.post("/inventory/label/item/{item_id}")
+async def label_item(item_id: int, request: Request):
+    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    try:
+        ok, msg, p = services.print_item_label(item_id)
+        deps.add_flash(request, f"Item label: {msg} ({p})", "success" if ok else "warning")
+    except Exception as e:
+        deps.add_flash(request, str(e), "error")
+    r = deps.redirect("/pos"); deps.save_session(r, deps.get_session(request)); return r
+
+
+@router.post("/inventory/label/batch/{batch_id}")
+async def label_batch(batch_id: int, request: Request):
+    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    try:
+        ok, msg, p = services.print_batch_label(batch_id)
+        deps.add_flash(request, f"Batch label: {msg} ({p})", "success" if ok else "warning")
+    except Exception as e:
+        deps.add_flash(request, str(e), "error")
+    r = deps.redirect("/pos"); deps.save_session(r, deps.get_session(request)); return r
+
+
+@router.get("/inventory/scan")
+def inventory_scan(request: Request, code: str = ""):
+    # redirect to pos with scan param so UI shows resolved result
+    from urllib.parse import quote
+    r = deps.redirect(f"/pos?scan={quote(code or '')}")
+    deps.save_session(r, deps.get_session(request)); return r
+

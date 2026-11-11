@@ -1,130 +1,278 @@
 # Property Manager (TUI + Web UI)
 
-Local-first property management system: reservations, front desk, POS/inventory, accounting ledger, invoices, reports/analytics. **Business logic lives in `src/app_core/`** and is shared by both UIs.
+Local-first property management system (reservations/front desk, POS & inventory with barcodes/batches, meals/recipes & activities, accounting ledger, invoices, reports/analytics, grounded assistant). **All business logic lives in `src/app_core/`** and is shared by the Textual TUI and the FastAPI/HTMX web UI.
 
-## Structure
+- **TUI:** runs locally in a terminal (best for constrained/mobile terminals like iSH).
+- **Web UI:** FastAPI server (`--workers 1`, SQLite) accessed from a browser (desktop/mobile, LAN or remote). Health probes: `GET /health`, `GET /healthz`.
+
+## Repository layout
 
 ```text
-launcher.py             # prompts and launches TUI or Web UI
-main.py                 # TUI entry point (default)
-requirements*.txt        # runtime/web/dev Python dependencies
-scripts/setup.sh        # dynamic setup/deploy (detects iSH/Alpine, Termux, Debian/Ubuntu, macOS)
-scripts/setup_ish_alpine.sh  # same dynamic script (iSH-friendly name)
-src/app_core/           # backend: db.py, services.py, paths.py, assistant.py
-ui/tui/                 # Textual TUI (app, tabs, modals)
-ui/web/                 # FastAPI + HTMX web UI
-tests/                  # pytest tests
+launcher.py                  # unified entry point: menu to choose/switch TUI or Web UI
+main.py                      # TUI entry point
+requirements*.txt            # runtime / web / dev Python deps
+scripts/setup.sh             # dynamic setup/deploy (Linux/macOS/Termux/iSH, apk/apt/pkg/brew)
+scripts/setup_ish_alpine.sh  # same script (iSH-friendly name)
+scripts/setup_windows.ps1    # dynamic setup/deploy for Windows (PowerShell, auto-bootstraps prereqs)
+scripts/setup_windows.cmd    # Windows CMD wrapper
+scripts/install_windows.ps1  # one-command Windows bootstrap (winget + clone + setup)
+scripts/install_windows.cmd  # Windows bootstrap CMD wrapper
+src/app_core/                # backend: db.py, services.py, paths.py, assistant.py, barcodes.py
+ui/tui/                      # Textual TUI (app, tabs, modals)
+ui/web/                      # FastAPI + HTMX web UI
+data/assistant_nlu/          # assistant seeds/feedback
+tests/                       # pytest tests
+assistant.md                 # assistant evolution & enhancement plan
 ```
 
-## Quick start (desktop / standard terminal)
+## Prerequisites (all platforms)
 
+- **Python 3.10+** (3.11+ recommended) with `pip` and `venv`.
+- **Git** (to clone/update; optional if you copy an existing checkout).
+- **SQLite** is bundled with Python; a C build toolchain is only needed if a wheel is unavailable for your platform/arch (common on iSH/Alpine or some ARM setups) — the setup scripts install best-effort build deps.
+- **Web UI extra:** dependencies in `requirements-web.txt`. Use a single worker (`--workers 1`) because the app uses SQLite.
+
+> Data/DB location is managed by `app_core.paths` (legacy `property_manager.db`/`exports/`/`invoices/` if present, else `data/`). Override with `PM_DATA_DIR=/path/to/data`.
+
+## Quick decision: how to deploy
+
+| Goal | Recommended mode |
+|---|---|
+| Local use on a PC/server terminal | **TUI** (`python launcher.py --tui`) or Web on `127.0.0.1` |
+| Access from phone/tablet browser on the same LAN | **Web** server bound to `0.0.0.0`, open `http://<host-ip>:8000` (Add to Home Screen) |
+| Remote access over the internet | **Web** on a host you control behind **HTTPS** (reverse proxy) / VPN / Tailscale |
+| iSH (iOS, emulated Alpine) | **TUI** with web deps skipped (`SKIP_WEB=1`) — most reliable |
+| Android (Termux) | **TUI** or **Web** (Termux supports both) |
+| Windows desktop/server | PowerShell setup script or manual `venv` + `uvicorn`/launcher |
+
+---
+
+## Deploy on any OS (recommended: dynamic setup scripts)
+
+The repo ships dynamic scripts that detect the OS/package manager, install prerequisites, clone/update, create a `.venv`, install deps, and can run/deploy.
+
+- **Unix-like (Linux, macOS, Android/Termux, iSH/Alpine):** `scripts/setup.sh` (alias `scripts/setup_ish_alpine.sh`)
+- **Windows:** `scripts/setup_windows.ps1` (or `scripts/setup_windows.cmd`)
+
+**Common parameters (env vars / PS params):**
+- `MODE=auto|tui|web|both` — what to install/run (`auto` prefers TUI on iSH, else both).
+- `ACTION=setup|run|deploy` — `setup` = install/prepare, `run` = start existing install, `deploy` = setup + run.
+- `SKIP_WEB=auto|0|1` — skip web deps (auto-skips on iSH; recommended there).
+- `HOST` / `PORT` — web bind/port (default `127.0.0.1:8000`). Use `0.0.0.0` for LAN access.
+- `INSTALL_DIR`, `REPO_URL`, `BRANCH` — install location/source.
+- `INSTALL_DEV=1`, `RUN_TESTS=1` — optional dev deps/tests.
+
+### Linux (Debian/Ubuntu, Fedora/RHEL*, Arch*, SUSE*, generic)
+
+> The script auto-detects `apt`/`apk`/`pkg`/`brew`. On distros without these, install Python 3, pip, venv, git (and a compiler for fallback builds) via your package manager, then run the script or the manual steps below.
+
+**Debian/Ubuntu (apt):**
 ```bash
-python3 -m venv .venv && . .venv/bin/activate
-pip install -r requirements.txt              # TUI/runtime
-pip install -r requirements-web.txt          # optional, for Web UI
-
-python launcher.py          # choose [1] TUI or [2] Web
-python launcher.py --tui    # TUI
-python launcher.py --web    # Web UI (opens browser, workers=1)
-```
-
-## Dynamic setup script (recommended for iSH / iOS terminals / servers)
-
-`scripts/setup.sh` (alias: `scripts/setup_ish_alpine.sh`) detects the environment and package manager (`apk`/`apt`/`pkg`/`brew`), installs deps, clones/updates the repo, prepares a `.venv`, and can deploy/run.
-
-```bash
-# Setup (auto-detect; on iSH defaults to TUI-friendly install)
-sh scripts/setup.sh
-
-# Setup + run immediately (deploy)
+sudo apt-get update && sudo apt-get install -y git python3 python3-venv python3-pip
+git clone https://github.com/Michaelhehelmy/property-manager-tui.git
+cd property-manager-tui
+sh scripts/setup.sh                 # setup (installs deps, creates .venv)
+# or setup + run:
 MODE=tui ACTION=deploy sh scripts/setup.sh
-MODE=web HOST=0.0.0.0 PORT=8000 ACTION=deploy sh scripts/setup.sh
-
-# Run after setup
-ACTION=run MODE=tui sh scripts/setup.sh
-ACTION=run MODE=web HOST=0.0.0.0 PORT=8000 sh scripts/setup.sh
+MODE=web ACTION=deploy HOST=127.0.0.1 PORT=8000 sh scripts/setup.sh
+```
+**Alpine (apk):**
+```sh
+apk update && apk add --no-cache git ca-certificates
+git clone https://github.com/Michaelhehelmy/property-manager-tui.git
+cd property-manager-tui
+sh scripts/setup.sh                 # web builds may need cargo/rust (script attempts); use SKIP_WEB=1 for TUI-only
+```
+**Fedora/RHEL/CentOS (dnf/yum), Arch (pacman), openSUSE (zypper):** install `git python3 python3-pip` (+ venv/build tools per distro), then:
+```bash
+git clone https://github.com/Michaelhehelmy/property-manager-tui.git && cd property-manager-tui
+# run the script (it will detect env; install any missing system deps if prompted/warned)
+MODE=tui ACTION=deploy sh scripts/setup.sh
+# or use manual venv steps below
 ```
 
-**Options (env vars):** `MODE=auto|tui|web|both`, `ACTION=setup|run|deploy`, `SKIP_WEB=auto|0|1`, `INSTALL_DIR`, `REPO_URL`, `BRANCH`, `HOST`, `PORT`, `INSTALL_DEV=1`, `RUN_TESTS=1`.
+### macOS
 
-### Windows (PowerShell)
+```bash
+# Xcode CLT recommended: xcode-select --install   (Homebrew optional)
+git clone https://github.com/Michaelhehelmy/property-manager-tui.git
+cd property-manager-tui
+sh scripts/setup.sh                 # uses brew if available; otherwise system python3
+MODE=web ACTION=deploy HOST=127.0.0.1 PORT=8000 sh scripts/setup.sh
+# TUI: MODE=tui ACTION=deploy sh scripts/setup.sh
+```
 
-Use `scripts/setup_windows.ps1` (or `scripts/setup_windows.cmd` wrapper). Requires **Python 3.10+** in PATH and **Git for Windows** (for clone/update).
+### Windows (10/11, Server)
+
+**One-command install (even if Python/Git are not installed)** — PowerShell as Administrator recommended (uses `winget` to auto-install prerequisites), then:
 
 ```powershell
-# Setup (from repo checkout, or will clone/update into %USERPROFILE%\property-manager-tui)
-powershell -ExecutionPolicy Bypass -File scripts\setup_windows.ps1
-
-# Setup + run (TUI or Web)
-powershell -ExecutionPolicy Bypass -File scripts\setup_windows.ps1 -Action deploy -Mode tui
-powershell -ExecutionPolicy Bypass -File scripts\setup_windows.ps1 -Action deploy -Mode web -BindHost 0.0.0.0 -Port 8000
-
-# Run later
-powershell -ExecutionPolicy Bypass -File scripts\setup_windows.ps1 -Action run -Mode tui
-powershell -ExecutionPolicy Bypass -File scripts\setup_windows.ps1 -Action run -Mode web
+irm https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install_windows.ps1 | iex
 ```
 
-CMD wrapper examples: `scripts\setup_windows.cmd -Action deploy -Mode tui`
+Customize before running (optional):
 
-Parameters/env vars: `-Action`/`ACTION` (setup|run|deploy), `-Mode`/`MODE` (auto|tui|web|both), `-SkipWeb`/`SKIP_WEB`, `-InstallDir`/`INSTALL_DIR`, `-BindHost`/`HOST`, `-Port`/`PORT`, `-InstallDev`, `-RunTests`. For LAN access run web with `-BindHost 0.0.0.0` and set `$env:PM_WEB_SECRET_KEY` to a strong secret.
+```powershell
+$env:ACTION='deploy'; $env:MODE='web'; $env:HOST='127.0.0.1'; $env:PORT='8000'
+irm https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install_windows.ps1 | iex
+```
+(`MODE=tui|web|both`, `HOST=0.0.0.0` for LAN; set `$env:PM_WEB_SECRET_KEY` for non-local/shared web.)
 
-## Run on iSH or iOS terminal apps
+**If you already have the repo / prefer local scripts:**
 
-Choose based on what your iOS terminal provides:
+```powershell
+# auto-bootstraps Python/Git if missing (winget), clones/updates, sets up & runs
+powershell -ExecutionPolicy Bypass -File scripts\install_windows.ps1 -Action deploy -Mode tui
+# or double-click / run:
+scripts\install_windows.cmd -Action deploy -Mode tui
 
-### 1) Full terminal on iOS (local TUI) — best for iSH
-Use an app that provides a full terminal (e.g. **iSH** on iOS/iPadOS). The Textual TUI runs locally in the terminal.
+# lower-level setup script (same actions/modes, also bootstraps prereqs)
+powershell -ExecutionPolicy Bypass -File scripts\setup_windows.ps1 -Action deploy -Mode web -BindHost 127.0.0.1 -Port 8000
+scripts\setup_windows.cmd -Action run -Mode tui
+```
+
+Parameters/env vars: `-Action`/`ACTION` (setup|run|deploy), `-Mode`/`MODE` (auto|tui|web|both), `-SkipWeb`/`SKIP_WEB`, `-InstallDir`/`INSTALL_DIR`, `-BindHost`/`HOST`, `-Port`/`PORT`, `-InstallDev`, `-RunTests`. Installs to `%USERPROFILE%\property-manager-tui` by default. If `winget` is unavailable, install [Python 3.10+](https://www.python.org/downloads/) (add to PATH) and [Git for Windows](https://git-scm.com/download/win), then re-run.
+
+### Windows Subsystem for Linux (WSL / WSL2)
+
+Treat as Linux inside WSL:
+```bash
+git clone https://github.com/Michaelhehelmy/property-manager-tui.git && cd property-manager-tui
+MODE=web ACTION=deploy HOST=0.0.0.0 PORT=8000 sh scripts/setup.sh
+```
+Open from Windows browser via `http://localhost:8000` (or the WSL IP for other LAN devices, subject to Windows firewall/port forwarding).
+
+### Android — Termux
+
+```sh
+pkg update && pkg install -y git python
+git clone https://github.com/Michaelhehelmy/property-manager-tui.git
+cd property-manager-tui
+# TUI or Web both supported
+MODE=tui ACTION=deploy sh scripts/setup.sh
+# or web (accessible from other devices on LAN):
+MODE=web HOST=0.0.0.0 PORT=8000 ACTION=deploy sh scripts/setup.sh
+```
+Then browse `http://<phone-ip>:8000` from another device (same Wi‑Fi). Set `PM_WEB_SECRET_KEY` for non-local use.
+
+### iOS — iSH (Alpine, emulated)
+
+iSH is constrained/emulated: **TUI is the most reliable mode**. Web dependency builds (e.g. `pydantic-core`/Rust) can be slow or unavailable — prefer `SKIP_WEB=1`.
 
 ```sh
 apk update && apk add --no-cache git ca-certificates
 git clone https://github.com/Michaelhehelmy/property-manager-tui.git ~/property-manager-tui
 cd ~/property-manager-tui
 SKIP_WEB=1 MODE=tui ACTION=deploy sh scripts/setup.sh
-# or setup only, then:
-# . .venv/bin/activate && python3 launcher.py --tui
+# later runs:
+ACTION=run MODE=tui sh scripts/setup.sh
+# or: . .venv/bin/activate && python3 launcher.py --tui
 ```
 
-Notes: iSH is emulated Alpine — TUI is the most reliable mode. Web dependency builds (e.g. `pydantic-core`/Rust) can be slow or unavailable, so `SKIP_WEB=1` is recommended. Re-run the script anytime to pull updates.
+### iOS/iPadOS — Web client (Safari) against a server
 
-### 2) Full client + server (Web UI)
-Run the **server** (FastAPI, `--workers 1`) on a capable host, and use an iOS device/browser as the **client**. This is recommended when you want iPhone/iPad Safari access (including **Add to Home Screen**).
+Run the **server** on a capable host and use iOS Safari as the **client** (works with “Add to Home Screen”):
+- **Server on Mac/Linux/Windows/Termux/Raspberry Pi/VPS** (LAN or reachable host): `MODE=web HOST=0.0.0.0 PORT=8000 ACTION=deploy ...` then open `http://<server-ip>:8000` in Safari.
+- **Same-device localhost** (if the environment can run the web deps): bind `127.0.0.1`.
+- For remote/public access, put the server behind **HTTPS** (reverse proxy) or a private network (Tailscale/VPN). Do not expose plain HTTP directly.
 
-- **Server on the same iOS terminal device** (if the environment can run Python web deps, e.g. some Linux-on-iOS setups/Termux-like environments or a remote host):  
-  `HOST=0.0.0.0 ACTION=deploy MODE=web sh scripts/setup.sh` then open `http://<device-ip>:8000` in Safari.
-- **Server on another machine** (Mac/Linux/VPS/Raspberry Pi/always-on host, accessible on LAN or via HTTPS/tunnel): run the web server there and open its URL from iOS Safari.
-- **Same-device browser:** `HOST=127.0.0.1` → `http://127.0.0.1:8000`.
+### Other Unix / NAS / Raspberry Pi / ARM / minimal environments
+
+On any POSIX-like system with Python 3.10+, git, and a working compiler toolchain (when wheels aren’t available):
+```bash
+git clone https://github.com/Michaelhehelmy/property-manager-tui.git && cd property-manager-tui
+# try the dynamic script first
+sh scripts/setup.sh
+# if your package manager isn’t detected, install python3/pip/venv/git/build deps manually, then:
+python3 -m venv .venv && . .venv/bin/activate
+pip install -r requirements.txt        # TUI
+pip install -r requirements-web.txt    # Web (optional)
+python3 launcher.py --tui
+```
+The app is local-first/SQLite; on very low-resource devices prefer TUI (`SKIP_WEB=1`).
+
+### Containers / Docker (generic)
+
+No official image is bundled; a minimal example (Debian-based) for the **Web UI**:
+```dockerfile
+FROM python:3.12-slim
+RUN apt-get update && apt-get install -y --no-install-recommends git build-essential && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY . /app
+RUN pip install --no-cache-dir -r requirements.txt -r requirements-web.txt
+ENV PM_WEB_SECRET_KEY=change-me PM_DATA_DIR=/data
+VOLUME ["/data"]
+EXPOSE 8000
+CMD ["python3", "-m", "uvicorn", "ui.web.server:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+```
+Build/run: `docker build -t property-manager . && docker run -p 8000:8000 -v pmdata:/data -e PM_WEB_SECRET_KEY=... property-manager`. Mount a volume for persistent data/backups and keep `--workers 1`.
+
+---
+
+## Manual install & run (any OS with Python)
 
 ```bash
-export PM_WEB_SECRET_KEY='change-this-to-a-long-random-secret'  # required for non-local/shared use
-python3 -m uvicorn ui.web.server:app --host 0.0.0.0 --port 8000 --workers 1
-# or: ACTION=run MODE=web HOST=0.0.0.0 PORT=8000 sh scripts/setup.sh
+# 1) Get source
+git clone https://github.com/Michaelhehelmy/property-manager-tui.git
+cd property-manager-tui
+
+# 2) Create & activate venv
+python3 -m venv .venv
+# Linux/macOS/Termux/iSH/WSL:  . .venv/bin/activate
+# Windows (PowerShell):         .\.venv\Scripts\Activate.ps1
+# Windows (cmd):                .venv\Scripts\activate.bat
+
+# 3) Install deps
+pip install -r requirements.txt          # TUI/core
+pip install -r requirements-web.txt      # Web UI (optional)
+
+# 4) Run
+python launcher.py            # interactive [1] TUI / [2] Web
+python launcher.py --tui
+python launcher.py --web      # web launcher
+# or directly:
+PYTHONPATH=src python -m uvicorn ui.web.server:app --host 127.0.0.1 --port 8000 --workers 1
 ```
 
-Security/ops: keep `--workers 1` (SQLite). Use a strong `PM_WEB_SECRET_KEY`. Prefer LAN/Tailscale/VPN or HTTPS reverse proxy for remote access; do not expose plain HTTP publicly. Health probes: `GET /health`, `GET /healthz`. Back up the DB/data regularly.
+## Web deployment notes (important)
 
-## Run (Web UI, manual)
+- **Single worker:** always run with `--workers 1` (SQLite/shared state).
+- **Secret:** set `PM_WEB_SECRET_KEY` to a strong random value for any non-local/shared deployment.
+- **Bind:** `127.0.0.1` = local only; `0.0.0.0` = reachable on network interfaces (LAN). Open firewall/port as needed.
+- **Security:** sensitive actions use CSRF + super-password/unlock flows. Prefer **HTTPS** (reverse proxy like Caddy/Nginx/Traefik) or a private network (VPN/Tailscale) for remote access; avoid exposing plain HTTP publicly.
+- **Reverse proxy (example):** proxy to `127.0.0.1:8000`, terminate TLS, forward headers as usual.
+- **Service/autostart:** run via a process manager (systemd, launchd, NSSM/Task Scheduler on Windows, `supervisord`, Docker restart policy) executing the venv’s Python/uvicorn with `--workers 1`.
+- **Backups:** back up the DB and data/exports/invoices regularly (and before upgrades/migrations).
+
+## Updates
 
 ```bash
-pip install -r requirements-web.txt
-PYTHONPATH=src uvicorn ui.web.server:app --reload --workers 1
-# Open http://127.0.0.1:8000
+cd <install-dir>
+git pull
+# re-run setup to refresh deps:
+#   Unix: MODE=<tui|web|both> ACTION=setup sh scripts/setup.sh
+#   Win:  powershell -ExecutionPolicy Bypass -File scripts\setup_windows.ps1 -Action setup
+# DB migrations run on startup (additive).
 ```
 
-Sensitive web actions use CSRF + super-password verification/unlock flow. The web UI is a localhost/single-worker MVP over the same `app_core` services/DB.
-
-## Tests / checks
+## Tests & checks
 
 ```bash
 python -m py_compile src/app_core/*.py ui/tui/*.py ui/web/*.py main.py launcher.py
 PYTHONPATH=src pytest -q
-# coverage:
 bash scripts/coverage.sh
-# install deps + run tests helper:
 bash scripts/install_deps_and_test.sh
 ```
 
-## Data paths
-`app_core.paths` anchors runtime data. By default it uses legacy root `property_manager.db`/`exports/`/`invoices/` if present; otherwise uses `data/`. Override with:
-```bash
-export PM_DATA_DIR=/path/to/data
-```
+## Troubleshooting
+
+- **Web deps fail to build (iSH/slow or no Rust toolchain):** use `SKIP_WEB=1 MODE=tui` and run the TUI.
+- **`python3 -m venv` missing:** install your distro’s venv package (e.g. `python3-venv` on Debian/Ubuntu) or let the script fall back where possible.
+- **Port in use:** change `PORT`/`--port`.
+- **Can’t reach web from another device:** bind `HOST=0.0.0.0`, allow the port through firewall, and use the host’s LAN IP.
+- **Permission/DB issues:** ensure the process can read/write the data directory (`PM_DATA_DIR` or default) and keep a single writer/worker.
+
+## More
+
+- `assistant.md` — assistant capabilities, local-only architecture, and enhancement plan.
+- In-app help/tooltips in Web & TUI for flows (POS/inventory/barcodes & batches, activities, settings, etc.).

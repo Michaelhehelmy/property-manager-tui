@@ -119,6 +119,19 @@ SETTINGS_CATALOG = {
     "assistant_llm_model": ("Assistant LLM Model", "str", "", "system", "Model name for talking/full_llm"),
     "assistant_llm_api_key": ("Assistant LLM API Key", "str", "", "system", "Optional; leave blank for local endpoints"),
     "assistant_require_unlock": ("Assistant Requires Unlock", "bool", "true", "system", "Gate chat access to sensitive manager data"),
+    "barcode_enabled": ("Barcode Enabled", "bool", "true", "system", "Enable barcode/label and batch features"),
+    "barcode_scanner_mode": ("Barcode Scanner Mode", "enum", "keyboard_wedge", "system", "Primary scan input mode",
+                             ["keyboard_wedge", "serial", "tcp"]),
+    "barcode_scanner_port": ("Barcode Scanner Port", "str", "", "system", "Serial port or host:port for non-wedge scanners"),
+    "barcode_suffix_enter": ("Scanner Sends Enter", "bool", "true", "system", "Keyboard-wedge scanners usually suffix Enter"),
+    "label_printer": ("Label Printer", "str", "", "system", "Like default printer (cups/win/raw:host:port); blank = default printer"),
+    "label_format": ("Label Format", "enum", "code128", "system", "Default label/barcode format",
+                     ["code128", "qr", "zpl", "escpos"]),
+    "label_include_qr_payload": ("Label Includes QR Payload", "bool", "true", "system", "Embed batch data payload on lot labels"),
+    "expiry_warn_days": ("Expiry Warning Days", "int", "7", "inventory", "Days before expiry to warn"),
+    "block_sell_expired": ("Block Selling Expired Batches", "bool", "false", "inventory", "If true, refuse sale from expired batches"),
+    "batch_deduction_policy": ("Batch Deduction Policy", "enum", "fefo", "inventory", "Batch allocation when selling",
+                               ["fefo", "manual"]),
     "schema_version": ("Schema Version", "internal", "4", "system", ""),
 }
 
@@ -1540,11 +1553,26 @@ def _void_pos_item_inner(cur, pos_row):
     pid = pos_row["id"]
     _reverse(cur, "POS", pid, entry_type_filter=("CHARGE", "COGS"))
     if pos_row["inventory_item_id"]:
+        # restore aggregate
         cur.execute("UPDATE inventory SET stock_qty = stock_qty + ? WHERE id=?",
                     (pos_row["quantity"], pos_row["inventory_item_id"]))
-        cur.execute("""INSERT INTO inventory_logs (item_id, change_type, quantity, reference)
-                       VALUES (?, 'IN', ?, ?)""",
-                    (pos_row["inventory_item_id"], pos_row["quantity"], f"void POS #{pid}"))
+        bid = None
+        try:
+            bid = pos_row["batch_id"]
+        except Exception:
+            bid = None
+        if bid:
+            cur.execute("UPDATE inventory_batches SET quantity_remaining = quantity_remaining + ?, status=CASE WHEN status='depleted' THEN 'active' ELSE status END WHERE id=?",
+                        (pos_row["quantity"], bid))
+        lot = None
+        try:
+            lot = pos_row["lot_code"]
+        except Exception:
+            lot = None
+        ref = f"void POS #{pid}" + (f" lot {lot}" if lot else "")
+        cur.execute("""INSERT INTO inventory_logs (item_id, change_type, quantity, reference, batch_id)
+                       VALUES (?, 'IN_VOID', ?, ?, ?)""",
+                    (pos_row["inventory_item_id"], pos_row["quantity"], ref, bid))
     cur.execute("UPDATE pos_tabs SET voided_at=datetime('now','localtime') WHERE id=?", (pid,))
 
 
@@ -1614,6 +1642,340 @@ def get_reservation(rid):
     return connect().execute("SELECT * FROM reservations WHERE id=?", (rid,)).fetchone()
 
 
+
+# ═══════════════════════════════════════════════════════════════════════════
+# BARCODES / BATCHES / TRACEABILITY
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _row_to_dict(row):
+    if row is None:
+        return None
+    try:
+        return dict(row)
+    except Exception:
+        return row
+
+
+def resolve_barcode(code):
+    """Resolve a scanned/entered code to item, batch, or embedded payload."""
+    from .db import connect
+    raw = barcodes.normalize_code(code)
+    if not raw:
+        return {"type": "unknown", "code": "", "item": None, "batch": None, "payload": None}
+    payload = barcodes.try_decode_payload(raw)
+    lot = raw
+    if payload:
+        lot = payload.get("lot") or raw
+    conn = connect()
+    batch = conn.execute("SELECT * FROM inventory_batches WHERE lot_code=? OR barcode_value=? ORDER BY id DESC LIMIT 1", (lot, raw)).fetchone()
+    item = None
+    if batch:
+        item = conn.execute("SELECT * FROM inventory WHERE id=?", (batch["item_id"],)).fetchone()
+        warn = int(get_setting("expiry_warn_days", "7") or 7)
+        status, days = barcodes.expiry_status(batch["expiry_date"], warn)
+        b = _row_to_dict(batch)
+        b["expiry_state"] = status
+        b["days_to_expiry"] = days
+        return {"type": "batch", "code": raw, "item": _row_to_dict(item), "batch": b, "payload": payload}
+    item = conn.execute("""SELECT * FROM inventory WHERE active=1 AND
+        (barcode = ? OR sku = ? OR lower(item_name)=lower(?)) LIMIT 1""", (raw, raw, raw)).fetchone()
+    if item:
+        return {"type": "item", "code": raw, "item": _row_to_dict(item), "batch": None, "payload": payload}
+    # try inactive explicit barcode/sku
+    item = conn.execute("""SELECT * FROM inventory WHERE barcode = ? OR sku = ? LIMIT 1""", (raw, raw)).fetchone()
+    if item:
+        return {"type": "item", "code": raw, "item": _row_to_dict(item), "batch": None, "payload": payload}
+    return {"type": "unknown", "code": raw, "item": None, "batch": None, "payload": payload}
+
+
+def get_inventory_item(item_id):
+    from .db import connect
+    return connect().execute("SELECT * FROM inventory WHERE id=?", (item_id,)).fetchone()
+
+
+def get_inventory_items(query="", category="", stock_filter="", include_inactive=False):
+    """Web/TUI-friendly inventory listing with barcode/SKU search."""
+    from .db import connect
+    q = (query or "").strip() if isinstance(query, str) else ""
+    cat = "" if not isinstance(category, str) or category == "All" else category
+    sf = "" if not isinstance(stock_filter, str) or stock_filter == "All" else stock_filter
+    sql = """SELECT i.*,
+        (SELECT COUNT(1) FROM inventory_batches b WHERE b.item_id=i.id AND b.status='active' AND b.quantity_remaining>0) AS active_batches,
+        (SELECT MIN(b.expiry_date) FROM inventory_batches b WHERE b.item_id=i.id AND b.status='active' AND b.quantity_remaining>0 AND b.expiry_date IS NOT NULL AND b.expiry_date <> '') AS next_expiry
+        FROM inventory i WHERE 1=1"""
+    params = []
+    if not include_inactive:
+        sql += " AND i.active=1"
+    if q:
+        like = f"%{q}%"
+        sql += " AND (i.item_name LIKE ? OR i.category LIKE ? OR IFNULL(i.sku,'') LIKE ? OR IFNULL(i.barcode,'') LIKE ?)"
+        params += [like, like, like, like]
+    if cat:
+        sql += " AND i.category=?"
+        params.append(cat)
+    low = float(get_setting("low_stock_threshold", "5"))
+    over = float(get_setting("overstock_threshold", "100"))
+    if sf == "Low":
+        sql += " AND i.stock_qty < ? AND i.stock_qty >= 0"
+        params.append(low)
+    elif sf == "Over":
+        sql += " AND i.stock_qty > ?"
+        params.append(over)
+    elif sf == "Negative":
+        sql += " AND i.stock_qty < 0"
+    elif sf == "Expiring":
+        warn = int(get_setting("expiry_warn_days", "7") or 7)
+        sql += " AND EXISTS (SELECT 1 FROM inventory_batches b WHERE b.item_id=i.id AND b.status='active' AND b.quantity_remaining>0 AND b.expiry_date IS NOT NULL AND date(b.expiry_date) <= date('now','localtime', ?))"
+        params.append(f"+{warn} days")
+    sql += " ORDER BY i.item_name, i.id"
+    return connect().execute(sql, params).fetchall()
+
+
+def list_inventory_batches(item_id=None, status=None, expiring_within_days=None, include_depleted=False):
+    from .db import connect
+    sql = """SELECT b.*, i.item_name, i.sku, i.unit
+             FROM inventory_batches b JOIN inventory i ON i.id=b.item_id WHERE 1=1"""
+    params = []
+    if item_id is not None:
+        sql += " AND b.item_id=?"
+        params.append(item_id)
+    if status:
+        sql += " AND b.status=?"
+        params.append(status)
+    elif not include_depleted:
+        sql += " AND b.status IN ('active','expired')"
+    if expiring_within_days is not None:
+        sql += " AND b.expiry_date IS NOT NULL AND b.expiry_date <> '' AND date(b.expiry_date) <= date('now','localtime', ?)"
+        params.append(f"+{int(expiring_within_days)} days")
+    sql += " ORDER BY CASE WHEN b.expiry_date IS NULL OR b.expiry_date='' THEN 1 ELSE 0 END, b.expiry_date, b.received_at, b.id"
+    rows = connect().execute(sql, params).fetchall()
+    warn = int(get_setting("expiry_warn_days", "7") or 7)
+    out = []
+    for r in rows:
+        d = dict(r)
+        st, days = barcodes.expiry_status(d.get("expiry_date"), warn)
+        d["expiry_state"] = st
+        d["days_to_expiry"] = days
+        out.append(d)
+    return out
+
+
+def get_inventory_batch(batch_id):
+    from .db import connect
+    row = connect().execute("""SELECT b.*, i.item_name, i.sku, i.unit, i.barcode AS item_barcode
+        FROM inventory_batches b JOIN inventory i ON i.id=b.item_id WHERE b.id=?""", (batch_id,)).fetchone()
+    if not row:
+        return None
+    d = dict(row)
+    warn = int(get_setting("expiry_warn_days", "7") or 7)
+    st, days = barcodes.expiry_status(d.get("expiry_date"), warn)
+    d["expiry_state"] = st
+    d["days_to_expiry"] = days
+    return d
+
+
+def get_expiring_batches(within_days=None, include_expired=True):
+    warn = int(within_days if within_days is not None else get_setting("expiry_warn_days", "7") or 7)
+    batches = list_inventory_batches(status=None, expiring_within_days=warn, include_depleted=False)
+    if include_expired:
+        # also include already expired active
+        from .db import connect
+        rows = connect().execute("""SELECT b.*, i.item_name, i.sku, i.unit
+            FROM inventory_batches b JOIN inventory i ON i.id=b.item_id
+            WHERE b.status='active' AND b.quantity_remaining>0 AND b.expiry_date IS NOT NULL AND b.expiry_date<>'' AND date(b.expiry_date) < date('now','localtime')
+            ORDER BY b.expiry_date""").fetchall()
+        have = {b["id"] for b in batches}
+        for r in rows:
+            if r["id"] in have:
+                continue
+            d = dict(r); st, days = barcodes.expiry_status(d.get("expiry_date"), warn); d["expiry_state"]=st; d["days_to_expiry"]=days
+            batches.append(d)
+    # keep only with remaining
+    return [b for b in batches if float(b.get("quantity_remaining") or 0) > 0]
+
+
+def _unique_lot_code(conn, base):
+    code = base
+    n = 1
+    while conn.execute("SELECT 1 FROM inventory_batches WHERE lot_code=?", (code,)).fetchone():
+        n += 1
+        code = f"{base}-{n}"
+    return code
+
+
+def create_inventory_batch(item_id, quantity, unit_cost=0.0, received_at=None, expiry_date=None,
+                           supplier="", reference="", notes="", lot_code=None, password=None, actor="system"):
+    """Receive stock into a traceable batch. Updates aggregate stock and logs movement."""
+    if password is not None and password != "":
+        if not verify_password(password):
+            raise PermissionError("Invalid super password.")
+    try:
+        qty = float(quantity)
+    except Exception:
+        raise ValueError("Quantity must be a number.")
+    if qty <= 0:
+        raise ValueError("Quantity must be positive.")
+    try:
+        ucost = float(unit_cost or 0)
+    except Exception:
+        ucost = 0.0
+    if ucost < 0:
+        raise ValueError("Unit cost cannot be negative.")
+    from .db import transaction
+    with transaction() as conn:
+        item = conn.execute("SELECT * FROM inventory WHERE id=?", (item_id,)).fetchone()
+        if not item:
+            raise ValueError("Item not found.")
+        if not item["active"]:
+            raise ValueError("Item is inactive.")
+        # received_at
+        recv = received_at
+        if not recv:
+            recv = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        # expiry auto-suggest
+        exp = (expiry_date or "").strip() or None
+        if not exp:
+            exp = barcodes.suggest_expiry(recv, item["shelf_life_days"]) if "shelf_life_days" in item.keys() else None
+        base_lot = barcodes.normalize_code(lot_code) if lot_code else barcodes.make_lot_code(item_id, recv)
+        lot = _unique_lot_code(conn, base_lot)
+        barcode_value = lot
+        btype = (item["barcode_type"] if "barcode_type" in item.keys() and item["barcode_type"] else "code128")
+        cur = conn.cursor()
+        cur.execute("""INSERT INTO inventory_batches
+            (item_id, lot_code, barcode_value, barcode_type, quantity_received, quantity_remaining,
+             unit_cost, received_at, expiry_date, supplier, reference, notes, status, payload_json)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (item_id, lot, barcode_value, btype, qty, qty, ucost, recv, exp,
+             (supplier or "").strip(), (reference or "").strip(), (notes or "").strip(), "active", "{}"))
+        bid = cur.lastrowid
+        # payload
+        try:
+            batch_row = conn.execute("SELECT * FROM inventory_batches WHERE id=?", (bid,)).fetchone()
+            payload = barcodes.encode_payload(barcodes.make_lot_payload(item, batch_row))
+            conn.execute("UPDATE inventory_batches SET payload_json=? WHERE id=?", (payload, bid))
+        except Exception:
+            pass
+        # aggregate stock & moving average cost
+        old_qty = float(item["stock_qty"] or 0)
+        old_cost = float(item["unit_cost"] or 0)
+        new_qty = old_qty + qty
+        new_cost = round((old_qty * old_cost + qty * ucost) / new_qty, 4) if ucost > 0 and new_qty > 0 else old_cost
+        conn.execute("UPDATE inventory SET stock_qty=?, unit_cost=? WHERE id=?", (new_qty, new_cost, item_id))
+        conn.execute("""INSERT INTO inventory_logs (item_id, change_type, quantity, reference, batch_id, unit_cost, balance_after)
+                       VALUES (?, 'IN_RECEIVE', ?, ?, ?, ?, ?)""",
+                    (item_id, qty, reference or f"receive lot {lot}", bid, ucost, new_qty))
+        if ucost > 0 and qty > 0:
+            total = round(qty * ucost, 2)
+            _post(cur, "INV", bid, "ASSET_IN", "Inventory Purchase",
+                  total, 0, 0, 0, "Cash", f"Receive {item['item_name']} lot {lot}",
+                  gross_override=-total)
+        _audit("inventory_batch_receive", "inventory_batch", bid, f"item={item_id} qty={qty} lot={lot}")
+        batch = conn.execute("SELECT b.*, i.item_name, i.sku, i.unit FROM inventory_batches b JOIN inventory i ON i.id=b.item_id WHERE b.id=?", (bid,)).fetchone()
+        return dict(batch) if batch else {"id": bid, "lot_code": lot}
+
+
+def receive_inventory_batch(item_id, quantity, unit_cost=0.0, received_at=None, expiry_date=None,
+                            supplier="", reference="", notes="", password="", print_label_after=False, printer=None):
+    batch = create_inventory_batch(item_id, quantity, unit_cost, received_at, expiry_date, supplier, reference, notes, password=password)
+    label = None
+    if print_label_after:
+        label = print_batch_label(batch.get("id"), printer=printer)
+    batch["label_print"] = label
+    return batch
+
+
+def get_label_printer():
+    p = (get_setting("label_printer", "") or "").strip()
+    if p:
+        return p
+    return (get_setting("default_printer", "") or "").strip() or None
+
+
+def _print_text_label(text, filename_base, printer=None, fmt="code128"):
+    EXPORT_DIR.mkdir(parents=True, exist_ok=True)
+    content, is_bin = barcodes.render_label_for_print(fmt, {}, None, True) if False else (text, False)
+    path = EXPORT_DIR / f"{filename_base}.txt"
+    path.write_text(text, encoding="utf-8")
+    target = printer if printer is not None else get_label_printer()
+    ok, msg = print_to_printer(str(path), target)
+    return ok, msg, str(path)
+
+
+def print_item_label(item_id, printer=None):
+    from .db import connect
+    item = connect().execute("SELECT * FROM inventory WHERE id=?", (item_id,)).fetchone()
+    if not item:
+        raise ValueError("Item not found.")
+    fmt = (get_setting("label_format", "code128") or "code128").lower()
+    text, _ = barcodes.render_label_for_print(fmt, item, None, True)
+    return _print_text_label(text, f"item_label_{item_id}", printer=printer, fmt=fmt)
+
+
+def print_batch_label(batch_id, printer=None):
+    from .db import connect
+    row = connect().execute("""SELECT b.*, i.item_name, i.sku, i.unit, i.barcode AS item_barcode, i.barcode_type AS item_barcode_type
+        FROM inventory_batches b JOIN inventory i ON i.id=b.item_id WHERE b.id=?""", (batch_id,)).fetchone()
+    if not row:
+        raise ValueError("Batch not found.")
+    fmt = (get_setting("label_format", "code128") or "code128").lower()
+    include_payload = get_setting("label_include_qr_payload", "true") == "true"
+    item = connect().execute("SELECT * FROM inventory WHERE id=?", (row["item_id"],)).fetchone()
+    text, _ = barcodes.render_label_for_print(fmt, item, row, include_payload=include_payload)
+    return _print_text_label(text, f"batch_label_{batch_id}_{row['lot_code']}", printer=printer, fmt=fmt)
+
+
+def test_label_print(printer=None):
+    sample_item = {"id": 0, "item_name": "Sample Item", "sku": "SKU-SAMPLE", "barcode": "SAMPLE123", "barcode_type": "code128", "category": "Sample", "selling_price": 0}
+    sample_batch = {"id": 0, "lot_code": "LOT-SAMPLE-0001", "barcode_value": "LOT-SAMPLE-0001", "barcode_type": "code128",
+                    "quantity_received": 1, "quantity_remaining": 1, "unit_cost": 0, "received_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "expiry_date": None, "supplier": "", "reference": "test"}
+    fmt = (get_setting("label_format", "code128") or "code128").lower()
+    text, _ = barcodes.render_label_for_print(fmt, sample_item, sample_batch, True)
+    return _print_text_label(text, "label_test", printer=printer, fmt=fmt)
+
+
+def _select_batches_for_sale(conn, item_id, qty_needed, specific_batch_id=None):
+    """Return list of (batch_row, take_qty) allocations (FEFO)."""
+    warn_days = int(get_setting("expiry_warn_days", "7") or 7)
+    block_expired = get_setting("block_sell_expired", "false") == "true"
+    if specific_batch_id is not None:
+        b = conn.execute("SELECT * FROM inventory_batches WHERE id=? AND item_id=?", (specific_batch_id, item_id)).fetchone()
+        if not b:
+            raise ValueError("Selected batch not found for item.")
+        state, _ = barcodes.expiry_status(b["expiry_date"], warn_days)
+        if state == "expired" and block_expired:
+            raise ValueError(f"Batch {b['lot_code']} is expired and cannot be sold.")
+        if float(b["quantity_remaining"] or 0) < qty_needed - 1e-9:
+            raise ValueError(f"Insufficient quantity in batch {b['lot_code']}.")
+        return [(b, float(qty_needed))]
+    rows = conn.execute("""SELECT * FROM inventory_batches
+        WHERE item_id=? AND status='active' AND quantity_remaining > 0
+        ORDER BY CASE WHEN expiry_date IS NULL OR expiry_date='' THEN 1 ELSE 0 END,
+                 date(expiry_date) ASC, datetime(received_at) ASC, id ASC""", (item_id,)).fetchall()
+    allocs = []
+    remaining = float(qty_needed)
+    for b in rows:
+        state, _ = barcodes.expiry_status(b["expiry_date"], warn_days)
+        if state == "expired" and block_expired:
+            continue
+        avail = float(b["quantity_remaining"] or 0)
+        if avail <= 1e-9:
+            continue
+        take = min(avail, remaining)
+        allocs.append((b, take))
+        remaining -= take
+        if remaining <= 1e-9:
+            break
+    if remaining > 1e-9:
+        # include blocked expired info in message if relevant
+        if block_expired:
+            raise ValueError("Insufficient non-expired batch stock available for the requested quantity.")
+        raise ValueError("Insufficient batch stock available for the requested quantity.")
+    return allocs
+
+
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # POS
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1632,16 +1994,24 @@ def _recipe_components(conn, menu_item_id):
         return []
 
 
-def _add_pos_item_tx(conn, reservation_id, desc, qty, price, inv_id=None, activity_id=None):
-    """Insert a POS item and related ledger/stock inside an existing transaction."""
+def _add_pos_item_tx(conn, reservation_id, desc, qty, price, inv_id=None, activity_id=None, batch_id=None, lot_code=None):
+    """Insert a POS item and related ledger/stock inside an existing transaction.
+
+    Batch-aware: for tracked/batched inventory items (or when batch_id provided) deduct via FEFO batches
+    and record batch_id/lot_code on pos_tabs. When a sale spans multiple batches, it is split into one
+    POS line/allocation per batch for exact traceability and correct void restore.
+    """
     if not isinstance(qty, int) or qty <= 0:
         raise ValueError("Quantity must be a positive integer.")
     if price < 0:
         raise ValueError("Price cannot be negative.")
     if not desc or not desc.strip():
         raise ValueError("Description is required.")
-    if inv_id is not None and not isinstance(inv_id, int):
-        inv_id = None
+    if inv_id is not None:
+        try:
+            inv_id = int(inv_id)
+        except Exception:
+            inv_id = None
 
     is_walkin = (reservation_id is None or reservation_id == 0)
     if not is_walkin:
@@ -1653,39 +2023,6 @@ def _add_pos_item_tx(conn, reservation_id, desc, qty, price, inv_id=None, activi
         if r["status"] not in ("Reserved", "Checked In"):
             raise ValueError(f"Cannot add POS to a '{r['status']}' reservation.")
 
-    net = price * qty
-    tax = calculate_tax(net, 0)
-    cur = conn.cursor()
-    cost_at_sale = 0.0
-    recipe = []
-    if inv_id:
-        inv = conn.execute("SELECT stock_qty, unit_cost, active, item_name FROM inventory WHERE id=?",
-                           (inv_id,)).fetchone()
-        if not inv or not inv["active"]:
-            raise ValueError("Inventory item not found or inactive.")
-        allow_neg = get_setting("allow_negative_stock", "true") == "true"
-        recipe = _recipe_components(conn, inv_id)
-        if recipe:
-            # Meal/menu item with recipe: deduct ingredients, not meal stock.
-            missing = []
-            total_cost_per_unit = 0.0
-            for c in recipe:
-                need = float(c["qty_per_sale"] or 0) * qty
-                if need <= 0:
-                    raise ValueError(f"Invalid recipe quantity for ingredient '{c['item_name']}'.")
-                if not c["active"]:
-                    raise ValueError(f"Recipe ingredient '{c['item_name']}' is inactive.")
-                if (not allow_neg) and float(c["stock_qty"] or 0) < need:
-                    missing.append(f"{c['item_name']} (need {need:g}, have {float(c['stock_qty'] or 0):g})")
-                total_cost_per_unit += float(c["unit_cost"] or 0) * float(c["qty_per_sale"] or 0)
-            if missing:
-                raise ValueError("Insufficient ingredient stock: " + "; ".join(missing))
-            cost_at_sale = round(total_cost_per_unit, 6)
-        else:
-            if not allow_neg and inv["stock_qty"] < qty:
-                raise ValueError(f"Insufficient stock: {inv['stock_qty']} available, {qty} requested.")
-            cost_at_sale = inv["unit_cost"] or 0
-
     rid = None if is_walkin else reservation_id
     act_id = None
     if activity_id is not None:
@@ -1693,41 +2030,207 @@ def _add_pos_item_tx(conn, reservation_id, desc, qty, price, inv_id=None, activi
             act_id = int(activity_id)
         except Exception:
             act_id = None
+
+    cur = conn.cursor()
+
+    # Resolve by batch/lot if provided without inv_id
+    if batch_id is not None and not inv_id:
+        b = conn.execute("SELECT * FROM inventory_batches WHERE id=?", (batch_id,)).fetchone()
+        if b:
+            inv_id = b["item_id"]
+    if lot_code and not batch_id and not inv_id:
+        b = conn.execute("SELECT * FROM inventory_batches WHERE lot_code=? OR barcode_value=?", (lot_code, lot_code)).fetchone()
+        if b:
+            inv_id = b["item_id"]
+            batch_id = b["id"]
+
+    if inv_id:
+        inv = conn.execute("SELECT * FROM inventory WHERE id=?", (inv_id,)).fetchone()
+        if not inv or not inv["active"]:
+            raise ValueError("Inventory item not found or inactive.")
+        allow_neg = get_setting("allow_negative_stock", "true") == "true"
+        recipe = _recipe_components(conn, inv_id)
+        # Determine batch tracking: explicit batch, tracked item, or existing active batches
+        has_batches = bool(batch_id or lot_code)
+        try:
+            tracked = int(inv["track_batches"] or 0) == 1
+        except Exception:
+            tracked = False
+        if not has_batches and tracked:
+            has_batches = True
+        if not has_batches and not recipe:
+            has_batches = conn.execute("SELECT 1 FROM inventory_batches WHERE item_id=? AND status='active' AND quantity_remaining>0 LIMIT 1", (inv_id,)).fetchone() is not None
+
+        if recipe:
+            # Meal/menu with recipe: deduct ingredients. If ingredients have batches, allocate FEFO per ingredient.
+            missing = []
+            ing_plans = []
+            total_cost_per_unit = 0.0
+            for c in recipe:
+                need = float(c["qty_per_sale"] or 0) * qty
+                if need <= 0:
+                    raise ValueError(f"Invalid recipe quantity for ingredient '{c['item_name']}'.")
+                if not c["active"]:
+                    raise ValueError(f"Recipe ingredient '{c['item_name']}' is inactive.")
+                ing_has_batches = conn.execute("SELECT 1 FROM inventory_batches WHERE item_id=? AND status='active' AND quantity_remaining>0 LIMIT 1", (c["ingredient_item_id"],)).fetchone() is not None
+                if ing_has_batches and not allow_neg:
+                    try:
+                        allocs = _select_batches_for_sale(conn, c["ingredient_item_id"], need, specific_batch_id=None)
+                    except Exception:
+                        allocs = None
+                    if allocs is None:
+                        missing.append(f"{c['item_name']} (need {need:g})")
+                    else:
+                        ing_plans.append((c, need, allocs))
+                        # cost from batch unit costs
+                        bcost = sum(float(a[0]["unit_cost"] or 0) * float(a[1]) for a in allocs)
+                        total_cost_per_unit += bcost / max(qty, 1)
+                else:
+                    if (not allow_neg) and float(c["stock_qty"] or 0) < need:
+                        missing.append(f"{c['item_name']} (need {need:g}, have {float(c['stock_qty'] or 0):g})")
+                    ing_plans.append((c, need, None))
+                    total_cost_per_unit += float(c["unit_cost"] or 0) * float(c["qty_per_sale"] or 0)
+            if missing:
+                raise ValueError("Insufficient ingredient stock: " + "; ".join(missing))
+            cost_at_sale = round(total_cost_per_unit, 6)
+            net = price * qty
+            tax = calculate_tax(net, 0)
+            cur.execute("""INSERT INTO pos_tabs
+                (reservation_id, inventory_item_id, item_description, quantity, unit_price, tax_amount, cost_at_sale, activity_id, batch_id, lot_code)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (rid, inv_id, desc.strip(), qty, price, tax["service"] + tax["vat"] + tax["city_tax"], cost_at_sale, act_id, None, None))
+            pid = cur.lastrowid
+            _post(cur, "POS", pid, "CHARGE", "F&B",
+                  tax["net"], tax["service"], tax["vat"], tax["city_tax"], "",
+                  f"POS: {desc.strip()} x{qty}")
+            cogs = round(cost_at_sale * qty, 2)
+            if cogs > 0:
+                _post(cur, "POS", pid, "COGS", "COGS", cogs, 0, 0, 0, "",
+                      f"COGS POS #{pid} (recipe): {desc.strip()} x{qty}")
+            for c, need, allocs in ing_plans:
+                if allocs:
+                    for b, take in allocs:
+                        conn.execute("UPDATE inventory_batches SET quantity_remaining = quantity_remaining - ?, status = CASE WHEN quantity_remaining - ? <= 0 THEN 'depleted' ELSE status END WHERE id=?",
+                                     (take, take, b["id"]))
+                        conn.execute("UPDATE inventory SET stock_qty = stock_qty - ? WHERE id=?", (take, c["ingredient_item_id"]))
+                        conn.execute("""INSERT INTO inventory_logs (item_id, change_type, quantity, reference, batch_id, unit_cost)
+                                       VALUES (?, 'OUT_RECIPE', ?, ?, ?, ?)""",
+                                     (c["ingredient_item_id"], take, f"POS #{pid} recipe: {desc.strip()} x{qty} lot {b['lot_code']}", b["id"], float(b["unit_cost"] or 0)))
+                else:
+                    conn.execute("UPDATE inventory SET stock_qty = stock_qty - ? WHERE id=?", (need, c["ingredient_item_id"]))
+                    conn.execute("""INSERT INTO inventory_logs (item_id, change_type, quantity, reference)
+                                   VALUES (?, 'OUT_RECIPE', ?, ?)""",
+                                 (c["ingredient_item_id"], need, f"POS #{pid} recipe: {desc.strip()} x{qty}"))
+            return {"pos_id": pid, "pos_ids": [pid], "gross": round(tax["gross"], 2), "tax": round(tax["service"] + tax["vat"] + tax["city_tax"], 2),
+                    "recipe_deducted": True, "batch_tracked": False}
+
+        if has_batches and not allow_neg:
+            # FEFO batch allocation (or specific batch). Split into per-batch lines for traceability.
+            spec = None
+            if batch_id:
+                try: spec = int(batch_id)
+                except Exception: spec = None
+            allocs = _select_batches_for_sale(conn, inv_id, qty, specific_batch_id=spec)
+        elif has_batches and allow_neg:
+            spec = None
+            if batch_id:
+                try: spec = int(batch_id)
+                except Exception: spec = None
+            try:
+                allocs = _select_batches_for_sale(conn, inv_id, qty, specific_batch_id=spec)
+            except Exception:
+                allocs = None
+        else:
+            allocs = None
+
+        if allocs:
+            # one line per allocation
+            pos_ids = []
+            total_gross = 0.0
+            total_tax = 0.0
+            for b, take in allocs:
+                take_int = int(take) if abs(take - round(take)) < 1e-9 else take
+                qty_line = int(round(take))
+                if abs(take - qty_line) > 1e-9:
+                    # keep integer POS qty; if fractional, store rounded but deduct exact take
+                    qty_line = int(take) if take >= 1 else 1
+                # for simplicity and schema (quantity INTEGER), require integer allocations
+                take_int_i = int(round(take))
+                if take_int_i <= 0:
+                    continue
+                net_l = price * take_int_i
+                tax_l = calculate_tax(net_l, 0)
+                bcost = float(b["unit_cost"] or inv["unit_cost"] or 0)
+                desc_l = desc.strip()
+                if len(allocs) > 1 or b["lot_code"]:
+                    desc_l = f"{desc.strip()} [lot {b['lot_code']}]"
+                cur.execute("""INSERT INTO pos_tabs
+                    (reservation_id, inventory_item_id, item_description, quantity, unit_price, tax_amount, cost_at_sale, activity_id, batch_id, lot_code)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (rid, inv_id, desc_l, take_int_i, price, tax_l["service"] + tax_l["vat"] + tax_l["city_tax"], bcost, act_id, b["id"], b["lot_code"]))
+                pid = cur.lastrowid
+                pos_ids.append(pid)
+                total_gross += tax_l["gross"]
+                total_tax += (tax_l["service"] + tax_l["vat"] + tax_l["city_tax"])
+                _post(cur, "POS", pid, "CHARGE", "F&B",
+                      tax_l["net"], tax_l["service"], tax_l["vat"], tax_l["city_tax"], "",
+                      f"POS: {desc_l} x{take_int_i}")
+                cogs = round(bcost * take_int_i, 2)
+                if cogs > 0:
+                    _post(cur, "POS", pid, "COGS", "COGS", cogs, 0, 0, 0, "",
+                          f"COGS POS #{pid}: {desc_l} x{take_int_i}")
+                conn.execute("UPDATE inventory_batches SET quantity_remaining = quantity_remaining - ?, status = CASE WHEN quantity_remaining - ? <= 0 THEN 'depleted' ELSE status END WHERE id=?",
+                             (take_int_i, take_int_i, b["id"]))
+                conn.execute("UPDATE inventory SET stock_qty = stock_qty - ? WHERE id=?", (take_int_i, inv_id))
+                conn.execute("""INSERT INTO inventory_logs (item_id, change_type, quantity, reference, batch_id, unit_cost)
+                               VALUES (?, 'OUT_SALE', ?, ?, ?, ?)""",
+                             (inv_id, take_int_i, f"POS #{pid} lot {b['lot_code']}", b["id"], bcost))
+            return {"pos_id": pos_ids[0] if pos_ids else None, "pos_ids": pos_ids, "gross": round(total_gross, 2), "tax": round(total_tax, 2),
+                    "recipe_deducted": False, "batch_tracked": True}
+        else:
+            # non-batched (or allowed negative with no batches): aggregate behavior
+            if not allow_neg and float(inv["stock_qty"] or 0) < qty:
+                raise ValueError(f"Insufficient stock: {inv['stock_qty']} available, {qty} requested.")
+            cost_at_sale = float(inv["unit_cost"] or 0)
+            net = price * qty
+            tax = calculate_tax(net, 0)
+            cur.execute("""INSERT INTO pos_tabs
+                (reservation_id, inventory_item_id, item_description, quantity, unit_price, tax_amount, cost_at_sale, activity_id, batch_id, lot_code)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (rid, inv_id, desc.strip(), qty, price, tax["service"] + tax["vat"] + tax["city_tax"], cost_at_sale, act_id, None, None))
+            pid = cur.lastrowid
+            _post(cur, "POS", pid, "CHARGE", "F&B",
+                  tax["net"], tax["service"], tax["vat"], tax["city_tax"], "",
+                  f"POS: {desc.strip()} x{qty}")
+            if cost_at_sale > 0:
+                cogs = round(cost_at_sale * qty, 2)
+                _post(cur, "POS", pid, "COGS", "COGS", cogs, 0, 0, 0, "",
+                      f"COGS POS #{pid}: {desc.strip()} x{qty}")
+            conn.execute("UPDATE inventory SET stock_qty = stock_qty - ? WHERE id=?", (qty, inv_id))
+            conn.execute("""INSERT INTO inventory_logs (item_id, change_type, quantity, reference)
+                           VALUES (?, 'OUT', ?, ?)""", (inv_id, qty, f"POS #{pid}"))
+            return {"pos_id": pid, "pos_ids": [pid], "gross": round(tax["gross"], 2), "tax": round(tax["service"] + tax["vat"] + tax["city_tax"], 2),
+                    "recipe_deducted": False, "batch_tracked": False}
+
+    # non-inventory POS (service/activity without inv_id linkage handled elsewhere)
+    net = price * qty
+    tax = calculate_tax(net, 0)
     cur.execute("""INSERT INTO pos_tabs
-        (reservation_id, inventory_item_id, item_description, quantity, unit_price, tax_amount, cost_at_sale, activity_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-        (rid, inv_id, desc.strip(), qty, price, tax["service"] + tax["vat"] + tax["city_tax"], cost_at_sale, act_id))
+        (reservation_id, inventory_item_id, item_description, quantity, unit_price, tax_amount, cost_at_sale, activity_id, batch_id, lot_code)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (rid, inv_id, desc.strip(), qty, price, tax["service"] + tax["vat"] + tax["city_tax"], 0.0, act_id, None, None))
     pid = cur.lastrowid
     _post(cur, "POS", pid, "CHARGE", "F&B",
           tax["net"], tax["service"], tax["vat"], tax["city_tax"], "",
           f"POS: {desc.strip()} x{qty}")
-    if inv_id and recipe:
-        cogs = round(cost_at_sale * qty, 2)
-        if cogs > 0:
-            _post(cur, "POS", pid, "COGS", "COGS", cogs, 0, 0, 0, "",
-                  f"COGS POS #{pid} (recipe): {desc.strip()} x{qty}")
-        for c in recipe:
-            need = float(c["qty_per_sale"] or 0) * qty
-            conn.execute("UPDATE inventory SET stock_qty = stock_qty - ? WHERE id=?", (need, c["ingredient_item_id"]))
-            conn.execute("""INSERT INTO inventory_logs (item_id, change_type, quantity, reference)
-                           VALUES (?, 'OUT', ?, ?)""",
-                         (c["ingredient_item_id"], need, f"POS #{pid} recipe: {desc.strip()} x{qty}"))
-    elif inv_id:
-        if cost_at_sale > 0:
-            cogs = round(cost_at_sale * qty, 2)
-            _post(cur, "POS", pid, "COGS", "COGS", cogs, 0, 0, 0, "",
-                  f"COGS POS #{pid}: {desc.strip()} x{qty}")
-        conn.execute("UPDATE inventory SET stock_qty = stock_qty - ? WHERE id=?", (qty, inv_id))
-        conn.execute("""INSERT INTO inventory_logs (item_id, change_type, quantity, reference)
-                       VALUES (?, 'OUT', ?, ?)""", (inv_id, qty, f"POS #{pid}"))
-    return {"pos_id": pid, "gross": round(tax["gross"], 2), "tax": round(tax["service"] + tax["vat"] + tax["city_tax"], 2),
-            "recipe_deducted": bool(inv_id and recipe)}
+    return {"pos_id": pid, "pos_ids": [pid], "gross": round(tax["gross"], 2), "tax": round(tax["service"] + tax["vat"] + tax["city_tax"], 2),
+            "recipe_deducted": False, "batch_tracked": False}
 
 
-def add_pos_item(reservation_id, desc, qty, price, inv_id=None, activity_id=None):
+def add_pos_item(reservation_id, desc, qty, price, inv_id=None, activity_id=None, batch_id=None, lot_code=None):
     from .db import transaction
     with transaction() as conn:
-        return _add_pos_item_tx(conn, reservation_id, desc, qty, price, inv_id, activity_id=activity_id)
+        return _add_pos_item_tx(conn, reservation_id, desc, qty, price, inv_id, activity_id=activity_id, batch_id=batch_id, lot_code=lot_code)
 
 
 def complete_walkin_sale(items, method, notes="", payment_type="Payment"):
@@ -1747,10 +2250,13 @@ def complete_walkin_sale(items, method, notes="", payment_type="Payment"):
             qty = int(it.get("qty") or 0)
             price = float(it.get("price") or 0)
             inv_id = it.get("inv_id")
-            res = _add_pos_item_tx(conn, None, desc, qty, price, inv_id)
-            pos_ids.append(res["pos_id"])
+            batch_id = it.get("batch_id")
+            lot_code = it.get("lot_code")
+            res = _add_pos_item_tx(conn, None, desc, qty, price, inv_id, batch_id=batch_id, lot_code=lot_code)
+            ids = res.get("pos_ids") or ([res.get("pos_id")] if res.get("pos_id") else [])
+            pos_ids.extend(ids)
             total_gross += res["gross"]
-            receipt_items.append({"desc": desc, "qty": qty, "price": price, "gross": res["gross"]})
+            receipt_items.append({"desc": desc, "qty": qty, "price": price, "gross": res["gross"], "lot_code": lot_code})
         total_gross = round(total_gross, 2)
         if total_gross <= 0:
             raise ValueError("Sale total must be positive.")
@@ -1798,34 +2304,8 @@ def void_pos_item(pos_id, password):
 # ═══════════════════════════════════════════════════════════════════════════
 
 def search_inventory(query="", category="", stock_filter=""):
-    if not isinstance(query, str):
-        query = ""  # pragma: no cover
-    if not isinstance(category, str) or category == "All":
-        category = ""  # pragma: no cover
-    if not isinstance(stock_filter, str) or stock_filter == "All":
-        stock_filter = ""  # pragma: no cover
-    sql = """SELECT id, item_name, category, stock_qty, unit, unit_cost, selling_price
-             FROM inventory WHERE active=1"""
-    params = []
-    if query:
-        sql += " AND (item_name LIKE ? OR category LIKE ?)"
-        params += [f"%{query}%", f"%{query}%"]
-    if category:
-        sql += " AND category=?"
-        params.append(category)
-    low = float(get_setting("low_stock_threshold", "5"))
-    over = float(get_setting("overstock_threshold", "100"))
-    if stock_filter == "Low":
-        sql += " AND stock_qty < ? AND stock_qty >= 0"  # pragma: no cover
-        params.append(low)  # pragma: no cover
-    elif stock_filter == "Over":
-        sql += " AND stock_qty > ?"  # pragma: no cover
-        params.append(over)  # pragma: no cover
-    elif stock_filter == "Negative":
-        sql += " AND stock_qty < 0"
-    sql += " ORDER BY item_name"
-    from .db import connect
-    return connect().execute(sql, params).fetchall()
+    # Enhanced to include SKU/barcode search and extra fields (keeps compat)
+    return get_inventory_items(query=query, category=category, stock_filter=stock_filter, include_inactive=False)
 
 
 def get_inventory_categories():
@@ -1862,34 +2342,85 @@ def get_recent_inventory_logs(limit=20):
     """, (limit,)).fetchall()
 
 
-def add_inventory_item(name, category, unit, stock, unit_cost, selling_price, low, over, password):
+def add_inventory_item(name, category, unit, stock, unit_cost, selling_price, low, over, password,
+                        sku="", barcode="", barcode_type="code128", track_batches=0, shelf_life_days=None, default_supplier=""):
     if not verify_password(password):
         raise PermissionError("Invalid super password.")
     if not name or not name.strip():
         raise ValueError("Name is required.")
+    sku = (sku or "").strip() or None
+    barcode = (barcode or "").strip() or None
+    try:
+        track_batches = int(track_batches or 0)
+    except Exception:
+        track_batches = 0
+    try:
+        shelf_life_days = int(shelf_life_days) if shelf_life_days not in (None, "", "None") else None
+    except Exception:
+        shelf_life_days = None
     from .db import transaction
     with transaction() as conn:
-        conn.execute("""INSERT INTO inventory
+        cur = conn.cursor()
+        cur.execute("""INSERT INTO inventory
             (item_name, category, unit, stock_qty, unit_cost, selling_price,
-             low_stock_threshold, overstock_threshold)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+             low_stock_threshold, overstock_threshold, sku, barcode, barcode_type, track_batches, shelf_life_days, default_supplier)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (name.strip(), category.strip(), unit.strip(), float(stock), float(unit_cost),
-             float(selling_price), float(low), float(over)))
+             float(selling_price), float(low), float(over), sku, barcode, (barcode_type or "code128"), track_batches, shelf_life_days, (default_supplier or "").strip()))
+        item_id = cur.lastrowid
+        # if initial stock provided, create an opening batch for traceability
+        try:
+            if float(stock) != 0:
+                lot = f"OPEN-{item_id}"
+                if conn.execute("SELECT 1 FROM inventory_batches WHERE lot_code=?", (lot,)).fetchone():
+                    lot = f"OPEN-{item_id}-{item_id}"
+                conn.execute("""INSERT INTO inventory_batches
+                    (item_id, lot_code, barcode_value, barcode_type, quantity_received, quantity_remaining,
+                     unit_cost, received_at, expiry_date, supplier, reference, notes, status, payload_json)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (item_id, lot, lot, (barcode_type or "code128"), float(stock), float(stock), float(unit_cost),
+                     datetime.now().strftime("%Y-%m-%d %H:%M:%S"), None, (default_supplier or "").strip(), "initial", "Initial stock", "active", "{}"))
+                bid = cur.lastrowid
+                conn.execute("""INSERT INTO inventory_logs (item_id, change_type, quantity, reference, batch_id, unit_cost, balance_after)
+                               VALUES (?, 'OPENING', ?, 'initial stock', ?, ?, ?)""", (item_id, float(stock), bid, float(unit_cost), float(stock)))
+        except Exception:
+            pass
     _audit("inventory_add", "inventory", "", name)
+    try:
+        return item_id
+    except Exception:
+        return None
 
 
-def update_inventory_item(item_id, name, category, unit, selling_price, low, over, password):
+def update_inventory_item(item_id, name, category, unit, selling_price, low, over, password,
+                           sku=None, barcode=None, barcode_type=None, track_batches=None, shelf_life_days=None, default_supplier=None):
     if not verify_password(password):
         raise PermissionError("Invalid super password.")
     if not name or not name.strip():
         raise ValueError("Name is required.")
     from .db import transaction
     with transaction() as conn:
-        conn.execute("""UPDATE inventory SET item_name=?, category=?, unit=?,
-                        selling_price=?, low_stock_threshold=?, overstock_threshold=?
-                        WHERE id=?""",
-                     (name.strip(), category.strip(), unit.strip(),
-                      float(selling_price), float(low), float(over), item_id))
+        # build dynamic set to keep compat when new args omitted
+        sets = ["item_name=?", "category=?", "unit=?", "selling_price=?", "low_stock_threshold=?", "overstock_threshold=?"]
+        params = [name.strip(), category.strip(), unit.strip(), float(selling_price), float(low), float(over)]
+        if sku is not None:
+            sets.append("sku=?"); params.append((sku or "").strip() or None)
+        if barcode is not None:
+            sets.append("barcode=?"); params.append((barcode or "").strip() or None)
+        if barcode_type is not None:
+            sets.append("barcode_type=?"); params.append((barcode_type or "code128"))
+        if track_batches is not None:
+            try: tb = int(track_batches or 0)
+            except Exception: tb = 0
+            sets.append("track_batches=?"); params.append(tb)
+        if shelf_life_days is not None:
+            try: sld = int(shelf_life_days) if shelf_life_days not in ("", "None") else None
+            except Exception: sld = None
+            sets.append("shelf_life_days=?"); params.append(sld)
+        if default_supplier is not None:
+            sets.append("default_supplier=?"); params.append((default_supplier or "").strip())
+        params.append(item_id)
+        conn.execute(f"UPDATE inventory SET {', '.join(sets)} WHERE id=?", params)
     _audit("inventory_update", "inventory", item_id, name)
 
 
@@ -2155,32 +2686,26 @@ def delete_meal(meal_id, password):
 
 
 def restock_inventory(item_id, qty, unit_cost=0.0, password=""):
+    """Restock by creating a received batch (traceable: received_at now). For full control (expiry/supplier) use create/receive_inventory_batch."""
     if not verify_password(password):
         raise PermissionError("Invalid super password.")
     if not isinstance(item_id, int) or item_id <= 0:
         raise ValueError("Invalid item ID.")
+    try:
+        qty = float(qty)
+    except Exception:
+        raise ValueError("Quantity must be positive.")
     if qty <= 0:
         raise ValueError("Quantity must be positive.")
-    if unit_cost < 0:
-        raise ValueError("Unit cost cannot be negative.")
-    from .db import connect, transaction
-    with transaction() as conn:
-        cur = conn.cursor()
-        row = conn.execute("SELECT stock_qty, unit_cost, item_name FROM inventory WHERE id=?", (item_id,)).fetchone()
-        if not row:
-            raise ValueError("Item not found.")
-        old_qty, old_cost = row["stock_qty"], row["unit_cost"]
-        new_qty = old_qty + qty
-        new_cost = round((old_qty * old_cost + qty * unit_cost) / new_qty, 4) if unit_cost > 0 and new_qty > 0 else old_cost
-        conn.execute("UPDATE inventory SET stock_qty=?, unit_cost=? WHERE id=?", (new_qty, new_cost, item_id))
-        conn.execute("""INSERT INTO inventory_logs (item_id, change_type, quantity, reference)
-                       VALUES (?, 'IN', ?, 'restock')""", (item_id, qty))
-        if unit_cost > 0 and qty > 0:
-            total = round(qty * unit_cost, 2)
-            _post(cur, "INV", item_id, "ASSET_IN", "Inventory Purchase",
-                  total, 0, 0, 0, "Cash", f"Restock {row['item_name']}",
-                  gross_override=-total)
-    _audit("inventory_restock", "inventory", item_id, f"+{qty} @ {unit_cost}")
+    try:
+        unit_cost = float(unit_cost or 0)
+    except Exception:
+        unit_cost = 0.0
+    # prefer batch-tracked receive
+    batch = create_inventory_batch(item_id, qty, unit_cost, received_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                   expiry_date=None, supplier="", reference="restock", notes="Restock", password=None)
+    _audit("inventory_restock", "inventory", item_id, f"+{qty} @ {unit_cost} lot={batch.get('lot_code') if isinstance(batch, dict) else ''}")
+    return batch
 
 
 # ═══════════════════════════════════════════════════════════════════════════

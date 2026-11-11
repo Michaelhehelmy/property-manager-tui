@@ -3,8 +3,8 @@
 Dynamic setup/deploy script for property-manager-tui on Windows.
 
 .DESCRIPTION
-Detects Python/Git, clones/updates repo (optional), creates .venv, installs deps,
-and can run TUI or Web UI.
+Auto-bootstraps prerequisites (installs Python/Git via winget if missing), clones/updates
+repo, creates .venv, installs deps, and can run TUI or Web UI.
 
 .PARAMETER Action
 setup | run | deploy  (deploy = setup + run). Default: setup
@@ -18,11 +18,14 @@ auto | 0 | 1. Default: auto (0 on Windows)
 .EXAMPLES
 powershell -ExecutionPolicy Bypass -File scripts\setup_windows.ps1
 powershell -ExecutionPolicy Bypass -File scripts\setup_windows.ps1 -Action deploy -Mode tui
-powershell -ExecutionPolicy Bypass -File scripts\setup_windows.ps1 -Action deploy -Mode web -Host 0.0.0.0 -Port 8000
+powershell -ExecutionPolicy Bypass -File scripts\setup_windows.ps1 -Action deploy -Mode web -BindHost 0.0.0.0 -Port 8000
 powershell -ExecutionPolicy Bypass -File scripts\setup_windows.ps1 -Action run -Mode web
 
+# One-liner bootstrap (no Python/Git preinstalled): download and run
+irm https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install_windows.ps1 | iex
+
 Environment variables also supported: ACTION, MODE, SKIP_WEB, INSTALL_DEV, RUN_TESTS,
-REPO_URL, INSTALL_DIR, BRANCH, HOST, PORT, PYTHON.
+REPO_URL, INSTALL_DIR, BRANCH, HOST, PORT, PYTHON, NO_BOOTSTRAP=1.
 #>
 [CmdletBinding()]
 param(
@@ -36,7 +39,8 @@ param(
   [int]$Port = $(if ($env:PORT) { [int]$env:PORT } else { 8000 }),
   [string]$PythonExe = $(if ($env:PYTHON) { $env:PYTHON } else { '' }),
   [switch]$InstallDev = $(if ($env:INSTALL_DEV -eq '1') { $true } else { $false }),
-  [switch]$RunTests = $(if ($env:RUN_TESTS -eq '1') { $true } else { $false })
+  [switch]$RunTests = $(if ($env:RUN_TESTS -eq '1') { $true } else { $false }),
+  [switch]$NoBootstrap = $(if ($env:NO_BOOTSTRAP -eq '1') { $true } else { $false })
 )
 
 $ErrorActionPreference = 'Stop'
@@ -44,7 +48,73 @@ $ErrorActionPreference = 'Stop'
 function Log([string]$msg) { Write-Host "==> $msg" -ForegroundColor Cyan }
 function Warn([string]$msg) { Write-Warning $msg }
 
+function Refresh-PathEnv {
+  try {
+    $machine = [System.Environment]::GetEnvironmentVariable('Path', 'Machine')
+    $user = [System.Environment]::GetEnvironmentVariable('Path', 'User')
+    $env:Path = ($machine, $user, $env:Path | Where-Object { $_ -and $_.Trim() }) -join ';'
+  } catch { }
+  # common install locations (fresh installs may not be on PATH in current session)
+  $candidates = @(
+    'C:\Program Files\Git\cmd',
+    'C:\Program Files\Git\bin'
+  )
+  try {
+    $pyRoots = @('C:\Program Files', 'C:\Program Files (x86)', (Join-Path $env:LOCALAPPDATA 'Programs\Python'))
+    foreach ($r in $pyRoots) {
+      if (Test-Path $r) {
+        Get-ChildItem -Path $r -Directory -Filter 'Python3*' -ErrorAction SilentlyContinue | ForEach-Object {
+          $candidates += $_.FullName
+          $candidates += (Join-Path $_.FullName 'Scripts')
+        }
+      }
+    }
+  } catch { }
+  foreach ($p in $candidates) {
+    if ($p -and (Test-Path $p) -and ($env:Path -notlike "*$p*")) { $env:Path = "$p;$env:Path" }
+  }
+}
+
+function Have-Cmd([string]$name) { return [bool](Get-Command $name -ErrorAction SilentlyContinue) }
+
+function Ensure-Prerequisites {
+  if ($NoBootstrap) { return }
+  $needPy = -not (Have-Cmd 'py') -and -not (Have-Cmd 'python') -and -not (Have-Cmd 'python3')
+  $needGit = -not (Have-Cmd 'git')
+  # git is required to clone when not running from an existing repo checkout
+  $scriptRoot = if ($PSScriptRoot) { Split-Path -Parent $PSScriptRoot } else { '' }
+  $inCheckout = $scriptRoot -and (Test-Path (Join-Path $scriptRoot 'launcher.py'))
+  $installHasRepo = (Test-Path (Join-Path $InstallDir '.git')) -or (Test-Path (Join-Path $InstallDir 'launcher.py'))
+  if (-not $inCheckout -and -not $installHasRepo -and $Action -ne 'run') { $needGit = $needGit -or $false } # clone path needs git
+  if (-not $needPy -and -not $needGit) { return }
+
+  Log "Missing prerequisites detected (python=$needPy git=$needGit). Attempting automatic install..."
+  if (-not (Have-Cmd 'winget')) {
+    Warn "winget (App Installer) not found; cannot auto-install prerequisites."
+    if ($needPy) { Warn "Install Python 3.10+ from https://www.python.org/downloads/ (check 'Add python.exe to PATH')." }
+    if ($needGit) { Warn "Install Git for Windows from https://git-scm.com/download/win." }
+    Warn "After installing, close & reopen PowerShell and re-run this script."
+    return
+  }
+  try {
+    if ($needPy) {
+      Log "Installing Python 3.12 via winget (this may take a minute)..."
+      & winget install -e --id Python.Python.3.12 --accept-package-agreements --accept-source-agreements --silent 2>$null
+      if ($LASTEXITCODE -ne 0) { & winget install -e --id Python.Python.3.12 --accept-package-agreements --accept-source-agreements }
+    }
+  } catch { Warn "Python install attempt failed: $_" }
+  try {
+    if ($needGit) {
+      Log "Installing Git for Windows via winget..."
+      & winget install -e --id Git.Git --accept-package-agreements --accept-source-agreements --silent 2>$null
+      if ($LASTEXITCODE -ne 0) { & winget install -e --id Git.Git --accept-package-agreements --accept-source-agreements }
+    }
+  } catch { Warn "Git install attempt failed: $_" }
+  Refresh-PathEnv
+}
+
 function Resolve-Python {
+  Refresh-PathEnv
   if ($PythonExe -and (Get-Command $PythonExe -ErrorAction SilentlyContinue)) { return $PythonExe }
   foreach ($cand in @('python', 'py -3', 'py', 'python3')) {
     try {
@@ -53,7 +123,7 @@ function Resolve-Python {
       elseif (Get-Command $cand -ErrorAction SilentlyContinue) { return $cand }
     } catch {}
   }
-  throw "Python not found. Install Python 3.10+ from https://www.python.org/downloads/ (ensure 'Add python.exe to PATH') and re-run."
+  return $null
 }
 
 function Invoke-Py([string]$py, [string[]]$pyArgs) {
@@ -64,12 +134,13 @@ function Invoke-Py([string]$py, [string[]]$pyArgs) {
 }
 
 function Resolve-Git {
+  Refresh-PathEnv
   if (Get-Command git -ErrorAction SilentlyContinue) { return 'git' }
   return $null
 }
 
 function Clone-Or-Update([string]$git) {
-  if (-not $git) { throw "Git not found. Install Git for Windows from https://git-scm.com/download/win or run this script from an existing repo checkout." }
+  if (-not $git) { throw "Git not found and required to clone/update. Install Git for Windows (https://git-scm.com/download/win) or run from an existing repo checkout, then re-run." }
   if (Test-Path (Join-Path $InstallDir '.git')) {
     Log "Updating existing repo in $InstallDir"
     try { & git -C $InstallDir fetch --all --prune } catch { Warn "git fetch failed: $_" }
@@ -147,7 +218,6 @@ function Ensure-Venv-And-Deps([string]$py) {
 function Print-Hints {
   Write-Host ""
   Log "Ready. (dir: $InstallDir, mode: $Mode, web_skipped: $SkipWeb)"
-  $venvActivate = Join-Path $InstallDir '.venv\Scripts\Activate.ps1'
   @"
 
 Run (PowerShell):
@@ -198,23 +268,25 @@ try {
   Log "Action=$Action Mode=$Mode SkipWeb=$SkipWeb Host=$BindHost Port=$Port"
   Log "InstallDir=$InstallDir"
 
+  # Auto-bootstrap Python/Git when missing (winget)
+  if ($Action -in @('setup','deploy')) { Ensure-Prerequisites }
+
   $git = Resolve-Git
   $py = Resolve-Python
-  Log "Python: $py"
+  if ($py) { Log "Python: $py" } else { Log "Python: not found" }
   if ($git) { Log "Git: $git" } else { Warn "Git not found (clone/update disabled unless already in a repo)." }
 
   switch ($Action) {
     'setup' {
-      # If running from inside repo and InstallDir is default/unset-like, prefer current repo root
-      $scriptRoot = Split-Path -Parent $PSScriptRoot
-      if ((Test-Path (Join-Path $scriptRoot '.git')) -and ($InstallDir -eq (Join-Path $HOME 'property-manager-tui')) -and (Test-Path (Join-Path $scriptRoot 'launcher.py'))) {
+      $scriptRoot = if ($PSScriptRoot) { Split-Path -Parent $PSScriptRoot } else { '' }
+      if ($scriptRoot -and (Test-Path (Join-Path $scriptRoot '.git')) -and ($InstallDir -eq (Join-Path $HOME 'property-manager-tui')) -and (Test-Path (Join-Path $scriptRoot 'launcher.py'))) {
         $InstallDir = $scriptRoot
         Log "Detected existing repo checkout; using InstallDir=$InstallDir"
-      } elseif (-not (Test-Path (Join-Path $InstallDir '.git')) -and (Test-Path (Join-Path $scriptRoot 'launcher.py')) -and $scriptRoot) {
-        # user ran script from a checkout but passed no explicit install dir
+      } elseif ($scriptRoot -and -not (Test-Path (Join-Path $InstallDir '.git')) -and (Test-Path (Join-Path $scriptRoot 'launcher.py'))) {
         $InstallDir = $scriptRoot
       }
       $script:InstallDir = $InstallDir
+      if (-not $py) { throw "Python not found (auto-install may require reopening PowerShell). Install Python 3.10+ from https://www.python.org/downloads/ or run scripts\\install_windows.ps1, then re-run." }
       if (-not (Test-Path (Join-Path $InstallDir '.git')) -or -not (Test-Path (Join-Path $InstallDir 'launcher.py'))) {
         Clone-Or-Update $git
       } else {
@@ -228,11 +300,12 @@ try {
       Run-Deploy
     }
     'deploy' {
-      $scriptRoot = Split-Path -Parent $PSScriptRoot
-      if ((Test-Path (Join-Path $scriptRoot 'launcher.py')) -and (-not (Test-Path (Join-Path $InstallDir '.git')))) {
+      $scriptRoot = if ($PSScriptRoot) { Split-Path -Parent $PSScriptRoot } else { '' }
+      if ($scriptRoot -and (Test-Path (Join-Path $scriptRoot 'launcher.py')) -and (-not (Test-Path (Join-Path $InstallDir '.git')))) {
         $InstallDir = $scriptRoot
       }
       $script:InstallDir = $InstallDir
+      if (-not $py) { throw "Python not found (auto-install may require reopening PowerShell). Install Python 3.10+ from https://www.python.org/downloads/ or run scripts\\install_windows.ps1, then re-run." }
       if (-not (Test-Path (Join-Path $InstallDir '.git')) -or -not (Test-Path (Join-Path $InstallDir 'launcher.py'))) {
         Clone-Or-Update $git
       } else {

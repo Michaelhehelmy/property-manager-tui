@@ -238,3 +238,15 @@ async def room_delete(request: Request, room_id: int):
         deps.add_flash(request, str(e), "error")
     r = deps.redirect("/settings"); deps.save_session(r, deps.get_session(request)); return r
 
+
+
+@router.post("/settings/test-label")
+async def test_label(request: Request):
+    deps.require_unlock(request)
+    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    try:
+        ok, msg, p = services.test_label_print()
+        deps.add_flash(request, f"Test label: {msg} ({p})", "success" if ok else "warning")
+    except Exception as e:
+        deps.add_flash(request, str(e), "error")
+    r = deps.redirect("/settings"); deps.save_session(r, deps.get_session(request)); return r

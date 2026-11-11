@@ -473,6 +473,13 @@ class InventoryEditScreen(ModalScreen):
         if e.button.id == "btn_save":
             try:
                 pw = self.query_one("#pw", Input).value
+                sku = self.query_one("#sku", Input).value
+                barcode = self.query_one("#barcode", Input).value
+                barcode_type = self.query_one("#barcode_type", Input).value or "code128"
+                track_batches = self.query_one("#track_batches", Input).value or "0"
+                sld = self.query_one("#shelf_life_days", Input).value.strip()
+                shelf_life_days = int(sld) if sld not in ("", "None", "null") else None
+                default_supplier = self.query_one("#default_supplier", Input).value
                 if self.mode == "add":
                     services.add_inventory_item(
                         self.query_one("#name", Input).value,
@@ -482,7 +489,9 @@ class InventoryEditScreen(ModalScreen):
                         float(self.query_one("#cost", Input).value or 0),
                         float(self.query_one("#sell", Input).value or 0),
                         float(self.query_one("#low", Input).value or 5),
-                        float(self.query_one("#over", Input).value or 100), pw)
+                        float(self.query_one("#over", Input).value or 100), pw,
+                        sku=sku, barcode=barcode, barcode_type=barcode_type,
+                        track_batches=track_batches, shelf_life_days=shelf_life_days, default_supplier=default_supplier)
                 else:
                     services.update_inventory_item(
                         self.item["id"],
@@ -491,7 +500,9 @@ class InventoryEditScreen(ModalScreen):
                         self.query_one("#unit", Input).value,
                         float(self.query_one("#sell", Input).value or 0),
                         float(self.query_one("#low", Input).value or 5),
-                        float(self.query_one("#over", Input).value or 100), pw)
+                        float(self.query_one("#over", Input).value or 100), pw,
+                        sku=sku, barcode=barcode, barcode_type=barcode_type,
+                        track_batches=track_batches, shelf_life_days=shelf_life_days, default_supplier=default_supplier)
                 self.dismiss(True)
             except PermissionError:
                 self.notify(t("Wrong super password."), severity="error")

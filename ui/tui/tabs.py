@@ -689,6 +689,10 @@ class NewOrderTab(VerticalScroll):
         if e.input.id == "search":
             self.refresh_data()
 
+    def on_input_submitted(self, e):
+        if e.input.id == "scan_code":
+            self._do_scan_lookup()
+
     def on_select_changed(self, e):
         if e.select.id == "cat":
             self.refresh_data()
@@ -808,6 +812,11 @@ class InventorySubTab(VerticalScroll):
             yield Select([("All", "All"), (t("Low Stock"), "Low"),
                           (t("Overstock"), "Over"), (t("Negative Stock"), "Negative")],
                          id="stock", prompt=t("Stock"))
+        with Horizontal(classes="button_row"):
+            yield Input(placeholder="Scan/Lookup barcode or lot", id="scan_code")
+            yield Button("Scan/Lookup", id="btn_scan", variant="primary")
+            yield Button("Item Label", id="btn_item_label", variant="primary")
+        yield Static("", id="scan_result", classes="help")
         yield DataTable(id="table")
         with Horizontal(classes="button_row"):
             yield Button("➕ " + t("New Item"), id="btn_new", variant="primary")
@@ -818,6 +827,26 @@ class InventorySubTab(VerticalScroll):
             yield Input(placeholder=t("Quantity"), id="rs_qty")
             yield Input(placeholder="Unit Cost", id="rs_cost", value="0")
             yield Button(t("Restock"), id="btn_rs_do", variant="success")
+        yield Static("Receive Batch (time bought/received + expiry)", classes="title")
+        with Horizontal(classes="button_row"):
+            yield Input(placeholder="Item ID", id="rb_item")
+            yield Input(placeholder="Qty", id="rb_qty")
+            yield Input(placeholder="Unit cost", id="rb_cost", value="0")
+        with Horizontal(classes="button_row"):
+            yield Input(placeholder="Received at (blank=now)", id="rb_received")
+            yield Input(placeholder="Expiry YYYY-MM-DD", id="rb_expiry")
+            yield Input(placeholder="Supplier", id="rb_supplier")
+        with Horizontal(classes="button_row"):
+            yield Input(placeholder="Reference", id="rb_ref")
+            yield Input(placeholder="Notes", id="rb_notes")
+            yield Button("Receive Batch", id="btn_receive_batch", variant="success")
+        with Horizontal(classes="button_row"):
+            yield Button("View Batches", id="btn_view_batches", variant="primary")
+            yield Button("Print Batch Label (selected batch)", id="btn_batch_label", variant="primary")
+        yield Static("Batches / Lots", classes="title")
+        yield DataTable(id="batches_table")
+        yield Static("Expiring / Expired Batches", classes="title")
+        yield DataTable(id="expiring_table")
         yield Static(t("Recent Movements"), classes="title")
         yield DataTable(id="logs")
 
@@ -849,7 +878,7 @@ class InventorySubTab(VerticalScroll):
         self._refresh_warnings()
         table = self.query_one("#table", DataTable)
         table.clear(columns=True)
-        table.add_columns("ID", t("Item"), t("Category"), t("Stock"), t("Unit"),
+        table.add_columns("ID", t("Item"), "SKU/Barcode", t("Category"), t("Stock"), "Next Exp", t("Unit"),
                           t("Unit Cost"), t("Sell"), "Warn")
         sw = self.query_one("#search", Input)
         q = sw.value if isinstance(sw.value, str) else ""
@@ -869,19 +898,71 @@ class InventorySubTab(VerticalScroll):
                 warn = "🔴 LOW"
             elif r["stock_qty"] > over:
                 warn = "🟡 OVER"  # pragma: no cover - stock indicator branch
-            table.add_row(str(r["id"]), r["item_name"], r["category"],
-                          f"{r['stock_qty']:.2f}", r["unit"],
-                          f"{r['unit_cost']:.2f}", f"{r['selling_price']:.2f}", warn)
+            sku_bc = f"{r['sku'] or '-'} / {r['barcode'] or '-'}" if "sku" in r.keys() else "-"
+            next_exp = r["next_expiry"] if "next_expiry" in r.keys() and r["next_expiry"] else "-"
+            table.add_row(str(r["id"]), r["item_name"], sku_bc, r["category"],
+                          f"{float(r['stock_qty'] or 0):.2f}", str(next_exp), r["unit"],
+                          f"{float(r['unit_cost'] or 0):.2f}", f"{float(r['selling_price'] or 0):.2f}", warn)
         logs = self.query_one("#logs", DataTable)
         logs.clear(columns=True)
         logs.add_columns("At", t("Item"), "Type", t("Qty"), "Ref")
         for r in services.get_recent_inventory_logs(20):
             logs.add_row(r["at"], r["item_name"], r["change_type"],  # pragma: no cover - log row render branch
-                         f"{r['quantity']:.2f}", r["reference"] or "")
+                         f"{float(r['quantity'] or 0):.2f}", r["reference"] or "")
+        self._refresh_batches()
+        self._refresh_expiring()
+
+    def _refresh_batches(self, item_id=None):
+        try:
+            t = self.query_one("#batches_table", DataTable)
+            t.clear(columns=True)
+            t.add_columns("ID", "Item", "Lot", "Received", "Expiry", "Rem/Recv", "Cost", "Status")
+            if item_id is None:
+                try:
+                    v = self.query_one("#rb_item", Input).value.strip()
+                    item_id = int(v) if v else None
+                except Exception:
+                    item_id = None
+            rows = services.list_inventory_batches(item_id=item_id, include_depleted=False) if hasattr(services, "list_inventory_batches") else []
+            for b in (rows or [])[:100]:
+                exp = b.get("expiry_date") or "-"
+                st = b.get("expiry_state") or b.get("status") or ""
+                if b.get("expiry_state") == "expired":
+                    st = "EXPIRED"
+                elif b.get("expiry_state") == "expiring":
+                    st = f"expiring({b.get('days_to_expiry')})"
+                t.add_row(str(b.get("id")), f"{b.get('item_name','')}#{b.get('item_id','')}", str(b.get("lot_code","")),
+                          str(b.get("received_at","")), str(exp),
+                          f"{float(b.get('quantity_remaining') or 0):g}/{float(b.get('quantity_received') or 0):g}",
+                          f"{float(b.get('unit_cost') or 0):.2f}", str(st))
+        except Exception:
+            pass
+
+    def _refresh_expiring(self):
+        try:
+            t = self.query_one("#expiring_table", DataTable)
+            t.clear(columns=True)
+            t.add_columns("Item", "Lot", "Received", "Expiry", "Remaining", "State")
+            rows = services.get_expiring_batches(None, include_expired=True) if hasattr(services, "get_expiring_batches") else []
+            for b in (rows or [])[:100]:
+                st = b.get("expiry_state") or ""
+                if b.get("expiry_state") == "expired":
+                    st = f"EXPIRED({b.get('days_to_expiry')})"
+                elif b.get("expiry_state") == "expiring":
+                    st = f"expiring({b.get('days_to_expiry')})"
+                t.add_row(f"{b.get('item_name','')}#{b.get('item_id','')}", str(b.get("lot_code","")),
+                          str(b.get("received_at","")), str(b.get("expiry_date") or "-"),
+                          f"{float(b.get('quantity_remaining') or 0):g}", str(st))
+        except Exception:
+            pass
 
     def on_input_changed(self, e):
         if e.input.id == "search":
             self.refresh_data()
+
+    def on_input_submitted(self, e):
+        if e.input.id == "scan_code":
+            self._do_scan_lookup()
 
     def on_select_changed(self, e):
         if e.select.id in ("cat", "stock"):
@@ -893,9 +974,14 @@ class InventorySubTab(VerticalScroll):
         if iid is None:
             return None
         row = table.get_row_at(table.cursor_row)
-        return {"id": iid, "item_name": row[1], "category": row[2],
-                "stock_qty": float(row[3]), "unit": row[4],
-                "unit_cost": float(row[5]), "selling_price": float(row[6])}
+        # cols: ID, Item, SKU/Barcode, Category, Stock, Next Exp, Unit, Unit Cost, Sell, Warn
+        try:
+            return {"id": iid, "item_name": row[1], "category": row[3],
+                    "stock_qty": float(str(row[4]).replace(',', '')), "unit": row[6],
+                    "unit_cost": float(str(row[7]).replace(',', '')), "selling_price": float(str(row[8]).replace(',', ''))}
+        except Exception:
+            return {"id": iid, "item_name": row[1] if len(row)>1 else "", "category": row[3] if len(row)>3 else "",
+                    "stock_qty": 0.0, "unit": row[6] if len(row)>6 else "", "unit_cost": 0.0, "selling_price": 0.0}
 
     def on_button_pressed(self, e):
         bid = e.button.id
@@ -905,12 +991,8 @@ class InventorySubTab(VerticalScroll):
             elif bid == "btn_edit":
                 item = self._sel_item()
                 if item:
-                    # Fetch full record with thresholds from DB
                     from app_core.db import connect
-                    full = connect().execute("""SELECT id, item_name, category, unit, stock_qty,
-                                                       unit_cost, selling_price, low_stock_threshold,
-                                                       overstock_threshold FROM inventory WHERE id=?""",
-                                             (item["id"],)).fetchone()
+                    full = connect().execute("SELECT * FROM inventory WHERE id=?", (item["id"],)).fetchone()
                     payload = dict(full) if full else item
                     push_modal(self.app, InventoryEditScreen("edit", payload), on_success=self.refresh_data)
             elif bid == "btn_del":
@@ -923,11 +1005,116 @@ class InventorySubTab(VerticalScroll):
                 if item:
                     self.query_one("#rs_qty", Input).value = ""
                     self.query_one("#rs_cost", Input).value = str(item["unit_cost"])
+                    try:
+                        self.query_one("#rb_item", Input).value = str(item["id"])
+                    except Exception:
+                        pass
                     self.app.notify(f"Restocking: {item['item_name']}")
             elif bid == "btn_rs_do":  # pragma: no cover - restock button dispatch
                 self._do_restock()  # pragma: no cover - restock button dispatch
+            elif bid == "btn_scan":
+                self._do_scan_lookup()
+            elif bid == "btn_item_label":
+                self._do_print_item_label()
+            elif bid == "btn_receive_batch":
+                self._do_receive_batch()
+            elif bid == "btn_view_batches":
+                self._refresh_batches()
+                self.app.notify("Batches refreshed")
+            elif bid == "btn_batch_label":
+                self._do_print_batch_label()
         except Exception as exc:  # pragma: no cover - defensive/widget-state branch
             show_error(self.app, str(exc))  # pragma: no cover - defensive/widget-state branch
+
+    def _do_scan_lookup(self):
+        try:
+            code = self.query_one("#scan_code", Input).value.strip()
+            if not code:
+                return show_error(self.app, "Enter/scan a barcode or lot code.")
+            res = services.resolve_barcode(code)
+            if res.get("type") == "batch":
+                b = res.get("batch") or {}
+                i = res.get("item") or {}
+                msg = f"BATCH {b.get('lot_code')} | {i.get('item_name','')} (#{b.get('item_id')}) | recv {b.get('received_at')} | exp {b.get('expiry_date') or '-'} | rem {b.get('quantity_remaining')} | {b.get('expiry_state')}"
+                self.query_one("#scan_result", Static).update(msg)
+                try:
+                    self.query_one("#rb_item", Input).value = str(b.get("item_id") or "")
+                except Exception:
+                    pass
+                self._refresh_batches(item_id=b.get("item_id"))
+                self.app.notify(msg)
+            elif res.get("type") == "item":
+                i = res.get("item") or {}
+                msg = f"ITEM {i.get('item_name')} (#{i.get('id')}) | SKU {i.get('sku') or '-'} | Barcode {i.get('barcode') or '-'} | stock {i.get('stock_qty')}"
+                self.query_one("#scan_result", Static).update(msg)
+                try:
+                    self.query_one("#rb_item", Input).value = str(i.get("id") or "")
+                except Exception:
+                    pass
+                self._refresh_batches(item_id=i.get("id"))
+                self.app.notify(msg)
+            else:
+                msg = f"No match for: {res.get('code')}"
+                self.query_one("#scan_result", Static).update(msg)
+                show_error(self.app, msg)
+        except Exception as exc:
+            show_error(self.app, str(exc))
+
+    def _do_print_item_label(self):
+        item = self._sel_item()
+        if not item:
+            return show_error(self.app, "Select an item.")
+        try:
+            ok, msg, p = services.print_item_label(item["id"])
+            self.app.notify(f"Item label: {msg}")
+        except Exception as exc:
+            show_error(self.app, str(exc))
+
+    def _do_print_batch_label(self):
+        try:
+            t = self.query_one("#batches_table", DataTable)
+            bid = selected_id(t)
+            if bid is None:
+                return show_error(self.app, "Select a batch in the batches table.")
+            ok, msg, p = services.print_batch_label(bid)
+            self.app.notify(f"Batch label: {msg}")
+        except Exception as exc:
+            show_error(self.app, str(exc))
+
+    def _do_receive_batch(self):
+        try:
+            item_id = int(self.query_one("#rb_item", Input).value.strip() or "0")
+            qty = float(self.query_one("#rb_qty", Input).value.strip() or "0")
+            cost = float(self.query_one("#rb_cost", Input).value.strip() or "0")
+            received_at = self.query_one("#rb_received", Input).value.strip() or None
+            expiry = self.query_one("#rb_expiry", Input).value.strip() or None
+            supplier = self.query_one("#rb_supplier", Input).value
+            ref = self.query_one("#rb_ref", Input).value
+            notes = self.query_one("#rb_notes", Input).value
+            if item_id <= 0:
+                return show_error(self.app, "Enter a valid Item ID.")
+            if not services.is_session_unlocked():
+                self.app.push_screen(UnlockSettingsModal(), callback=lambda ok: self._finish_receive_batch(ok, item_id, qty, cost, received_at, expiry, supplier, ref, notes))
+            else:
+                self._finish_receive_batch(True, item_id, qty, cost, received_at, expiry, supplier, ref, notes)
+        except Exception as exc:
+            show_error(self.app, str(exc))
+
+    def _finish_receive_batch(self, ok, item_id, qty, cost, received_at, expiry, supplier, ref, notes):
+        if ok == "recovery":
+            self.app.push_screen(RecoveryResetModal(), callback=lambda ok2: self._finish_receive_batch(ok2, item_id, qty, cost, received_at, expiry, supplier, ref, notes))
+            return
+        if not ok:
+            return
+        try:
+            batch = services.receive_inventory_batch(item_id, qty, cost, received_at=received_at, expiry_date=expiry, supplier=supplier, reference=ref, notes=notes, password="__session__", print_label_after=False)
+            self.app.notify(f"Received batch {batch.get('lot_code')} (recv {batch.get('received_at')} exp {batch.get('expiry_date') or '-'})")
+            self.refresh_data()
+            self._refresh_batches(item_id=item_id)
+        except PermissionError:
+            show_error(self.app, "Unlock Settings first to receive batch.")
+        except Exception as exc:
+            show_error(self.app, str(exc))
 
     def _do_restock(self):
         item = self._sel_item()
