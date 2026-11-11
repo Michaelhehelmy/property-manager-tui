@@ -40,3 +40,6 @@ input,select,textarea,button{max-width:100%}
   nav{border-right:0;border-bottom:1px solid var(--muted)}
   nav a{display:inline-block;margin:2px 4px 2px 0}
 }
+
+.assistant-grid{max-width:100%}
+@media (max-width: 800px){.assistant-grid{grid-template-columns:1fr !important}}

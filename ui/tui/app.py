@@ -121,7 +121,13 @@ class PropertyManagerApp(App[None]):
     Header { background: #313244; color: #89b4fa; }
     Footer { background: #313244; }
     TabbedContent { height: 100%; padding: 1; }
-    TabPane { padding: 1 2; background: #1e1e2e; overflow-y: auto; overflow-x: hidden; }
+    TabPane { padding: 1 2; background: #1e1e2e; overflow-y: auto; overflow-x: hidden; width: 100%; }
+    FrontDeskTab, ReservationsTab, PosInventoryTab, AccountingTab, SettingsTab, AssistantTab, NewOrderTab, InventorySubTab, VerticalScroll, Vertical { overflow-x: hidden; width: 100%; max-width: 100%; }
+    Horizontal { overflow-x: hidden; max-width: 100%; }
+    .button_row, .form_row { height: auto; width: 100%; overflow-x: hidden; layout: grid; grid-size: 4; grid-gutter: 0 1; }
+    .button_row Button, .form_row Button { min-width: 0; width: 100%; }
+    #assistant_split { overflow-x: hidden; }
+    #assistant_main { overflow-x: hidden; min-width: 0; }
     DataTable { height: auto; max-height: 14; border: solid #45475a; margin: 0 0 1 0; background: #1e1e2e; }
     Button { margin: 0 1 1 0; padding: 0 2; min-width: 12; background: #89b4fa; color: #1e1e2e; text-style: bold; border: none; }
     Button:hover { background: #b4befe; }
