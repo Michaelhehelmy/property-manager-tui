@@ -1,7 +1,7 @@
 """All modals. UI-only — all logic in services.py."""
 import os
 from datetime import datetime
-from textual.widgets import Static, Button, Input, RichLog, DataTable, Select, Checkbox
+from textual.widgets import Static, Button, Input, RichLog, DataTable, Select, Checkbox, Collapsible
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from rich.text import Text
@@ -706,12 +706,12 @@ class GuestCRMModal(ModalScreen):
     BINDINGS = [("escape", "close", "Close")]
     def compose(self):
         with VerticalScroll(id="crm_dialog"):
-            yield Static("👥 " + t("Guests"), classes="title")
+            yield Static("👥 " + t("Guests") + " — Portfolio", classes="title")
             yield Input(placeholder=t("Search"), id="search")
             yield DataTable(id="table")
             yield Static("", id="dupes", classes="warn")
             with Horizontal(classes="modal_buttons"):
-                yield Button(t("View History"), id="btn_hist", variant="primary")
+                yield Button("📁 Portfolio", id="btn_hist", variant="primary")
                 yield Button(t("Merge Selected"), id="btn_merge", variant="warning")
                 yield Button(t("Edit"), id="btn_edit", variant="primary")
                 yield Button("Refresh", id="btn_refresh", variant="primary")
@@ -721,11 +721,15 @@ class GuestCRMModal(ModalScreen):
     def _load(self):
         table = self.query_one("#table", DataTable)
         table.clear(columns=True)
-        table.add_columns("ID", "Name", "Phone", "Stays", "Last Stay", "Total")
+        table.cursor_type = "row"
+        table.add_columns("ID", "Name", "Phone", "Stays", "Last Stay", "Total", "Outstanding")
         search = self.query_one("#search", Input).value or ""
         for g in services.get_all_guests(search):
-            table.add_row(str(g["id"]), g["canonical_name"], g["phone"] or "-",
-                          str(g["stays"] or 0), g["last_stay"] or "-", f"{(g['total'] or 0):.0f}")
+            table.add_row(
+                str(g["id"]), str(g.get("canonical_name") or ""), str(g.get("phone") or "-"),
+                str(g.get("stays") or 0), str(g.get("last_stay") or "-"),
+                f"{float(g.get('total') or 0):.2f}", f"{float(g.get('outstanding') or 0):.2f}",
+            )
     def on_input_changed(self, e):
         if e.input.id == "search":
             self._load()
@@ -764,26 +768,141 @@ class GuestCRMModal(ModalScreen):
 
 
 class GuestHistoryModal(ModalScreen):
+    """Comprehensive guest portfolio: profile, stats, all trips/reservations, POS activity, payments, invoices."""
     BINDINGS = [("escape", "close", "Close")]
     def __init__(self, guest_id):
         super().__init__()
         self.guest_id = guest_id
+        self._portfolio = None
+
     def compose(self):
-        g = services.get_guest_by_id(self.guest_id)
         with VerticalScroll(id="folio_dialog"):
-            yield Static(f"{t('View History')}: {g['name'] if g else '?'}", classes="title")
-            yield DataTable(id="table")
+            yield Static("Loading guest portfolio...", id="gh_title", classes="title")
+            yield Static("", id="gh_summary")
+            yield Collapsible(Static("", id="gh_profile"), title="Profile & Top Items", collapsed=False)
+            yield Collapsible(DataTable(id="gh_trips"), title="Trips / Reservations (select row for details)", collapsed=False)
+            yield Collapsible(DataTable(id="gh_pos"), title="All POS / Activity", collapsed=True)
+            yield Collapsible(DataTable(id="gh_pay"), title="All Payments", collapsed=True)
+            yield Collapsible(Static("", id="gh_invoices"), title="Invoices (saved files)", collapsed=True)
+            yield Collapsible(Static("", id="gh_trip_details"), title="Selected Trip Details", collapsed=True, id="gh_col_detail")
             with Horizontal(classes="modal_buttons"):
                 yield Button(t("Close"), id="btn_close", variant="primary")
+
     def on_mount(self):
-        table = self.query_one("#table", DataTable)
-        table.add_columns("ID", "Room", "In", "Out", "Status", "Rate", "Tax")
-        for r in services.get_guest_history_by_id(self.guest_id):
-            table.add_row(str(r["id"]), r["room_number"], r["check_in_date"], r["check_out_date"],
-                          r["status"], f"{r['agreed_nightly_rate']:.2f}", f"{r['tax_amount']:.2f}")
+        self._load()
+
+    def _load(self):
+        try:
+            p = services.get_guest_portfolio(self.guest_id)
+        except Exception as exc:
+            self.query_one("#gh_title", Static).update(f"Guest portfolio error: {exc}")
+            return
+        self._portfolio = p
+        if not p:
+            self.query_one("#gh_title", Static).update("Guest not found")
+            return
+        g = p.get("guest") or {}
+        s = p.get("stats") or {}
+        name = g.get("name") or g.get("canonical_name") or "?"
+        self.query_one("#gh_title", Static).update(f"Guest Portfolio — {name} (#{g.get('id', self.guest_id)})")
+        summary = (
+            f"Stays: {s.get('stays_total',0)} ({s.get('completed_stays',0)} completed, {s.get('total_nights',0)} nights) | "
+            f"Charges: {fmt(s.get('total_charges',0))} | Paid: {fmt(s.get('total_paid',0))} | "
+            f"Outstanding: {fmt(s.get('total_outstanding',0))} | POS: {fmt(s.get('pos_gross_total',0))}\n"
+            f"First visit: {s.get('first_visit') or '-'} | Last visit: {s.get('last_visit') or '-'} | Favorite room: {s.get('favorite_room') or '-'}"
+        )
+        self.query_one("#gh_summary", Static).update(summary)
+        prof = [f"Phone: {g.get('phone') or '-'}", f"Email: {g.get('email') or '-'}", f"Notes: {g.get('notes') or '-'}"]
+        tops = p.get("top_items_overall") or []
+        if tops:
+            prof.append("Top items overall: " + ", ".join([f"{x['item']} ({fmt(x['gross'])})" for x in tops[:8]]))
+        self.query_one("#gh_profile", Static).update("\n".join(prof))
+
+        tt = self.query_one("#gh_trips", DataTable)
+        tt.clear(columns=True)
+        tt.cursor_type = "row"
+        tt.add_columns("ID", "Room", "In", "Out", "N", "Status", "Charges", "Paid", "Due", "POS#", "Inv#")
+        for trip in p.get("trips") or []:
+            bd = trip.get("balance") or {}
+            tt.add_row(
+                str(trip.get("id")), str(trip.get("room_number") or "-"),
+                str(trip.get("check_in_date") or ""), str(trip.get("check_out_date") or ""),
+                str(trip.get("nights") or 0), str(trip.get("status") or ""),
+                f"{float(bd.get('total_charges') or 0):.2f}", f"{float(bd.get('total_paid') or 0):.2f}",
+                f"{float(bd.get('balance_due') or 0):.2f}",
+                str(len(trip.get("pos_active") or trip.get("pos_items") or [])), str(len(trip.get("invoices") or [])),
+            )
+
+        pt = self.query_one("#gh_pos", DataTable)
+        pt.clear(columns=True)
+        pt.add_columns("When", "Res", "Room", "Item", "Qty", "Price", "Tax")
+        for i in (p.get("all_pos") or [])[:250]:
+            pt.add_row(
+                str(i.get("created_at") or ""), str(i.get("reservation_id")), str(i.get("room_number") or ""),
+                str(i.get("item_description") or ""), str(i.get("quantity") or 0),
+                f"{float(i.get('unit_price') or 0):.2f}", f"{float(i.get('tax_amount') or 0):.2f}",
+            )
+
+        payt = self.query_one("#gh_pay", DataTable)
+        payt.clear(columns=True)
+        payt.add_columns("When", "Res", "Room", "Method", "Type", "Amount")
+        for x in (p.get("all_payments") or [])[:250]:
+            payt.add_row(
+                str(x.get("at") or ""), str(x.get("reservation_id")), str(x.get("room_number") or ""),
+                str(x.get("method") or ""), str(x.get("payment_type") or ""), f"{float(x.get('amount') or 0):.2f}",
+            )
+
+        inv_lines = []
+        for trip in p.get("trips") or []:
+            for inv in (trip.get("invoices") or []):
+                inv_lines.append(f"Res #{trip.get('id')}: {inv.get('name')}  ({inv.get('modified','')})  [{inv.get('path','')}]")
+        self.query_one("#gh_invoices", Static).update("\n".join(inv_lines) if inv_lines else "No saved invoice files for this guest's reservations.")
+
+    def on_data_table_row_selected(self, e):
+        if getattr(e.data_table, "id", "") != "gh_trips":
+            return
+        rid = selected_id(e.data_table)
+        if not rid or not self._portfolio:
+            return
+        trip = next((x for x in (self._portfolio.get("trips") or []) if x.get("id") == rid), None)
+        if not trip:
+            return
+        bd = trip.get("balance") or {}
+        lines = [
+            f"Reservation #{trip['id']}  Room {trip.get('room_number') or '-'}  {trip.get('check_in_date')} → {trip.get('check_out_date')}  ({trip.get('status')})",
+            f"Rate: {fmt(trip.get('agreed_nightly_rate',0))}  Plan: {trip.get('rate_plan') or '-'}  Source: {trip.get('source') or '-'}  Nights: {trip.get('nights',0)}",
+            f"Charges {fmt(bd.get('total_charges',0))} (accommodation {fmt(bd.get('accommodation_gross',0))}, POS {fmt(bd.get('pos_gross',0))})  Paid {fmt(bd.get('total_paid',0))}  Due {fmt(bd.get('balance_due',0))}",
+            f"Notes: {trip.get('notes') or '-'}",
+            "",
+            "POS / Activity:",
+        ]
+        pos_items = trip.get("pos_items") or []
+        for i in pos_items[:40]:
+            tag = " [VOID]" if i.get("voided_at") else ""
+            lines.append(f"  - {i.get('item_description')} x{i.get('quantity')} @ {fmt(i.get('unit_price',0))} (tax {fmt(i.get('tax_amount',0))}){tag}")
+        if not pos_items:
+            lines.append("  (none)")
+        lines.append("")
+        lines.append("Payments:")
+        pays = trip.get("payments") or []
+        for pay in pays[:40]:
+            tag = " [VOID]" if pay.get("voided_at") else ""
+            lines.append(f"  - {pay.get('at')} {pay.get('method')} {pay.get('payment_type') or ''} {fmt(pay.get('amount',0))}{tag}")
+        if not pays:
+            lines.append("  (none)")
+        invs = trip.get("invoices") or []
+        lines.append("")
+        lines.append("Invoices: " + (", ".join(x.get('name', '') for x in invs) if invs else "(none saved)"))
+        self.query_one("#gh_trip_details", Static).update("\n".join(lines))
+        try:
+            self.query_one("#gh_col_detail", Collapsible).collapsed = False
+        except Exception:
+            pass
+
     def on_button_pressed(self, e):
         if e.button.id == "btn_close":
             self.dismiss()
+
     def action_close(self):
         self.dismiss()
 

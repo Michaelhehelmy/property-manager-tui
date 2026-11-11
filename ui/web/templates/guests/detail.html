@@ -1,18 +1,111 @@
 {% extends "base.html" %}
 {% block content %}
-<h2>Guest: {{ g['canonical_name'] }} (#{{g['id']}})</h2>
+<h2>Guest portfolio: {{ g.get('canonical_name') or g.get('name') }} <span class="muted">(#{{ g.get('id') }})</span></h2>
+<p class="muted">360° view: profile, trips/reservations, POS/activity, payments, invoices, and totals — all grounded in real app data.</p>
+
+{% set s = p.stats or {} %}
+<div class="grid grid-4" style="margin-bottom:12px;">
+  <div class="panel"><div class="muted">Stays / Trips</div><div style="font-size:22px;font-weight:700">{{ s.stays_total or 0 }}</div><div class="muted">{{ s.completed_stays or 0 }} completed · {{ s.total_nights or 0 }} nights</div></div>
+  <div class="panel"><div class="muted">Total charges</div><div style="font-size:22px;font-weight:700">{{ '%.2f'|format(s.total_charges or 0) }}</div><div class="muted">POS total {{ '%.2f'|format(s.pos_gross_total or 0) }}</div></div>
+  <div class="panel"><div class="muted">Total paid</div><div style="font-size:22px;font-weight:700">{{ '%.2f'|format(s.total_paid or 0) }}</div><div class="muted">Across all reservations</div></div>
+  <div class="panel"><div class="muted">Outstanding</div><div style="font-size:22px;font-weight:700; color: {% if (s.total_outstanding or 0) > 0 %}var(--warn){% else %}var(--ok){% endif %}">{{ '%.2f'|format(s.total_outstanding or 0) }}</div><div class="muted">Due on active/checked-out stays</div></div>
+</div>
+
 <div class="grid grid-2">
-  <div class="panel"><h3>Edit (requires unlock/password)</h3>
+  <div class="panel">
+    <h3>Profile & contact</h3>
+    <table>
+      <tr><th>Name</th><td>{{ g.get('canonical_name') or g.get('name') }}</td></tr>
+      <tr><th>Phone</th><td>{{ g.get('phone') or '—' }}</td></tr>
+      <tr><th>Email</th><td>{{ g.get('email') or '—' }}</td></tr>
+      <tr><th>First visit</th><td>{{ s.first_visit or '—' }}</td></tr>
+      <tr><th>Last visit</th><td>{{ s.last_visit or '—' }}</td></tr>
+      <tr><th>Favorite room</th><td>{{ s.favorite_room or '—' }}</td></tr>
+      <tr><th>Notes</th><td style="white-space:pre-wrap">{{ g.get('notes') or '—' }}</td></tr>
+    </table>
+    {% if p.top_items_overall %}
+    <h4 style="margin-top:12px;">Top items overall (POS)</h4>
+    <ul style="margin:6px 0 0 18px;">
+      {% for it in p.top_items_overall %}<li>{{ it.item }} — {{ '%.2f'|format(it.gross) }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+  </div>
+
+  <div class="panel">
+    <h3>Edit guest (requires unlock + super password)</h3>
     <form method="post" action="/guests/{{g['id']}}/update"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
-      <label>Name<input name="name" value="{{g['canonical_name']}}"/></label>
-      <label>Phone<input name="phone" value="{{g['phone']}}"/></label>
-      <label>Email<input name="email" value="{{g['email']}}"/></label>
-      <label>Notes<textarea name="notes">{{g['notes']}}</textarea></label>
+      <label>Name<input name="name" value="{{ g.get('canonical_name') or g.get('name') or '' }}"/></label>
+      <label>Phone<input name="phone" value="{{ g.get('phone') or '' }}"/></label>
+      <label>Email<input name="email" value="{{ g.get('email') or '' }}"/></label>
+      <label>Notes<textarea name="notes">{{ g.get('notes') or '' }}</textarea></label>
       <label>Super password<input type="password" name="password"/></label>
-      <button type="submit">Update</button>
-    </form></div>
-  <div class="panel"><h3>History</h3><table><tr><th>Res</th><th>Room</th><th>Dates</th><th>Status</th><th>Rate</th></tr>
-  {% for h in hist %}<tr><td><a href="/reservations/{{h['id']}}">#{{h['id']}}</a></td><td>{{h['room_number']}}</td><td>{{h['check_in_date']}} → {{h['check_out_date']}}</td><td>{{h['status']}}</td><td>{{h['agreed_nightly_rate']}}</td></tr>
-  {% else %}<tr><td colspan="5" class="muted">No history</td></tr>{% endfor %}</table></div>
+      <button type="submit">Update profile</button>
+    </form>
+  </div>
+</div>
+
+<div class="panel" style="margin-top:12px;">
+  <h3>Trips / Reservations ({{ p.trips|length }})</h3>
+  <p class="muted">All stays with room, dates, status, charges/balance, POS orders, payments, and invoices.</p>
+  {% for t in p.trips %}
+  <details style="margin:10px 0; border:1px solid var(--muted); border-radius:10px; padding:8px 10px; background:#0f172a22;" {% if loop.first %}open{% endif %}>
+    <summary style="cursor:pointer; font-weight:600;">
+      Res <a href="/reservations/{{t.id}}">#{{t.id}}</a> · {{ t.room_number or '—' }} {{ '(' ~ t.room_type ~ ')' if t.room_type else '' }} · {{ t.check_in_date }} → {{ t.check_out_date }} ({{ t.nights }} nights) · <span class="muted">{{ t.status }}</span>
+      · charges {{ '%.2f'|format((t.balance.total_charges if t.balance else 0) or 0) }}, paid {{ '%.2f'|format((t.balance.total_paid if t.balance else 0) or 0) }}, due <strong>{{ '%.2f'|format((t.balance.balance_due if t.balance else 0) or 0) }}</strong>
+    </summary>
+    <div style="margin-top:8px;">
+      <div class="muted">Source: {{ t.source or '—' }} · Plan: {{ t.rate_plan or '—' }} · Rate: {{ '%.2f'|format(t.agreed_nightly_rate or 0) }} · Tax: {{ '%.2f'|format(t.tax_amount or 0) }}{% if t.notes %} · Notes: {{ t.notes }}{% endif %}</div>
+      <div class="grid grid-3" style="margin-top:8px; gap:10px;">
+        <div>
+          <h4>Folio</h4>
+          <table>
+            <tr><th>Total charges</th><td>{{ '%.2f'|format((t.balance.total_charges if t.balance else 0) or 0) }}</td></tr>
+            <tr><th>Accommodation</th><td>{{ '%.2f'|format((t.balance.accommodation_gross if t.balance else 0) or 0) }}</td></tr>
+            <tr><th>POS/Extras</th><td>{{ '%.2f'|format((t.balance.pos_gross if t.balance else 0) or 0) }}</td></tr>
+            <tr><th>Total paid</th><td>{{ '%.2f'|format((t.balance.total_paid if t.balance else 0) or 0) }}</td></tr>
+            <tr><th>Balance due</th><td><strong>{{ '%.2f'|format((t.balance.balance_due if t.balance else 0) or 0) }}</strong></td></tr>
+          </table>
+        </div>
+        <div>
+          <h4>POS / Activity ({{ (t.pos_active or [])|length }} active)</h4>
+          <table><tr><th>Item</th><th>Qty</th><th>Price</th><th>Tax</th></tr>
+          {% for i in (t.pos_items or []) %}<tr {% if i.voided_at %}class="muted" style="text-decoration:line-through"{% endif %}><td>{{ i.item_description }}</td><td>{{ i.quantity }}</td><td>{{ '%.2f'|format(i.unit_price or 0) }}</td><td>{{ '%.2f'|format(i.tax_amount or 0) }}</td></tr>
+          {% else %}<tr><td colspan="4" class="muted">No POS items</td></tr>{% endfor %}</table>
+        </div>
+        <div>
+          <h4>Payments</h4>
+          <table><tr><th>When</th><th>Method</th><th>Type</th><th>Amount</th></tr>
+          {% for pay in (t.payments or []) %}<tr {% if pay.voided_at %}class="muted" style="text-decoration:line-through"{% endif %}><td>{{ pay.at }}</td><td>{{ pay.method }}</td><td>{{ pay.payment_type }}</td><td>{{ '%.2f'|format(pay.amount or 0) }}</td></tr>
+          {% else %}<tr><td colspan="4" class="muted">No payments</td></tr>{% endfor %}</table>
+          <h4 style="margin-top:8px;">Invoices</h4>
+          {% if t.invoices %}
+            <ul style="margin:4px 0 0 18px;">
+            {% for inv in t.invoices %}<li><a href="/files/invoice/{{ inv.name }}">{{ inv.name }}</a> <span class="muted">({{ inv.modified or '' }})</span></li>{% endfor %}
+            </ul>
+          {% else %}<div class="muted">No invoice files saved for this reservation.</div>{% endif %}
+        </div>
+      </div>
+    </div>
+  </details>
+  {% else %}
+    <div class="muted">No trips/reservations for this guest yet.</div>
+  {% endfor %}
+</div>
+
+<div class="grid grid-2" style="margin-top:12px;">
+  <div class="panel">
+    <h3>All POS / activity ({{ p.all_pos|length }})</h3>
+    <table><tr><th>When</th><th>Res</th><th>Room</th><th>Item</th><th>Qty</th><th>Price</th></tr>
+    {% for i in p.all_pos[:80] %}<tr><td>{{ i.created_at }}</td><td><a href="/reservations/{{ i.reservation_id }}">#{{ i.reservation_id }}</a></td><td>{{ i.room_number or '' }}</td><td>{{ i.item_description }}</td><td>{{ i.quantity }}</td><td>{{ '%.2f'|format(i.unit_price or 0) }}</td></tr>
+    {% else %}<tr><td colspan="6" class="muted">No POS activity</td></tr>{% endfor %}</table>
+    {% if p.all_pos|length > 80 %}<div class="muted">Showing latest 80 of {{ p.all_pos|length }}.</div>{% endif %}
+  </div>
+  <div class="panel">
+    <h3>All payments ({{ p.all_payments|length }})</h3>
+    <table><tr><th>When</th><th>Res</th><th>Room</th><th>Method</th><th>Type</th><th>Amount</th></tr>
+    {% for pay in p.all_payments[:80] %}<tr><td>{{ pay.at }}</td><td><a href="/reservations/{{ pay.reservation_id }}">#{{ pay.reservation_id }}</a></td><td>{{ pay.room_number or '' }}</td><td>{{ pay.method }}</td><td>{{ pay.payment_type }}</td><td>{{ '%.2f'|format(pay.amount or 0) }}</td></tr>
+    {% else %}<tr><td colspan="6" class="muted">No payments</td></tr>{% endfor %}</table>
+    {% if p.all_payments|length > 80 %}<div class="muted">Showing latest 80 of {{ p.all_payments|length }}.</div>{% endif %}
+  </div>
 </div>
 {% endblock %}

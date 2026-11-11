@@ -1,8 +1,21 @@
 {% extends "base.html" %}
 {% block content %}
 <h2>Guests</h2>
+<p class="muted">Guest portfolio index: search, review stays/value/outstanding, and open full 360° guest profile (trips, POS activity, payments, invoices).</p>
 <div class="panel"><form method="get" class="row"><input name="q" value="{{q}}" placeholder="Search name/phone/email"/><div style="flex:0"><button type="submit">Search</button></div></form></div>
-<div class="panel"><table><tr><th>ID</th><th>Name</th><th>Phone</th><th>Email</th><th>Stays</th><th></th></tr>
-{% for r in rows %}<tr><td>{{r['id']}}</td><td>{{r['canonical_name']}}</td><td>{{r['phone']}}</td><td>{{r['email']}}</td><td>{{r['stays'] or ''}}</td><td><a class="btn" href="/guests/{{r['id']}}">Open</a></td></tr>
-{% else %}<tr><td colspan="6" class="muted">No guests</td></tr>{% endfor %}</table></div>
+<div class="panel"><table>
+  <tr><th>ID</th><th>Name</th><th>Phone</th><th>Email</th><th>Stays</th><th>Last Stay</th><th>Total (est.)</th><th>Outstanding</th><th></th></tr>
+{% for r in rows %}<tr>
+  <td>{{r['id']}}</td>
+  <td><strong>{{r['canonical_name']}}</strong></td>
+  <td>{{r['phone'] or '—'}}</td>
+  <td>{{r['email'] or '—'}}</td>
+  <td>{{r['stays'] or 0}}</td>
+  <td>{{r['last_stay'] or '—'}}</td>
+  <td>{{"%.2f"|format(r['total'] or 0)}}</td>
+  <td style="color:{% if (r['outstanding'] or 0) > 0 %}var(--warn){% else %}inherit{% endif %}; font-weight:{% if (r['outstanding'] or 0) > 0 %}700{% else %}400{% endif %}">{{"%.2f"|format(r['outstanding'] or 0)}}</td>
+  <td><a class="btn" href="/guests/{{r['id']}}">Open portfolio</a></td>
+</tr>
+{% else %}<tr><td colspan="9" class="muted">No guests</td></tr>{% endfor %}
+</table></div>
 {% endblock %}

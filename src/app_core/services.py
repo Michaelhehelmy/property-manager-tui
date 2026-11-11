@@ -839,28 +839,40 @@ def find_or_create_guest(name, phone="", email=""):
 def get_all_guests(search=""):
     from .db import connect
     q = f"%{search}%" if search else None
-    if q:
-        return connect().execute("""
-            SELECT g.id, g.canonical_name, g.phone, g.email,
-                   COUNT(r.id) AS stays,
-                   MAX(r.check_in_date) AS last_stay,
-                   COALESCE(SUM(r.agreed_nightly_rate *
-                       MAX(1, CAST(julianday(r.check_out_date)-julianday(r.check_in_date) AS INT))
-                       + r.tax_amount), 0) AS total
-            FROM guests g LEFT JOIN reservations r ON r.guest_id = g.id
-            WHERE g.canonical_name LIKE ? OR g.phone LIKE ? OR g.email LIKE ?
-            GROUP BY g.id ORDER BY g.canonical_name
-        """, (q, q, q)).fetchall()
-    return connect().execute("""
-        SELECT g.id, g.canonical_name, g.phone, g.email,
+    base_sql = """
+        SELECT g.id, g.canonical_name, g.phone, g.email, g.notes,
                COUNT(r.id) AS stays,
                MAX(r.check_in_date) AS last_stay,
-               COALESCE(SUM(r.agreed_nightly_rate *
-                   MAX(1, CAST(julianday(r.check_out_date)-julianday(r.check_in_date) AS INT))
-                   + r.tax_amount), 0) AS total
+               COALESCE(SUM(CASE WHEN r.status NOT IN ('Cancelled','No-Show','Deleted') THEN
+                   r.agreed_nightly_rate * MAX(1, CAST(julianday(r.check_out_date)-julianday(r.check_in_date) AS INT)) + r.tax_amount
+               ELSE 0 END), 0) AS total
         FROM guests g LEFT JOIN reservations r ON r.guest_id = g.id
+        {where}
         GROUP BY g.id ORDER BY g.canonical_name
-    """).fetchall()
+    """
+    if q:
+        rows = connect().execute(base_sql.format(where="WHERE g.canonical_name LIKE ? OR g.phone LIKE ? OR g.email LIKE ?"), (q, q, q)).fetchall()
+    else:
+        rows = connect().execute(base_sql.format(where=""),).fetchall()
+    # enrich with real outstanding (sum balances across non-deleted/cancelled/no-show? balance func already handles)
+    out = []
+    for r in rows:
+        d = dict(r)
+        try:
+            due = 0.0
+            res_ids = connect().execute("SELECT id FROM reservations WHERE guest_id=?", (r["id"],)).fetchall()
+            for rr in res_ids:
+                try:
+                    b = calculate_guest_balance(rr["id"])
+                    if b and b > 0:
+                        due += b
+                except Exception:
+                    pass
+            d["outstanding"] = round(due, 2)
+        except Exception:
+            d["outstanding"] = 0.0
+        out.append(d)
+    return out
 
 
 def get_guest_by_id(guest_id):
@@ -1044,9 +1056,143 @@ def merge_guests(winner_id, loser_id, password):
     return moved
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# ROOMS
-# ═══════════════════════════════════════════════════════════════════════════
+
+def _list_invoice_files_for_reservation(rid):
+    rid = int(rid)
+    files = []
+    try:
+        INVOICE_DIR.mkdir(exist_ok=True)
+        for pat in (f"invoice_Res{rid}_*.txt", f"invoice_Res{rid}_*.pdf"):
+            for fp in sorted(INVOICE_DIR.glob(pat), reverse=True):
+                try:
+                    st = fp.stat()
+                    files.append({"name": fp.name, "path": str(fp), "size": st.st_size, "modified": datetime.fromtimestamp(st.st_mtime).strftime(DATETIME_FMT)})
+                except Exception:
+                    files.append({"name": fp.name, "path": str(fp)})
+    except Exception:
+        pass
+    return files
+
+
+def get_guest_portfolio(guest_id):
+    """Comprehensive guest portfolio: profile, stats, trips/reservations, POS, payments, invoices (real data)."""
+    from .db import connect
+    gid = int(guest_id)
+    guest = get_guest_by_id(gid)
+    if not guest:
+        return None
+    conn = connect()
+    # reservations/trips (all, including cancelled/no-show for history; mark clearly)
+    rows = conn.execute("""
+        SELECT r.*, rm.room_number, rm.room_type, rp.name AS rate_plan_name
+        FROM reservations r
+        LEFT JOIN rooms rm ON r.room_id = rm.id
+        LEFT JOIN rate_plans rp ON r.rate_plan_id = rp.id
+        WHERE r.guest_id=?
+        ORDER BY r.check_in_date DESC, r.id DESC
+    """, (gid,)).fetchall()
+
+    trips = []
+    all_pos = []
+    all_payments = []
+    total_nights = 0
+    total_charges = 0.0
+    total_paid = 0.0
+    total_outstanding = 0.0
+    completed_stays = 0
+    room_counts = {}
+    first_visit = None
+    last_visit = None
+
+    for r in rows:
+        rid = r["id"]
+        try:
+            nights = _nights(r["check_in_date"], r["check_out_date"])
+        except Exception:
+            nights = 0
+        bd = get_balance_breakdown(rid) or {}
+        pos = [dict(x) for x in conn.execute(
+            "SELECT id, item_description, quantity, unit_price, tax_amount, voided_at, created_at FROM pos_tabs WHERE reservation_id=? ORDER BY id",
+            (rid,)).fetchall()]
+        pos_active = [x for x in pos if not x.get("voided_at")]
+        pays = [dict(x) for x in conn.execute(
+            "SELECT id, amount, method, payment_type, notes, voided_at, at FROM payments WHERE reservation_id=? ORDER BY id",
+            (rid,)).fetchall()]
+        invoices = _list_invoice_files_for_reservation(rid)
+        charges = float(bd.get("total_charges") or 0)
+        paid = float(bd.get("total_paid") or 0)
+        due = float(bd.get("balance_due") or 0)
+        status = r["status"]
+        if status not in ("Cancelled", "No-Show", "Deleted"):
+            total_charges += charges
+            total_paid += paid
+            if due > 0:
+                total_outstanding += due
+            total_nights += max(0, nights)
+        if status == "Checked Out":
+            completed_stays += 1
+        rn = r["room_number"] or ""
+        if rn:
+            room_counts[rn] = room_counts.get(rn, 0) + 1
+        ci = r["check_in_date"]
+        if ci:
+            first_visit = ci if not first_visit or ci < first_visit else first_visit
+            last_visit = ci if not last_visit or ci > last_visit else last_visit
+
+        trip = {
+            "id": rid, "room_number": r["room_number"], "room_type": r["room_type"],
+            "check_in_date": r["check_in_date"], "check_out_date": r["check_out_date"],
+            "nights": max(0, nights), "status": status, "source": r["source"],
+            "rate_plan": r["rate_plan_name"], "agreed_nightly_rate": float(r["agreed_nightly_rate"] or 0),
+            "tax_amount": float(r["tax_amount"] or 0), "notes": r["notes"] or "",
+            "created_at": r["created_at"],
+            "balance": bd, "pos_items": pos, "pos_active": pos_active, "payments": pays,
+            "invoices": invoices,
+        }
+        trips.append(trip)
+        for x in pos_active:
+            all_pos.append({**x, "reservation_id": rid, "room_number": r["room_number"], "check_in_date": r["check_in_date"]})
+        for x in pays:
+            if not x.get("voided_at"):
+                all_payments.append({**x, "reservation_id": rid, "room_number": r["room_number"], "check_in_date": r["check_in_date"]})
+
+    # spend by category (POS items)
+    pos_totals = {}
+    for x in all_pos:
+        name = (x.get("item_description") or "Item").strip()
+        qty = float(x.get("quantity") or 0)
+        gross = qty * float(x.get("unit_price") or 0) + float(x.get("tax_amount") or 0)
+        pos_totals[name] = pos_totals.get(name, 0.0) + gross
+    top_items = sorted([{"item": k, "gross": round(v, 2)} for k, v in pos_totals.items()], key=lambda i: i["gross"], reverse=True)[:10]
+
+    favorite_room = None
+    if room_counts:
+        favorite_room = sorted(room_counts.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
+
+    stats = {
+        "stays_total": len(trips),
+        "completed_stays": completed_stays,
+        "total_nights": total_nights,
+        "total_charges": round(total_charges, 2),
+        "total_paid": round(total_paid, 2),
+        "total_outstanding": round(total_outstanding, 2),
+        "pos_gross_total": round(sum(t["gross"] for t in top_items) if top_items else 0.0, 2),
+        "first_visit": first_visit,
+        "last_visit": last_visit,
+        "favorite_room": favorite_room,
+    }
+    # add grand pos total accurately
+    stats["pos_gross_total"] = round(sum(float(x.get("quantity") or 0) * float(x.get("unit_price") or 0) + float(x.get("tax_amount") or 0) for x in all_pos), 2)
+
+    return {
+        "guest": guest,
+        "stats": stats,
+        "trips": trips,
+        "all_pos": sorted(all_pos, key=lambda x: (x.get("created_at") or "", x.get("id") or 0), reverse=True),
+        "all_payments": sorted(all_payments, key=lambda x: (x.get("at") or "", x.get("id") or 0), reverse=True),
+        "top_items_overall": top_items,
+    }
+
 
 def get_all_rooms():
     from .db import connect
