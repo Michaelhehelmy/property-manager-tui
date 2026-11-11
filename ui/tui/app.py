@@ -153,9 +153,16 @@ class PropertyManagerApp(App[None]):
 
     #protected_modal, #pw_dialog, #folio_dialog, #lang_dialog, #inv_edit_dialog,
     #report_dialog, #chart_dialog, #crm_dialog, #invoice_dialog {
-        width: 88; height: auto; max-height: 92%;
+        width: 90%; max-width: 88; min-width: 40; height: auto; max-height: 92%;
         border: thick #89b4fa; background: #24273a; padding: 1 2;
+        overflow-x: hidden; overflow-y: auto;
     }
+    VerticalScroll { overflow-x: hidden; }
+    .modal_buttons Horizontal, .modal_buttons { width: 100%; height: auto; }
+    .modal_buttons Button { min-width: 8; }
+    DataTable { min-width: 0; }
+    Static { text-wrap: wrap; }
+    Input, Select { max-width: 100%; }
     #invoice_body, #report_body, #review_body, #chart_body, #body {
         height: 1fr; min-height: 12;
         background: #1e1e2e; border: solid #45475a; padding: 0 1;
@@ -165,7 +172,7 @@ class PropertyManagerApp(App[None]):
     #wiz_preview { min-height: 3; content-align: center middle; }
     #assistant_log { height: 1fr; min-height: 12; background: #1e1e2e; border: solid #45475a; padding: 0 1; margin: 0 0 1 0; }
     #assistant_split { height: 1fr; }
-    #assistant_side { width: 34; min-width: 28; height: 100%; border: solid #45475a; background: #24273a; padding: 1; margin: 0 1 0 0; overflow-y: auto; }
+    #assistant_side { width: 34; min-width: 24; max-width: 40%; height: 100%; border: solid #45475a; background: #24273a; padding: 1; margin: 0 1 0 0; overflow-y: auto; overflow-x: hidden; }
     #assistant_side Button { width: 100%; margin: 0 0 1 0; min-width: 0; }
     #assistant_main { width: 1fr; height: 100%; }
     #assistant_input { margin: 0 0 1 0; }

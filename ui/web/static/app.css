@@ -3,10 +3,10 @@
 a{color:var(--accent)} .layout{display:grid;grid-template-columns:220px 1fr;min-height:100vh}
 nav{background:#181825;padding:16px;border-right:1px solid var(--muted)} nav h1{font-size:16px;margin:0 0 4px;color:var(--accent)}
 nav .gift{font-size:11px;color:var(--warn);margin-bottom:12px} nav a{display:block;padding:8px 10px;border-radius:6px;text-decoration:none;color:var(--text);margin:2px 0}
-nav a:hover{background:var(--panel)} main{padding:18px 22px;overflow:auto}
+nav a:hover{background:var(--panel)} main{padding:18px 22px;overflow-y:auto;overflow-x:hidden;max-width:100%}
 .panel{background:var(--panel);border:1px solid var(--muted);border-radius:8px;padding:14px;margin:0 0 14px}
 .grid{display:grid;gap:12px}.grid-2{grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}.grid-4{grid-template-columns:repeat(auto-fit,minmax(160px,1fr))}
-table{width:100%;border-collapse:collapse} th,td{padding:7px 8px;border-bottom:1px solid var(--muted);text-align:left;font-size:13px;vertical-align:top}
+table{width:100%;border-collapse:collapse;table-layout:fixed} th,td{padding:7px 8px;border-bottom:1px solid var(--muted);text-align:left;font-size:13px;vertical-align:top;word-break:break-word;overflow-wrap:anywhere}
 th{color:var(--warn)} input,select,textarea,button{font:inherit}
 input,select,textarea{width:100%;padding:8px;border:1px solid var(--muted);border-radius:6px;background:#11111b;color:var(--text);margin:2px 0 8px}
 button,.btn{display:inline-block;padding:8px 12px;border:0;border-radius:6px;background:var(--accent);color:#11111b;font-weight:700;cursor:pointer;text-decoration:none}
@@ -26,3 +26,17 @@ button[title],a.btn[title],a[title]{cursor:pointer}
 .help-box li{margin:3px 0}
 .kbd{display:inline-block;padding:1px 6px;border:1px solid var(--muted);border-radius:4px;background:#181825;font-size:12px}
 label > .hint{font-weight:400;color:#a6adc8;font-size:12px}
+
+
+/* Responsive: prevent horizontal scroll */
+html,body{max-width:100%;overflow-x:hidden}
+.layout{max-width:100%;overflow-x:hidden}
+.panel,main,nav,details,form,.grid,.row{max-width:100%}
+pre{white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere;overflow-x:hidden}
+img,video{max-width:100%;height:auto}
+input,select,textarea,button{max-width:100%}
+@media (max-width: 900px){
+  .layout{grid-template-columns:1fr}
+  nav{border-right:0;border-bottom:1px solid var(--muted)}
+  nav a{display:inline-block;margin:2px 4px 2px 0}
+}
