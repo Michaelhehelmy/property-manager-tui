@@ -1,6 +1,8 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="panel" style="max-width:520px"><h2>Unlock protected actions</h2>
+<p class="muted">Access control for protected actions. <span title="Some operations require unlock/super password">ⓘ</span></p>
+<details class="help-box"><summary>How to use</summary><ul><li>Enter the super password to unlock protected actions for this session.</li><li>Protected actions include sensitive settings, refunds/voids, seed apply, and other guarded operations.</li><li>If you forgot the password, use recovery (if configured).</li></ul></details>
 <form method="post" action="/unlock">
   <input type="hidden" name="csrf" value="{{ csrf_token }}"/>
   <input type="hidden" name="next" value="{{ next }}"/>

@@ -1,6 +1,8 @@
 {% extends "base.html" %}
 {% block content %}
 <h2>Rate Plans</h2>
+<p class="muted">Define pricing plans/modifiers used by reservations.</p>
+<details class="help-box"><summary>How to use Rate Plans</summary><ul><li><strong>Create/edit:</strong> set name and price modifier; plans can be selected when creating reservations.</li><li><strong>Delete:</strong> a plan cannot be deleted if reservations reference it.</li><li><strong>Protected:</strong> changes may require unlock/super password depending on configuration.</li></ul></details>
 <p class="muted">Manage rate plans (real backend: <code>get_all_rate_plans</code>, <code>add/update/delete_rate_plan</code>, <code>count_reservations_using_plan</code>). Add/edit/delete require unlock + super password.</p>
 
 <div class="grid grid-2">

@@ -2,6 +2,7 @@
 {% block content %}
 <h2>POS / Inventory</h2>
 <p class="muted">Reservation POS posts items immediately to the folio (real backend). Walk-in uses a <strong>multi-item cart</strong> committed atomically via <code>complete_walkin_sale</code> with a linked receipt.</p>
+<details class="help-box"><summary>How to use POS / Inventory / Activities</summary><ul><li><strong>Reservation charges:</strong> select a reservation, enter item/qty/price (and optional inventory ID) to post directly to its folio/invoice.</li><li><strong>Walk-in sale:</strong> add items to the cart, then “Complete walk-in sale” to commit atomically with a receipt.</li><li><strong>Inventory & meals:</strong> add items, restock (protected), and manage meals/recipes — recipe meals auto-deduct ingredients on sale.</li><li><strong>Activities/Trips:</strong> register bookable experiences (excursions/tours) below. Book them on a reservation (Reservation detail → Book activity) to add to its folio & invoice like POS; stats track bookings/revenue.</li></ul></details>
 
 <div class="grid grid-2">
   <div class="panel"><h3>Add POS item to reservation (immediate)</h3>
@@ -12,7 +13,7 @@
       </select></label>
       <label>Description<input name="desc" required placeholder="Item description"/></label>
       <div class="row"><label>Qty<input name="qty" type="number" value="1" min="1"/></label><label>Unit price<input name="price" type="number" step="0.01" required/></label><label>Inventory ID (opt)<input name="inv_id" type="number" placeholder="optional"/></label></div>
-      <button type="submit">Add to reservation</button>
+      <button type="submit" title="Post this POS item to the selected reservation folio immediately">Add to reservation</button>
     </form>
   </div>
 
@@ -38,7 +39,7 @@
     <h4>Checkout (atomic: all items + one payment)</h4>
     <form method="post" action="/pos/walkin"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
       <div class="row"><label>Method<select name="method"><option>Cash</option><option>Card</option><option>Bank Transfer</option><option>OTA</option></select></label><label>Notes<input name="notes" placeholder="optional"/></label></div>
-      <button class="ok" type="submit" {% if not cart %}disabled{% endif %}>Complete walk-in sale &amp; get receipt</button>
+      <button class="ok" type="submit" title="Commit all cart items as one atomic walk-in sale and generate a receipt" {% if not cart %}disabled{% endif %}>Complete walk-in sale &amp; get receipt</button>
     </form>
   </div>
 </div>
@@ -156,7 +157,7 @@
         <label>Name<input name="name" required placeholder="e.g. Desert Safari"/></label>
         <label>Description<textarea name="description" placeholder="optional"></textarea></label>
         <div class="row"><label>Category<input name="category" value="Trip" placeholder="Trip / Excursion / Activity"/></label><label>Unit price<input name="unit_price" type="number" step="0.01" value="0"/></label></div>
-        <button type="submit">Register activity</button>
+        <button type="submit" title="Register a bookable activity/trip (can be ordered on reservations and added to folio/invoice)">Register activity</button>
       </form>
     </div>
     <div>

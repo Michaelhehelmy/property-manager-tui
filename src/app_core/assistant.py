@@ -725,14 +725,28 @@ def _friendly_open(text: str) -> str:
 def _fmt_capabilities(data: dict) -> str:
     caps = (data or {}).get("capabilities") or []
     notes = (data or {}).get("notes") or []
-    lines = ["Sure — I’m your grounded manager assistant and business partner (read-only, based on real app data). Here’s what I can help with:"]
+    lines = ["Sure — I’m your grounded manager assistant and business partner (read-only, based on real app data). I can look things up, summarize performance, and guide you with examples."]
+    lines.append("")
+    lines.append("**What I can help with**")
     for c in caps:
         lines.append(f"- {c}")
     if notes:
         lines.append("")
-        for n in notes: lines.append(f"Note: {n}")
+        for n in notes: lines.append(f"**Note:** {n}")
     lines.append("")
-    lines.append("Try asking things like: “business partner briefing for this month”, “who owes money?”, “top selling items last month”, or “show guest #3 full portfolio”.")
+    lines.append("**How to use (examples you can ask)**")
+    lines.append("- **Business & ops:** `business partner briefing for this month`, `how are we doing?`, `today's ops`, `property stats`, `housekeeping status`, `reservation pipeline`, `available rooms tomorrow`")
+    lines.append("- **Money & reports:** `who owes money?`, `P&L last month`, `cash flow this month`, `VAT 2026-11-01 to 2026-11-30`, `payment methods this month`, `occupancy last month`, `compare this month vs last month`, `expenses breakdown last month`, `top selling items this month`, `sales breakdown this week`")
+    lines.append("- **Inventory & catalog:** `any low stock items?`, `top selling items`, `menu`, `rate plans`, `list registered activities`, `activity booking statistics`")
+    lines.append("- **Guests (360°):** `find guest Ahmed`, `guest #3 profile`, `show guest #3 full portfolio` (all stays, POS/orders, payments, invoices, totals), `when was guest #3 last visit?`, `what did guest #3 order most on last visit?`, `guest #3 last visit spend`, `what activities did guest #3 book?`")
+    lines.append("- **Reservations:** `reservation #12 summary`, `reservation #12 balance`")
+    lines.append("- **Health & audit:** `ledger integrity check`, `recent activity`")
+    lines.append("")
+    lines.append("**Tips**")
+    lines.append("- Be specific when you can: use IDs (`guest #3`, `reservation #12`), names (`find guest Sara`), report names, or date ranges (`2026-10-01 to 2026-10-31`, `last month`, `this week`).")
+    lines.append("- If I’m unsure or find multiple matches, I’ll ask you to clarify — reply with the ID I suggest.")
+    lines.append("- I only read real app data (no changes, no guesses). If something is missing for the period, I’ll tell you.")
+    lines.append("- You can rate answers and correct my intent in the app so I learn your phrasing over time.")
     return "\n".join(lines)
 
 def _fmt_stats(data: dict) -> str:

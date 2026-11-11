@@ -1,16 +1,17 @@
 {% extends "base.html" %}
 {% block content %}
 <h2>Dashboard</h2>
+<p class="muted">Today’s operational overview and key figures from real data. <span title="Hover labels and buttons for tips. Click reservation IDs to open details.">ⓘ Hover/tap labels for tips.</span></p>
 <div class="grid grid-4">
-  <div class="panel"><div class="muted">Occupancy</div><div class="stat">{{ front.occupancy_pct }}%</div><div class="muted">{{ front.occupied }}/{{ front.total }} rooms</div></div>
-  <div class="panel"><div class="muted">Arrivals today</div><div class="stat">{{ front.arrivals_today }}</div></div>
-  <div class="panel"><div class="muted">Departures today</div><div class="stat">{{ front.departures_today }}</div></div>
-  <div class="panel"><div class="muted">Net profit (ledger)</div><div class="stat">{{ "%.2f"|format(ledger.net_profit) }}</div><div class="muted">A/R {{ "%.2f"|format(ledger.ar_balance) }}</div></div>
+  <div class="panel" title="Current occupancy: occupied rooms out of total rooms"><div class="muted">Occupancy</div><div class="stat">{{ front.occupancy_pct }}%</div><div class="muted">{{ front.occupied }}/{{ front.total }} rooms</div></div>
+  <div class="panel" title="Reservations expected to arrive today"><div class="muted">Arrivals today</div><div class="stat">{{ front.arrivals_today }}</div></div>
+  <div class="panel" title="Reservations expected to depart today"><div class="muted">Departures today</div><div class="stat">{{ front.departures_today }}</div></div>
+  <div class="panel" title="Net profit and accounts receivable from ledger/real balances"><div class="muted">Net profit (ledger)</div><div class="stat">{{ "%.2f"|format(ledger.net_profit) }}</div><div class="muted">A/R {{ "%.2f"|format(ledger.ar_balance) }}</div></div>
 </div>
 <div class="grid grid-2">
-  <div class="panel"><h3>Arrivals</h3><table><tr><th>ID</th><th>Guest</th><th>Status</th><th>Dates</th></tr>
+  <div class="panel" title="Today's arrivals — click a reservation to manage check-in, folio, and more"><h3>Arrivals</h3><table><tr><th>ID</th><th>Guest</th><th>Status</th><th>Dates</th></tr>
   {% for r in arrivals %}<tr><td><a href="/reservations/{{r['id']}}">#{{r['id']}}</a></td><td>{{r['guest_name']}}</td><td>{{r['status']}}</td><td>{{r['check_in_date']}} → {{r['check_out_date']}}</td></tr>{% else %}<tr><td colspan="4" class="muted">None</td></tr>{% endfor %}</table></div>
-  <div class="panel"><h3>In House</h3><table><tr><th>ID</th><th>Guest</th><th>Dates</th></tr>
+  <div class="panel" title="Currently checked-in guests/reservations"><h3>In House</h3><table><tr><th>ID</th><th>Guest</th><th>Dates</th></tr>
   {% for r in in_house %}<tr><td><a href="/reservations/{{r['id']}}">#{{r['id']}}</a></td><td>{{r['guest_name']}}</td><td>{{r['check_in_date']}} → {{r['check_out_date']}}</td></tr>{% else %}<tr><td colspan="3" class="muted">None</td></tr>{% endfor %}</table></div>
 </div>
 {% endblock %}

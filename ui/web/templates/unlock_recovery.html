@@ -1,6 +1,8 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="panel" style="max-width:560px"><h2>Recover access with recovery code</h2>
+<p class="muted">Access control for protected actions. <span title="Some operations require unlock/super password">ⓘ</span></p>
+<details class="help-box"><summary>How to use</summary><ul><li>Use your configured recovery method/code to reset or regain access.</li><li>After recovery, unlock with the new credentials to perform protected actions.</li></ul></details>
 <p class="muted">Enter one unused recovery code and set a new super password. The code will be consumed.</p>
 <form method="post" action="/unlock/recovery">
   <input type="hidden" name="csrf" value="{{ csrf_token }}"/>

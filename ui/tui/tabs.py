@@ -75,7 +75,7 @@ class FrontDeskTab(VerticalScroll):
             yield Input(placeholder=t("From"), id="from")
             yield Input(placeholder=t("To"), id="to")
             yield Select([], id="room_sel", prompt=t("Room"))
-            yield Button(t("Apply"), id="btn_apply", variant="primary")
+            yield Button(t("Apply"), id="btn_apply", variant="primary", tooltip="Apply the selected filters/view to the front desk display")
         yield RadioSet(
             RadioButton(t("Day"), id="w_day"),
             RadioButton(t("Week"), id="w_week"),
@@ -83,13 +83,13 @@ class FrontDeskTab(VerticalScroll):
             RadioButton(t("Custom"), id="w_custom"),
             id="window")
         with Horizontal(classes="button_row"):
-            yield Button("📈 " + t("Occupancy Chart"), id="btn_chart", variant="primary")
+            yield Button("📈 " + t("Occupancy Chart"), id="btn_chart", variant="primary", tooltip="Show occupancy chart for the selected period")
         yield DataTable(id="room_table")
         with Horizontal(classes="button_row"):
-            yield Button(t("Mark Clean"), id="btn_clean", variant="success")
-            yield Button(t("Mark Dirty"), id="btn_dirty", variant="warning")
-            yield Button(t("Mark Maintenance"), id="btn_maint", variant="error")
-            yield Button(t("Edit"), id="btn_edit", variant="primary")
+            yield Button(t("Mark Clean"), id="btn_clean", variant="success", tooltip="Mark selected room as Clean (ready for guests)")
+            yield Button(t("Mark Dirty"), id="btn_dirty", variant="warning", tooltip="Mark selected room as Dirty (needs housekeeping)")
+            yield Button(t("Mark Maintenance"), id="btn_maint", variant="error", tooltip="Mark selected room as Maintenance (out of service)")
+            yield Button(t("Edit"), id="btn_edit", variant="primary", tooltip="Edit selected item")
         yield Static("", id="context", classes="warn")
         yield DataTable(id="upcoming")
 
@@ -260,21 +260,22 @@ class ReservationsTab(VerticalScroll):
 
     def compose(self):
         yield Static(t("Active Bookings & Guest Management"), classes="title")
+        yield Static("Tip: search/select a booking for check-in/out, folio, payments, modify/cancel. Use 👥 Guests for 360° portfolios (all stays, POS, payments, invoices). Hover buttons for help.", classes="help")
         yield Input(placeholder=t("Search"), id="search")
         yield DataTable(id="table")
         with Horizontal(classes="button_row"):
-            yield Button(t("Check-In Guest"), id="btn_in", variant="success")
-            yield Button(t("Check-Out & Invoice"), id="btn_out", variant="warning")
-            yield Button(t("Preview Invoice"), id="btn_preview", variant="primary")
-            yield Button(t("View Folio"), id="btn_folio", variant="primary")
+            yield Button(t("Check-In Guest"), id="btn_in", variant="success", tooltip="Check in the selected reservation (guest arrival)")
+            yield Button(t("Check-Out & Invoice"), id="btn_out", variant="warning", tooltip="Check out selected reservation and generate invoice (unpaid override may require password)")
+            yield Button(t("Preview Invoice"), id="btn_preview", variant="primary", tooltip="Preview invoice for the selected reservation")
+            yield Button(t("View Folio"), id="btn_folio", variant="primary", tooltip="View folio details (charges, POS/activities, payments, balance) for selected reservation")
         with Horizontal(classes="button_row"):
-            yield Button("🔒 " + t("Modify"), id="btn_modify", variant="primary")
-            yield Button(t("Cancel Reservation"), id="btn_cancel", variant="error")
-            yield Button(t("No-Show"), id="btn_noshow", variant="error")
-            yield Button(t("Delete"), id="btn_delete", variant="error")
+            yield Button("🔒 " + t("Modify"), id="btn_modify", variant="primary", tooltip="Modify selected reservation (room/dates/rate) subject to availability and rules")
+            yield Button(t("Cancel Reservation"), id="btn_cancel", variant="error", tooltip="Cancel selected reservation (super password required if paid/partially paid)")
+            yield Button(t("No-Show"), id="btn_noshow", variant="error", tooltip="Mark selected reservation as No-Show (super password required if paid/partially paid)")
+            yield Button(t("Delete"), id="btn_delete", variant="error", tooltip="Delete selected reservation (only when permitted: Reserved with no payments/POS)")
         with Horizontal(classes="button_row"):
-            yield Button("👥 " + t("Guests"), id="btn_guests", variant="primary")
-            yield Button("📊 " + t("Chart"), id="btn_chart", variant="primary")
+            yield Button("👥 " + t("Guests"), id="btn_guests", variant="primary", tooltip="Open Guests/CRM: search, merge/edit, and open 360° guest portfolios")
+            yield Button("📊 " + t("Chart"), id="btn_chart", variant="primary", tooltip="Show chart/analytics for the selected context")
 
         with Collapsible(title="➕ " + t("Create New Reservation"), collapsed=True):
             yield Input(placeholder=t("Guest Name"), id="guest")
@@ -287,16 +288,16 @@ class ReservationsTab(VerticalScroll):
             yield Input(placeholder=t("Deposit Amount"), id="deposit", value="")
             yield Input(placeholder=t("Check-In Date"), id="ci")
             yield Input(placeholder=t("Check-Out Date"), id="co")
-            yield Button(t("Save Reservation"), id="btn_save", variant="primary")
+            yield Button(t("Save Reservation"), id="btn_save", variant="primary", tooltip="Create/save a new reservation with the entered details")
 
         with Collapsible(title="💰 " + t("Guest Folio & Settlement"), collapsed=True):
             yield Input(placeholder=t("Reservation ID for Billing"), id="pay_rid")
-            yield Button(t("Check Guest Balance Due"), id="btn_balance", variant="primary")
+            yield Button(t("Check Guest Balance Due"), id="btn_balance", variant="primary", tooltip="Show balance due for the selected reservation/guest")
             yield Input(placeholder=t("Payment Amount"), id="pay_amt")
             yield Select([(m, m) for m in PAYMENT_METHODS], id="pay_method", prompt=t("Method"), value="Cash")
             yield Select([(pt, pt) for pt in PAYMENT_TYPES], id="pay_type", prompt=t("Payment Type"), value="Payment")
             yield Input(placeholder=t("Notes"), id="pay_notes", value="")
-            yield Button(t("Record Payment"), id="btn_pay", variant="success")
+            yield Button(t("Record Payment"), id="btn_pay", variant="success", tooltip="Record a payment or deposit for the selected reservation")
 
     def on_mount(self):
         now = datetime.now()
@@ -559,6 +560,7 @@ class ReservationsTab(VerticalScroll):
 
 class PosInventoryTab(Vertical):
     def compose(self):
+        yield Static("POS & Inventory: post charges to reservations or walk-ins, manage inventory/meals/recipes and registered activities/trips (booked activities add to folio & invoice). Hover buttons for tips.", classes="help")
         with TabbedContent():
             with TabPane(t("New Order"), id="tab_order"):
                 yield NewOrderTab()
@@ -590,7 +592,7 @@ class NewOrderTab(VerticalScroll):
             id="target")
         with Horizontal(classes="button_row"):
             yield Input(placeholder=t("Reservation ID for Billing"), id="rid")
-            yield Button(t("Load"), id="btn_load", variant="primary")
+            yield Button(t("Load"), id="btn_load", variant="primary", tooltip="Load selected reservation or context for POS actions")
         yield Static("", id="info", classes="warn")
         yield Static(t("Item Grid"), classes="title")
         with Horizontal(classes="button_row"):
@@ -602,7 +604,7 @@ class NewOrderTab(VerticalScroll):
             yield Input(placeholder=t("Description"), id="custom_desc")
             yield Input(placeholder=t("Qty"), id="custom_qty", value="1")
             yield Input(placeholder=t("Unit Price"), id="custom_price")
-            yield Button(t("Add"), id="btn_custom", variant="primary")
+            yield Button(t("Add"), id="btn_custom", variant="primary", tooltip="Add custom item/entry with the provided details")
         yield Static(t("Cart"), classes="title")
         yield DataTable(id="cart")
         with Horizontal(classes="button_row"):
@@ -967,6 +969,7 @@ class InventorySubTab(VerticalScroll):
 
 class AccountingTab(VerticalScroll):
     def compose(self):
+        yield Static("Accounting: record/void operational expenses and review entries. Protected actions may require unlock/super password. Hover buttons for tips.", classes="help")
         now = datetime.now()
         first = now.replace(day=1).strftime("%Y-%m-%d")
         today = now.strftime("%Y-%m-%d")
@@ -989,10 +992,10 @@ class AccountingTab(VerticalScroll):
         with Horizontal(classes="button_row"):
             yield Input(placeholder=t("From"), id="from", value=first)
             yield Input(placeholder=t("To"), id="to", value=today)
-            yield Button(t("Apply"), id="btn_apply", variant="primary")
+            yield Button(t("Apply"), id="btn_apply", variant="primary", tooltip="Apply the selected filters/view to the front desk display")
 
         with Horizontal(classes="button_row"):
-            yield Button("📊 " + t("Chart"), id="btn_chart", variant="primary")
+            yield Button("📊 " + t("Chart"), id="btn_chart", variant="primary", tooltip="Show chart/analytics for the selected context")
             yield Button(t("P&L Statement"), id="btn_pl", variant="primary")
             yield Button(t("Cash Flow"), id="btn_cash", variant="primary")
             yield Button(t("Payment Methods"), id="btn_methods", variant="primary")
@@ -1162,6 +1165,7 @@ class AccountingTab(VerticalScroll):
 
 class SettingsTab(VerticalScroll):
     def compose(self):
+        yield Static("Settings & maintenance: branding, rate plans, rooms, seed config export/import, backups and health. Protected actions require unlock/super password. Hover controls for tips.", classes="help")
         yield Static("⚙ " + t("Settings"), classes="title")
         yield Static("", id="lock_msg", classes="warn")
         yield Vertical(id="body")
@@ -1494,44 +1498,49 @@ class AssistantTab(Vertical):
     """Chat tab with side panel: core backend facts + optional talking-model polish."""
 
     QUICK_PROMPTS = [
-        ("Caps", "What can you do?"),
-        ("Decision (month)", "Decision support for this month"),
+        ("Help & examples", "What can you do?"),
+        ("Biz briefing", "Business partner briefing for this month"),
+        ("Today ops", "Today's ops"),
+        ("Who owes", "Who owes money?"),
+        ("Low stock", "Any low stock items?"),
         ("P&L last month", "P&L for last month"),
-        ("VAT last month", "VAT for last month"),
-        ("Occupancy month", "Occupancy for this month"),
-        ("Rate plans", "List rate plans"),
+        ("Compare months", "Compare this month vs last month"),
+        ("Guest #1 portfolio", "Show guest #1 full portfolio"),
         ("Guest #1 last order", "What did guest #1 order most on their last visit?"),
+        ("Activities", "List registered activities"),
+        ("Activity stats", "Activity booking statistics"),
     ]
 
     def compose(self):
         yield Static("🤖 " + t("Manager Assistant"), classes="title")
+        yield Static("Grounded in real app data (read-only). Local replies (no external LLM). Tip: ask with IDs/names/date ranges, e.g. 'guest #3 full portfolio', 'P&L last month', 'who owes money?'.", classes="help")
         with Horizontal(id="assistant_split"):
             with Vertical(id="assistant_side"):
-                yield Static("Core / Talking", classes="warn")
+                yield Static("Core / Talking (local)", classes="warn")
                 yield Static("", id="assistant_mode_info", classes="help")
                 yield Static("", id="assistant_status", classes="warn")
                 yield Static("Quick prompts (real backend):", classes="help")
                 for i, (label, _) in enumerate(self.QUICK_PROMPTS):
-                    yield Button(label, id=f"assistant_q_{i}", variant="primary")
-                yield Button("Capabilities", id="assistant_caps", variant="primary")
+                    yield Button(label, id=f"assistant_q_{i}", variant="primary", tooltip=self.QUICK_PROMPTS[i][1])
+                yield Button("Help & examples", id="assistant_caps", variant="primary", tooltip="Show what I can do and how to ask with examples")
                 yield Static("Evaluate last answer:", classes="help")
-                yield Button("👍 Helpful", id="assistant_fb_up", variant="success")
-                yield Button("👎 Not helpful", id="assistant_fb_down", variant="warning")
-                yield Button("✏ Correct intent", id="assistant_fb_correct", variant="primary")
-                yield Button("Unlock", id="assistant_unlock", variant="warning")
+                yield Button("👍 Helpful", id="assistant_fb_up", variant="success", tooltip="Mark last answer helpful (helps learning)")
+                yield Button("👎 Not helpful", id="assistant_fb_down", variant="warning", tooltip="Mark last answer not helpful")
+                yield Button("✏ Correct intent", id="assistant_fb_correct", variant="primary", tooltip="Correct the detected intent so the assistant learns")
+                yield Button("Unlock", id="assistant_unlock", variant="warning", tooltip="Unlock to access assistant if unlock is required")
             with Vertical(id="assistant_main"):
                 yield RichLog(id="assistant_log", highlight=False, markup=False, wrap=True)
-                yield Input(placeholder="Ask in English (reports, guests, last visit orders, reservation #id...)", id="assistant_input")
+                yield Input(placeholder="Ask in plain English (e.g. 'guest #3 full portfolio', 'P&L last month', 'who owes money?', 'today's ops')", id="assistant_input")
                 with Horizontal(classes="button_row"):
-                    yield Button("Send", id="assistant_send", variant="success")
-                    yield Button("Clear", id="assistant_clear", variant="error")
+                    yield Button("Send", id="assistant_send", variant="success", tooltip="Send question (answered from real app data)")
+                    yield Button("Clear", id="assistant_clear", variant="error", tooltip="Clear conversation history")
         self._history = []
         self._last_result = None
 
     def on_mount(self):
         self._refresh_gate()
-        self._write_system("Core backend ready (grounded, read-only). Talking model is optional (Settings: assistant_response_mode / LLM config).")
-        self._write_system("Example: What did guest #3 order most on their last visit?")
+        self._write_system("Ready (grounded, read-only, local). Ask in plain English — I’ll answer from real app data.")
+        self._write_system("Examples: 'what can you do?' | 'business partner briefing for this month' | 'guest #3 full portfolio' | 'who owes money?' | 'list registered activities'")
 
     def _log(self):
         return self.query_one("#assistant_log", RichLog)
@@ -1555,11 +1564,12 @@ class AssistantTab(Vertical):
             pass  # pragma: no cover - defensive/widget-state branch
         try:
             cfg = assistant_backend._llm_config()
-            info = f"Mode: {cfg.get('response_mode')} | Provider: {cfg.get('provider')}"
-            if cfg.get("enabled"):
-                info += f" | Talking/LLM: {cfg.get('model')}"
+            mode = cfg.get('response_mode', 'talking')
+            if cfg.get('local_available') or cfg.get('enabled'):
+                mp = cfg.get('model_path') or cfg.get('model') or 'local-gguf'
+                info = f"Mode: {mode} | Talking: local model ({mp})"
             else:
-                info += " | Talking/LLM: off (core only)"
+                info = f"Mode: {mode} | Talking: local deterministic (no external LLM)"
             self.query_one("#assistant_mode_info", Static).update(info)
         except Exception:  # pragma: no cover - defensive/widget-state branch
             pass  # pragma: no cover - defensive/widget-state branch

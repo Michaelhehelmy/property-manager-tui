@@ -1,28 +1,30 @@
 {% extends "base.html" %}
 {% block content %}
 <h2>Reservation #{{ r['id'] }} — {{ r['guest_name'] }}</h2>
+<p class="muted">Manage this stay: status, folio, payments, POS/activities, invoice, and policy actions. <span title="Hover buttons and fields for tips">ⓘ</span></p>
+<details class="help-box"><summary>How to use this reservation</summary><ul><li><strong>Status:</strong> Check in / Check out (override may require password if unpaid per policy).</li><li><strong>Modify:</strong> change room/dates/rate (subject to availability and rules).</li><li><strong>Folio & payments:</strong> record payments/refunds; refund requires unlock + super password. Generate invoice from folio data.</li><li><strong>POS / Activities:</strong> charges posted to the folio/invoice; book registered activities/trips to add them like POS. Voiding items requires password.</li><li><strong>Cancel/No-show/Delete:</strong> follow policy; paid/partially paid cancel/no-show requires super password, delete allowed only when permitted (no payments/POS).</li></ul></details>
 <div class="grid grid-2">
   <div class="panel"><h3>Status: {{ r['status'] }}</h3>
     <p class="muted">Room {{ r['room_id'] }} · {{ r['check_in_date'] }} → {{ r['check_out_date'] }} · Rate {{ r['agreed_nightly_rate'] }} · Source {{ r['source'] }}</p>
     <div class="row">
-      <form method="post" action="/reservations/{{r['id']}}/checkin" class="inline"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><button class="ok">Check in</button></form>
-      <form method="post" action="/reservations/{{r['id']}}/checkout" class="inline"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><button class="warn">Check out</button></form>
+      <form method="post" action="/reservations/{{r['id']}}/checkin" class="inline"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><button class="ok" title="Mark reservation as Checked In (guest arrived)">Check in</button></form>
+      <form method="post" action="/reservations/{{r['id']}}/checkout" class="inline"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><button class="warn" title="Mark reservation as Checked Out (may be blocked if unpaid balance requires override)">Check out</button></form>
     </div>
     <details><summary>Checkout override (password)</summary>
-      <form method="post" action="/reservations/{{r['id']}}/checkout-override"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><input type="password" name="password" placeholder="Super password"/><button class="warn">Override checkout</button></form>
+      <form method="post" action="/reservations/{{r['id']}}/checkout-override"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><input type="password" name="password" placeholder="Super password"/><button class="warn" title="Force checkout despite unpaid balance (requires super password, audited)">Override checkout</button></form>
     </details>
     <details><summary>Modify</summary>
       <form method="post" action="/reservations/{{r['id']}}/modify"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
         <label>Room<select name="room_id">{% for rm in rooms %}<option value="{{rm['id']}}" {% if rm['id']==r['room_id'] %}selected{% endif %}>{{rm['room_number']}}</option>{% endfor %}</select></label>
         <div class="row"><label>Check-in<input type="date" name="check_in" value="{{r['check_in_date']}}"/></label><label>Check-out<input type="date" name="check_out" value="{{r['check_out_date']}}"/></label><label>Rate<input name="rate" value="{{r['agreed_nightly_rate']}}"/></label></div>
-        <button>Modify</button>
+        <button title="Save changes to room, dates, or rate (availability/rules apply)">Modify</button>
       </form>
     </details>
     <details><summary>Cancel / No-show / Delete</summary>
       <p class="muted">Super password is required to cancel or mark no-show for paid/partially paid reservations. Unpaid reservations do not require a password.</p>
-      <form method="post" action="/reservations/{{r['id']}}/cancel" class="inline"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><input type="password" name="password" placeholder="Password (if paid/partial)"/><button class="err">Cancel</button></form>
-      <form method="post" action="/reservations/{{r['id']}}/noshow" class="inline"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><input type="password" name="password" placeholder="Password (if paid/partial)"/><button class="err">No-show</button></form>
-      <form method="post" action="/reservations/{{r['id']}}/delete" class="inline"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><button class="err">Delete</button></form>
+      <form method="post" action="/reservations/{{r['id']}}/cancel" class="inline"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><input type="password" name="password" placeholder="Password (if paid/partial)"/><button class="err" title="Cancel reservation (super password required if paid/partially paid)">Cancel</button></form>
+      <form method="post" action="/reservations/{{r['id']}}/noshow" class="inline"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><input type="password" name="password" placeholder="Password (if paid/partial)"/><button class="err" title="Mark as No-show (super password required if paid/partially paid)">No-show</button></form>
+      <form method="post" action="/reservations/{{r['id']}}/delete" class="inline"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><button class="err" title="Delete reservation (only when permitted: Reserved with no payments/POS)">Delete</button></form>
     </details>
   </div>
   <div class="panel"><h3>Folio</h3>
@@ -33,22 +35,22 @@
     </table>
     <form method="post" action="/reservations/{{r['id']}}/pay"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
       <div class="row"><label>Amount<input name="amount" type="number" step="0.01"/></label><label>Method<select name="method"><option>Cash</option><option>Card</option><option>OTA</option><option>Bank Transfer</option></select></label><label>Type<select name="payment_type"><option>Payment</option><option>Deposit</option></select></label></div>
-      <label>Notes<input name="notes"/></label><button class="ok">Record payment</button>
+      <label>Notes<input name="notes"/></label><button class="ok" title="Record a payment/deposit against this reservation folio">Record payment</button>
     </form>
     <details><summary>Refund (password)</summary>
       <form method="post" action="/reservations/{{r['id']}}/refund"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
         <div class="row"><label>Amount<input name="amount" type="number" step="0.01"/></label><label>Method<select name="method"><option>Cash</option><option>Card</option><option>Bank Transfer</option></select></label></div>
-        <input name="notes" placeholder="Notes"/><input type="password" name="password" placeholder="Super password"/><button class="err">Refund</button>
+        <input name="notes" placeholder="Notes"/><input type="password" name="password" placeholder="Super password"/><button class="err" title="Record a refund (requires unlock + super password)">Refund</button>
       </form>
     </details>
-    <form method="post" action="/reservations/{{r['id']}}/invoice" class="inline" style="margin-top:8px"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><input type="hidden" name="currency" value="EGP"/><button>Generate invoice</button></form>
+    <form method="post" action="/reservations/{{r['id']}}/invoice" class="inline" style="margin-top:8px"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><input type="hidden" name="currency" value="EGP"/><button title="Generate/save an invoice for this reservation (includes accommodation, POS/activities, payments)">Generate invoice</button></form>
   </div>
 </div>
 <div class="grid grid-2">
   <div class="panel"><h3>POS / Charges / Activities</h3>
     <table><tr><th>ID</th><th>Desc</th><th>Type</th><th>Qty</th><th>Unit</th><th>Action</th></tr>
   {% for p in pos %}{% if not p['voided_at'] %}<tr><td>{{p['id']}}</td><td>{{p['item_description']}}</td><td>{% if p['activity_id'] %}<span class="ok">Activity/Trip</span>{% elif p['inventory_item_id'] %}POS/Inventory{% else %}Charge{% endif %}</td><td>{{p['quantity']}}</td><td>{{"%.2f"|format(p['unit_price'] or 0)}}</td>
-  <td><form method="post" action="/pos/void/{{p['id']}}" class="inline"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><input type="hidden" name="next" value="/reservations/{{r['id']}}"/><input type="password" name="password" placeholder="Pwd" style="width:90px;display:inline-block"/><button class="err">Void</button></form></td></tr>{% endif %}
+  <td><form method="post" action="/pos/void/{{p['id']}}" class="inline"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><input type="hidden" name="next" value="/reservations/{{r['id']}}"/><input type="password" name="password" placeholder="Pwd" style="width:90px;display:inline-block"/><button class="err" title="Void this POS/charge (requires super password; reverses its effect)">Void</button></form></td></tr>{% endif %}
   {% else %}<tr><td colspan="6" class="muted">None</td></tr>{% endfor %}</table>
     <details style="margin-top:10px"><summary><strong>Book activity / trip (registered)</strong> — adds to folio & invoice like POS</summary>
       <form method="post" action="/reservations/{{r['id']}}/book-activity"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
@@ -58,7 +60,7 @@
         </select></label>
         <div class="row"><label>Qty<input name="qty" type="number" min="1" value="1"/></label><label>Scheduled (opt)<input name="scheduled_at" placeholder="e.g. 2026-11-12 09:00"/></label></div>
         <label>Notes (opt)<input name="notes" placeholder="optional"/></label>
-        <button class="ok" type="submit">Book / order activity</button>
+        <button class="ok" type="submit" title="Book this registered activity/trip for the reservation — added to folio & invoice like POS">Book / order activity</button>
       </form>
       {% if not activities %}<p class="muted">No active registered activities. Register activities/trips in <a href="/pos">POS / Inventory</a>.</p>{% endif %}
     </details>

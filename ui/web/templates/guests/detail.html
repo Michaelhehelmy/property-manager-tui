@@ -2,6 +2,7 @@
 {% block content %}
 <h2>Guest portfolio: {{ g.get('canonical_name') or g.get('name') }} <span class="muted">(#{{ g.get('id') }})</span></h2>
 <p class="muted">360° view: profile, trips/reservations, POS/activity, payments, invoices, and totals — all grounded in real app data.</p>
+<details class="help-box"><summary>How to use this portfolio</summary><ul><li><strong>Summary cards:</strong> lifetime stays/nights, charges, paid, outstanding, and POS/activities totals.</li><li><strong>Trips/Reservations:</strong> expand a stay to see folio (accommodation/POS/activities), itemized orders, payments, and invoice files. Click a reservation ID to manage it.</li><li><strong>POS & Payments:</strong> aggregated activity and payment history across all stays.</li><li><strong>Invoices:</strong> saved invoice files per stay (download when available).</li><li><strong>Edit profile:</strong> update name/contact/notes (requires unlock + super password).</li></ul></details>
 
 {% set s = p.stats or {} %}
 <div class="grid grid-4" style="margin-bottom:12px;">
@@ -39,7 +40,7 @@
       <label>Email<input name="email" value="{{ g.get('email') or '' }}"/></label>
       <label>Notes<textarea name="notes">{{ g.get('notes') or '' }}</textarea></label>
       <label>Super password<input type="password" name="password"/></label>
-      <button type="submit">Update profile</button>
+      <button type="submit" title="Save guest profile changes (requires unlock and super password)">Update profile</button>
     </form>
   </div>
 </div>

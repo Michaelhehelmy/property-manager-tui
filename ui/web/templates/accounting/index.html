@@ -1,6 +1,8 @@
 {% extends "base.html" %}
 {% block content %}
 <h2>Accounting</h2>
+<p class="muted">Record and review operational expenses (grounded in real ledger data).</p>
+<details class="help-box"><summary>How to use Accounting</summary><ul><li><strong>Record expense:</strong> choose category, parameter, amount/VAT, method and notes, then submit.</li><li><strong>Void expense:</strong> voiding requires unlock/super password and is audited; it reverses the ledger entry.</li><li><strong>Reports:</strong> see Reports & Analytics for P&L, cash flow, VAT summaries derived from real data.</li></ul></details>
 <div class="grid grid-4">
   <div class="panel"><div class="muted">Billed revenue</div><div class="stat">{{ "%.2f"|format(summary.billed_revenue) }}</div></div>
   <div class="panel"><div class="muted">Expenses+COGS</div><div class="stat">{{ "%.2f"|format(summary.expenses) }}</div></div>

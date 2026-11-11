@@ -15,3 +15,14 @@ button.warn,.btn.warn{background:var(--warn)} button.err,.btn.err{background:var
 .flash{padding:10px 12px;border-radius:6px;margin:0 0 10px}.flash.info{background:#313244}.flash.error{background:#442029;color:#ffd7de}.flash.success{background:#233126;color:#d7ffe0}
 .muted{color:#a6adc8}.stat{font-size:22px;font-weight:800;color:var(--accent)} pre{white-space:pre-wrap;background:#11111b;padding:12px;border-radius:8px;overflow:auto}
 form.inline{display:inline} details{margin:8px 0}
+
+/* Help & usability */
+[title]{cursor:help}
+button[title],a.btn[title],a[title]{cursor:pointer}
+.field-help,.help{font-size:12px;color:#a6adc8;margin:-4px 0 8px}
+.help-box{background:#11111b;border:1px dashed var(--muted);border-radius:8px;padding:10px 12px;margin:8px 0}
+.help-box summary{cursor:pointer;color:var(--accent);font-weight:600}
+.help-box ul{margin:6px 0 0 18px;padding:0}
+.help-box li{margin:3px 0}
+.kbd{display:inline-block;padding:1px 6px;border:1px solid var(--muted);border-radius:4px;background:#181825;font-size:12px}
+label > .hint{font-weight:400;color:#a6adc8;font-size:12px}
