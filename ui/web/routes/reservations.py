@@ -43,7 +43,11 @@ def detail(rid: int, request: Request):
     folio = services.get_balance_breakdown(rid) or {}
     pos = connect().execute("SELECT * FROM pos_tabs WHERE reservation_id=? ORDER BY id DESC", (rid,)).fetchall()
     pays = connect().execute("SELECT * FROM payments WHERE reservation_id=? ORDER BY id DESC", (rid,)).fetchall()
-    return render(request, "reservations/detail.html", {"title":f"Reservation #{rid}","r":res,"folio":folio,"pos":pos,"pays":pays,"rooms":_rooms(),"today":datetime.now().strftime("%Y-%m-%d")})
+    try:
+        activities = services.list_activities(active_only=True)
+    except Exception:
+        activities = []
+    return render(request, "reservations/detail.html", {"title":f"Reservation #{rid}","r":res,"folio":folio,"pos":pos,"pays":pays,"rooms":_rooms(),"activities":activities,"today":datetime.now().strftime("%Y-%m-%d")})
 
 async def _act(request, rid, fn, ok):
     form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
@@ -137,3 +141,18 @@ async def invoice(rid: int, request: Request):
     except Exception as e:
         deps.add_flash(request,str(e),"error"); r=deps.redirect(f"/reservations/{rid}")
     deps.save_session(r, deps.get_session(request)); return r
+
+
+@router.post("/reservations/{rid}/book-activity")
+async def book_activity(rid: int, request: Request):
+    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    try:
+        act_id = int(form.get("activity_id"))
+        qty = int(form.get("qty") or 1)
+        scheduled_at = (form.get("scheduled_at") or "").strip() or None
+        notes = (form.get("notes") or "").strip()
+        res = services.book_activity(rid, act_id, qty, scheduled_at=scheduled_at, notes=notes)
+        deps.add_flash(request, f"Activity/trip booked (POS #{res.get('pos_id')}) — added to reservation folio & invoice", "success")
+    except Exception as e:
+        deps.add_flash(request, str(e), "error")
+    r = deps.redirect(f"/reservations/{rid}"); deps.save_session(r, deps.get_session(request)); return r

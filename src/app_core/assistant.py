@@ -33,8 +33,10 @@ INTENT_LABELS = [
     "report_pl", "report_cash_flow", "report_vat", "report_payment_methods", "report_occupancy", "report_daily_ops",
     "occupancy_summary", "compare_periods", "outstanding_balances", "inventory_alerts", "top_selling_items",
     "expenses_summary", "sales_breakdown", "reservation_pipeline", "housekeeping_summary", "room_availability",
-    "menu_info", "rate_plans", "ledger_integrity", "guest_search", "guest_profile", "guest_last_visit",
-    "guest_top_items_last_visit", "guest_last_visit_spend", "reservation_summary", "reservation_balance",
+    "menu_info", "rate_plans", "ledger_integrity", "guest_search", "guest_profile", "guest_portfolio", "guest_last_visit",
+    "guest_top_items_last_visit", "guest_last_visit_spend", "guest_activity_bookings",
+    "list_activities", "activity_stats",
+    "reservation_summary", "reservation_balance",
     "recent_activity", "ambiguous_needs_clarification", "unsupported_or_unsafe", "compound_multi_intent",
 ]
 
@@ -240,7 +242,8 @@ def tool_list_capabilities(args=None):
         "Business partner briefing & decision support (KPIs, risks, opportunities, suggested actions)",
         "Property/ops stats and today snapshot (guests, rooms, reservations, arrivals/departures, housekeeping)",
         "Reports: P&L, cash flow, VAT, payment methods, occupancy, daily ops; compare periods",
-        "Guests: search, profile, last visit, most-ordered items and spend on last visit",
+        "Guests: search, profile, full 360° portfolio (all trips/stays, POS activity, payments, invoices, totals/stats), last visit, most-ordered items and spend on last visit, guest activity/trip bookings",
+        "Activities/Trips (excursions/experiences): registered catalog, booking/order stats, and guest/reservation activity bookings (booked like POS to folio/invoice)",
         "Reservations: summary/details, balance, outstanding balances/AR, pipeline",
         "Inventory: alerts (low/over/negative), top-selling items; menu/meals",
         "Expenses and sales breakdown; rate plans; room availability; ledger/data integrity",
@@ -282,6 +285,59 @@ def tool_get_guest_last_visit_spend(args):
         return {**visit, "balance_breakdown": bd, "top_items": items}
     except Exception as e:
         return {**visit, "spend_error": str(e)}
+
+def tool_get_guest_portfolio(args):
+    gid = _safe_int((args or {}).get("guest_id") or (args or {}).get("id"))
+    if not gid: return {"error": "guest_id is required"}
+    try:
+        p = services.get_guest_portfolio(gid)
+        if not p: return {"error": f"Guest #{gid} not found"}
+        # compact for assistant context (keep key facts; full lists can be large)
+        trips = []
+        for t in (p.get("trips") or []):
+            trips.append({
+                "id": t.get("id"), "room_number": t.get("room_number"), "room_type": t.get("room_type"),
+                "check_in_date": t.get("check_in_date"), "check_out_date": t.get("check_out_date"),
+                "nights": t.get("nights"), "status": t.get("status"), "source": t.get("source"),
+                "rate_plan": t.get("rate_plan"), "agreed_nightly_rate": t.get("agreed_nightly_rate"),
+                "balance": t.get("balance"), "pos_count": len(t.get("pos_items") or []), "pos_active_count": len(t.get("pos_active") or []),
+                "payments_count": len(t.get("payments") or []), "invoice_files": [i.get("name") for i in (t.get("invoices") or [])],
+                "pos_items": [{"desc": i.get("item_description"), "qty": i.get("quantity"), "unit_price": i.get("unit_price"), "tax": i.get("tax_amount"), "voided": bool(i.get("voided_at")), "activity_id": i.get("activity_id")} for i in (t.get("pos_items") or [])[:20]],
+                "payments": [{"at": i.get("at"), "method": i.get("method"), "type": i.get("payment_type"), "amount": i.get("amount"), "voided": bool(i.get("voided_at"))} for i in (t.get("payments") or [])[:20]],
+            })
+        return {"guest": p.get("guest"), "stats": p.get("stats"), "trips": trips, "all_pos_count": len(p.get("all_pos") or []), "all_payments_count": len(p.get("all_payments") or []), "top_items_overall": p.get("top_items_overall") or []}
+    except Exception as e:
+        return {"error": str(e)}
+
+def tool_list_activities(args=None):
+    try:
+        active_only = bool((args or {}).get("active_only", False))
+        items = services.list_activities(active_only=active_only)
+        return {"activities": items, "count": len(items)}
+    except Exception as e:
+        return {"error": str(e)}
+
+def tool_get_activity_stats(args=None):
+    try:
+        aid = _safe_int((args or {}).get("activity_id"))
+        stats = services.get_activity_stats(activity_id=aid)
+        return {"activity_stats": stats}
+    except Exception as e:
+        return {"error": str(e)}
+
+def tool_list_activity_bookings(args=None):
+    try:
+        aid = _safe_int((args or {}).get("activity_id"))
+        rid = _safe_int((args or {}).get("reservation_id"))
+        gid = _safe_int((args or {}).get("guest_id"))
+        limit = int((args or {}).get("limit") or 100)
+        bookings = services.list_activity_bookings(activity_id=aid, reservation_id=rid, guest_id=gid, limit=limit)
+        return {"bookings": bookings, "count": len(bookings)}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+
 
 def tool_get_reservation_summary(args):
     rid = _safe_int((args or {}).get("reservation_id") or (args or {}).get("id"))
@@ -655,6 +711,10 @@ TOOLS = {
     "get_guest_last_visit": {"fn": tool_get_guest_last_visit, "description": "Guest's last visit (most recent Checked Out, else most recent non-deleted).", "parameters": {"type":"object","properties":{"guest_id":{"type":"integer"}},"required":["guest_id"],"additionalProperties":False}},
     "get_guest_top_items_last_visit": {"fn": tool_get_guest_top_items_last_visit, "description": "Most ordered items on guest's last visit (non-voided POS).", "parameters": {"type":"object","properties":{"guest_id":{"type":"integer"},"limit":{"type":"integer"}},"required":["guest_id"],"additionalProperties":False}},
     "get_guest_last_visit_spend": {"fn": tool_get_guest_last_visit_spend, "description": "Guest's last visit with spend/balance and top items.", "parameters": {"type":"object","properties":{"guest_id":{"type":"integer"}},"required":["guest_id"],"additionalProperties":False}},
+    "get_guest_portfolio": {"fn": tool_get_guest_portfolio, "description": "Full guest 360° portfolio: profile, lifetime stats, all trips/stays with folio/charges/paid/due, all POS/activity orders per trip and overall, all payments, invoices, top items.", "parameters": {"type":"object","properties":{"guest_id":{"type":"integer"}}, "required":["guest_id"], "additionalProperties":False}},
+    "list_activities": {"fn": tool_list_activities, "description": "List registered guest activities/trips/excursions catalog.", "parameters": {"type":"object","properties":{"active_only":{"type":"boolean"}},"additionalProperties":False}},
+    "get_activity_stats": {"fn": tool_get_activity_stats, "description": "Per-activity/trip booking statistics (bookings, qty, revenue) grounded in real bookings.", "parameters": {"type":"object","properties":{"activity_id":{"type":"integer"}},"additionalProperties":False}},
+    "list_activity_bookings": {"fn": tool_list_activity_bookings, "description": "List booked/ordered guest activities-trips (POS-linked bookings) with reservation/guest context; filter by guest_id, reservation_id, or activity_id.", "parameters": {"type":"object","properties":{"guest_id":{"type":"integer"},"reservation_id":{"type":"integer"},"activity_id":{"type":"integer"},"limit":{"type":"integer"}},"additionalProperties":False}},
     "get_reservation_summary": {"fn": tool_get_reservation_summary, "description": "Reservation details, balance, POS count.", "parameters": {"type":"object","properties":{"reservation_id":{"type":"integer"}},"required":["reservation_id"],"additionalProperties":False}},
     "get_guest_balance": {"fn": tool_get_guest_balance, "description": "Reservation/guest balance and breakdown.", "parameters": {"type":"object","properties":{"reservation_id":{"type":"integer"}},"required":["reservation_id"],"additionalProperties":False}},
     "get_recent_activity": {"fn": tool_get_recent_activity, "description": "Recent audit/activity log.", "parameters": {"type":"object","properties":{"limit":{"type":"integer"}},"additionalProperties":False}},
@@ -878,7 +938,11 @@ _INTENT_CUES = {
   "guest_last_visit_spend": (1.5, ["how much did","spend on last visit","spent last time","spending last visit","total on last visit"]),
   "guest_top_items_last_visit": (1.6, ["most ordered","ordered most","ordered the most","ordering the most","buy the most","bought the most","top-ordered","biggest pos orders","topped their list","most frequently","most of during that visit","consume/purchase most","what did they order","what did he order","what did she order","items did they buy","which items did","order the most"]),
   "guest_last_visit": (1.3, ["last visit","last stay","previous visit","previous trip","last time","most recent stay","most recent visit","latest stay","latest visit","last came","most recent checked-out","previous stay","when was the last time"]),
+  "guest_portfolio": (1.5, ["full portfolio","guest portfolio","360","360°","all trips","all stays","all reservations","complete history","entire history","all invoices","all his invoices","all her invoices","all their invoices","all pos orders","all orders","all activities for guest","all payments for guest","everything for guest","full history","complete guest record","lifetime","all visits"]),
   "guest_profile": (1.3, ["profile","everything we know","contact info","past reservations","recent stay history","background for guest","account/profile view","history with us","details and latest bookings","full profile","who are they","what's on file","what’s on file","open the profile","their details"]),
+  "guest_activity_bookings": (1.4, ["booked activities","booked trips","booked excursions","booked tours","activities they ordered","activities he ordered","activities she ordered","trips they booked","excursions booked","tours booked","ordered activities","activity bookings for guest","guest activities","which activities did"]),
+  "list_activities": (1.4, ["list activities","available activities","available trips","available excursions","available tours","activities catalog","trips catalog","excursions catalog","register activities","registered activities","registered trips","what activities","what trips can","what excursions"]),
+  "activity_stats": (1.4, ["activity stats","activity statistics","trip stats","trip statistics","excursion stats","bookings stats","how many booked","most popular activity","most popular trip","most popular excursion","activity revenue","trip bookings"]),
   "guest_search": (1.2, ["find guest","search guest","look up a guest","locate a guest","trying to find a guest","anyone in the system","possible matches","who matches","who do we have on file","show candidates","resembling","search guests for","locate a contact","pull up any matching guest","can you find the guest"]),
   "reservation_balance": (1.4, ["balance","owe","outstanding","amount due","settled","paid versus due","left to collect","folio balance","how much does the guest"]),
   "reservation_summary": (1.3, ["reservation summary","booking summary","details on booking","details on reservation","folio snapshot","what's going on with reservation","rundown of booking","summarize reservation","reservation details"]),
@@ -905,7 +969,7 @@ def rule_classify(text: str, slots: dict | None = None) -> dict:
                 if cs and len(cs & ts)/len(cs) >= 0.8: scores[intent] += w*0.6
     # structural boosts
     if gid or gq or "guest #" in tl or "customer" in tl or "visitor" in tl:
-        for k in ("guest_profile","guest_last_visit","guest_top_items_last_visit","guest_last_visit_spend","guest_search"): scores[k]+=0.2
+        for k in ("guest_profile","guest_portfolio","guest_last_visit","guest_top_items_last_visit","guest_last_visit_spend","guest_activity_bookings","guest_search"): scores[k]+=0.2
     if rid or "reservation #" in tl or "booking #" in tl or "res #" in tl:
         for k in ("reservation_summary","reservation_balance"): scores[k]+=0.25
     rk = slots.get("report_kind")
@@ -930,7 +994,7 @@ def rule_classify(text: str, slots: dict | None = None) -> dict:
         scores["ambiguous_needs_clarification"] += 0.8
     # compound detection
     report_hits = sum(1 for k in ["report_pl","report_cash_flow","report_vat","report_payment_methods","report_occupancy","report_daily_ops"] if scores.get(k,0)>0)
-    guest_chain = (gid or gq or "guest" in tl) and sum(1 for k in ["guest_profile","guest_last_visit","guest_top_items_last_visit","guest_last_visit_spend"] if scores.get(k,0)>0 or k.replace("guest_","") in tl) >= 2
+    guest_chain = (gid or gq or "guest" in tl) and sum(1 for k in ["guest_profile","guest_portfolio","guest_last_visit","guest_top_items_last_visit","guest_last_visit_spend","guest_activity_bookings"] if scores.get(k,0)>0) >= 2
     res_chain = rid and scores.get("reservation_balance",0)>0 and scores.get("reservation_summary",0)>0
     if report_hits>=2 or guest_chain or res_chain or _has_any(tl, ["and also"," as well as"," plus ","p&l and cash flow","compare this month vs","list rate plans and also"]):
         scores["compound_multi_intent"] += 1.0
@@ -1136,6 +1200,14 @@ def _execute_single(intent: str, text: str, slots: dict):
         data=execute_tool("get_occupancy_summary",{"start":start,"end":end}); tools_used.append("get_occupancy_summary")
         return {"ok":True,"intent":intent,"tools_used":tools_used,"data":data,"answer":_format_data(f"Occupancy summary ({start} → {end})",data)}
 
+    # activities / trips (catalog & stats)
+    if intent=="list_activities":
+        data=execute_tool("list_activities",{}); tools_used.append("list_activities")
+        return {"ok":True,"intent":intent,"tools_used":tools_used,"data":data,"answer":_format_data("Activities / trips catalog (registered)",data)}
+    if intent=="activity_stats":
+        data=execute_tool("get_activity_stats",{}); tools_used.append("get_activity_stats")
+        return {"ok":True,"intent":intent,"tools_used":tools_used,"data":data,"answer":_format_data("Activity / trip booking statistics (real data)",data)}
+
     # reservations
     if intent in ("reservation_balance","reservation_summary"):
         if not rid: return _execute_single("ambiguous_needs_clarification", text, slots)
@@ -1144,7 +1216,7 @@ def _execute_single(intent: str, text: str, slots: dict):
         return {"ok":True,"intent":intent,"tools_used":tools_used,"data":data,"answer":_format_data(f"Reservation #{rid}",data)}
 
     # guests
-    if intent in ("guest_search","guest_profile","guest_last_visit","guest_top_items_last_visit","guest_last_visit_spend"):
+    if intent in ("guest_search","guest_profile","guest_portfolio","guest_last_visit","guest_top_items_last_visit","guest_last_visit_spend","guest_activity_bookings"):
         guests, explicit_id, q = resolve_guest(text, slots)
         if intent=="guest_search":
             query=q or slots.get("guest_query") or re.sub(r"(?i)\b(find|search|look up|locate|guest|guests|customer|for|named?|called|who do we have|show|matches|matching)\b"," ",text)
@@ -1165,6 +1237,12 @@ def _execute_single(intent: str, text: str, slots: dict):
             elif intent=="guest_last_visit":
                 data=execute_tool("get_guest_last_visit",{"guest_id":gid}); tools_used.append("get_guest_last_visit")
                 title=f"Last visit (guest #{gid} {gname})"
+            elif intent=="guest_portfolio":
+                data=execute_tool("get_guest_portfolio",{"guest_id":gid}); tools_used.append("get_guest_portfolio")
+                title=f"Guest #{gid} full portfolio (360°: stays, POS, payments, invoices)"
+            elif intent=="guest_activity_bookings":
+                data=execute_tool("list_activity_bookings",{"guest_id":gid}); tools_used.append("list_activity_bookings")
+                title=f"Guest #{gid} booked activities/trips"
             else:
                 data=execute_tool("get_guest_profile",{"guest_id":gid}); tools_used.append("get_guest_profile")
                 title=f"Guest #{gid} profile"
@@ -1204,9 +1282,11 @@ def _execute_compound(text: str, slots: dict):
         if explicit_id or len(guests)==1:
             g_slots=dict(slots)
             if len(guests)==1 and not explicit_id: g_slots["guest_id"]=guests[0]["id"]
+            if _has_any(tl,["full portfolio","360","all trips","all stays","all reservations","all invoices","complete history","entire history","all pos orders"]): subs.append(("guest_portfolio",g_slots))
             if _has_any(tl,["profile","everything we know","history"]): subs.append(("guest_profile",g_slots))
             if _has_any(tl,["last visit","last stay","most recent","when did","last time"]): subs.append(("guest_last_visit",g_slots))
             if _has_any(tl,["ordered most","most ordered","top-ordered","buy the most","topped their list","what did they order"]): subs.append(("guest_top_items_last_visit",g_slots))
+            if _has_any(tl,["booked activities","booked excursions","booked tours","activities they ordered","trips they booked"]): subs.append(("guest_activity_bookings",g_slots))
             if _has_any(tl,["spend","how much did"]): subs.append(("guest_last_visit_spend",g_slots))
         elif len(guests)>1 and not explicit_id:
             return _guest_disambiguation(guests,q)

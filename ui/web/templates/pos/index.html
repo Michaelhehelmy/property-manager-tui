@@ -144,4 +144,38 @@
     {% endif %}{% else %}<tr><td colspan="5" class="muted">None</td></tr>{% endfor %}</table>
   </div>
 </div>
+
+
+<div class="panel" style="margin-top:12px">
+  <h3>Activities / Trips (registered catalog)</h3>
+  <p class="muted">Register bookable guest experiences (trips, excursions, tours, activities). When ordered/booked for a reservation they are added as POS charges to the reservation folio and invoice (like POS). Each has per-activity booking statistics.</p>
+  <div class="grid grid-2">
+    <div>
+      <h4>Register new activity / trip</h4>
+      <form method="post" action="/activities/create"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+        <label>Name<input name="name" required placeholder="e.g. Desert Safari"/></label>
+        <label>Description<textarea name="description" placeholder="optional"></textarea></label>
+        <div class="row"><label>Category<input name="category" value="Trip" placeholder="Trip / Excursion / Activity"/></label><label>Unit price<input name="unit_price" type="number" step="0.01" value="0"/></label></div>
+        <button type="submit">Register activity</button>
+      </form>
+    </div>
+    <div>
+      <h4>Booking statistics (real data)</h4>
+      <table><tr><th>Activity</th><th>Cat</th><th>Active</th><th>Bookings</th><th>Qty</th><th>Revenue</th></tr>
+      {% for s in (activity_stats or []) %}
+      <tr><td>{{s.activity_name}} <span class="muted">#{{s.activity_id}}</span></td><td>{{s.category}}</td><td>{{'Yes' if s.active else 'No'}}</td><td>{{s.bookings}}</td><td>{{s.total_qty}}</td><td>{{"%.2f"|format(s.gross_revenue or 0)}}</td></tr>
+      {% else %}<tr><td colspan="6" class="muted">No activity bookings/stats yet.</td></tr>{% endfor %}
+      </table>
+    </div>
+  </div>
+  <h4 style="margin-top:10px">Registered activities</h4>
+  <table><tr><th>ID</th><th>Name</th><th>Category</th><th>Price</th><th>Active</th><th>Description</th><th></th></tr>
+  {% for a in (activities or []) %}
+  <tr><td>{{a.id}}</td><td>{{a.name}}</td><td>{{a.category}}</td><td>{{"%.2f"|format(a.unit_price or 0)}}</td><td>{{'Yes' if a.active else 'No'}}</td><td>{{a.description}}</td>
+    <td><form method="post" action="/activities/{{a.id}}/toggle" class="inline"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><button class="{{'warn' if a.active else 'ok'}}" type="submit">{{'Deactivate' if a.active else 'Activate'}}</button></form></td>
+  </tr>
+  {% else %}<tr><td colspan="7" class="muted">No activities registered yet.</td></tr>{% endfor %}
+  </table>
+</div>
+
 {% endblock %}

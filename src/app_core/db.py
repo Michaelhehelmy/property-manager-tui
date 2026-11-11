@@ -8,7 +8,7 @@ from . import paths
 DATA_DIR = paths.DATA_DIR
 BASE_DIR = paths.BASE_DIR
 DB_PATH = paths.DB_PATH
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 _conn = None
 
@@ -168,6 +168,18 @@ CREATE TABLE meal_ingredients (
 );
 CREATE INDEX idx_meal_ing_meal ON meal_ingredients(meal_id);
 
+CREATE TABLE activities (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    description TEXT NOT NULL DEFAULT '',
+    category TEXT NOT NULL DEFAULT 'Trip',
+    unit_price REAL NOT NULL DEFAULT 0,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX idx_activities_active ON activities(active);
+
 CREATE TABLE pos_tabs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     reservation_id INTEGER,
@@ -179,10 +191,13 @@ CREATE TABLE pos_tabs (
     cost_at_sale REAL NOT NULL DEFAULT 0,
     voided_at TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    activity_id INTEGER,
     FOREIGN KEY (reservation_id) REFERENCES reservations(id),
-    FOREIGN KEY (inventory_item_id) REFERENCES inventory(id)
+    FOREIGN KEY (inventory_item_id) REFERENCES inventory(id),
+    FOREIGN KEY (activity_id) REFERENCES activities(id)
 );
 CREATE INDEX idx_pos_res ON pos_tabs(reservation_id);
+CREATE INDEX idx_pos_activity ON pos_tabs(activity_id);
 
 CREATE TABLE expense_categories (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -345,6 +360,28 @@ def _migrate_to_7(conn):
 
 
 
+def _migrate_to_8(conn):
+    conn.executescript("""
+    CREATE TABLE IF NOT EXISTS activities (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        description TEXT NOT NULL DEFAULT '',
+        category TEXT NOT NULL DEFAULT 'Trip',
+        unit_price REAL NOT NULL DEFAULT 0,
+        active INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_activities_active ON activities(active);
+    """)
+    # add activity_id to pos_tabs if missing
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(pos_tabs)").fetchall()]
+    if "activity_id" not in cols:
+        conn.execute("ALTER TABLE pos_tabs ADD COLUMN activity_id INTEGER REFERENCES activities(id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_pos_activity ON pos_tabs(activity_id)")
+
+
+
 def migrate():
     conn = connect()
     version = conn.execute("PRAGMA user_version").fetchone()[0]
@@ -360,6 +397,8 @@ def migrate():
             _migrate_to_6(conn)
         if version < 7:
             _migrate_to_7(conn)
+        if version < 8:
+            _migrate_to_8(conn)
         conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
         conn.commit()
         return "upgraded"

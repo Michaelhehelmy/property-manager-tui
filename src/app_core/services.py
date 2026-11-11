@@ -1632,7 +1632,7 @@ def _recipe_components(conn, menu_item_id):
         return []
 
 
-def _add_pos_item_tx(conn, reservation_id, desc, qty, price, inv_id=None):
+def _add_pos_item_tx(conn, reservation_id, desc, qty, price, inv_id=None, activity_id=None):
     """Insert a POS item and related ledger/stock inside an existing transaction."""
     if not isinstance(qty, int) or qty <= 0:
         raise ValueError("Quantity must be a positive integer.")
@@ -1687,10 +1687,16 @@ def _add_pos_item_tx(conn, reservation_id, desc, qty, price, inv_id=None):
             cost_at_sale = inv["unit_cost"] or 0
 
     rid = None if is_walkin else reservation_id
+    act_id = None
+    if activity_id is not None:
+        try:
+            act_id = int(activity_id)
+        except Exception:
+            act_id = None
     cur.execute("""INSERT INTO pos_tabs
-        (reservation_id, inventory_item_id, item_description, quantity, unit_price, tax_amount, cost_at_sale)
-        VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (rid, inv_id, desc.strip(), qty, price, tax["service"] + tax["vat"] + tax["city_tax"], cost_at_sale))
+        (reservation_id, inventory_item_id, item_description, quantity, unit_price, tax_amount, cost_at_sale, activity_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (rid, inv_id, desc.strip(), qty, price, tax["service"] + tax["vat"] + tax["city_tax"], cost_at_sale, act_id))
     pid = cur.lastrowid
     _post(cur, "POS", pid, "CHARGE", "F&B",
           tax["net"], tax["service"], tax["vat"], tax["city_tax"], "",
@@ -1718,10 +1724,10 @@ def _add_pos_item_tx(conn, reservation_id, desc, qty, price, inv_id=None):
             "recipe_deducted": bool(inv_id and recipe)}
 
 
-def add_pos_item(reservation_id, desc, qty, price, inv_id=None):
+def add_pos_item(reservation_id, desc, qty, price, inv_id=None, activity_id=None):
     from .db import transaction
     with transaction() as conn:
-        return _add_pos_item_tx(conn, reservation_id, desc, qty, price, inv_id)
+        return _add_pos_item_tx(conn, reservation_id, desc, qty, price, inv_id, activity_id=activity_id)
 
 
 def complete_walkin_sale(items, method, notes="", payment_type="Payment"):
@@ -2282,6 +2288,174 @@ def get_recent_expenses(limit=50):
         FROM operational_expenses e JOIN expense_categories c ON e.category_id = c.id
         WHERE e.voided_at IS NULL ORDER BY e.id DESC LIMIT ?
     """, (limit,)).fetchall()
+
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# ACTIVITIES / TRIPS (bookable guest experiences) — ordered like POS, posted to reservation folio/invoice
+# ═══════════════════════════════════════════════════════════════════════════
+
+def list_activities(active_only=False):
+    from .db import connect
+    q = "SELECT * FROM activities"
+    params = ()
+    if active_only:
+        q += " WHERE active=1"
+    q += " ORDER BY name COLLATE NOCASE, id"
+    return [dict(r) for r in connect().execute(q, params).fetchall()]
+
+
+def get_activity(activity_id):
+    from .db import connect
+    r = connect().execute("SELECT * FROM activities WHERE id=?", (int(activity_id),)).fetchone()
+    return dict(r) if r else None
+
+
+def create_activity(name, description="", category="Trip", unit_price=0.0, active=1):
+    if not name or not str(name).strip():
+        raise ValueError("Activity name is required.")
+    try:
+        price = float(unit_price or 0)
+    except Exception:
+        raise ValueError("Price must be a number.")
+    if price < 0:
+        raise ValueError("Price cannot be negative.")
+    from .db import transaction
+    with transaction() as conn:
+        try:
+            cur = conn.execute(
+                """INSERT INTO activities (name, description, category, unit_price, active)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (str(name).strip(), (description or "").strip(), (category or "Trip").strip() or "Trip", price, 1 if active else 0),
+            )
+            aid = cur.lastrowid
+        except Exception as e:
+            if "UNIQUE" in str(e).upper():
+                raise ValueError("An activity with this name already exists.")
+            raise
+    _audit("activity_create", "activity", aid, name)
+    return aid
+
+
+def update_activity(activity_id, name, description="", category="Trip", unit_price=0.0, active=1, password=None):
+    if password is not None and password != "" and not verify_password(password):
+        raise PermissionError("Invalid super password.")
+    if not name or not str(name).strip():
+        raise ValueError("Activity name is required.")
+    try:
+        price = float(unit_price or 0)
+    except Exception:
+        raise ValueError("Price must be a number.")
+    if price < 0:
+        raise ValueError("Price cannot be negative.")
+    from .db import connect, transaction
+    row = connect().execute("SELECT id FROM activities WHERE id=?", (int(activity_id),)).fetchone()
+    if not row:
+        raise ValueError("Activity not found.")
+    with transaction() as conn:
+        try:
+            conn.execute(
+                """UPDATE activities SET name=?, description=?, category=?, unit_price=?, active=?, updated_at=datetime('now','localtime') WHERE id=?""",
+                (str(name).strip(), (description or "").strip(), (category or "Trip").strip() or "Trip", price, 1 if active else 0, int(activity_id)),
+            )
+        except Exception as e:
+            if "UNIQUE" in str(e).upper():
+                raise ValueError("An activity with this name already exists.")
+            raise
+    _audit("activity_update", "activity", int(activity_id), name)
+    return True
+
+
+def set_activity_active(activity_id, active):
+    from .db import connect
+    row = connect().execute("SELECT id FROM activities WHERE id=?", (int(activity_id),)).fetchone()
+    if not row:
+        raise ValueError("Activity not found.")
+    with transaction() as conn:
+        conn.execute("UPDATE activities SET active=?, updated_at=datetime('now','localtime') WHERE id=?", (1 if active else 0, int(activity_id)))
+    _audit("activity_toggle", "activity", int(activity_id), f"active={1 if active else 0}")
+    return True
+
+
+def book_activity(reservation_id, activity_id, quantity=1, scheduled_at=None, notes=""):
+    """Book/order a registered activity/trip for a reservation.
+    Creates a POS charge (like POS) linked to the activity so it is added to the reservation folio, balance, and invoice."""
+    from .db import connect
+    act = connect().execute("SELECT * FROM activities WHERE id=? AND active=1", (int(activity_id),)).fetchone()
+    if not act:
+        raise ValueError("Activity/trip not found or inactive.")
+    try:
+        qty = int(quantity or 1)
+    except Exception:
+        qty = 1
+    if qty <= 0:
+        raise ValueError("Quantity must be a positive integer.")
+    desc = act["name"]
+    if scheduled_at:
+        desc = f"{desc} ({scheduled_at})"
+    if notes:
+        n = str(notes).strip()
+        if n:
+            desc = f"{desc} - {n[:80]}"
+    pos_id = add_pos_item(int(reservation_id), desc, qty, float(act["unit_price"] or 0), inv_id=None, activity_id=int(activity_id))
+    _audit("activity_book", "activity_booking", pos_id, f"res={reservation_id} activity={activity_id} qty={qty}")
+    return {"pos_id": pos_id, "reservation_id": int(reservation_id), "activity_id": int(activity_id), "quantity": qty, "unit_price": float(act["unit_price"] or 0)}
+
+
+def list_activity_bookings(activity_id=None, reservation_id=None, guest_id=None, limit=500):
+    """List booked activities/trips (POS lines linked to activities) with reservation/guest context."""
+    from .db import connect
+    where = ["p.voided_at IS NULL", "p.activity_id IS NOT NULL"]
+    params = []
+    if activity_id is not None:
+        where.append("p.activity_id=?"); params.append(int(activity_id))
+    if reservation_id is not None:
+        where.append("p.reservation_id=?"); params.append(int(reservation_id))
+    if guest_id is not None:
+        where.append("r.guest_id=?"); params.append(int(guest_id))
+    q = f"""
+        SELECT p.id AS pos_id, p.reservation_id, p.activity_id, p.item_description, p.quantity, p.unit_price, p.tax_amount, p.created_at,
+               a.name AS activity_name, a.category AS activity_category,
+               r.guest_id, r.guest_name, r.check_in_date, r.check_out_date, r.status AS reservation_status,
+               rm.room_number
+        FROM pos_tabs p
+        JOIN activities a ON a.id = p.activity_id
+        LEFT JOIN reservations r ON r.id = p.reservation_id
+        LEFT JOIN rooms rm ON rm.id = r.room_id
+        WHERE {' AND '.join(where)}
+        ORDER BY p.created_at DESC, p.id DESC
+        LIMIT ?
+    """
+    params.append(int(limit or 500))
+    return [dict(r) for r in connect().execute(q, params).fetchall()]
+
+
+def get_activity_stats(activity_id=None):
+    """Per-activity (or overall) booking/order statistics grounded in real POS/activity bookings."""
+    from .db import connect
+    params = []
+    filt = "WHERE p.voided_at IS NULL AND p.activity_id IS NOT NULL"
+    if activity_id is not None:
+        filt += " AND p.activity_id=?"; params.append(int(activity_id))
+    rows = connect().execute(f"""
+        SELECT p.activity_id, a.name AS activity_name, a.category, a.unit_price, a.active,
+               COUNT(*) AS bookings, COALESCE(SUM(p.quantity),0) AS total_qty,
+               COALESCE(SUM(p.quantity*p.unit_price + p.tax_amount),0) AS gross_revenue,
+               MIN(p.created_at) AS first_booked, MAX(p.created_at) AS last_booked
+        FROM pos_tabs p JOIN activities a ON a.id=p.activity_id
+        {filt}
+        GROUP BY p.activity_id
+        ORDER BY gross_revenue DESC, total_qty DESC
+    """, params).fetchall()
+    stats = [dict(r) for r in rows]
+    # include registered activities with zero bookings when listing all
+    if activity_id is None:
+        seen = {s["activity_id"] for s in stats}
+        for a in connect().execute("SELECT id, name, category, unit_price, active FROM activities ORDER BY name").fetchall():
+            if a["id"] not in seen:
+                stats.append({"activity_id": a["id"], "activity_name": a["name"], "category": a["category"], "unit_price": a["unit_price"], "active": a["active"],
+                              "bookings": 0, "total_qty": 0, "gross_revenue": 0.0, "first_booked": None, "last_booked": None})
+    return stats
 
 
 # ═══════════════════════════════════════════════════════════════════════════

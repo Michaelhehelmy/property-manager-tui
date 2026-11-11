@@ -40,52 +40,23 @@ def _cart_view(cart):
 
 
 @router.get("/pos")
+@router.get("/pos")
 def pos(request: Request, q: str = ""):
+    cart = _get_cart(request)
+    # list active non-deleted reservations to target POS/folio
+    reservations = connect().execute("""
+        SELECT r.id, r.guest_name, r.status, rm.room_number
+        FROM reservations r LEFT JOIN rooms rm ON r.room_id=rm.id
+        WHERE r.status NOT IN ('Cancelled','No-Show','Deleted')
+        ORDER BY r.check_in_date DESC, r.id DESC
+    """).fetchall()
+    inv = services.get_inventory_items(q)
     try:
-        inv = services.search_inventory(q)
+        activities = services.list_activities(active_only=False)
+        activity_stats = services.get_activity_stats()
     except Exception:
-        inv = connect().execute(
-            "SELECT * FROM inventory WHERE active=1 AND item_name LIKE ? ORDER BY item_name LIMIT 200",
-            (f"%{q}%",),
-        ).fetchall()
-    res = connect().execute(
-        "SELECT id, guest_name, status FROM reservations WHERE status IN ('Reserved','Checked In') ORDER BY id DESC LIMIT 100"
-    ).fetchall()
-    cart_raw = _get_cart(request)
-    cart, cart_total = _cart_view(cart_raw)
-    walkin_pos = services.list_walkin_pos(limit=30)
-    walkin_payments = services.list_walkin_payments(limit=20)
-    recipe_counts = {}
-    try:
-        rows = connect().execute("SELECT menu_item_id, COUNT(*) n FROM recipe_components GROUP BY menu_item_id").fetchall()
-        recipe_counts = {int(r["menu_item_id"]): int(r["n"]) for r in rows}
-    except Exception:
-        recipe_counts = {}
-    inv_view = []
-    for i in inv:
-        d = {k: i[k] for k in i.keys()} if hasattr(i, "keys") else dict(i)
-        d["recipe_components"] = recipe_counts.get(int(d["id"]), 0)
-        inv_view.append(d)
-    try:
-        meals = services.list_meals(active_only=False)
-        for m in meals:
-            full = services.get_meal(m["id"]) or m
-            m["ingredients"] = full.get("ingredients", [])
-            m["preparation"] = full.get("preparation", m.get("preparation", ""))
-            m["description"] = full.get("description", m.get("description", ""))
-    except Exception:
-        meals = []
-    return render(request, "pos/index.html", {
-        "title": "POS / Inventory",
-        "inv": inv_view,
-        "reservations": res,
-        "q": q,
-        "cart": cart,
-        "cart_total": cart_total,
-        "walkin_pos": walkin_pos,
-        "walkin_payments": walkin_payments,
-        "meals": meals,
-    })
+        activities, activity_stats = [], []
+    return render(request, "pos/index.html", {"title":"POS / Inventory","cart":cart,"cart_total":_cart_view(cart)["total"],"reservations":reservations,"inv":inv,"activities":activities,"activity_stats":activity_stats,"q":q})
 
 
 @router.post("/pos/add")
@@ -293,6 +264,28 @@ async def meal_delete(request: Request):
     try:
         services.delete_meal(int(form.get("meal_id") or 0), form.get("password", ""))
         deps.add_flash(request, "Meal deleted.", "success")
+    except Exception as e:
+        deps.add_flash(request, str(e), "error")
+    r = deps.redirect("/pos"); deps.save_session(r, deps.get_session(request)); return r
+
+@router.post("/activities/create")
+async def activity_create(request: Request):
+    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    try:
+        services.create_activity(form.get("name",""), form.get("description",""), form.get("category","Trip"), float(form.get("unit_price") or 0), 1)
+        deps.add_flash(request, "Activity/trip registered", "success")
+    except Exception as e:
+        deps.add_flash(request, str(e), "error")
+    r = deps.redirect("/pos"); deps.save_session(r, deps.get_session(request)); return r
+
+@router.post("/activities/{aid}/toggle")
+async def activity_toggle(aid: int, request: Request):
+    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    try:
+        act = services.get_activity(aid)
+        if not act: raise ValueError("Activity not found")
+        services.set_activity_active(aid, 0 if act.get("active") else 1)
+        deps.add_flash(request, "Activity updated", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
     r = deps.redirect("/pos"); deps.save_session(r, deps.get_session(request)); return r
