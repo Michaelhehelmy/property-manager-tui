@@ -79,7 +79,7 @@ function Have-Cmd([string]$name) { return [bool](Get-Command $name -ErrorAction 
 
 function Ensure-Prerequisites {
   if ($NoBootstrap) { return }
-  $needPy = -not (Have-Cmd 'py') -and -not (Have-Cmd 'python') -and -not (Have-Cmd 'python3')
+  $needPy = -not (Test-PythonCmd 'py -3') -and -not (Test-PythonCmd 'py') -and -not (Test-PythonCmd 'python') -and -not (Test-PythonCmd 'python3')
   $needGit = -not (Have-Cmd 'git')
   # git is required to clone when not running from an existing repo checkout
   $scriptRoot = if ($PSScriptRoot) { Split-Path -Parent $PSScriptRoot } else { '' }
@@ -113,16 +113,41 @@ function Ensure-Prerequisites {
   Refresh-PathEnv
 }
 
+function Test-PythonCmd([string]$cand) {
+  try {
+    if ($cand -eq 'py -3') { & py -3 -c "import sys; sys.exit(0)" *> $null; return ($LASTEXITCODE -eq 0) }
+    elseif ($cand -eq 'py') { & py -c "import sys; sys.exit(0)" *> $null; return ($LASTEXITCODE -eq 0) }
+    elseif (Get-Command $cand -ErrorAction SilentlyContinue) {
+      & $cand -c "import sys; sys.exit(0)" *> $null
+      if ($LASTEXITCODE -eq 0) { return $true }
+      # App Execution Alias stub may "exist" but fail to run real Python
+      & $cand --version *> $null
+      return ($LASTEXITCODE -eq 0)
+    }
+  } catch {}
+  return $false
+}
+
 function Resolve-Python {
   Refresh-PathEnv
-  if ($PythonExe -and (Get-Command $PythonExe -ErrorAction SilentlyContinue)) { return $PythonExe }
-  foreach ($cand in @('python', 'py -3', 'py', 'python3')) {
-    try {
-      if ($cand -eq 'py -3') { & py -3 -V *> $null; if ($LASTEXITCODE -eq 0) { return 'py -3' } }
-      elseif ($cand -eq 'py') { & py -V *> $null; if ($LASTEXITCODE -eq 0) { return 'py' } }
-      elseif (Get-Command $cand -ErrorAction SilentlyContinue) { return $cand }
-    } catch {}
+  if ($PythonExe) {
+    if ($PythonExe -eq 'py -3' -or $PythonExe -eq 'py') { if (Test-PythonCmd $PythonExe) { return $PythonExe } }
+    elseif (Get-Command $PythonExe -ErrorAction SilentlyContinue) { if (Test-PythonCmd $PythonExe) { return $PythonExe } }
   }
+  foreach ($cand in @('py -3', 'py', 'python', 'python3')) {
+    if (Test-PythonCmd $cand) { return $cand }
+  }
+  # probe common install dirs (PATH may not be refreshed in-session)
+  try {
+    $roots = @('C:\Program Files', 'C:\Program Files (x86)', (Join-Path $env:LOCALAPPDATA 'Programs\Python'))
+    foreach ($r in $roots) {
+      if (-not (Test-Path $r)) { continue }
+      Get-ChildItem -Path $r -Directory -Filter 'Python3*' -ErrorAction SilentlyContinue | Sort-Object Name -Descending | ForEach-Object {
+        $exe = Join-Path $_.FullName 'python.exe'
+        if ((Test-Path $exe) -and (Test-PythonCmd $exe)) { return $exe }
+      }
+    }
+  } catch {}
   return $null
 }
 

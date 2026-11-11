@@ -29,6 +29,21 @@ $ErrorActionPreference = 'Stop'
 function Log([string]$m) { Write-Host "==> $m" -ForegroundColor Cyan }
 function Warn([string]$m) { Write-Warning $m }
 function Have($n) { [bool](Get-Command $n -ErrorAction SilentlyContinue) }
+
+function Test-PythonCmd([string]$cand) {
+  try {
+    if ($cand -eq 'py -3') { & py -3 -c "import sys; sys.exit(0)" *> $null; return ($LASTEXITCODE -eq 0) }
+    elseif ($cand -eq 'py') { & py -c "import sys; sys.exit(0)" *> $null; return ($LASTEXITCODE -eq 0) }
+    elseif (Get-Command $cand -ErrorAction SilentlyContinue) {
+      & $cand -c "import sys; sys.exit(0)" *> $null
+      if ($LASTEXITCODE -eq 0) { return $true }
+      & $cand --version *> $null
+      return ($LASTEXITCODE -eq 0)
+    }
+  } catch {}
+  return $false
+}
+function Has-WorkingPython { return (Test-PythonCmd 'py -3') -or (Test-PythonCmd 'py') -or (Test-PythonCmd 'python') -or (Test-PythonCmd 'python3') }
 function Refresh-PathEnv {
   try {
     $env:Path = [System.Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [System.Environment]::GetEnvironmentVariable('Path','User') + ';' + $env:Path
@@ -50,9 +65,15 @@ try {
     exit 1
   }
   Refresh-PathEnv
-  if (-not (Have py) -and -not (Have python) -and -not (Have python3)) {
+  if (-not (Has-WorkingPython)) {
     Log "Installing Python 3.12 via winget..."
     try { winget install -e --id Python.Python.3.12 --accept-package-agreements --accept-source-agreements --silent } catch { winget install -e --id Python.Python.3.12 --accept-package-agreements --accept-source-agreements }
+    Refresh-PathEnv
+    if (-not (Has-WorkingPython)) {
+      Warn "Python still not detected in this session (Windows may be using the Microsoft Store 'python' alias)."
+      Warn "Fix: Settings > Apps > Advanced app settings > App execution aliases > turn OFF 'python.exe' and 'python3.exe', then reopen PowerShell and re-run this installer."
+      Warn "Or install Python 3.10+ from https://www.python.org/downloads/ (check 'Add python.exe to PATH'), reopen PowerShell, and re-run."
+    }
   }
   if (-not (Have git)) {
     Log "Installing Git via winget..."
