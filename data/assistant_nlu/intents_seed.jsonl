@@ -208,3 +208,54 @@
 {"text": "overall counts: guests, rooms, reservations", "label": "property_stats"}
 {"text": "how many customers do we have on file", "label": "property_stats"}
 {"text": "reservation count by status and total guests please", "label": "property_stats"}
+{"text": "hi", "label": "greeting_smalltalk", "slots": {}}
+{"text": "hello", "label": "greeting_smalltalk", "slots": {}}
+{"text": "hey there", "label": "greeting_smalltalk", "slots": {}}
+{"text": "good morning", "label": "greeting_smalltalk", "slots": {}}
+{"text": "good afternoon", "label": "greeting_smalltalk", "slots": {}}
+{"text": "good evening", "label": "greeting_smalltalk", "slots": {}}
+{"text": "thanks", "label": "greeting_smalltalk", "slots": {}}
+{"text": "thank you", "label": "greeting_smalltalk", "slots": {}}
+{"text": "thanks a lot", "label": "greeting_smalltalk", "slots": {}}
+{"text": "appreciate it", "label": "greeting_smalltalk", "slots": {}}
+{"text": "how are you", "label": "greeting_smalltalk", "slots": {}}
+{"text": "show guest #3 full portfolio", "label": "guest_portfolio", "slots": {}}
+{"text": "guest #5 360 portfolio", "label": "guest_portfolio", "slots": {}}
+{"text": "complete history for guest 12", "label": "guest_portfolio", "slots": {}}
+{"text": "all trips and invoices for guest #2", "label": "guest_portfolio", "slots": {}}
+{"text": "show all reservations and POS orders for guest #7", "label": "guest_portfolio", "slots": {}}
+{"text": "guest 4 lifetime portfolio", "label": "guest_portfolio", "slots": {}}
+{"text": "everything for guest #9 all stays payments invoices", "label": "guest_portfolio", "slots": {}}
+{"text": "full guest portfolio for guest #1", "label": "guest_portfolio", "slots": {}}
+{"text": "all visits and invoices for guest 6", "label": "guest_portfolio", "slots": {}}
+{"text": "show guest #8 complete record with all trips and payments", "label": "guest_portfolio", "slots": {}}
+{"text": "what activities did guest #3 book", "label": "guest_activity_bookings", "slots": {}}
+{"text": "guest 5 booked excursions", "label": "guest_activity_bookings", "slots": {}}
+{"text": "show trips guest #2 ordered", "label": "guest_activity_bookings", "slots": {}}
+{"text": "booked activities for guest #7", "label": "guest_activity_bookings", "slots": {}}
+{"text": "which tours did guest 4 take", "label": "guest_activity_bookings", "slots": {}}
+{"text": "guest #6 activity bookings", "label": "guest_activity_bookings", "slots": {}}
+{"text": "excursions booked by guest #1", "label": "guest_activity_bookings", "slots": {}}
+{"text": "what trips has guest 9 ordered", "label": "guest_activity_bookings", "slots": {}}
+{"text": "guest 8 booked activities list", "label": "guest_activity_bookings", "slots": {}}
+{"text": "show guest #10 excursions and tours", "label": "guest_activity_bookings", "slots": {}}
+{"text": "list registered activities", "label": "list_activities", "slots": {}}
+{"text": "what activities are available", "label": "list_activities", "slots": {}}
+{"text": "show activities catalog", "label": "list_activities", "slots": {}}
+{"text": "available trips and excursions", "label": "list_activities", "slots": {}}
+{"text": "registered trips", "label": "list_activities", "slots": {}}
+{"text": "what excursions can guests book", "label": "list_activities", "slots": {}}
+{"text": "list all activities and tours", "label": "list_activities", "slots": {}}
+{"text": "show activity catalog", "label": "list_activities", "slots": {}}
+{"text": "available guest activities", "label": "list_activities", "slots": {}}
+{"text": "what trips do we offer", "label": "list_activities", "slots": {}}
+{"text": "activity booking statistics", "label": "activity_stats", "slots": {}}
+{"text": "trip stats", "label": "activity_stats", "slots": {}}
+{"text": "how many activities booked", "label": "activity_stats", "slots": {}}
+{"text": "most popular excursion", "label": "activity_stats", "slots": {}}
+{"text": "activity revenue stats", "label": "activity_stats", "slots": {}}
+{"text": "bookings stats for activities", "label": "activity_stats", "slots": {}}
+{"text": "trip booking statistics", "label": "activity_stats", "slots": {}}
+{"text": "which activity is most popular", "label": "activity_stats", "slots": {}}
+{"text": "excursion stats", "label": "activity_stats", "slots": {}}
+{"text": "show activity performance and bookings", "label": "activity_stats", "slots": {}}

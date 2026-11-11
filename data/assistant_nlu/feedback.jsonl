@@ -1,0 +1,1 @@
+{"id": null, "created_at": "2026-11-10 10:25:49", "message": "test msg", "predicted_intent": "report_pl", "corrected_intent": "report_cash_flow", "confidence": null, "slots": {}, "corrected_slots": {}, "tools_used": [], "answer_preview": "", "rating": -1, "user_note": "was cash flow", "status": "new", "source": ""}

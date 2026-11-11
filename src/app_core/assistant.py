@@ -1,8 +1,10 @@
-"""Manager assistant: grounded read-only core + no-dep NLU + business-partner insights.
+"""Manager assistant: grounded read-only core, local-only (no external/OpenAI LLM).
 
 - Facts come ONLY from real backend tools/services/DB (read-only). No hallucinations.
-- No new dependencies: stdlib + existing app modules only.
-- Tiered routing: instant exemplar corrections > weighted rule/slot scoring > optional sklearn/setfit if available.
+- No external LLM calls. "Talking" polish is done locally:
+    1) optional local GGUF model via llama-cpp-python (if installed + model path configured)
+    2) deterministic friendly formatter/rephraser (always available, no deps)
+- Tiered NLU (no required deps): instant exemplar corrections > optional sklearn/setfit > weighted rules/slots.
 - Learns over time: ratings/corrections stored locally (DB+JSONL) and applied instantly via exemplar memory.
 """
 from __future__ import annotations
@@ -29,7 +31,7 @@ DEFAULT_SETFIT_MODEL_DIR = BASE_DIR / "models" / "assistant_intent_setfit"
 DEFAULT_SKLEARN_MODEL_PATH = BASE_DIR / "models" / "assistant_intent_sklearn.joblib"
 
 INTENT_LABELS = [
-    "capabilities_help", "property_stats", "today_ops", "business_partner_briefing", "decision_support",
+    "capabilities_help", "greeting_smalltalk", "property_stats", "today_ops", "business_partner_briefing", "decision_support",
     "report_pl", "report_cash_flow", "report_vat", "report_payment_methods", "report_occupancy", "report_daily_ops",
     "occupancy_summary", "compare_periods", "outstanding_balances", "inventory_alerts", "top_selling_items",
     "expenses_summary", "sales_breakdown", "reservation_pipeline", "housekeeping_summary", "room_availability",
@@ -50,11 +52,9 @@ def _iso(d):
 
 def _safe_int(v):
     try:
-        if v is None:
-            return None
+        if v is None: return None
         s = str(v).strip()
-        if s == "":
-            return None
+        if s == "": return None
         return int(re.sub(r"[^\d-]", "", s)) if isinstance(s, str) else int(s)
     except Exception:
         return None
@@ -71,21 +71,30 @@ def _token_set(s: str):
 
 def _sim(a: str, b: str) -> float:
     a, b = _norm_text(a), _norm_text(b)
-    if not a or not b:
-        return 0.0
+    if not a or not b: return 0.0
     return difflib.SequenceMatcher(None, a, b).ratio()
 
 def _fmt_money(x):
-    try:
-        return f"{float(x):,.2f}"
-    except Exception:
-        return str(x)
+    try: return f"{float(x):,.2f}"
+    except Exception: return str(x)
 
 def _parse_iso(s):
-    try:
-        return datetime.strptime(s, DATE_FMT).date()
-    except Exception:
-        return None
+    try: return datetime.strptime(s, DATE_FMT).date()
+    except Exception: return None
+
+def _yn(v):
+    return "yes" if v else "no"
+
+def _short(s, n=120):
+    s = (str(s) if s is not None else "").replace("\n", " ").strip()
+    return s if len(s) <= n else s[: n - 1] + "…"
+
+def _val(d, *keys, default=None):
+    cur = d
+    for k in keys:
+        if isinstance(cur, dict): cur = cur.get(k)
+        else: return default
+    return default if cur is None else cur
 
 # ── Date/range parsing ───────────────────────────────────────────────────────
 
@@ -156,18 +165,18 @@ def _prev_period(start, end):
 
 def _context_from_history(history):
     ctx = {}
-    if not isinstance(history, list):
-        return ctx
+    if not isinstance(history, list): return ctx
     for h in reversed(history):
         if h.get("role") == "assistant":
             slots = h.get("slots") or {}
             for k in ("guest_id", "reservation_id", "date_start", "date_end"):
-                if slots.get(k) and k not in ctx:
-                    ctx[k] = slots.get(k)
-            if h.get("intent") and "last_intent" not in ctx:
-                ctx["last_intent"] = h.get("intent")
-        if len(ctx) >= 5:
-            break
+                if slots.get(k) and k not in ctx: ctx[k] = slots.get(k)
+            if h.get("intent") and "last_intent" not in ctx: ctx["last_intent"] = h.get("intent")
+            if h.get("resolved_guest_id") and "guest_id" not in ctx: ctx["guest_id"] = h.get("resolved_guest_id")
+        elif h.get("role") == "user":
+            # light carryover not needed
+            pass
+        if len(ctx) >= 6: break
     return ctx
 
 def extract_slots(text: str, history=None) -> dict:
@@ -181,39 +190,29 @@ def extract_slots(text: str, history=None) -> dict:
     m = re.search(r"\broom\s*#?\s*([a-z0-9-]+)\b", tl)
     if m: slots["room_query"] = m.group(1)
     s, e = _parse_date_range(t); slots["date_start"], slots["date_end"] = s, e
-    # report kind hints
     rk = None
-    if any(k in tl for k in ["p&l", "pnl", "profit and loss", "profit-wise", "bottom line", "net profit", "income versus outgoings", "earnings and costs", "revenue beat expenses", "financial performance", "sales in, costs out"]):
-        rk = "pl"
-    elif any(k in tl for k in ["cash flow", "cashflow", "cash in", "cash out", "money movement", "cash-positive", "liquidity", "ins and outs of cash"]):
-        rk = "cash_flow"
-    elif any(k in tl for k in ["vat", "value-added tax", "tax report", "output", "input tax"]):
-        rk = "vat"
-    elif any(k in tl for k in ["payment method", "payments by method", "paid us", "by cash, card", "split by cash", "payment channels", "settlement methods", "how did guests pay", "collections by method", "mix of settlement", "bank transfers or cash"]):
-        rk = "payment_methods"
-    elif any(k in tl for k in ["daily ops", "arrivals", "departures", "in-house", "in house", "check-ins", "checkouts", "check outs", "handover", "front-desk style ops", "stayovers", "ops picture", "ops summary", "operational view"]):
-        rk = "daily_ops"
-    elif any(k in tl for k in ["occupancy", "adr", "revpar", "room-nights", "fill rate", "how full", "how busy", "utilized", "how occupied"]):
-        rk = "occupancy"
+    if any(k in tl for k in ["p&l", "pnl", "profit and loss", "profit-wise", "bottom line", "net profit", "income versus outgoings", "earnings and costs", "revenue beat expenses", "financial performance", "sales in, costs out"]): rk = "pl"
+    elif any(k in tl for k in ["cash flow", "cashflow", "cash in", "cash out", "money movement", "cash-positive", "liquidity", "ins and outs of cash"]): rk = "cash_flow"
+    elif any(k in tl for k in ["vat", "value-added tax", "tax report", "output", "input tax"]): rk = "vat"
+    elif any(k in tl for k in ["payment method", "payments by method", "paid us", "by cash, card", "split by cash", "payment channels", "settlement methods", "how did guests pay", "collections by method", "mix of settlement", "bank transfers or cash"]): rk = "payment_methods"
+    elif any(k in tl for k in ["daily ops", "arrivals", "departures", "in-house", "in house", "check-ins", "checkouts", "check outs", "handover", "front-desk style ops", "stayovers", "ops picture", "ops summary", "operational view"]): rk = "daily_ops"
+    elif any(k in tl for k in ["occupancy", "adr", "revpar", "room-nights", "fill rate", "how full", "how busy", "utilized", "how occupied"]): rk = "occupancy"
     if rk: slots["report_kind"] = rk
-    # guest query
     mq = re.search(r"[\"""'`]([^\"""'`]{2,})[\"""'`]", t)
     if mq:
         slots["guest_query"] = mq.group(1).strip()
     if "guest_query" not in slots:
-        mf = re.search(r"\b(?:find|search|look up|locate|named?|called|for|about)\s+(?:guest\s+|customer\s+)?([A-Za-z\u0600-\u06FF][A-Za-z\u0600-\u06FF\s'.-]{1,50}?)(?:\s+(?:last|most|ordered|visit|stayed|reservation|balance|profile|history|check|who|and)\b|[?.!,]|$)", t, re.I)
+        mf = re.search(r"\b(?:find|search|look up|locate|named?|called|for|about)\s+(?:guest\s+|customer\s+)?([A-Za-z\u0600-\u06FF][A-Za-z\u0600-\u06FF\s'.-]{1,50}?)(?:\s+(?:last|most|ordered|visit|stayed|reservation|balance|profile|history|check|who|and|portfolio|invoices|activities|trips)\b|[?.!,]|$)", t, re.I)
         if mf:
             cand = mf.group(1).strip(" ?.,!")
             bad = {"id","number","#","the","a","someone","anyone","he","she","they","him","her","them","last","visit","most","ordered","me","us","today","yesterday","month","week"}
             if cand.lower() not in bad and not re.fullmatch(r"\d+", cand):
                 slots["guest_query"] = cand
-    # carryover (only if not explicit and message is a follow-up)
     ctx = _context_from_history(history)
-    followup = any(k in tl for k in ["same guest", "that guest", "his ", "her ", "their ", "same reservation", "that reservation", "for him", "for her", "for them", "and for", "what about", "same period", "same range"])
+    followup = any(k in tl for k in ["same guest", "that guest", "his ", "her ", "their ", "same reservation", "that reservation", "for him", "for her", "for them", "and for", "what about", "same period", "same range", "break that down", "show me more", "their portfolio", "his portfolio", "her portfolio"])
     if followup or (len(t.split()) <= 6 and not slots.get("guest_id") and not slots.get("reservation_id")):
-        for k in ("guest_id", "reservation_id"):
-            if not slots.get(k) and ctx.get(k):
-                slots[k] = ctx[k]
+        for k in ("guest_id", "reservation_id", "date_start", "date_end"):
+            if not slots.get(k) and ctx.get(k): slots[k] = ctx[k]
     slots["context"] = ctx
     return slots
 
@@ -225,7 +224,7 @@ def resolve_guest(text: str, slots: dict | None = None):
         return ([g] if g else []), gid, None
     q = slots.get("guest_query")
     if q:
-        q2 = re.sub(r"(?i)\b(find|search|look up|locate|guest|customer|named?|called|for|about|profile|someone|anyone|matching|matches|resembles?|show|possible|candidates)\b", " ", q)
+        q2 = re.sub(r"(?i)\b(find|search|look up|locate|guest|customer|named?|called|for|about|profile|someone|anyone|matching|matches|resembles?|show|possible|candidates|portfolio)\b", " ", q)
         q2 = re.sub(r"\s+", " ", q2).strip(" ?.,!")
         if len(q2) < 2: q2 = q
         return services.assistant_find_guests(q2, limit=8), None, q2
@@ -242,12 +241,16 @@ def tool_list_capabilities(args=None):
         "Business partner briefing & decision support (KPIs, risks, opportunities, suggested actions)",
         "Property/ops stats and today snapshot (guests, rooms, reservations, arrivals/departures, housekeeping)",
         "Reports: P&L, cash flow, VAT, payment methods, occupancy, daily ops; compare periods",
-        "Guests: search, profile, full 360° portfolio (all trips/stays, POS activity, payments, invoices, totals/stats), last visit, most-ordered items and spend on last visit, guest activity/trip bookings",
-        "Activities/Trips (excursions/experiences): registered catalog, booking/order stats, and guest/reservation activity bookings (booked like POS to folio/invoice)",
+        "Guests: search, profile, full 360° portfolio (all trips/stays, POS activity, payments, invoices, totals/stats), last visit, most-ordered items and spend on last visit, booked activities/trips",
+        "Activities/Trips (excursions/experiences): registered catalog, booking/order stats, and guest/reservation bookings (booked like POS to folio/invoice)",
         "Reservations: summary/details, balance, outstanding balances/AR, pipeline",
         "Inventory: alerts (low/over/negative), top-selling items; menu/meals",
         "Expenses and sales breakdown; rate plans; room availability; ledger/data integrity",
-    ], "notes": ["All answers grounded in real backend data (read-only).", "Last visit = most recent Checked Out, else most recent non-deleted."]}
+    ], "notes": [
+        "All answers grounded in real backend data (read-only).",
+        "Last visit = most recent Checked Out, else most recent non-deleted.",
+        "Booked activities/trips are posted as POS charges to the reservation folio/invoice.",
+    ]}
 
 def tool_search_guests(args):
     q = (args or {}).get("query") or (args or {}).get("q") or ""
@@ -292,20 +295,7 @@ def tool_get_guest_portfolio(args):
     try:
         p = services.get_guest_portfolio(gid)
         if not p: return {"error": f"Guest #{gid} not found"}
-        # compact for assistant context (keep key facts; full lists can be large)
-        trips = []
-        for t in (p.get("trips") or []):
-            trips.append({
-                "id": t.get("id"), "room_number": t.get("room_number"), "room_type": t.get("room_type"),
-                "check_in_date": t.get("check_in_date"), "check_out_date": t.get("check_out_date"),
-                "nights": t.get("nights"), "status": t.get("status"), "source": t.get("source"),
-                "rate_plan": t.get("rate_plan"), "agreed_nightly_rate": t.get("agreed_nightly_rate"),
-                "balance": t.get("balance"), "pos_count": len(t.get("pos_items") or []), "pos_active_count": len(t.get("pos_active") or []),
-                "payments_count": len(t.get("payments") or []), "invoice_files": [i.get("name") for i in (t.get("invoices") or [])],
-                "pos_items": [{"desc": i.get("item_description"), "qty": i.get("quantity"), "unit_price": i.get("unit_price"), "tax": i.get("tax_amount"), "voided": bool(i.get("voided_at")), "activity_id": i.get("activity_id")} for i in (t.get("pos_items") or [])[:20]],
-                "payments": [{"at": i.get("at"), "method": i.get("method"), "type": i.get("payment_type"), "amount": i.get("amount"), "voided": bool(i.get("voided_at"))} for i in (t.get("payments") or [])[:20]],
-            })
-        return {"guest": p.get("guest"), "stats": p.get("stats"), "trips": trips, "all_pos_count": len(p.get("all_pos") or []), "all_payments_count": len(p.get("all_payments") or []), "top_items_overall": p.get("top_items_overall") or []}
+        return p
     except Exception as e:
         return {"error": str(e)}
 
@@ -335,9 +325,6 @@ def tool_list_activity_bookings(args=None):
         return {"bookings": bookings, "count": len(bookings)}
     except Exception as e:
         return {"error": str(e)}
-
-
-
 
 def tool_get_reservation_summary(args):
     rid = _safe_int((args or {}).get("reservation_id") or (args or {}).get("id"))
@@ -397,10 +384,8 @@ def tool_get_occupancy_summary(args):
         return {"start": start, "end": end, "error": str(e)}
 
 def tool_verify_ledger_integrity(args=None):
-    try:
-        return services.verify_ledger_integrity()
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
+    try: return services.verify_ledger_integrity()
+    except Exception as e: return {"ok": False, "error": str(e)}
 
 def tool_get_property_stats(args=None):
     try:
@@ -445,7 +430,6 @@ def tool_get_housekeeping_summary(args=None):
 def tool_get_inventory_alerts(args=None):
     try:
         w = services.get_inventory_warnings()
-        # make json-friendly
         def pack(lst, keys):
             out = []
             for t in lst:
@@ -469,10 +453,8 @@ def tool_get_outstanding_balances(args=None):
         outstanding = []
         total_due = 0.0
         for r in rows:
-            try:
-                bal = services.calculate_guest_balance(r["id"])
-            except Exception:
-                bal = 0.0
+            try: bal = services.calculate_guest_balance(r["id"])
+            except Exception: bal = 0.0
             if bal and bal > 0.009:
                 outstanding.append({"reservation_id": r["id"], "guest_name": r["guest_name"], "room": r["room_number"],
                                     "status": r["status"], "check_in": r["check_in_date"], "check_out": r["check_out_date"],
@@ -490,15 +472,11 @@ def tool_get_top_selling_items(args=None):
     try:
         from .db import connect
         rows = connect().execute("""
-            SELECT item_description,
-                   SUM(quantity) AS qty_sold,
-                   SUM((unit_price * quantity) + COALESCE(tax_amount,0)) AS gross,
-                   COUNT(*) AS lines
+            SELECT item_description, SUM(quantity) AS qty_sold,
+                   SUM((unit_price * quantity) + COALESCE(tax_amount,0)) AS gross, COUNT(*) AS lines
             FROM pos_tabs
             WHERE voided_at IS NULL AND date(created_at) >= ? AND date(created_at) <= ?
-            GROUP BY item_description
-            ORDER BY qty_sold DESC, gross DESC
-            LIMIT ?""", (start, end, limit)).fetchall()
+            GROUP BY item_description ORDER BY qty_sold DESC, gross DESC LIMIT ?""", (start, end, limit)).fetchall()
         items = [{"item": r["item_description"], "qty_sold": r["qty_sold"], "gross": round(r["gross"] or 0, 2), "lines": r["lines"]} for r in rows]
         return {"start": start, "end": end, "top_items": items}
     except Exception as e:
@@ -574,11 +552,9 @@ def tool_get_menu_info(args=None):
     try:
         meals = services.list_meals(active_only=False) if hasattr(services, 'list_meals') else []
         out = []
-        for m in (meals or [])[:50]:
-            try:
-                d = dict(m) if not isinstance(m, dict) else m
-            except Exception:
-                d = {"id": m["id"], "name": m.get("name")}
+        for m in (meals or [])[:80]:
+            try: d = dict(m) if not isinstance(m, dict) else m
+            except Exception: d = {"id": getattr(m, 'id', None), "name": m.get("name") if hasattr(m,'get') else str(m)}
             out.append(d)
         return {"meals": out, "count": len(out)}
     except Exception as e:
@@ -610,7 +586,7 @@ def tool_compare_periods(args=None):
             cf = services.report_cash_flow(s,e); out["cash_flow"] = cf if isinstance(cf, dict) else {"text": str(cf)[:800]}
         except Exception as ex: out["cash_error"] = str(ex)
         return out
-    return {"current": snap(start,end), "previous": snap(p1s,p1e), "note": "Compare key metrics (P&L, occupancy, cash flow) across the two periods."}
+    return {"current": snap(start,end), "previous": snap(p1s,p1e)}
 
 def tool_business_partner_briefing(args=None):
     start, end = (args or {}).get("start"), (args or {}).get("end")
@@ -618,7 +594,7 @@ def tool_business_partner_briefing(args=None):
     data = {"start": start, "end": end, "sections": {}}
     insights = {"snapshot": [], "good": [], "watchouts": [], "actions": []}
     try:
-        ps = tool_get_property_stats({})["stats"]
+        ps = tool_get_property_stats({}).get("stats") or {}
         data["sections"]["property_stats"] = ps
         insights["snapshot"].append(f"Guests {ps.get('guests_total',0)}, rooms {ps.get('rooms_total',0)}, reservations {ps.get('reservations_total',0)}, in-house {ps.get('in_house',0)}.")
     except Exception: pass
@@ -638,6 +614,8 @@ def tool_business_partner_briefing(args=None):
             if net < 0: insights["watchouts"].append("Net result is negative for the period — review costs and pricing/mix.")
             elif rev > 0 and net/rev >= 0.2: insights["good"].append("Healthy net margin in the period.")
             if exp > rev and rev > 0: insights["watchouts"].append("Expenses exceed revenue in the period.")
+        elif isinstance(pl, str):
+            insights["snapshot"].append(f"P&L ({start}→{end}) available (text report).")
     except Exception: pass
     try:
         occ = services.get_occupancy_for_window(start,end); data["sections"]["occupancy"] = occ
@@ -671,7 +649,6 @@ def tool_business_partner_briefing(args=None):
         if integ.get("ok"): insights["good"].append("Ledger/data integrity check: OK.")
         else: insights["watchouts"].append("Ledger/data integrity reported issues — review health check before relying on reports.")
     except Exception: pass
-    # actions from watchouts
     for w in insights["watchouts"][:5]:
         if "Outstanding balances" in w: insights["actions"].append("Follow up on unpaid balances (review reservation balances and collect).")
         elif "low/negative" in w: insights["actions"].append("Restock low/negative inventory items and verify recipes/ingredient usage.")
@@ -679,12 +656,10 @@ def tool_business_partner_briefing(args=None):
         elif "negative for the period" in w or "Expenses exceed revenue" in w: insights["actions"].append("Review expense drivers and revenue/pricing mix for the period.")
         elif "Low occupancy" in w: insights["actions"].append("Consider targeted offers or channel adjustments to lift occupancy.")
         elif "integrity reported issues" in w: insights["actions"].append("Run/open Health Check and resolve flagged inconsistencies.")
-    # dedupe actions
     seen=set(); insights["actions"]=[a for a in insights["actions"] if not (a in seen or seen.add(a))]
     if not insights["actions"]: insights["actions"].append("Maintain current performance; monitor occupancy, collections, and stock daily.")
     data["insights"] = insights
     return data
-
 
 TOOLS = {
     "list_capabilities": {"fn": tool_list_capabilities, "description": "List assistant capabilities.", "parameters": {"type":"object","properties":{},"additionalProperties":False}},
@@ -711,7 +686,7 @@ TOOLS = {
     "get_guest_last_visit": {"fn": tool_get_guest_last_visit, "description": "Guest's last visit (most recent Checked Out, else most recent non-deleted).", "parameters": {"type":"object","properties":{"guest_id":{"type":"integer"}},"required":["guest_id"],"additionalProperties":False}},
     "get_guest_top_items_last_visit": {"fn": tool_get_guest_top_items_last_visit, "description": "Most ordered items on guest's last visit (non-voided POS).", "parameters": {"type":"object","properties":{"guest_id":{"type":"integer"},"limit":{"type":"integer"}},"required":["guest_id"],"additionalProperties":False}},
     "get_guest_last_visit_spend": {"fn": tool_get_guest_last_visit_spend, "description": "Guest's last visit with spend/balance and top items.", "parameters": {"type":"object","properties":{"guest_id":{"type":"integer"}},"required":["guest_id"],"additionalProperties":False}},
-    "get_guest_portfolio": {"fn": tool_get_guest_portfolio, "description": "Full guest 360° portfolio: profile, lifetime stats, all trips/stays with folio/charges/paid/due, all POS/activity orders per trip and overall, all payments, invoices, top items.", "parameters": {"type":"object","properties":{"guest_id":{"type":"integer"}}, "required":["guest_id"], "additionalProperties":False}},
+    "get_guest_portfolio": {"fn": tool_get_guest_portfolio, "description": "Full guest 360° portfolio: profile, lifetime stats, all trips/stays with folio/charges/paid/due, all POS/activity orders per trip and overall, all payments, invoices, top items.", "parameters": {"type":"object","properties":{"guest_id":{"type":"integer"}},"required":["guest_id"],"additionalProperties":False}},
     "list_activities": {"fn": tool_list_activities, "description": "List registered guest activities/trips/excursions catalog.", "parameters": {"type":"object","properties":{"active_only":{"type":"boolean"}},"additionalProperties":False}},
     "get_activity_stats": {"fn": tool_get_activity_stats, "description": "Per-activity/trip booking statistics (bookings, qty, revenue) grounded in real bookings.", "parameters": {"type":"object","properties":{"activity_id":{"type":"integer"}},"additionalProperties":False}},
     "list_activity_bookings": {"fn": tool_list_activity_bookings, "description": "List booked/ordered guest activities-trips (POS-linked bookings) with reservation/guest context; filter by guest_id, reservation_id, or activity_id.", "parameters": {"type":"object","properties":{"guest_id":{"type":"integer"},"reservation_id":{"type":"integer"},"activity_id":{"type":"integer"},"limit":{"type":"integer"}},"additionalProperties":False}},
@@ -729,41 +704,688 @@ def execute_tool(name: str, args: dict | None = None) -> dict:
     except Exception as e:
         return {"error": f"Tool '{name}' failed: {e}"}
 
+# ── Friendly formatting & deterministic synthesis (local, no deps) ───────────
+
 def _format_data(title: str, data: Any) -> str:
+    """Fallback: compact structured view (kept for traceability)."""
     try:
         body = json.dumps(data, indent=2, ensure_ascii=False, default=str)
     except Exception:
         body = str(data)
-    if len(body) > 7000:
-        body = body[:7000] + "\n... (truncated)"
+    if len(body) > 6000:
+        body = body[:6000] + "\n... (truncated)"
     return f"{title}\n{body}"
 
-def _fmt_stats_answer(stats: dict, as_of=None):
-    if not stats: return ""
-    lines = [f"Property stats (as of {as_of or _iso(_today())}, real backend):"]
-    if "guests_total" in stats: lines.append(f"- Guests (total): {stats['guests_total']}")
-    if "rooms_total" in stats: lines.append(f"- Rooms (total): {stats['rooms_total']}")
-    if "reservations_total" in stats: lines.append(f"- Reservations (total): {stats['reservations_total']}")
-    if "reservations_by_status" in stats: lines.append(f"- By status: {json.dumps(stats['reservations_by_status'], ensure_ascii=False)}")
-    if "in_house" in stats: lines.append(f"- In-house (Checked In): {stats['in_house']}")
-    if "arrivals_today" in stats: lines.append(f"- Arrivals today: {stats['arrivals_today']}")
-    if "departures_today" in stats: lines.append(f"- Departures today: {stats['departures_today']}")
+def _friendly_open(text: str) -> str:
+    text = (text or "").strip()
+    if not text:
+        return "Sure — here's what I found based on real app data."
+    return text
+
+def _fmt_capabilities(data: dict) -> str:
+    caps = (data or {}).get("capabilities") or []
+    notes = (data or {}).get("notes") or []
+    lines = ["Sure — I’m your grounded manager assistant and business partner (read-only, based on real app data). Here’s what I can help with:"]
+    for c in caps:
+        lines.append(f"- {c}")
+    if notes:
+        lines.append("")
+        for n in notes: lines.append(f"Note: {n}")
+    lines.append("")
+    lines.append("Try asking things like: “business partner briefing for this month”, “who owes money?”, “top selling items last month”, or “show guest #3 full portfolio”.")
+    return "\n".join(lines)
+
+def _fmt_stats(data: dict) -> str:
+    stats = (data or {}).get("stats") or {}
+    as_of = (data or {}).get("as_of") or _iso(_today())
+    if not stats:
+        return "I couldn’t retrieve property stats right now. Want me to try again or check today’s ops?"
+    lines = [f"Sure — here’s your property snapshot (as of {as_of}, from real records):"]
+    if "guests_total" in stats: lines.append(f"- Guests: **{stats['guests_total']}** total")
+    if "rooms_total" in stats: lines.append(f"- Rooms: **{stats['rooms_total']}** total")
+    if "reservations_total" in stats: lines.append(f"- Reservations: **{stats['reservations_total']}** total")
+    by = stats.get("reservations_by_status") or {}
+    if by:
+        parts = [f"{k}: {v}" for k,v in by.items()]
+        lines.append(f"- By status: {', '.join(parts)}")
+    if "in_house" in stats: lines.append(f"- In-house now (Checked In): **{stats['in_house']}**")
+    if "arrivals_today" in stats: lines.append(f"- Arrivals today: **{stats['arrivals_today']}**")
+    if "departures_today" in stats: lines.append(f"- Departures today: **{stats['departures_today']}**")
+    return "\n".join(lines)
+
+def _fmt_today_ops(data: dict) -> str:
+    if data.get("error"):
+        return f"I couldn’t load today’s ops right now ({data.get('error')}). Want to try property stats instead?"
+    date = data.get("date") or _iso(_today())
+    fd = data.get("front_desk") or {}
+    hk = data.get("housekeeping") or {}
+    ops = data.get("daily_ops")
+    lines = [f"Here’s today’s operations snapshot for **{date}** (grounded in real data):"]
+    if fd:
+        lines.append(f"- Front desk: arrivals **{fd.get('arrivals_today',0)}**, departures **{fd.get('departures_today',0)}**, in-house **{fd.get('in_house', fd.get('inhouse', 0))}**, occupancy **{fd.get('occupancy_pct',0)}%**")
+        lines.append(f"- Rooms readiness: clean **{fd.get('clean',0)}**, dirty **{fd.get('dirty',0)}**, maintenance **{fd.get('maint',0)}**")
+    if hk and hk.get("by_status"):
+        parts = [f"{k}: {v}" for k,v in (hk.get("by_status") or {}).items()]
+        lines.append(f"- Housekeeping: {', '.join(parts)} (total {hk.get('total_rooms',0)})")
+    if isinstance(ops, dict):
+        # summarize common keys
+        for k in ("arrivals","departures","in_house","stayovers"):
+            v = ops.get(k)
+            if v is not None and k not in ("",):
+                if isinstance(v, list): lines.append(f"- {k.replace('_',' ').title()}: **{len(v)}**")
+                elif isinstance(v, (int,float,str)): lines.append(f"- {k.replace('_',' ').title()}: **{v}**")
+    elif isinstance(ops, str) and ops.strip():
+        # include concise excerpt
+        excerpt = "\n".join([ln for ln in ops.strip().splitlines() if ln.strip()][:12])
+        lines.append("")
+        lines.append("Ops details:")
+        lines.append(excerpt)
+    if not fd and not hk and not ops:
+        lines.append("- No ops details were returned for today.")
     return "\n".join(lines)
 
 def _fmt_partner_briefing(data: dict) -> str:
     ins = (data or {}).get("insights") or {}
     start, end = data.get("start"), data.get("end")
-    out = [f"Business partner briefing ({start} → {end}) — grounded in real data"]
+    out = [f"Here’s your business partner briefing for **{start} → {end}** (grounded in real data):"]
     if ins.get("snapshot"):
-        out.append("\nSnapshot:"); out += [f"- {x}" for x in ins["snapshot"]]
+        out.append("\n**Snapshot**"); out += [f"- {x}" for x in ins["snapshot"]]
     if ins.get("good"):
-        out.append("\nWhat's going well:"); out += [f"- {x}" for x in ins["good"]]
+        out.append("\n**What’s going well**"); out += [f"- {x}" for x in ins["good"]]
     if ins.get("watchouts"):
-        out.append("\nWatch-outs:"); out += [f"- {x}" for x in ins["watchouts"]]
+        out.append("\n**Watch-outs**"); out += [f"- {x}" for x in ins["watchouts"]]
+    else:
+        out.append("\n**Watch-outs**"); out.append("- None flagged by the current checks — keep monitoring collections, stock, and readiness.")
     if ins.get("actions"):
-        out.append("\nSuggested actions (data-informed):"); out += [f"- {x}" for x in ins["actions"]]
-    out.append("\n(Data trace: property/front-desk stats, P&L, occupancy, AR, inventory alerts, top sellers, ledger integrity for the period.)")
+        out.append("\n**Suggested actions (data-informed)**"); out += [f"- {x}" for x in ins["actions"]]
     return "\n".join(out)
+
+def _fmt_report(data: dict) -> str:
+    if data.get("error"):
+        return f"I couldn’t generate that report ({data.get('error')}). Want to try a different report or date range?"
+    kind = data.get("kind") or "report"
+    report = data.get("report")
+    label = data.get("date") or f"{data.get('start','')} → {data.get('end','')}"
+    title = kind.replace("_"," ").upper()
+    lines = [f"Here’s the **{title}** report for **{label}** (grounded in real records):"]
+    if isinstance(report, dict):
+        # show key metrics first
+        keys_order = ["revenue","total_revenue","net_revenue","expenses","total_expenses","net_profit","net_income","net","cash_in","cash_out","net_cash","vat_collected","vat_paid","net_vat","occupancy_pct","adr","revpar","room_nights","rooms_sold","rooms_available","count","total"]
+        shown = set()
+        metrics = []
+        for k in keys_order:
+            if k in report and isinstance(report[k], (int,float,str)) and not isinstance(report[k], bool):
+                metrics.append((k, report[k])); shown.add(k)
+        if metrics:
+            for k,v in metrics[:12]:
+                name = k.replace('_',' ').title()
+                if isinstance(v,(int,float)) and any(x in k for x in ["revenue","expense","profit","income","net","cash","vat","adr","revpar","total"]):
+                    lines.append(f"- {name}: **{_fmt_money(v)}**")
+                else:
+                    lines.append(f"- {name}: **{v}**")
+        # include other scalar/string fields
+        for k,v in report.items():
+            if k in shown: continue
+            if isinstance(v, (int,float,str)) and not isinstance(v,bool) and len(lines) < 22:
+                lines.append(f"- {k.replace('_',' ').title()}: **{_fmt_money(v) if isinstance(v,(int,float)) and 'pct' not in k and 'count' not in k else v}**")
+            elif isinstance(v, list) and v and len(lines) < 22:
+                lines.append(f"- {k.replace('_',' ').title()}: {len(v)} item(s)")
+        if "text" in report and isinstance(report["text"], str):
+            lines.append("\nDetails:\n" + "\n".join(report["text"].strip().splitlines()[:20]))
+    elif isinstance(report, str):
+        excerpt = "\n".join(report.strip().splitlines()[:25])
+        lines.append(excerpt if excerpt else "- (empty report)")
+    else:
+        lines.append(_format_data("Report data", report))
+    return "\n".join(lines)
+
+def _fmt_occupancy(data: dict) -> str:
+    if data.get("error"):
+        return f"I couldn’t load occupancy ({data.get('error')})."
+    occ = data.get("occupancy") or {}
+    start, end = data.get("start"), data.get("end")
+    if not occ:
+        return f"No occupancy data found for **{start} → {end}**."
+    lines = [f"Occupancy summary for **{start} → {end}** (real data):"]
+    for k,label in [("pct","Occupancy"),("occupancy_pct","Occupancy"),("adr","ADR"),("revpar","RevPAR"),("room_nights","Room nights"),("rooms_sold","Rooms sold"),("rooms_available","Rooms available"),("revenue","Revenue"),("total_revenue","Revenue")]:
+        if k in occ and occ[k] is not None and label+"**" not in "\n".join(lines):
+            v = occ[k]
+            if isinstance(v,(int,float)) and k not in ("room_nights","rooms_sold","rooms_available") and "pct" not in k:
+                lines.append(f"- {label}: **{_fmt_money(v)}**" if "pct" not in k else f"- {label}: **{v}%**")
+            else:
+                lines.append(f"- {label}: **{v}{'%' if 'pct' in k else ''}**")
+    # include any other scalars
+    for k,v in occ.items():
+        if isinstance(v,(int,float,str)) and k not in ("pct","occupancy_pct","adr","revpar","room_nights","rooms_sold","rooms_available","revenue","total_revenue") and len(lines)<18:
+            nm=k.replace('_',' ').title()
+            lines.append(f"- {nm}: **{v}**")
+    return "\n".join(lines)
+
+def _fmt_compare(data: dict) -> str:
+    cur = data.get("current") or {}; prev = data.get("previous") or {}
+    lines = [f"Here’s a grounded comparison: **{cur.get('start','?')} → {cur.get('end','?')}** vs **{prev.get('start','?')} → {prev.get('end','?')}**."]
+    def pl_net(x):
+        pl = x.get("pl") or {}
+        if isinstance(pl, dict):
+            rev = float(pl.get("revenue", pl.get("total_revenue", pl.get("net_revenue", 0))) or 0)
+            exp = float(pl.get("expenses", pl.get("total_expenses", 0)) or 0)
+            net = float(pl.get("net_profit", pl.get("net_income", rev-exp)) or (rev-exp))
+            return rev, exp, net
+        return None
+    cpl, ppl = pl_net(cur), pl_net(prev)
+    if cpl and ppl:
+        lines.append(f"- **P&L:** net {_fmt_money(cpl[2])} (rev {_fmt_money(cpl[0])}, exp {_fmt_money(cpl[1])}) vs {_fmt_money(ppl[2])} previously (Δ {_fmt_money(cpl[2]-ppl[2])}).")
+    cocc = (cur.get("occupancy") or {}); pocc = (prev.get("occupancy") or {})
+    if cocc or pocc:
+        cp = float(cocc.get("pct", cocc.get("occupancy_pct", 0)) or 0); pp = float(pocc.get("pct", pocc.get("occupancy_pct", 0)) or 0)
+        lines.append(f"- **Occupancy:** {cp}% vs {pp}% (Δ {round(cp-pp,2)} pp), ADR {_fmt_money(cocc.get('adr',0))} vs {_fmt_money(pocc.get('adr',0))}, RevPAR {_fmt_money(cocc.get('revpar',0))} vs {_fmt_money(pocc.get('revpar',0))}.")
+    ccf = cur.get("cash_flow"); pcf = prev.get("cash_flow")
+    if ccf or pcf:
+        def nc(cf):
+            if isinstance(cf, dict):
+                for k in ("net_cash","net","cash_net"):
+                    if k in cf: return float(cf.get(k) or 0)
+            return None
+        a,b = nc(ccf), nc(pcf)
+        if a is not None or b is not None:
+            lines.append(f"- **Cash flow (net):** {_fmt_money(a or 0)} vs {_fmt_money(b or 0)}.")
+    if len(lines) == 1:
+        lines.append("- Detailed period data was retrieved; ask for a specific report (P&L, occupancy, or cash flow) if you want the full breakdown.")
+    return "\n".join(lines)
+
+def _fmt_outstanding(data: dict) -> str:
+    if data.get("error"): return f"I couldn’t load outstanding balances ({data.get('error')})."
+    count = int(data.get("count") or 0); total = float(data.get("total_due") or 0)
+    items = data.get("outstanding") or []
+    if count == 0:
+        return "Good news — there are **no outstanding balances** on active/checked-out reservations right now (based on real records)."
+    lines = [f"Here’s who currently owes money (real data): **{count}** reservation(s), **{_fmt_money(total)}** total due."]
+    for r in items[:15]:
+        lines.append(f"- Res #{r.get('reservation_id')} — {r.get('guest_name','Guest')} (room {r.get('room') or '-'}, {r.get('status','')}, {r.get('check_in','')}→{r.get('check_out','')}): **{_fmt_money(r.get('balance_due',0))}** due")
+    if count > 15:
+        lines.append(f"- …and {count-15} more. Ask if you want the full list or the largest balances.")
+    return "\n".join(lines)
+
+def _fmt_inventory_alerts(data: dict) -> str:
+    if data.get("error"): return f"I couldn’t load inventory alerts ({data.get('error')})."
+    a = (data or {}).get("alerts") or {}
+    neg = a.get("negative") or []; low = a.get("low") or []; over = a.get("overstock") or []
+    if not neg and not low and not over:
+        return "Inventory looks healthy — **no low, negative, or overstock alerts** right now (real data)."
+    lines = ["Here are the current inventory alerts (real data):"]
+    if neg:
+        lines.append(f"- **Negative stock ({len(neg)}):** " + ", ".join([f"{i.get('item_name')} (#{i.get('id')}, qty {i.get('stock_qty')})" for i in neg[:8]]))
+    if low:
+        lines.append(f"- **Low stock ({len(low)}):** " + ", ".join([f"{i.get('item_name')} (#{i.get('id')}, qty {i.get('stock_qty')}, thr {i.get('threshold')})" for i in low[:8]]))
+    if over:
+        lines.append(f"- **Overstock ({len(over)}):** " + ", ".join([f"{i.get('item_name')} (#{i.get('id')}, qty {i.get('stock_qty')}, thr {i.get('threshold')})" for i in over[:8]]))
+    return "\n".join(lines)
+
+def _fmt_top_sellers(data: dict) -> str:
+    if data.get("error"): return f"I couldn’t load top sellers ({data.get('error')})."
+    items = data.get("top_items") or []
+    start, end = data.get("start"), data.get("end")
+    if not items:
+        return f"No non-voided POS sales found for **{start} → {end}**. Want to try a different period?"
+    lines = [f"Top selling items for **{start} → {end}** (grounded in POS data):"]
+    for i,it in enumerate(items[:10],1):
+        lines.append(f"{i}. **{it.get('item')}** — {it.get('qty_sold')} sold, {_fmt_money(it.get('gross',0))} gross ({it.get('lines',0)} lines)")
+    return "\n".join(lines)
+
+def _fmt_expenses(data: dict) -> str:
+    if data.get("error"): return f"I couldn’t load expenses ({data.get('error')})."
+    cats = data.get("by_category") or []; total = float(data.get("total") or 0)
+    start, end = data.get("start"), data.get("end")
+    if not cats:
+        return f"No expenses recorded for **{start} → {end}**."
+    lines = [f"Expenses summary for **{start} → {end}** (real data): **{_fmt_money(total)}** total."]
+    for c in cats[:12]:
+        lines.append(f"- {c.get('category')}: **{_fmt_money(c.get('total',0))}** (net {_fmt_money(c.get('net',0))}, VAT {_fmt_money(c.get('vat',0))}, {c.get('count',0)} entries)")
+    if len(cats) > 12: lines.append(f"- …and {len(cats)-12} more categories.")
+    return "\n".join(lines)
+
+def _fmt_sales_breakdown(data: dict) -> str:
+    if data.get("error"): return f"I couldn’t load sales breakdown ({data.get('error')})."
+    start,end = data.get("start"), data.get("end")
+    lines = [f"Sales & collections breakdown for **{start} → {end}** (real data):"]
+    pos = data.get("pos_by_item") or []
+    if pos:
+        lines.append("**POS by item (top):**")
+        for i in pos[:10]: lines.append(f"- {i.get('item')}: {i.get('qty')} sold, {_fmt_money(i.get('gross',0))} gross")
+    pays = data.get("payments_by_method") or []
+    if pays:
+        lines.append("**Payments by method:**")
+        for p in pays: lines.append(f"- {p.get('method')}: {_fmt_money(p.get('total',0))} ({p.get('count',0)} txns)")
+    src = data.get("reservations_by_source") or []
+    if src:
+        lines.append("**Reservations by source:** " + ", ".join([f"{s.get('source')}: {s.get('count')}" for s in src[:8]]))
+    if len(lines) == 1: lines.append("- No sales/payment/source data found for this period.")
+    return "\n".join(lines)
+
+def _fmt_pipeline(data: dict) -> str:
+    if data.get("error"): return f"I couldn’t load the reservation pipeline ({data.get('error')})."
+    by = data.get("by_status") or {}
+    upcoming = data.get("upcoming_arrivals_7d") or []
+    lines = ["Reservation pipeline (real data):"]
+    if by:
+        lines.append("- **By status:** " + ", ".join([f"{k}: {v}" for k,v in by.items()]))
+    if upcoming:
+        lines.append(f"- **Upcoming arrivals (next 7 days): {len(upcoming)}**")
+        for r in upcoming[:10]: lines.append(f"  - Res #{r.get('id')} {r.get('guest_name','')} — room {r.get('room_number') or '-'}, {r.get('check_in_date')}→{r.get('check_out_date')} ({r.get('status')})")
+        if len(upcoming)>10: lines.append(f"  - …and {len(upcoming)-10} more.")
+    else:
+        lines.append("- No upcoming arrivals in the next 7 days.")
+    return "\n".join(lines)
+
+def _fmt_housekeeping(data: dict) -> str:
+    if data.get("error"): return f"I couldn’t load housekeeping summary ({data.get('error')})."
+    s = data.get("summary") or {}
+    by = s.get("by_status") or {}
+    total = s.get("total_rooms", sum(by.values()) if by else 0)
+    if not by:
+        return "No housekeeping data available right now."
+    parts = [f"{k}: **{v}**" for k,v in by.items()]
+    return f"Housekeeping status (real data, {total} rooms): " + ", ".join(parts) + "."
+
+def _fmt_availability(data: dict) -> str:
+    if data.get("error"): return f"I couldn’t check availability ({data.get('error')})."
+    start,end = data.get("start"), data.get("end")
+    rooms = data.get("rooms") or []; count = data.get("available_count", len(rooms))
+    if count == 0:
+        return f"No rooms are available for **{start} → {end}** (based on real availability). Want to try different dates?"
+    lines = [f"Room availability for **{start} → {end}**: **{count}** room(s) available."]
+    for r in rooms[:15]:
+        lines.append(f"- {r.get('room_number')} ({r.get('room_type','')}) — base {_fmt_money(r.get('base_price',0))}, housekeeping: {r.get('housekeeping_status','')}")
+    if count > 15: lines.append(f"- …and {count-15} more.")
+    return "\n".join(lines)
+
+def _fmt_menu(data: dict) -> str:
+    if data.get("error"): return f"I couldn’t load the menu ({data.get('error')})."
+    meals = data.get("meals") or []
+    if not meals: return "No meals/menu items are registered yet."
+    lines = [f"Menu / meals (real data, {data.get('count', len(meals))} items):"]
+    for m in meals[:20]:
+        name = m.get("name") or m.get("item_name") or f"Meal #{m.get('id')}"
+        price = m.get("selling_price", m.get("price"))
+        active = m.get("active")
+        extra = f" — {_fmt_money(price)}" if price is not None else ""
+        if active is not None: extra += f" ({'active' if active else 'inactive'})"
+        desc = _short(m.get("description") or "", 80)
+        lines.append(f"- **{name}**{extra}" + (f": {desc}" if desc else ""))
+    if len(meals)>20: lines.append(f"- …and {len(meals)-20} more.")
+    return "\n".join(lines)
+
+def _fmt_rate_plans(data: dict) -> str:
+    if data.get("error"): return f"I couldn’t load rate plans ({data.get('error')})."
+    plans = data.get("rate_plans") or []
+    if not plans: return "No rate plans found."
+    lines = [f"Rate plans (real data, {len(plans)}):"]
+    for p in plans[:30]:
+        name = p.get("name") or f"Plan #{p.get('id')}"
+        mod = p.get("price_modifier", p.get("modifier", 0))
+        used = p.get("reservations_using_plan")
+        used_s = f", used by {used} reservation(s)" if used is not None else ""
+        lines.append(f"- **{name}** (#{p.get('id')}): modifier {mod}{used_s}")
+    return "\n".join(lines)
+
+def _fmt_integrity(data: dict) -> str:
+    if data.get("error"): return f"I couldn’t run the integrity check ({data.get('error')})."
+    ok = data.get("ok")
+    if ok: return "Ledger/data integrity check: **OK** — no issues reported by the current checks (real data)."
+    # show issues summary
+    issues = data.get("issues") or data.get("errors") or data.get("problems")
+    lines = ["Ledger/data integrity check: **issues found** (real data)."]
+    if isinstance(issues, list) and issues:
+        for it in issues[:12]: lines.append(f"- {it}")
+    elif issues:
+        lines.append(f"- {issues}")
+    else:
+        # dump keys hints
+        for k,v in data.items():
+            if k=="ok": continue
+            if v and isinstance(v,(list,dict,str)) and len(lines)<12:
+                lines.append(f"- {k}: {_short(json.dumps(v, ensure_ascii=False, default=str) if not isinstance(v,str) else v, 140)}")
+    lines.append("I recommend opening the Health Check in the app to review and resolve these before relying on reports.")
+    return "\n".join(lines)
+
+def _fmt_recent_activity(data: dict) -> str:
+    if data.get("error"): return f"I couldn’t load recent activity ({data.get('error')})."
+    rows = data.get("recent_audit") or []
+    if not rows: return "No recent audit/activity entries found."
+    lines = [f"Recent activity (latest {len(rows)} audit entries, real data):"]
+    for r in rows[:20]:
+        when = r.get("at") or r.get("created_at") or ""
+        action = r.get("action") or r.get("event") or r.get("type") or ""
+        detail = r.get("detail") or r.get("description") or r.get("entity") or ""
+        who = r.get("user") or r.get("actor") or ""
+        parts = [p for p in [str(when).strip(), str(action).strip(), str(detail).strip(), str(who).strip()] if p]
+        lines.append("- " + " | ".join(parts) if parts else f"- { _short(json.dumps(r, ensure_ascii=False, default=str), 160)}")
+    if len(rows)>20: lines.append(f"- …and {len(rows)-20} more.")
+    return "\n".join(lines)
+
+def _fmt_activities_catalog(data: dict) -> str:
+    if data.get("error"): return f"I couldn’t load activities ({data.get('error')})."
+    items = data.get("activities") or []
+    if not items: return "No activities/trips are registered yet. You can register them in **POS / Inventory → Activities / Trips**."
+    lines = [f"Registered activities/trips catalog (real data, {data.get('count', len(items))}):"]
+    for a in items[:25]:
+        status = "active" if a.get("active") else "inactive"
+        lines.append(f"- **{a.get('name')}** (#{a.get('id')}, {a.get('category','Trip')}, {_fmt_money(a.get('unit_price',0))}, {status})" + (f": {_short(a.get('description',''),80)}" if a.get('description') else ""))
+    if len(items)>25: lines.append(f"- …and {len(items)-25} more.")
+    lines.append("\nBookings for these activities are posted to the reservation folio and invoice (like POS).")
+    return "\n".join(lines)
+
+def _fmt_activity_stats(data: dict) -> str:
+    if data.get("error"): return f"I couldn’t load activity stats ({data.get('error')})."
+    stats = data.get("activity_stats") or []
+    if not stats: return "No activity/trip statistics available yet."
+    lines = ["Activity/trip booking statistics (grounded in real bookings):"]
+    for s in stats[:20]:
+        lines.append(f"- **{s.get('activity_name')}** (#{s.get('activity_id')}, {s.get('category','')}): {s.get('bookings',0)} booking(s), qty {s.get('total_qty',0)}, revenue {_fmt_money(s.get('gross_revenue',0))}" + (f" — last booked {s.get('last_booked')}" if s.get('last_booked') else ""))
+    if len(stats)>20: lines.append(f"- …and {len(stats)-20} more.")
+    return "\n".join(lines)
+
+def _fmt_activity_bookings(data: dict) -> str:
+    if data.get("error"): return f"I couldn’t load activity bookings ({data.get('error')})."
+    bookings = data.get("bookings") or []
+    if not bookings: return "No booked activities/trips found for the selected filter (real data)."
+    lines = [f"Booked activities/trips ({data.get('count', len(bookings))} found, grounded in real bookings):"]
+    for b in bookings[:20]:
+        who = b.get("guest_name") or (f"guest #{b.get('guest_id')}" if b.get("guest_id") else "guest")
+        lines.append(f"- **{b.get('activity_name') or b.get('item_description')}** x{b.get('quantity',1)} ({_fmt_money(b.get('unit_price',0))} each) — Res #{b.get('reservation_id')} {who}, room {b.get('room_number') or '-'}, {b.get('check_in_date','')}→{b.get('check_out_date','')} (booked {b.get('created_at','')})")
+    if len(bookings)>20: lines.append(f"- …and {len(bookings)-20} more.")
+    return "\n".join(lines)
+
+def _fmt_reservation(data: dict) -> str:
+    if data.get("error"): return f"I couldn’t load the reservation ({data.get('error')})."
+    rid = data.get("reservation_id") or data.get("id")
+    # get_guest_balance shape
+    if "breakdown" in data or ("balance" in data and "reservation_id" in data):
+        bd = data.get("breakdown") or {}
+        bal = data.get("balance", bd.get("balance_due", 0))
+        lines = [f"Reservation #{rid} — balance (real data):"]
+        lines.append(f"- **Balance due:** {_fmt_money(bal)}")
+        if bd:
+            for k,label in [("total_charges","Total charges"),("accommodation_gross","Accommodation"),("pos_gross","POS/activities"),("total_paid","Total paid")]:
+                if bd.get(k) is not None: lines.append(f"- {label}: {_fmt_money(bd.get(k))}")
+        return "\n".join(lines)
+    # summary shape
+    lines = [f"Reservation #{rid} (real data):"]
+    for k,label in [("guest_name","Guest"),("guest_id","Guest ID"),("status","Status"),("room_number","Room"),("room_type","Room type"),("check_in_date","Check-in"),("check_out_date","Check-out"),("nights","Nights"),("source","Source"),("rate_plan","Rate plan")]:
+        if data.get(k) is not None: lines.append(f"- {label}: {data.get(k)}")
+    for k,label in [("agreed_nightly_rate","Nightly rate"),("tax_amount","Tax")]:
+        if data.get(k) is not None: lines.append(f"- {label}: {_fmt_money(data.get(k))}")
+    bal = data.get("balance") or data.get("balance_due")
+    if bal is not None: lines.append(f"- **Balance due:** {_fmt_money(bal)}")
+    if data.get("pos_count") is not None: lines.append(f"- POS/activity items: {data.get('pos_count')}")
+    if data.get("notes"): lines.append(f"- Notes: {_short(data.get('notes'), 140)}")
+    return "\n".join(lines)
+
+def _fmt_guest_search(data: dict) -> str:
+    if data.get("error"): return f"I couldn’t search guests ({data.get('error')})."
+    q = data.get("query") or ""; guests = data.get("guests") or []
+    if not guests:
+        return f"I couldn’t find any guests matching “{q}” in the real records. Try a different name/phone/email fragment or a guest ID."
+    lines = [f"I found **{len(guests)}** guest match(es) for “{q}” (real data):"]
+    for g in guests[:10]:
+        name = g.get("name") or g.get("canonical_name") or "Guest"
+        lines.append(f"- #{g.get('id')} **{name}** — phone: {g.get('phone') or '-'}, email: {g.get('email') or '-'}, stays: {g.get('stays', g.get('reservation_count', 0))}, last stay: {g.get('last_stay') or '-'}")
+    if len(guests)>10: lines.append(f"- …and {len(guests)-10} more.")
+    lines.append("Tell me the guest ID (e.g. `guest #12`) if you want their full portfolio, last visit, or bookings.")
+    return "\n".join(lines)
+
+def _fmt_guest_profile(data: dict) -> str:
+    if data.get("error"): return f"I couldn’t load that guest profile ({data.get('error')})."
+    g = data.get("guest") or {}
+    if not g and data.get("id"): g = data
+    gid = g.get("id") or g.get("guest_id")
+    name = g.get("name") or g.get("canonical_name") or f"Guest #{gid}"
+    lines = [f"Here’s the profile for **{name}** (#{gid}, real data):"]
+    lines.append(f"- Phone: {g.get('phone') or '-'} | Email: {g.get('email') or '-'}")
+    if g.get("notes"): lines.append(f"- Notes: {_short(g.get('notes'), 160)}")
+    recents = data.get("recent_reservations") or data.get("reservations") or []
+    if recents:
+        lines.append(f"- Recent reservations ({min(len(recents),5)} shown):")
+        for r in recents[:5]:
+            lines.append(f"  - Res #{r.get('id')} room {r.get('room_number') or r.get('room_id') or '-'} {r.get('check_in_date','')}→{r.get('check_out_date','')} ({r.get('status','')})")
+    else:
+        lines.append("- No reservations on file.")
+    return "\n".join(lines)
+
+def _fmt_guest_last_visit(data: dict) -> str:
+    if data.get("error"): return f"I couldn’t load the last visit ({data.get('error')})."
+    if not data.get("found") and not data.get("last_visit"):
+        gid = data.get("guest_id") or "this guest"
+        return f"I couldn’t find a last visit for guest #{gid} in the real records (no eligible reservations)."
+    lv = data.get("last_visit") or data
+    gid = data.get("guest_id") or lv.get("guest_id")
+    basis = data.get("basis") or ("most recent Checked Out stay" if lv.get("status") == "Checked Out" else "most recent non-deleted reservation")
+    lines = [f"Last visit for guest #{gid} (based on {basis}, real data):"]
+    rid = lv.get("reservation_id") or lv.get("id")
+    if rid: lines.append(f"- Reservation: #{rid} ({lv.get('status','')})")
+    if lv.get("room_number") or lv.get("room_id"): lines.append(f"- Room: {lv.get('room_number') or lv.get('room_id')} {('('+lv.get('room_type')+')') if lv.get('room_type') else ''}".strip())
+    if lv.get("check_in_date") or lv.get("check_out_date"): lines.append(f"- Dates: {lv.get('check_in_date','')} → {lv.get('check_out_date','')}" + (f" ({lv.get('nights')} nights)" if lv.get('nights') else ""))
+    if lv.get("agreed_nightly_rate") is not None: lines.append(f"- Nightly rate: {_fmt_money(lv.get('agreed_nightly_rate'))}")
+    if lv.get("source"): lines.append(f"- Source: {lv.get('source')}")
+    return "\n".join(lines)
+
+def _fmt_guest_top_items(data: dict) -> str:
+    if data.get("error"): return f"I couldn’t load top ordered items ({data.get('error')})."
+    gid = data.get("guest_id")
+    if not data.get("found") and not data.get("items"):
+        rid = (data.get("last_visit") or {}).get("reservation_id") or (data.get("last_visit") or {}).get("id")
+        if rid: return f"Guest #{gid}’s last visit (Res #{rid}) has no non-voided POS/activity orders recorded."
+        return f"I couldn’t determine last-visit orders for guest #{gid} (no eligible last visit found)."
+    lv = data.get("last_visit") or {}
+    items = data.get("items") or []
+    rid = lv.get("reservation_id") or lv.get("id")
+    lines = [f"Most ordered items on guest #{gid}’s last visit (Res #{rid}, real POS data):"]
+    if not items:
+        lines.append("- No non-voided items/orders recorded for that stay.")
+    else:
+        for i,it in enumerate(items[:10],1):
+            lines.append(f"{i}. **{it.get('item_description') or it.get('item')}** — qty {it.get('total_qty', it.get('qty', it.get('quantity',0)))}" + (f", spend {_fmt_money(it.get('gross_spend', it.get('gross',0)))}" if it.get('gross_spend') is not None or it.get('gross') is not None else ""))
+    return "\n".join(lines)
+
+def _fmt_guest_last_visit_spend(data: dict) -> str:
+    if data.get("error"): return f"I couldn’t load last-visit spend ({data.get('error')})."
+    gid = data.get("guest_id")
+    lv = data.get("last_visit") or {}
+    rid = lv.get("reservation_id") or lv.get("id")
+    lines = [f"Last visit spend for guest #{gid} (real data):"]
+    if rid: lines.append(f"- Stay: Res #{rid} {lv.get('check_in_date','')}→{lv.get('check_out_date','')} ({lv.get('status','')}) room {lv.get('room_number') or '-'}")
+    bd = data.get("balance_breakdown") or {}
+    if bd:
+        for k,label in [("total_charges","Total charges"),("accommodation_gross","Accommodation"),("pos_gross","POS/activities"),("total_paid","Total paid"),("balance_due","Balance due")]:
+            if bd.get(k) is not None:
+                prefix = "**" if k=="balance_due" else ""
+                lines.append(f"- {label}: {prefix}{_fmt_money(bd.get(k))}{prefix}")
+    elif data.get("spend") is not None:
+        lines.append(f"- Spend/balance: {_fmt_money(data.get('spend'))}")
+    items = data.get("top_items") or []
+    if items:
+        lines.append("- Top items on that stay: " + ", ".join([f"{it.get('item_description') or it.get('item')} (x{it.get('total_qty', it.get('qty',0))})" for it in items[:5]]))
+    return "\n".join(lines)
+
+def _fmt_guest_portfolio(data: dict) -> str:
+    if data.get("error"): return f"I couldn’t load the guest portfolio ({data.get('error')})."
+    g = data.get("guest") or {}; s = data.get("stats") or {}
+    gid = g.get("id") or g.get("guest_id"); name = g.get("name") or g.get("canonical_name") or f"Guest #{gid}"
+    lines = [f"Guest portfolio (360°) for **{name}** (#{gid}) — grounded in real data:"]
+    lines.append(f"- Contact: phone {g.get('phone') or '-'}, email {g.get('email') or '-'}")
+    lines.append(f"- Stays: **{s.get('stays_total',0)}** total ({s.get('completed_stays',0)} completed, {s.get('total_nights',0)} nights) | first: {s.get('first_visit') or '-'} | last: {s.get('last_visit') or '-'} | favorite room: {s.get('favorite_room') or '-'}")
+    lines.append(f"- Financials: charged **{_fmt_money(s.get('total_charges',0))}**, paid **{_fmt_money(s.get('total_paid',0))}**, outstanding **{_fmt_money(s.get('total_outstanding',0))}**, POS/activities **{_fmt_money(s.get('pos_gross_total',0))}**")
+    trips = data.get("trips") or []
+    if trips:
+        lines.append(f"\n**Trips / reservations ({len(trips)}):**")
+        for t in trips[:8]:
+            bd = t.get("balance") or {}
+            invc = t.get("invoice_files") or t.get("invoices") or []
+            invn = len(invc) if isinstance(invc, list) else 0
+            lines.append(f"- Res #{t.get('id')} room {t.get('room_number') or '-'} {t.get('check_in_date','')}→{t.get('check_out_date','')} ({t.get('status','')}): charges {_fmt_money(bd.get('total_charges',0))}, paid {_fmt_money(bd.get('total_paid',0))}, due {_fmt_money(bd.get('balance_due',0))}, POS items {t.get('pos_active_count', t.get('pos_count',0))}, invoices {invn}")
+        if len(trips)>8: lines.append(f"- …and {len(trips)-8} more stays (open the guest portfolio in the app for full per-stay detail).")
+    else:
+        lines.append("- No trips/reservations on file.")
+    top = data.get("top_items_overall") or []
+    if top:
+        lines.append("**Top items overall:** " + ", ".join([f"{i.get('item')} ({_fmt_money(i.get('gross',0))})" for i in top[:6]]))
+    posn = data.get("all_pos_count", 0); payn = data.get("all_payments_count", 0)
+    lines.append(f"\nTotals on record: {posn} POS/activity line(s), {payn} payment(s). All figures above are from real backend data.")
+    return "\n".join(lines)
+
+def _fmt_decision_support(data: dict) -> str:
+    if data.get("error"): return f"I couldn’t load decision support ({data.get('error')})."
+    start,end = data.get("start"), data.get("end")
+    lines = [f"Decision support for **{start} → {end}** (grounded in real data):"]
+    ds = data.get("decision_support")
+    fs = data.get("financial_summary")
+    if isinstance(ds, dict):
+        # highlights
+        for k in ("kpis","signals","strengths","risks","recommendations","summary"):
+            v = ds.get(k)
+            if v is None: continue
+            if isinstance(v, list) and v:
+                lines.append(f"**{k.replace('_',' ').title()}:**")
+                for it in v[:8]: lines.append(f"- {it if isinstance(it,str) else _short(json.dumps(it,ensure_ascii=False,default=str),140)}")
+            elif isinstance(v, dict) and v:
+                lines.append(f"**{k.replace('_',' ').title()}:**")
+                for kk,vv in list(v.items())[:8]: lines.append(f"- {kk}: {vv}")
+            elif isinstance(v, str) and v.strip():
+                lines.append(f"- {k.replace('_',' ').title()}: {v.strip()}")
+        # scalar kpis
+        for k,v in ds.items():
+            if k in ("kpis","signals","strengths","risks","recommendations","summary"): continue
+            if isinstance(v,(int,float,str)) and len(lines)<22:
+                lines.append(f"- {k.replace('_',' ').title()}: **{_fmt_money(v) if isinstance(v,(int,float)) and 'pct' not in k else v}**")
+    elif isinstance(ds, str) and ds.strip():
+        lines.append("\n".join(ds.strip().splitlines()[:20]))
+    if isinstance(fs, dict) and fs:
+        lines.append("**Financial summary:**")
+        for k,v in list(fs.items())[:10]:
+            if isinstance(v,(int,float,str)):
+                lines.append(f"- {k.replace('_',' ').title()}: **{_fmt_money(v) if isinstance(v,(int,float)) and 'pct' not in k else v}**")
+    if len(lines)==1: lines.append(_format_data("Decision support data", data))
+    return "\n".join(lines)
+
+def _proactive_suggestions(intent: str, data: dict, answer_text: str = "") -> list[str]:
+    sug = []
+    try:
+        if intent == "outstanding_balances":
+            if (data or {}).get("count",0) > 0: sug.append("Want the full list sorted by largest balance, or a specific reservation’s folio?")
+            sug.append("I can also run a business partner briefing for this month.")
+        elif intent == "inventory_alerts":
+            a = (data or {}).get("alerts") or {}
+            if (a.get("low") or a.get("negative")): sug.append("Want to see top-selling items to prioritize what to restock?")
+        elif intent == "property_stats":
+            sug.append("Ask for “today’s ops” or “business partner briefing for this month” for more detail.")
+        elif intent == "today_ops":
+            sug.append("Want housekeeping details, today’s arrivals/departures list, or who owes money?")
+        elif intent in ("report_pl","report_cash_flow","report_vat","report_payment_methods","report_occupancy","occupancy_summary"):
+            sug.append("I can compare this period to the previous one if you’d like.")
+        elif intent == "compare_periods":
+            sug.append("Want a business partner briefing or a deeper P&L/cash-flow breakdown for the current period?")
+        elif intent in ("guest_profile","guest_last_visit","guest_top_items_last_visit","guest_last_visit_spend"):
+            gid = (data or {}).get("guest_id") or (((data or {}).get("guest") or {}).get("id"))
+            if gid: sug.append(f"Want the full 360° portfolio for guest #{gid} (all stays, POS, payments, invoices)?")
+            sug.append("I can also show their booked activities/trips.")
+        elif intent == "guest_portfolio":
+            gid = ((data or {}).get("guest") or {}).get("id") or (data or {}).get("guest_id")
+            outst = (((data or {}).get("stats") or {}).get("total_outstanding") or 0)
+            if outst and outst > 0: sug.append("This guest has an outstanding balance — want details on which reservation is due?")
+            if gid: sug.append(f"Want to see booked activities/trips for guest #{gid}?")
+        elif intent == "guest_search":
+            if (data or {}).get("guests"): sug.append("Tell me the guest ID to open their full portfolio or last visit.")
+        elif intent == "reservation_summary":
+            rid = (data or {}).get("reservation_id") or (data or {}).get("id")
+            bal = (data or {}).get("balance_due") or (data or {}).get("balance")
+            if bal and float(bal) > 0: sug.append(f"Reservation #{rid} has a balance due — want the folio breakdown?")
+        elif intent == "reservation_balance":
+            sug.append("Want the full reservation summary as well?")
+        elif intent == "top_selling_items":
+            sug.append("Want to check inventory alerts to make sure top sellers are stocked?")
+        elif intent == "list_activities":
+            sug.append("Want activity/trip booking statistics or bookings for a specific guest?")
+        elif intent == "activity_stats":
+            sug.append("Ask for bookings of a specific activity or a guest’s booked activities.")
+        elif intent == "business_partner_briefing":
+            sug.append("Want me to drill into any watch-out (AR, inventory, occupancy, or expenses)?")
+        elif intent == "housekeeping_summary":
+            sug.append("Want today’s ops snapshot or arrivals to prioritize readiness?")
+        elif intent == "capabilities_help":
+            sug.append("Ask me anything above — I’ll answer from real app data.")
+    except Exception:
+        pass
+    # dedupe, keep max 2
+    out=[]; seen=set()
+    for s in sug:
+        if s in seen: continue
+        seen.add(s); out.append(s)
+    return out[:2]
+
+def _apply_proactive(intent: str, data: dict, answer: str) -> str:
+    sugg = _proactive_suggestions(intent, data or {}, answer)
+    if not sugg: return answer
+    if "Want " in answer or "want " in answer.splitlines()[-1].lower():
+        # avoid overdoing
+        return answer
+    return answer.rstrip() + "\n\n" + " ".join(sugg)
+
+def _format_for_intent(intent: str, data: dict, fallback_title: str = "Result") -> str:
+    try:
+        if intent == "capabilities_help": return _fmt_capabilities(data)
+        if intent == "property_stats": return _fmt_stats(data)
+        if intent == "today_ops": return _fmt_today_ops(data)
+        if intent == "business_partner_briefing": return _fmt_partner_briefing(data)
+        if intent in ("report_pl","report_cash_flow","report_vat","report_payment_methods","report_occupancy","report_daily_ops"): return _fmt_report(data)
+        if intent == "occupancy_summary": return _fmt_occupancy(data)
+        if intent == "decision_support": return _fmt_decision_support(data)
+        if intent == "compare_periods": return _fmt_compare(data)
+        if intent == "outstanding_balances": return _fmt_outstanding(data)
+        if intent == "inventory_alerts": return _fmt_inventory_alerts(data)
+        if intent == "top_selling_items": return _fmt_top_sellers(data)
+        if intent == "expenses_summary": return _fmt_expenses(data)
+        if intent == "sales_breakdown": return _fmt_sales_breakdown(data)
+        if intent == "reservation_pipeline": return _fmt_pipeline(data)
+        if intent == "housekeeping_summary": return _fmt_housekeeping(data)
+        if intent == "room_availability": return _fmt_availability(data)
+        if intent == "menu_info": return _fmt_menu(data)
+        if intent == "rate_plans": return _fmt_rate_plans(data)
+        if intent == "ledger_integrity": return _fmt_integrity(data)
+        if intent == "recent_activity": return _fmt_recent_activity(data)
+        if intent == "list_activities": return _fmt_activities_catalog(data)
+        if intent == "activity_stats": return _fmt_activity_stats(data)
+        if intent == "guest_activity_bookings": return _fmt_activity_bookings(data)
+        if intent in ("reservation_summary","reservation_balance"): return _fmt_reservation(data)
+        if intent == "guest_search": return _fmt_guest_search(data)
+        if intent == "guest_profile": return _fmt_guest_profile(data)
+        if intent == "guest_portfolio": return _fmt_guest_portfolio(data)
+        if intent == "guest_last_visit": return _fmt_guest_last_visit(data)
+        if intent == "guest_top_items_last_visit": return _fmt_guest_top_items(data)
+        if intent == "guest_last_visit_spend": return _fmt_guest_last_visit_spend(data)
+    except Exception:
+        pass
+    return _format_data(fallback_title, data)
+
+# Deterministic local "talking" rephraser (no model, no external calls)
+def _local_talking_rephrase(message: str, core_result: dict) -> str:
+    """Produce a friendly, grounded natural reply from core result (pure local, deterministic)."""
+    intent = (core_result or {}).get("intent") or ""
+    data = core_result.get("data") or {}
+    core_answer = (core_result.get("core_answer") or core_result.get("answer") or "").strip()
+    if core_result.get("needs_clarification") or intent == "ambiguous_needs_clarification":
+        # make clarification warm
+        if core_answer:
+            ans = core_answer
+            if not ans.lower().startswith(("sure","of course","i can help","happy to")):
+                ans = "Sure — " + ans[0].lower() + ans[1:] if len(ans)>1 else "Sure — " + ans
+            return ans
+    # Prefer well-formatted core answer (we now generate friendly ones); lightly frame if very terse
+    if core_answer:
+        ans = core_answer
+        # avoid double-wrapping
+        return ans
+    # fallback: format from data
+    return _format_for_intent(intent, data if isinstance(data, dict) else {}, fallback_title="Result")
 
 # ── Feedback & exemplar memory ───────────────────────────────────────────────
 def _ensure_nlu_dirs():
@@ -855,8 +1477,8 @@ def exemplar_match(text: str, threshold: float = 0.70):
         return {"intent":best["label"],"confidence":min(0.96,0.55+best_score*0.45),"slots":best.get("slots") or {},"source":"exemplar_similar","score":best_score}
     return None
 
-# ── ML routers (optional, no-dep to run without) ─────────────────────────────
-_SKLEARN_CACHE = None; _SETFIT_CACHE = None
+# ── ML routers (optional, local/no external API) ─────────────────────────────
+_SKLEARN_CACHE = None; _SETFIT_CACHE = None; _LOCAL_LLM_CACHE = None
 def _load_sklearn_router():
     global _SKLEARN_CACHE
     if _SKLEARN_CACHE is not None: return _SKLEARN_CACHE
@@ -911,38 +1533,38 @@ def _predict_intent_ml(text: str):
             except Exception: pass
     return None
 
-
 # ── Weighted rule NLU (no deps) ──────────────────────────────────────────────
 
 def _has_any(tl, keys): return any(k in tl for k in keys)
 
 _INTENT_CUES = {
+  "greeting_smalltalk": (1.1, ["hi","hello","hey","good morning","good afternoon","good evening","thanks","thank you","thx","how are you","who are you","what's up","whats up"]),
   "capabilities_help": (1.5, ["what can you do","how can you help","capabilities","your abilities","menu of queries","what tools","how do i phrase","boundaries","assist day to day"]),
   "property_stats": (1.4, ["how many guests","number of guests","total guests","guest count","guests do i have","guests do we have","how many customers","how many reservations","number of reservations","total reservations","reservation count","how many rooms","number of rooms","total rooms","how many bookings","quick stats","property stats","overall stats"]),
-  "today_ops": (1.4, ["today's ops","todays ops","ops today","today snapshot","morning briefing","what's happening today","whats happening today","arrivals today","departures today","in-house now","in house now"]),
+  "today_ops": (1.4, ["today's ops","todays ops","ops today","today snapshot","morning briefing","what's happening today","whats happening today","arrivals today","departures today","in-house now","in house now","front desk today"]),
   "business_partner_briefing": (1.5, ["business partner","partner briefing","business briefing","executive briefing","how is the business","how's the business","hows the business","advise me","what should i focus on","priorities for me","recommendations","opportunities and risks","partner view"]),
   "decision_support": (1.3, ["decision support","kpi","how are we doing","manager's overview","manager’s overview","executive snapshot","signals","warning signs","strengths and risks","actionable insights","briefing me","performance indicators"]),
-  "compare_periods": (1.4, ["compare","vs last","versus last","this month vs","compared to last","trend vs","previous period"]),
-  "outstanding_balances": (1.4, ["who owes","outstanding balance","outstanding balances","unpaid","who hasn't paid","who hasnt paid","amount due overall","receivables","money owed","collectables","overdue"]),
+  "compare_periods": (1.4, ["compare","vs last","versus last","this month vs","compared to last","trend vs","previous period","month over month"]),
+  "outstanding_balances": (1.4, ["who owes","outstanding balance","outstanding balances","unpaid","who hasn't paid","who hasnt paid","amount due overall","receivables","money owed","collectables","overdue","accounts receivable"]),
   "inventory_alerts": (1.4, ["low stock","running low","out of stock","negative stock","overstock","inventory alert","inventory alerts","restock","stock warnings","what's low","whats low"]),
   "top_selling_items": (1.4, ["top selling","best seller","best sellers","most sold","top items sold","popular items","what sells most","top pos items"]),
   "expenses_summary": (1.3, ["expense breakdown","expenses by category","spending breakdown","cost breakdown","operating expenses summary","where did we spend"]),
-  "sales_breakdown": (1.3, ["sales breakdown","revenue breakdown","pos breakdown","sales by item","sales by category","revenue mix"]),
+  "sales_breakdown": (1.3, ["sales breakdown","revenue breakdown","pos breakdown","sales by item","sales by category","revenue mix","how did guests pay breakdown"]),
   "reservation_pipeline": (1.3, ["reservation pipeline","upcoming arrivals","upcoming reservations","bookings pipeline","reservations by status","future bookings"]),
-  "housekeeping_summary": (1.3, ["housekeeping","clean rooms","dirty rooms","room status summary","rooms ready"]),
-  "room_availability": (1.3, ["available rooms","room availability","any rooms free","rooms free","vacant rooms"]),
+  "housekeeping_summary": (1.3, ["housekeeping","clean rooms","dirty rooms","room status summary","rooms ready","rooms to clean"]),
+  "room_availability": (1.3, ["available rooms","room availability","any rooms free","rooms free","vacant rooms","availability for"]),
   "menu_info": (1.2, ["menu","meals","what meals","dishes","meal list","recipes"]),
   "rate_plans": (1.3, ["rate plan","pricing plan","plans/packages","catalog of rate plans"]),
   "ledger_integrity": (1.4, ["health check","integrity","ledger integrity","data integrity","reconcile ledger","orphaned","mismatched records","sanity check","audit the database","consistency","books/data consistency"]),
   "recent_activity": (1.2, ["recent activity","audit log","what changed lately","recent changes"]),
+  "list_activities": (1.4, ["list activities","available activities","available trips","available excursions","available tours","activities catalog","trips catalog","excursions catalog","register activities","registered activities","registered trips","what activities","what trips can","what excursions"]),
+  "activity_stats": (1.4, ["activity stats","activity statistics","trip stats","trip statistics","excursion stats","bookings stats","how many booked","most popular activity","most popular trip","most popular excursion","activity revenue","trip bookings"]),
+  "guest_portfolio": (1.5, ["full portfolio","guest portfolio","360","360°","all trips","all stays","all reservations","complete history","entire history","all invoices","all his invoices","all her invoices","all their invoices","all pos orders","all orders","all activities for guest","all payments for guest","everything for guest","full history","complete guest record","lifetime","all visits"]),
+  "guest_activity_bookings": (1.4, ["booked activities","booked trips","booked excursions","booked tours","activities they ordered","activities he ordered","activities she ordered","trips they booked","excursions booked","tours booked","ordered activities","activity bookings for guest","guest activities","which activities did"]),
   "guest_last_visit_spend": (1.5, ["how much did","spend on last visit","spent last time","spending last visit","total on last visit"]),
   "guest_top_items_last_visit": (1.6, ["most ordered","ordered most","ordered the most","ordering the most","buy the most","bought the most","top-ordered","biggest pos orders","topped their list","most frequently","most of during that visit","consume/purchase most","what did they order","what did he order","what did she order","items did they buy","which items did","order the most"]),
   "guest_last_visit": (1.3, ["last visit","last stay","previous visit","previous trip","last time","most recent stay","most recent visit","latest stay","latest visit","last came","most recent checked-out","previous stay","when was the last time"]),
-  "guest_portfolio": (1.5, ["full portfolio","guest portfolio","360","360°","all trips","all stays","all reservations","complete history","entire history","all invoices","all his invoices","all her invoices","all their invoices","all pos orders","all orders","all activities for guest","all payments for guest","everything for guest","full history","complete guest record","lifetime","all visits"]),
   "guest_profile": (1.3, ["profile","everything we know","contact info","past reservations","recent stay history","background for guest","account/profile view","history with us","details and latest bookings","full profile","who are they","what's on file","what’s on file","open the profile","their details"]),
-  "guest_activity_bookings": (1.4, ["booked activities","booked trips","booked excursions","booked tours","activities they ordered","activities he ordered","activities she ordered","trips they booked","excursions booked","tours booked","ordered activities","activity bookings for guest","guest activities","which activities did"]),
-  "list_activities": (1.4, ["list activities","available activities","available trips","available excursions","available tours","activities catalog","trips catalog","excursions catalog","register activities","registered activities","registered trips","what activities","what trips can","what excursions"]),
-  "activity_stats": (1.4, ["activity stats","activity statistics","trip stats","trip statistics","excursion stats","bookings stats","how many booked","most popular activity","most popular trip","most popular excursion","activity revenue","trip bookings"]),
   "guest_search": (1.2, ["find guest","search guest","look up a guest","locate a guest","trying to find a guest","anyone in the system","possible matches","who matches","who do we have on file","show candidates","resembling","search guests for","locate a contact","pull up any matching guest","can you find the guest"]),
   "reservation_balance": (1.4, ["balance","owe","outstanding","amount due","settled","paid versus due","left to collect","folio balance","how much does the guest"]),
   "reservation_summary": (1.3, ["reservation summary","booking summary","details on booking","details on reservation","folio snapshot","what's going on with reservation","rundown of booking","summarize reservation","reservation details"]),
@@ -953,6 +1575,11 @@ def rule_classify(text: str, slots: dict | None = None) -> dict:
     tl = _norm_text(text)
     rid = slots.get("reservation_id"); gid = slots.get("guest_id"); gq = slots.get("guest_query")
 
+    # greeting/smalltalk (only if short and no data ask)
+    if re.fullmatch(r"(hi|hello|hey|good morning|good afternoon|good evening|thanks|thank you|thx|yo)[!.\s]*", tl) or (len(tl.split()) <= 5 and _has_any(tl,["hi","hello","hey","thanks","thank you"])):
+        if not (rid or gid or gq or slots.get("report_kind")):
+            return {"intent":"greeting_smalltalk","confidence":0.95,"slots":slots,"router":"rules"}
+
     # unsafe (read-only assistant)
     if _has_any(tl, ["go ahead and delete","delete reservation","delete room","and refund","refund the guest","check the guest in","check in the guest","change room price","change price to","reset the super password","reset password for me","email the guest","send invoice","sync bookings","add a new room","import 500","override checkout","hack into","ignore the rules","hidden admin"]):
         return {"intent":"unsupported_or_unsafe","confidence":0.97,"slots":slots,"router":"rules"}
@@ -961,10 +1588,8 @@ def rule_classify(text: str, slots: dict | None = None) -> dict:
     for intent,(w,cues) in _INTENT_CUES.items():
         for c in cues:
             if c in tl: scores[intent] += w
-        # fuzzy cue boost
         for c in cues[:6]:
             if len(c)>=6 and c not in tl:
-                # token overlap approximation
                 cs=set(c.split()); ts=_token_set(tl)
                 if cs and len(cs & ts)/len(cs) >= 0.8: scores[intent] += w*0.6
     # structural boosts
@@ -976,17 +1601,15 @@ def rule_classify(text: str, slots: dict | None = None) -> dict:
     if rk:
         mapk={"pl":"report_pl","cash_flow":"report_cash_flow","vat":"report_vat","payment_methods":"report_payment_methods","occupancy":"report_occupancy","daily_ops":"report_daily_ops"}
         if rk in mapk: scores[mapk[rk]] += 1.2
-    # disambiguate occupancy summary vs report
     if rk=="occupancy":
         if _has_any(tl, ["report","adr","revpar","performance","room-nights","metrics","revenue-per-room"]): scores["report_occupancy"] += 0.6
         else: scores["occupancy_summary"] += 0.4
-    # guest intent priority adjustments
     if scores.get("guest_top_items_last_visit",0)>0 or scores.get("guest_last_visit_spend",0)>0:
         scores["guest_last_visit"] += 0.1
     if _has_any(tl, ["when did","when was the last time","last time they stayed","last stay with us","previous visit here"]) and scores.get("guest_profile",0)>0 and scores.get("guest_top_items_last_visit",0)==0:
         scores["guest_last_visit"] += 0.5
     # ambiguity
-    if _has_any(tl, ["he ordered","she ordered","they ordered","his last visit","her last visit","their last visit","that guest","they owe","do they owe"]) and not gid and not gq and not slots.get("context",{}).get("guest_id"):
+    if _has_any(tl, ["he ordered","she ordered","they ordered","his last visit","her last visit","their last visit","that guest","they owe","do they owe","his portfolio","her portfolio"]) and not gid and not gq and not slots.get("context",{}).get("guest_id"):
         scores["ambiguous_needs_clarification"] += 1.2
     if tl.strip() in {"balance","show me the balance","what's the balance","what is the balance"} and not rid:
         scores["ambiguous_needs_clarification"] += 1.3
@@ -1000,7 +1623,6 @@ def rule_classify(text: str, slots: dict | None = None) -> dict:
         scores["compound_multi_intent"] += 1.0
 
     if not scores:
-        # weak fallbacks
         if _has_any(tl, ["report","revenue","expenses","profit"]): return {"intent":"report_pl","confidence":0.5,"slots":slots,"router":"rules"}
         if "guest" in tl and _has_any(tl, ["find","search","look up"]): return {"intent":"guest_search","confidence":0.5,"slots":slots,"router":"rules"}
         return {"intent":"capabilities_help","confidence":0.2,"slots":slots,"router":"rules","low_confidence":True}
@@ -1009,7 +1631,6 @@ def rule_classify(text: str, slots: dict | None = None) -> dict:
     best, best_s = ranked[0]
     second_s = ranked[1][1] if len(ranked)>1 else 0.0
     margin = best_s - second_s
-    # confidence from score/margin
     conf = min(0.98, 0.45 + best_s*0.18 + margin*0.12)
     if best_s < 0.9: conf = min(conf, 0.55)
     if margin < 0.25 and best_s < 1.4: conf = min(conf, 0.6)
@@ -1034,186 +1655,138 @@ def classify_intent(text: str, history=None) -> dict:
         return {"intent":ml["intent"],"confidence":float(ml.get("confidence",0.6)),"slots":slots,"router":ml.get("router","ml")}
     return rl
 
-
 # ── Execution ────────────────────────────────────────────────────────────────
 
 def _guest_disambiguation(candidates, q=None):
     data = {"candidates": candidates, "query": q}
-    lines = ["I found multiple matching guests (real backend search). Please specify the guest ID:"]
+    lines = ["I found more than one guest matching that (real records). Which one did you mean? Please reply with the guest ID:"]
     for g in candidates[:8]:
         try:
-            lines.append(f"- #{g['id']}: {g.get('name','')} (phone: {g.get('phone','') or '-'}, reservations: {g.get('reservation_count',0)})")
-        except Exception: lines.append(f"- {g}")
+            name = g.get("name") or g.get("canonical_name") or "Guest"
+            lines.append(f"- **#{g['id']} {name}** — phone: {g.get('phone') or '-'}, email: {g.get('email') or '-'}, stays: {g.get('stays', g.get('reservation_count', 0))}, last stay: {g.get('last_stay') or '-'}")
+        except Exception:
+            lines.append(f"- {g}")
+    lines.append("For example: `guest #12 full portfolio`.")
     return {"ok":True,"intent":"ambiguous_needs_clarification","needs_clarification":True,"tools_used":["search_guests"] if q else [],"data":data,"answer":"\n".join(lines)}
+
+def _answer(intent: str, tools_used, data, title="Result", ok=True, **extra):
+    ans = _format_for_intent(intent, data if isinstance(data, dict) else {}, fallback_title=title)
+    ans = _apply_proactive(intent, data if isinstance(data, dict) else {}, ans)
+    res = {"ok": ok, "intent": intent, "tools_used": tools_used or [], "data": data, "answer": ans}
+    res.update(extra)
+    return res
 
 def _execute_single(intent: str, text: str, slots: dict):
     tools_used=[]; start,end = slots.get("date_start"), slots.get("date_end")
     if not start or not end: start,end = _parse_date_range(text)
     rid = slots.get("reservation_id")
 
+    if intent == "greeting_smalltalk":
+        tl = _norm_text(text)
+        if any(k in tl for k in ["thank", "thx"]):
+            ans = "You're very welcome! If you need anything else — reports, guest portfolios, who owes money, ops, or a business briefing — I'm here to help (all from real app data)."
+        else:
+            ans = "Hi! I’m your property manager assistant and business partner. I can help with reports, operations, guests (profiles/portfolios/last visits/bookings), reservations, balances, inventory, activities, and more — all grounded in real app data. What would you like to know?"
+        return {"ok":True,"intent":intent,"tools_used":[], "data":{}, "answer":ans}
+
     if intent=="capabilities_help":
         data=execute_tool("list_capabilities",{}); tools_used.append("list_capabilities")
-        caps=data.get("capabilities",[])
-        ans="I can help as a grounded, read-only manager/business partner using real backend data:\n- "+"\n- ".join(caps)+\
-            "\n\nExamples: 'business partner briefing for this month', 'who owes money?', 'top selling items last month', 'compare this month vs last month', 'what did guest #3 order most on their last visit?'"
-        return {"ok":True,"intent":intent,"tools_used":tools_used,"data":data,"answer":ans}
+        return _answer(intent, tools_used, data)
 
     if intent=="unsupported_or_unsafe":
-        return {"ok":False,"intent":intent,"tools_used":[],"data":{"reason":"unsafe_or_out_of_scope"},
-                "answer":"I can only help with read-only questions grounded in real app data (reports, guests, reservations, balances, inventory, ops, insights). I can’t perform actions/changes or invent data. Tell me what you want to look up and I’ll fetch it."}
+        ans = ("I can help with **read-only** questions grounded in real app data (reports, guests/portfolios, reservations, balances, inventory, activities, ops, insights). "
+               "I can’t perform actions, make changes, or guess/invent information. "
+               "If you tell me what you’d like to look up (e.g. a guest, reservation, report, or date range), I’ll fetch it for you.")
+        return {"ok":False,"intent":intent,"tools_used":[],"data":{"reason":"unsafe_or_out_of_scope"},"answer":ans}
 
     if intent=="ambiguous_needs_clarification":
         tl=_norm_text(text)
-        if rid and _has_any(tl,["balance","owe","outstanding"]):
+        if rid and _has_any(tl,["balance","owe","outstanding","due"]):
             return _execute_single("reservation_balance", text, slots)
-        if _has_any(tl,["balance","owe","outstanding"]) and not rid:
+        if _has_any(tl,["balance","owe","outstanding","due"]) and not rid:
             return {"ok":True,"intent":intent,"needs_clarification":True,"tools_used":[],"data":{"missing":"reservation_id","suggestion":"overall_ar"},
-                    "answer":"Do you mean a specific reservation's balance (e.g. 'reservation #12 balance') or overall outstanding balances/who owes money? (Try: 'who owes money?')"}
-        if _has_any(tl,["ordered","last visit","last stay","profile","spend","when did they","he ","she ","they ","his ","her ","their "]) and not (slots.get("guest_id") or slots.get("guest_query")):
+                    "answer":"Do you mean a **specific reservation’s balance** (e.g. `reservation #12 balance`) or **overall outstanding balances** (who owes money across all reservations)? Tell me which one and I’ll pull the real figures."}
+        if _has_any(tl,["ordered","last visit","last stay","profile","spend","portfolio","invoice","activity","activities","trip","excursion","when did they","he ","she ","they ","his ","her ","their "]) and not (slots.get("guest_id") or slots.get("guest_query")):
             return {"ok":True,"intent":intent,"needs_clarification":True,"tools_used":[],"data":{"missing":"guest"},
-                    "answer":"Which guest do you mean? Please provide a guest ID (e.g. guest #3) or a name/phone fragment so I can look them up from real data."}
-        if ("report" in tl or tl.startswith("report")) and not slots.get("report_kind") and not rid:
+                    "answer":"Which guest do you mean? Please share a **guest ID** (e.g. `guest #3`) or a name/phone fragment so I can look them up in the real records."}
+        if (("report" in tl) or tl.startswith("report")) and not slots.get("report_kind") and not rid:
             return {"ok":True,"intent":intent,"needs_clarification":True,"tools_used":[],"data":{"missing":"report_kind"},
-                    "answer":"Which report do you want (P&L, cash flow, VAT, payment methods, occupancy, or daily ops) and for what date range?"}
+                    "answer":"Which report would you like — **P&L, cash flow, VAT, payment methods, occupancy, or daily ops** — and for what date/range (e.g. `P&L last month` or `daily ops today`)?"}
         return {"ok":True,"intent":intent,"needs_clarification":True,"tools_used":[],"data":{"missing":"context"},
-                "answer":"I’m not confident I understood. I can fetch reports, business briefing, stats/counts, who owes money, inventory alerts, top sellers, guests (search/profile/last visit/most-ordered/spend), reservations/balances, rate plans, availability, and more. Please rephrase with specifics (ID, name, report type, or date range)."}
+                "answer":"I want to make sure I get this right — could you rephrase with a bit more detail? I can help with briefings, property/ops stats, reports & comparisons, who owes money, inventory alerts, top sellers, expenses/sales, guests (search/profile/full portfolio/last visit/orders/spend/activities), reservations/balances/pipeline, housekeeping, availability, activities, menus, rate plans, and integrity checks."}
 
     if intent=="property_stats":
         data=execute_tool("get_property_stats",{}); tools_used.append("get_property_stats")
-        ans=_fmt_stats_answer((data or {}).get("stats") or {}, (data or {}).get("as_of"))
-        return {"ok":True,"intent":intent,"tools_used":tools_used,"data":data,"answer":ans or _format_data("Property stats",data)}
-
+        return _answer(intent, tools_used, data)
     if intent=="today_ops":
         data=execute_tool("get_today_ops",{}); tools_used.append("get_today_ops")
-        return {"ok":True,"intent":intent,"tools_used":tools_used,"data":data,"answer":_format_data(f"Today's ops ({(data or {}).get('date', _iso(_today()))})", data)}
-
+        return _answer(intent, tools_used, data)
     if intent=="business_partner_briefing":
         data=execute_tool("business_partner_briefing",{"start":start,"end":end}); tools_used.append("business_partner_briefing")
-        return {"ok":True,"intent":intent,"tools_used":tools_used,"data":data,"answer":_fmt_partner_briefing(data)}
-
+        return _answer(intent, tools_used, data)
     if intent=="decision_support":
         data=execute_tool("get_decision_support",{"start":start,"end":end}); tools_used.append("get_decision_support")
-        # add short insight header
-        ans=_format_data(f"Decision support ({start} → {end})", data)
-        return {"ok":True,"intent":intent,"tools_used":tools_used,"data":data,"answer":ans}
-
+        return _answer(intent, tools_used, data, title=f"Decision support ({start} → {end})")
     if intent=="compare_periods":
         data=execute_tool("compare_periods",{"start":start,"end":end}); tools_used.append("compare_periods")
-        cur=data.get("current",{}); prev=data.get("previous",{})
-        lines=[f"Period comparison (grounded):\n- Current: {cur.get('start')} → {cur.get('end')}\n- Previous: {prev.get('start')} → {prev.get('end')}"]
-        def g(d,*keys):
-            x=d
-            for k in keys:
-                if isinstance(x,dict): x=x.get(k)
-                else: return None
-            return x
-        for label, key in [("PL","pl"),("Occupancy","occupancy"),("Cash flow","cash_flow")]:
-            lines.append(f"\n{label} (current): {json.dumps(cur.get(key,{}),ensure_ascii=False,default=str)[:600]}")
-            lines.append(f"{label} (previous): {json.dumps(prev.get(key,{}),ensure_ascii=False,default=str)[:600]}")
-        return {"ok":True,"intent":intent,"tools_used":tools_used,"data":data,"answer":"\n".join(lines)}
-
+        return _answer(intent, tools_used, data)
     if intent=="outstanding_balances":
         data=execute_tool("get_outstanding_balances",{}); tools_used.append("get_outstanding_balances")
-        if data.get("error"): ans=_format_data("Outstanding balances",data)
-        else:
-            lines=[f"Outstanding balances (real data): {data.get('count',0)} reservation(s), total due {_fmt_money(data.get('total_due',0))}"]
-            for r in (data.get('outstanding') or [])[:15]:
-                lines.append(f"- Res #{r['reservation_id']} {r.get('guest_name','')} (room {r.get('room','')}, {r.get('status','')}): due {_fmt_money(r['balance_due'])}")
-            if (data.get('count',0) or 0)==0: lines.append("- No outstanding balances on active/checked-out reservations.")
-            ans="\n".join(lines)
-        return {"ok":True,"intent":intent,"tools_used":tools_used,"data":data,"answer":ans}
-
+        return _answer(intent, tools_used, data)
     if intent=="inventory_alerts":
         data=execute_tool("get_inventory_alerts",{}); tools_used.append("get_inventory_alerts")
-        a=(data or {}).get("alerts") or {}
-        lines=["Inventory alerts (real data):"]
-        for label,key in [("Negative","negative"),("Low","low"),("Overstock","overstock")]:
-            items=a.get(key) or []
-            lines.append(f"- {label}: {len(items)}")
-            for it in items[:10]: lines.append(f"  • #{it.get('id')} {it.get('item_name')} qty={it.get('stock_qty')}"+(f" (thr {it.get('threshold')})" if it.get('threshold') is not None else ""))
-        if not (a.get("negative") or a.get("low") or a.get("overstock")): lines.append("- All clear: no low/negative/overstock alerts.")
-        return {"ok":True,"intent":intent,"tools_used":tools_used,"data":data,"answer":"\n".join(lines)}
-
+        return _answer(intent, tools_used, data)
     if intent=="top_selling_items":
         data=execute_tool("get_top_selling_items",{"start":start,"end":end,"limit":10}); tools_used.append("get_top_selling_items")
-        items=(data or {}).get("top_items") or []
-        lines=[f"Top selling items ({start} → {end}) — grounded in POS data:"]
-        for i,it in enumerate(items[:10],1): lines.append(f"{i}. {it['item']}: qty {it['qty_sold']}, gross {_fmt_money(it['gross'])} ({it['lines']} lines)")
-        if not items: lines.append("- No non-voided POS sales found in this period.")
-        return {"ok":True,"intent":intent,"tools_used":tools_used,"data":data,"answer":"\n".join(lines)}
-
+        return _answer(intent, tools_used, data)
     if intent=="expenses_summary":
         data=execute_tool("get_expenses_summary",{"start":start,"end":end}); tools_used.append("get_expenses_summary")
-        cats=(data or {}).get("by_category") or []
-        lines=[f"Expenses summary ({start} → {end}): total {_fmt_money((data or {}).get('total',0))}"]
-        for c in cats[:15]: lines.append(f"- {c['category']}: {_fmt_money(c['total'])} (net {_fmt_money(c['net'])}, vat {_fmt_money(c['vat'])}, {c['count']} entries)")
-        if not cats: lines.append("- No expenses recorded in this period.")
-        return {"ok":True,"intent":intent,"tools_used":tools_used,"data":data,"answer":"\n".join(lines)}
-
+        return _answer(intent, tools_used, data)
     if intent=="sales_breakdown":
         data=execute_tool("get_sales_breakdown",{"start":start,"end":end}); tools_used.append("get_sales_breakdown")
-        return {"ok":True,"intent":intent,"tools_used":tools_used,"data":data,"answer":_format_data(f"Sales breakdown ({start} → {end})",data)}
-
+        return _answer(intent, tools_used, data)
     if intent=="reservation_pipeline":
         data=execute_tool("get_reservation_pipeline",{}); tools_used.append("get_reservation_pipeline")
-        return {"ok":True,"intent":intent,"tools_used":tools_used,"data":data,"answer":_format_data("Reservation pipeline",data)}
-
+        return _answer(intent, tools_used, data)
     if intent=="housekeeping_summary":
         data=execute_tool("get_housekeeping_summary",{}); tools_used.append("get_housekeeping_summary")
-        s=(data or {}).get("summary") or {}
-        lines=[f"Housekeeping summary (total rooms {s.get('total_rooms',0)}):"]+[f"- {k}: {v}" for k,v in (s.get("by_status") or {}).items()]
-        return {"ok":True,"intent":intent,"tools_used":tools_used,"data":data,"answer":"\n".join(lines)}
-
+        return _answer(intent, tools_used, data)
     if intent=="room_availability":
         a_start = slots.get("date_start") or start; a_end = slots.get("date_end") or end
         data=execute_tool("get_room_availability",{"start":a_start,"end":a_end}); tools_used.append("get_room_availability")
-        rooms=(data or {}).get("rooms") or []
-        lines=[f"Room availability ({a_start} → {a_end}): {data.get('available_count',len(rooms))} room(s) available"]
-        for r in rooms[:20]: lines.append(f"- {r.get('room_number')} ({r.get('room_type','')}) base {_fmt_money(r.get('base_price',0))} [{r.get('housekeeping_status','')}]")
-        return {"ok":True,"intent":intent,"tools_used":tools_used,"data":data,"answer":"\n".join(lines)}
-
+        return _answer(intent, tools_used, data)
     if intent=="menu_info":
         data=execute_tool("get_menu_info",{}); tools_used.append("get_menu_info")
-        return {"ok":True,"intent":intent,"tools_used":tools_used,"data":data,"answer":_format_data("Menu / meals",data)}
-
+        return _answer(intent, tools_used, data)
     if intent=="rate_plans":
         data=execute_tool("list_rate_plans",{}); tools_used.append("list_rate_plans")
-        return {"ok":True,"intent":intent,"tools_used":tools_used,"data":data,"answer":_format_data("Rate plans",data)}
-
+        return _answer(intent, tools_used, data)
     if intent=="ledger_integrity":
         data=execute_tool("verify_ledger_integrity",{}); tools_used.append("verify_ledger_integrity")
-        status="OK" if (data or {}).get("ok") else "ISSUES FOUND"
-        return {"ok":True,"intent":intent,"tools_used":tools_used,"data":data,"answer":_format_data(f"Ledger/data integrity: {status}",data)}
-
+        return _answer(intent, tools_used, data)
     if intent=="recent_activity":
         data=execute_tool("get_recent_activity",{}); tools_used.append("get_recent_activity")
-        return {"ok":True,"intent":intent,"tools_used":tools_used,"data":data,"answer":_format_data("Recent activity (audit)",data)}
-
-    # reports
+        return _answer(intent, tools_used, data)
     if intent in ("report_pl","report_cash_flow","report_vat","report_payment_methods","report_occupancy","report_daily_ops"):
         kind=intent.replace("report_","")
         data=execute_tool("get_report",{"kind":kind,"start":start,"end":end}); tools_used.append("get_report")
-        label = end if kind=="daily_ops" else f"{start} → {end}"
-        return {"ok":True,"intent":intent,"tools_used":tools_used,"data":data,"answer":_format_data(f"Report {kind} ({label})",data)}
-
+        return _answer(intent, tools_used, data)
     if intent=="occupancy_summary":
         data=execute_tool("get_occupancy_summary",{"start":start,"end":end}); tools_used.append("get_occupancy_summary")
-        return {"ok":True,"intent":intent,"tools_used":tools_used,"data":data,"answer":_format_data(f"Occupancy summary ({start} → {end})",data)}
-
-    # activities / trips (catalog & stats)
+        return _answer(intent, tools_used, data)
     if intent=="list_activities":
         data=execute_tool("list_activities",{}); tools_used.append("list_activities")
-        return {"ok":True,"intent":intent,"tools_used":tools_used,"data":data,"answer":_format_data("Activities / trips catalog (registered)",data)}
+        return _answer(intent, tools_used, data)
     if intent=="activity_stats":
         data=execute_tool("get_activity_stats",{}); tools_used.append("get_activity_stats")
-        return {"ok":True,"intent":intent,"tools_used":tools_used,"data":data,"answer":_format_data("Activity / trip booking statistics (real data)",data)}
+        return _answer(intent, tools_used, data)
 
     # reservations
     if intent in ("reservation_balance","reservation_summary"):
         if not rid: return _execute_single("ambiguous_needs_clarification", text, slots)
         name="get_guest_balance" if intent=="reservation_balance" else "get_reservation_summary"
         data=execute_tool(name,{"reservation_id":rid}); tools_used.append(name)
-        return {"ok":True,"intent":intent,"tools_used":tools_used,"data":data,"answer":_format_data(f"Reservation #{rid}",data)}
+        return _answer(intent, tools_used, data, title=f"Reservation #{rid}")
 
     # guests
     if intent in ("guest_search","guest_profile","guest_portfolio","guest_last_visit","guest_top_items_last_visit","guest_last_visit_spend","guest_activity_bookings"):
@@ -1222,51 +1795,50 @@ def _execute_single(intent: str, text: str, slots: dict):
             query=q or slots.get("guest_query") or re.sub(r"(?i)\b(find|search|look up|locate|guest|guests|customer|for|named?|called|who do we have|show|matches|matching)\b"," ",text)
             query=re.sub(r"\s+"," ",query).strip(" ?.,")
             data=execute_tool("search_guests",{"query":query,"limit":10}); tools_used.append("search_guests")
-            return {"ok":True,"intent":intent,"tools_used":tools_used,"data":data,"answer":_format_data(f"Guest search: {data.get('query','')}",data)}
+            return _answer(intent, tools_used, data)
         if explicit_id and not guests:
-            return {"ok":False,"intent":intent,"tools_used":[],"data":{"error":f"Guest #{explicit_id} not found"},"answer":f"I couldn't find guest #{explicit_id} (real backend lookup)."}
+            return {"ok":False,"intent":intent,"tools_used":[],"data":{"error":f"Guest #{explicit_id} not found"},
+                    "answer":f"I couldn’t find **guest #{explicit_id}** in the real records. Want to try a name/phone search instead?"}
         if len(guests)==1 or (explicit_id and len(guests)==1):
             g=guests[0]; gid=g["id"] if isinstance(g,dict) else explicit_id
-            gname=g.get("name","") if isinstance(g,dict) else ""
+            gname=(g.get("name") or g.get("canonical_name") or "") if isinstance(g,dict) else ""
             if intent=="guest_top_items_last_visit":
                 data=execute_tool("get_guest_top_items_last_visit",{"guest_id":gid,"limit":5}); tools_used.append("get_guest_top_items_last_visit")
-                title=f"Most ordered items — last visit (guest #{gid} {gname})"
             elif intent=="guest_last_visit_spend":
                 data=execute_tool("get_guest_last_visit_spend",{"guest_id":gid}); tools_used.append("get_guest_last_visit_spend")
-                title=f"Last visit spend (guest #{gid} {gname})"
             elif intent=="guest_last_visit":
                 data=execute_tool("get_guest_last_visit",{"guest_id":gid}); tools_used.append("get_guest_last_visit")
-                title=f"Last visit (guest #{gid} {gname})"
             elif intent=="guest_portfolio":
                 data=execute_tool("get_guest_portfolio",{"guest_id":gid}); tools_used.append("get_guest_portfolio")
-                title=f"Guest #{gid} full portfolio (360°: stays, POS, payments, invoices)"
             elif intent=="guest_activity_bookings":
                 data=execute_tool("list_activity_bookings",{"guest_id":gid}); tools_used.append("list_activity_bookings")
-                title=f"Guest #{gid} booked activities/trips"
             else:
                 data=execute_tool("get_guest_profile",{"guest_id":gid}); tools_used.append("get_guest_profile")
-                title=f"Guest #{gid} profile"
-            return {"ok":True,"intent":intent,"tools_used":tools_used,"data":data,"answer":_format_data(title,data)}
+            res = _answer(intent, tools_used, data)
+            res["resolved_guest_id"] = gid
+            return res
         if len(guests)>1: return _guest_disambiguation(guests, q or slots.get("guest_query"))
         if slots.get("guest_id") or slots.get("guest_query"):
-            return {"ok":False,"intent":intent,"tools_used":[],"data":{"query":slots.get("guest_query"),"guest_id":slots.get("guest_id")},"answer":"I couldn't find a matching guest in real backend data. Please try a different name/phone fragment or a guest ID."}
+            return {"ok":False,"intent":intent,"tools_used":[],"data":{"query":slots.get("guest_query"),"guest_id":slots.get("guest_id")},
+                    "answer":"I couldn’t find a matching guest in the real records. Try a different name/phone/email fragment or a specific guest ID (e.g. `guest #3`)."}
         return _execute_single("ambiguous_needs_clarification", text, slots)
 
     # fallback
     data=execute_tool("list_capabilities",{}); tools_used.append("list_capabilities")
-    return {"ok":True,"intent":"capabilities_help","tools_used":tools_used,"data":data,"answer":"I couldn't confidently map that request. "+_format_data("Capabilities",data)}
+    ans = "I couldn’t confidently map that request to a supported, grounded action. " + _fmt_capabilities(data)
+    return {"ok":True,"intent":"capabilities_help","tools_used":tools_used,"data":data,"answer":ans}
 
 def _execute_compound(text: str, slots: dict):
     tl=_norm_text(text); subs=[]
-    if slots.get("reservation_id") and _has_any(tl,["balance","owe","outstanding"]): subs.append(("reservation_balance",slots))
+    if slots.get("reservation_id") and _has_any(tl,["balance","owe","outstanding","due"]): subs.append(("reservation_balance",slots))
     if slots.get("reservation_id") and _has_any(tl,["summary","details","folio","overview"]): subs.append(("reservation_summary",slots))
     if _has_any(tl,["business partner","partner briefing","executive briefing","advise me","recommendations","what should i focus"]): subs.append(("business_partner_briefing",slots))
     if _has_any(tl,["decision support","kpi","how are we doing","signals"]): subs.append(("decision_support",slots))
     for intent,rk in [("report_pl","pl"),("report_cash_flow","cash_flow"),("report_vat","vat"),("report_payment_methods","payment_methods"),("report_occupancy","occupancy"),("report_daily_ops","daily_ops")]:
         cues={"pl":["p&l","pnl","profit and loss","profit","net profit"],"cash_flow":["cash flow","cashflow"],"vat":["vat","value-added tax","tax report"],"payment_methods":["payment method","payments by method","payment channels"],"occupancy":["occupancy","adr","revpar","how full","how busy"],"daily_ops":["daily ops","arrivals","departures","in-house","in house"]}
         if _has_any(tl,cues[rk]): subs.append((intent,slots))
-    if _has_any(tl,["compare","vs last","versus last"]): subs.append(("compare_periods",slots))
-    if _has_any(tl,["who owes","outstanding","unpaid"]): subs.append(("outstanding_balances",slots))
+    if _has_any(tl,["compare","vs last","versus last","previous period"]): subs.append(("compare_periods",slots))
+    if _has_any(tl,["who owes","outstanding","unpaid","receivables"]): subs.append(("outstanding_balances",slots))
     if _has_any(tl,["low stock","inventory alert","running low","overstock"]): subs.append(("inventory_alerts",slots))
     if _has_any(tl,["top selling","best seller","most sold"]): subs.append(("top_selling_items",slots))
     if _has_any(tl,["expense breakdown","expenses by category","where did we spend"]): subs.append(("expenses_summary",slots))
@@ -1274,6 +1846,8 @@ def _execute_compound(text: str, slots: dict):
     if _has_any(tl,["health check","integrity","ledger integrity"]): subs.append(("ledger_integrity",slots))
     if _has_any(tl,["housekeeping"]): subs.append(("housekeeping_summary",slots))
     if _has_any(tl,["pipeline","upcoming arrivals"]): subs.append(("reservation_pipeline",slots))
+    if _has_any(tl,["list activities","available activities","activities catalog","registered activities","registered trips","available excursions"]): subs.append(("list_activities",slots))
+    if _has_any(tl,["activity stats","activity statistics","trip stats","booking statistics"]): subs.append(("activity_stats",slots))
     # guest chain
     guests, explicit_id, q = resolve_guest(text, slots)
     if slots.get("guest_id") or q or _has_any(tl,["find guest","search guest"]):
@@ -1298,15 +1872,91 @@ def _execute_compound(text: str, slots: dict):
     if not uniq: return _execute_single("ambiguous_needs_clarification", text, slots)
     if len(uniq)==1: return _execute_single(uniq[0][0], text, uniq[0][1])
     tools_used=[]; parts=[]; data_all={}; ok=True
+    parts.append("Sure — here’s what I found (grounded in real data):")
     for it,sl in uniq[:6]:
         res=_execute_single(it,text,sl)
         tools_used.extend(res.get("tools_used") or [])
-        parts.append(f"## {it}\n{res.get('answer','')}")
+        label = it.replace("_"," ").title()
+        parts.append(f"\n### {label}\n{res.get('answer','')}")
         data_all[it]=res.get("data")
         ok = ok and bool(res.get("ok",True))
-    return {"ok":ok,"intent":"compound_multi_intent","tools_used":list(dict.fromkeys(tools_used)),"data":data_all,"answer":"\n\n".join(parts)}
+    return {"ok":ok,"intent":"compound_multi_intent","tools_used":list(dict.fromkeys(tools_used)),"data":data_all,"answer":"\n".join(parts)}
 
-# ── Public routing / chat / LLM compat ───────────────────────────────────────
+# ── Local-only LLM config & runtime (no external/OpenAI calls) ──────────────
+
+def _llm_config():
+    """Local-only config. No external endpoints or OpenAI API calls."""
+    try:
+        provider=(services.get_setting("assistant_provider","auto") or "auto").strip().lower()
+        response_mode=(services.get_setting("assistant_response_mode","talking") or "talking").strip().lower()
+        model_path=(services.get_setting("assistant_local_model_path","") or os.environ.get("ASSISTANT_LOCAL_MODEL_PATH","") or "").strip()
+        n_ctx=int(services.get_setting("assistant_local_n_ctx","2048") or 2048)
+    except Exception:
+        provider,response_mode,model_path,n_ctx="auto","talking","",2048
+    # normalize: anything "openai"/external -> treated as local/auto (no external)
+    if provider in ("openai","openai_compatible","external"):
+        provider = "auto"
+    local_available = False
+    try:
+        import llama_cpp  # type: ignore
+        if model_path and Path(model_path).expanduser().exists():
+            local_available = True
+    except Exception:
+        local_available = False
+    # 'enabled' means local model runtime available; deterministic talking is always available separately
+    enabled = provider != "deterministic_only" and local_available
+    return {"provider":provider,"response_mode":response_mode,"model_path":model_path,"n_ctx":n_ctx,
+            "local_available": local_available, "enabled": enabled, "external": False}
+
+def _get_local_llm():
+    global _LOCAL_LLM_CACHE
+    cfg = _llm_config()
+    if not cfg.get("local_available"): return None
+    if _LOCAL_LLM_CACHE is not None: return _LOCAL_LLM_CACHE or None
+    try:
+        from llama_cpp import Llama  # type: ignore
+        mp = str(Path(cfg["model_path"]).expanduser())
+        _LOCAL_LLM_CACHE = Llama(model_path=mp, n_ctx=int(cfg.get("n_ctx") or 2048), verbose=False)
+        return _LOCAL_LLM_CACHE
+    except Exception:
+        _LOCAL_LLM_CACHE = False
+        return None
+
+def _local_llm_generate(prompt: str, max_tokens: int = 512, temperature: float = 0.2) -> str | None:
+    llm = _get_local_llm()
+    if llm is None: return None
+    try:
+        out = llm(prompt, max_tokens=max_tokens, temperature=temperature, stop=["</s>","User:","Manager question:"])
+        if isinstance(out, dict):
+            txt = ((out.get("choices") or [{}])[0].get("text") or "").strip()
+            return txt or None
+        return str(out).strip() or None
+    except Exception:
+        return None
+
+def talking_rephrase(message: str, core_result: dict, config: dict | None = None) -> str | None:
+    """Local-only friendly rephrase. Uses local GGUF model if available, else deterministic formatter."""
+    config = config or _llm_config()
+    core_answer=(core_result or {}).get("answer") or ""
+    data=(core_result or {}).get("data")
+    # Try local model first (if enabled)
+    if config.get("enabled"):
+        try:
+            data_str=json.dumps(data,ensure_ascii=False,default=str)[:3500]
+        except Exception:
+            data_str=str(data)[:3500]
+        prompt = (
+            "You are a friendly, clear property-manager business partner assistant. "
+            "Rewrite the grounded answer below for the manager in warm, natural English. "
+            "RULES: Use ONLY the provided grounded data/answer. Do NOT invent or guess any facts, numbers, names, dates, IDs, items, or actions. "
+            "Keep all IDs/dates/amounts accurate. Be concise, answer-first, use short bullets when helpful, and include 1 helpful follow-up suggestion if relevant.\n\n"
+            f"Manager question: {message}\n\nGrounded answer:\n{core_answer}\n\nGrounded data (JSON):\n{data_str}\n\nFriendly reply:"
+        )
+        txt = _local_llm_generate(prompt, max_tokens=500, temperature=0.2)
+        if txt:
+            return txt.strip()
+    # Deterministic local fallback (always available)
+    return _local_talking_rephrase(message, core_result)
 
 def deterministic_route(message: str) -> dict | None:
     text=(message or "").strip()
@@ -1322,93 +1972,37 @@ def deterministic_route(message: str) -> dict | None:
     res["intent"]=res.get("intent") or intent; res["confidence"]=conf; res["slots"]=slots; res["router"]=cls.get("router","rules")
     return res
 
-def _llm_config():
-    try:
-        provider=(services.get_setting("assistant_provider","auto") or "auto").strip()
-        response_mode=(services.get_setting("assistant_response_mode","talking") or "talking").strip()
-        base=(services.get_setting("assistant_llm_base_url","") or "").strip().rstrip("/")
-        model=(services.get_setting("assistant_llm_model","") or "").strip()
-        key=(services.get_setting("assistant_llm_api_key","") or "").strip()
-    except Exception:
-        provider,response_mode,base,model,key="auto","talking","","",""
-    enabled = provider!="deterministic_only" and bool(base and model)
-    return {"provider":provider,"response_mode":response_mode,"base_url":base,"model":model,"api_key":key,"enabled":enabled}
-
-def _openai_chat(messages, config, tools_schema=None, temperature=0.1, timeout=60):
-    try:
-        import requests
-    except Exception as e:
-        return None, f"requests not available: {e}"
-    url=(config.get("base_url") or "")+"/chat/completions"
-    headers={"Content-Type":"application/json"}
-    if config.get("api_key"): headers["Authorization"]=f"Bearer {config['api_key']}"
-    payload={"model":config.get("model"),"messages":messages,"temperature":temperature}
-    if tools_schema: payload["tools"]=tools_schema; payload["tool_choice"]="auto"
-    try:
-        r=requests.post(url,headers=headers,json=payload,timeout=timeout)
-        if r.status_code>=400: return None, f"LLM HTTP {r.status_code}: {r.text[:300]}"
-        return r.json(), None
-    except Exception as e:
-        return None, str(e)
-
-def talking_rephrase(message: str, core_result: dict, config: dict) -> str | None:
-    if not config or not config.get("enabled"): return None
-    core_answer=(core_result or {}).get("answer") or ""
-    data=(core_result or {}).get("data")
-    try: data_str=json.dumps(data,ensure_ascii=False,default=str)[:5000]
-    except Exception: data_str=str(data)[:5000]
-    system=("You are a friendly property-manager business partner assistant. Answer in clear English. "
-            "You are given GROUNDED BACKEND DATA and a core answer. Rephrase/summarize it nicely and highlight key insights/actions. "
-            "Do NOT invent facts, numbers, names, dates, IDs, or items. Keep IDs/dates/amounts accurate.")
-    user=f"Manager question: {message}\n\nCore grounded answer:\n{core_answer}\n\nGrounded data (JSON):\n{data_str}"
-    resp, err = _openai_chat([{"role":"system","content":system},{"role":"user","content":user}], config, tools_schema=None, temperature=0.2, timeout=45)
-    if err or not resp: return None
-    msg=((resp.get("choices") or [{}])[0].get("message") or {})
-    text=(msg.get("content") or "").strip()
-    return text or None
-
 def llm_route(message: str, history: list[dict] | None = None, config: dict | None = None) -> dict | None:
+    """Local-only 'full' route: uses local GGUF if available for phrasing, else deterministic tool routing. No external calls."""
     config=config or _llm_config()
-    if not config.get("enabled"): return None
-    tools_schema=[{"type":"function","function":{"name":n,"description":s["description"],"parameters":s["parameters"]}} for n,s in TOOLS.items()]
-    system=("You are a property-manager business partner assistant. Use ONLY the provided tools for facts/numbers/guests/reports. "
-            "Never invent data. If ambiguous, ask to clarify. Cite key IDs/dates. Answer in clear English. "
-            "Last visit = most recent Checked Out else most recent non-deleted. Most ordered last visit = get_guest_top_items_last_visit.")
-    msgs=[{"role":"system","content":system}]
-    for h in (history or [])[-8:]:
-        if h.get("role") in ("user","assistant") and h.get("content"): msgs.append({"role":h["role"],"content":str(h["content"])[:4000]})
-    msgs.append({"role":"user","content":message})
-    tools_used=[]; last_data=None
-    for _ in range(6):
-        resp, err = _openai_chat(msgs, config, tools_schema=tools_schema, temperature=0.1, timeout=60)
-        if err:
-            det=deterministic_route(message)
-            return {"ok":bool(det),"source":"full_llm_error_fallback_core" if det else "full_llm_error",
-                    "tools_used":(det or {}).get("tools_used") or tools_used,"data":(det or {}).get("data") or {"error":err},
-                    "answer":((det or {}).get("answer") or "") or f"LLM unavailable ({err}). Try a grounded query (reports, stats, guests, reservations).","llm_error":err}
-        choice=(resp.get("choices") or [{}])[0]; msg=choice.get("message") or {}; tool_calls=msg.get("tool_calls") or []
-        if tool_calls:
-            msgs.append({"role":"assistant","content":msg.get("content") or "","tool_calls":tool_calls})
-            for tc in tool_calls:
-                fn=(tc.get("function") or {}); name=fn.get("name")
-                try: args=json.loads(fn.get("arguments") or "{}")
-                except Exception: args={}
-                result=execute_tool(name,args); tools_used.append(name); last_data=result
-                msgs.append({"role":"tool","tool_call_id":tc.get("id"),"name":name,"content":json.dumps(result,ensure_ascii=False,default=str)[:8000]})
-            continue
-        answer=(msg.get("content") or "").strip() or _format_data("Result", last_data)
-        return {"ok":True,"source":"full_llm_tools","tools_used":tools_used,"data":last_data,"answer":answer}
-    return {"ok":True,"source":"full_llm_tools","tools_used":tools_used,"data":last_data,"answer":_format_data("Result (max tool rounds reached)", last_data)}
+    # Always produce a grounded deterministic/tool result
+    slots=extract_slots(message, history)
+    cls=classify_intent(message, history)
+    intent=cls.get("intent") or "capabilities_help"
+    slots={**slots, **(cls.get("slots") or {})}
+    if intent=="compound_multi_intent": core=_execute_compound(message, slots)
+    else: core=_execute_single(intent, message, slots)
+    core.setdefault("source","local_grounded"); core["intent"]=core.get("intent") or intent
+    core["confidence"]=cls.get("confidence",0.0); core["slots"]=slots; core["router"]=cls.get("router","rules")
+    # optionally polish with local model
+    if config.get("enabled") and core.get("ok") and not core.get("needs_clarification"):
+        polished = talking_rephrase(message, {**core, "core_answer": core.get("answer")}, config)
+        if polished: core["answer"]=polished; core["source"]="local_llm+"+core.get("source","core"); core["talking_model"]="local_gguf"
+    else:
+        core["source"]="local_grounded_core"
+    return core
 
 def chat(message: str, history: list[dict] | None = None) -> dict:
     message=(message or "").strip()
-    if not message: return {"ok":False,"source":"none","tools_used":[],"data":None,"answer":"Please enter a question."}
+    if not message:
+        return {"ok":False,"source":"none","tools_used":[],"data":None,"answer":"Hi! How can I help? Ask me about reports, guests, reservations, operations, or a business briefing — I’ll answer from real app data."}
     try: services.touch_session()
     except Exception: pass
     config=_llm_config(); mode=config.get("response_mode") or "talking"; provider=config.get("provider") or "auto"
-    if mode=="full_llm" and config.get("enabled"):
+
+    if mode=="full_llm":
         res=llm_route(message, history=history, config=config)
-        if res: res["response_mode"]=mode; return res
+        if res: res["response_mode"]="full_llm_local"; return res
 
     slots=extract_slots(message, history)
     cls=classify_intent(message, history)
@@ -1418,15 +2012,12 @@ def chat(message: str, history: list[dict] | None = None) -> dict:
 
     if intent=="compound_multi_intent":
         core=_execute_compound(message, slots)
-    elif confidence < 0.45 and not strong and intent not in ("capabilities_help","unsupported_or_unsafe"):
-        if config.get("enabled") and provider in ("auto","openai_compatible") and mode!="core":
-            res=llm_route(message, history=history, config=config)
-            if res: res["response_mode"]=mode; res["intent"]=intent; res["confidence"]=confidence; return res
+    elif confidence < 0.45 and not strong and intent not in ("capabilities_help","unsupported_or_unsafe","greeting_smalltalk"):
+        # stay local: clarify rather than calling external llm
         core=_execute_single("ambiguous_needs_clarification", message, slots); core["intent"]=intent
     else:
         if intent=="capabilities_help" and confidence < 0.5 and cls.get("low_confidence"):
-            core={"ok":True,"intent":"ambiguous_needs_clarification","needs_clarification":True,"tools_used":[],"data":{"router_confidence":confidence},
-                  "answer":"I’m not confident I understood that request. I can help with: business partner briefing, property/ops stats, reports (P&L/cash/VAT/payments/occupancy/daily ops) and period comparisons, who owes money, inventory alerts, top sellers, expenses/sales breakdown, guests (search/profile/last visit/most-ordered/spend), reservations/balances/pipeline, housekeeping, availability, menus, rate plans, integrity. Please rephrase with specifics (ID, name, report, or date range)."}
+            core=_execute_single("ambiguous_needs_clarification", message, slots); core["intent"]="ambiguous_needs_clarification"
         else:
             core=_execute_single(intent, message, slots)
 
@@ -1434,10 +2025,22 @@ def chat(message: str, history: list[dict] | None = None) -> dict:
     core["confidence"]=confidence; core["slots"]=slots; core["router"]=cls.get("router","rules")
     core["response_mode"]=mode; core["core_answer"]=core.get("answer"); core["core_source"]=core.get("source")
 
-    if mode=="talking" and core.get("ok") and config.get("enabled") and not core.get("needs_clarification"):
-        polished=talking_rephrase(message, core, config)
-        if polished: core["answer"]=polished; core["source"]=f"talking+{core.get('core_source')}"; core["talking_model"]=config.get("model")
-        else: core["source"]=f"talking_unavailable+{core.get('core_source')}"
+    # Local "talking" polish (deterministic always, optional local GGUF) — no external calls
+    if mode in ("talking","auto","local") and core.get("ok") and not core.get("needs_clarification") and intent not in ("greeting_smalltalk",):
+        polished = talking_rephrase(message, core, config)
+        if polished and polished.strip():
+            # ensure grounded: if model somehow drops key, prefer core; here we trust but keep core data
+            core["answer"]=polished
+            core["source"]=f"talking_local+{core.get('core_source','core')}"
+            if config.get("enabled"): core["talking_model"]="local_gguf"
+            else: core["talking_model"]="deterministic"
+        else:
+            core["source"]=core.get("core_source") or core.get("source")
     elif mode=="core":
         core["source"]=core.get("core_source") or core.get("source")
+
+    # propagate resolved guest for context
+    if core.get("resolved_guest_id"):
+        try: core.setdefault("slots",{})["guest_id"] = core["resolved_guest_id"]
+        except Exception: pass
     return core
