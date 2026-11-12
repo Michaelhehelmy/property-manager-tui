@@ -189,6 +189,7 @@ async def walkin(request: Request):
 @router.post("/pos/void/{pos_id}")
 async def pos_void(pos_id: int, request: Request):
     form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    deps.require_unlock(request)
     try:
         services.void_pos_item(pos_id, form.get("password", ""))
         deps.add_flash(request, "POS voided", "success")
@@ -201,6 +202,7 @@ async def pos_void(pos_id: int, request: Request):
 @router.post("/inventory/restock")
 async def restock(request: Request):
     form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    deps.require_unlock(request)
     try:
         services.restock_inventory(int(form.get("item_id")), float(form.get("qty") or 0), float(form.get("unit_cost") or 0), form.get("password", ""))
         deps.add_flash(request, "Inventory restocked (batch recorded with received time)", "success")
@@ -212,6 +214,7 @@ async def restock(request: Request):
 @router.post("/inventory/add")
 async def inv_add(request: Request):
     form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    deps.require_unlock(request)
     try:
         services.add_inventory_item(
             form.get("name", ""), form.get("category", ""), form.get("unit", ""), float(form.get("stock") or 0),
@@ -352,6 +355,7 @@ async def batch_receive(request: Request):
 @router.post("/inventory/label/item/{item_id}")
 async def label_item(item_id: int, request: Request):
     form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    deps.require_unlock(request)
     try:
         ok, msg, p = services.print_item_label(item_id)
         deps.add_flash(request, f"Item label: {msg} ({p})", "success" if ok else "warning")
@@ -363,6 +367,7 @@ async def label_item(item_id: int, request: Request):
 @router.post("/inventory/label/batch/{batch_id}")
 async def label_batch(batch_id: int, request: Request):
     form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    deps.require_unlock(request)
     try:
         ok, msg, p = services.print_batch_label(batch_id)
         deps.add_flash(request, f"Batch label: {msg} ({p})", "success" if ok else "warning")

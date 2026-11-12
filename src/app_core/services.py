@@ -2520,21 +2520,34 @@ def add_inventory_item(name, category, unit, stock, unit_cost, selling_price, lo
             (name.strip(), category.strip(), unit.strip(), float(stock), float(unit_cost),
              float(selling_price), float(low), float(over), sku, barcode, (barcode_type or "code128"), track_batches, shelf_life_days, (default_supplier or "").strip()))
         item_id = cur.lastrowid
-        # if initial stock provided, create an opening batch for traceability
+        # if initial stock provided, create an opening batch for traceability (idempotent guard)
         try:
-            if float(stock) != 0:
+            if abs(float(stock)) > 1e-9:
                 lot = f"OPEN-{item_id}"
-                if conn.execute("SELECT 1 FROM inventory_batches WHERE lot_code=?", (lot,)).fetchone():
-                    lot = f"OPEN-{item_id}-{item_id}"
-                conn.execute("""INSERT INTO inventory_batches
-                    (item_id, lot_code, barcode_value, barcode_type, quantity_received, quantity_remaining,
-                     unit_cost, received_at, expiry_date, supplier, reference, notes, status, payload_json)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                    (item_id, lot, lot, (barcode_type or "code128"), float(stock), float(stock), float(unit_cost),
-                     datetime.now().strftime("%Y-%m-%d %H:%M:%S"), None, (default_supplier or "").strip(), "initial", "Initial stock", "active", "{}"))
-                bid = cur.lastrowid
-                conn.execute("""INSERT INTO inventory_logs (item_id, change_type, quantity, reference, batch_id, unit_cost, balance_after)
-                               VALUES (?, 'OPENING', ?, 'initial stock', ?, ?, ?)""", (item_id, float(stock), bid, float(unit_cost), float(stock)))
+                exists = conn.execute("SELECT id FROM inventory_batches WHERE item_id=? AND lot_code=? AND reference='initial'", (item_id, lot)).fetchone()
+                if not exists:
+                    now_s = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    exp = None
+                    try:
+                        sld = int(shelf_life_days) if shelf_life_days not in (None, "", "None") else None
+                    except Exception:
+                        sld = None
+                    if sld and sld > 0:
+                        exp = (datetime.now() + timedelta(days=sld)).strftime(DATE_FMT)
+                    conn.execute("""INSERT INTO inventory_batches
+                        (item_id, lot_code, barcode_value, barcode_type, quantity_received, quantity_remaining,
+                         unit_cost, received_at, expiry_date, supplier, reference, notes, status, payload_json)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (item_id, lot, lot, (barcode_type or "code128"), float(stock), float(stock), float(unit_cost),
+                         now_s, exp, (default_supplier or "").strip(), "initial", "Initial stock", "active", "{}"))
+                    bid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+                    try:
+                        payload = json.dumps({"v":1,"t":"lot","item":item_id,"name":name.strip(),"lot":lot,"recv":now_s,"exp":exp or "","qty":float(stock),"rem":float(stock),"cost":float(unit_cost)}, separators=(",",":"), ensure_ascii=False)
+                        conn.execute("UPDATE inventory_batches SET payload_json=? WHERE id=?", (payload, bid))
+                    except Exception:
+                        pass
+                    conn.execute("""INSERT INTO inventory_logs (item_id, change_type, quantity, reference, batch_id, unit_cost, balance_after)
+                                   VALUES (?, 'OPENING', ?, 'initial stock', ?, ?, ?)""", (item_id, float(stock), bid, float(unit_cost), float(stock)))
         except Exception:
             pass
     _audit("inventory_add", "inventory", "", name)
