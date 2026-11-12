@@ -661,6 +661,15 @@ def tool_business_partner_briefing(args=None):
     data["insights"] = insights
     return data
 
+def tool_get_app_update_status(args=None):
+    try:
+        from . import updater
+        local = updater.get_local_state()
+        return {"app_version": local.get("app_version"), "local": local, "how_to_check": "Use Settings → App updates → Check for updates (web/TUI) to see available updates, changelog, and apply safely while preserving data (DB/exports/invoices)."}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 def tool_get_expiring_batches(args=None):
     try:
         args = args or {}
@@ -755,6 +764,7 @@ TOOLS = {
     "get_expiring_batches": {"fn": tool_get_expiring_batches, "description": "List expiring/expired inventory batches (traceable lots) within days.", "parameters": {"type":"object","properties":{"within_days":{"type":"integer"},"include_expired":{"type":"boolean"}},"additionalProperties":False}},
     "list_inventory_batches": {"fn": tool_list_inventory_batches, "description": "List inventory batches/lots with received/expiry/remaining/cost for an item or all.", "parameters": {"type":"object","properties":{"item_id":{"type":"integer"},"status":{"type":"string"},"expiring_within_days":{"type":"integer"},"include_depleted":{"type":"boolean"}},"additionalProperties":False}},
     "trace_barcode": {"fn": tool_trace_barcode, "description": "Trace a barcode/SKU/lot code to the inventory item or batch (lot, received, expiry, remaining, movements).", "parameters": {"type":"object","properties":{"code":{"type":"string"},"barcode":{"type":"string"},"sku":{"type":"string"}},"additionalProperties":False}},
+    "get_app_update_status": {"fn": tool_get_app_update_status, "description": "Get local app version/commit/update state and how to check/apply updates (data preserved).", "parameters": {"type":"object","properties":{},"additionalProperties":False}},
 }
 
 def execute_tool(name: str, args: dict | None = None) -> dict:
@@ -802,7 +812,7 @@ def _fmt_capabilities(data: dict) -> str:
     lines.append("- **Inventory & catalog:** `any low stock items?`, `top selling items`, `what expires soon?`, `expiring batches in 7 days`, `list inventory batches`, `trace barcode LOT-...` / `trace SKU ...` (lot received/expiry/movements), `menu`, `rate plans`, `list registered activities`, `activity booking statistics`")
     lines.append("- **Guests (360°):** `find guest Ahmed`, `guest #3 profile`, `show guest #3 full portfolio` (all stays, POS/orders, payments, invoices, totals), `when was guest #3 last visit?`, `what did guest #3 order most on last visit?`, `guest #3 last visit spend`, `what activities did guest #3 book?`")
     lines.append("- **Reservations:** `reservation #12 summary`, `reservation #12 balance`")
-    lines.append("- **Health & audit:** `ledger integrity check`, `recent activity`")
+    lines.append("- **Health, audit & updates:** `ledger integrity check`, `recent activity`, `check for updates` / `what app version`")
     lines.append("")
     lines.append("**Tips**")
     lines.append("- Be specific when you can: use IDs (`guest #3`, `reservation #12`), names (`find guest Sara`), report names, or date ranges (`2026-10-01 to 2026-10-31`, `last month`, `this week`).")
@@ -1458,6 +1468,20 @@ def _fmt_trace_barcode(data: dict) -> str:
     return _format_data("Trace result", data)
 
 
+def _fmt_app_update_status(data: dict) -> str:
+    if data.get("error"):
+        return f"I couldn’t read app update status ({data.get('error')})."
+    local = data.get("local") or {}
+    lines = ["App version and update status (local, grounded):"]
+    lines.append(f"- App version: **{data.get('app_version') or local.get('app_version') or '—'}**")
+    lines.append(f"- Installed commit: `{local.get('commit_short') or '—'}` {('— ' + local.get('commit_subject')) if local.get('commit_subject') else ''} {( '('+local.get('commit_date')+')' ) if local.get('commit_date') else ''}")
+    lines.append(f"- Branch: {local.get('branch') or '—'} {'(local changes present)' if local.get('dirty') else ''}")
+    if local.get('data_dir'): lines.append(f"- Data directory (preserved on update): {local.get('data_dir')}")
+    how = data.get('how_to_check') or "Use Settings → App updates to check for updates, view changelog, and update safely (DB/exports/invoices preserved)."
+    lines.append(f"- {how}")
+    return "\n".join(lines)
+
+
 def _apply_proactive(intent: str, data: dict, answer: str) -> str:
     sugg = _proactive_suggestions(intent, data or {}, answer)
     if not sugg: return answer
@@ -1481,6 +1505,7 @@ def _format_for_intent(intent: str, data: dict, fallback_title: str = "Result") 
         if intent in ("expiring_batches","get_expiring_batches"): return _fmt_expiring_batches(data)
         if intent in ("inventory_batches","list_inventory_batches"): return _fmt_inventory_batches(data)
         if intent in ("trace_barcode","barcode_trace"): return _fmt_trace_barcode(data)
+        if intent in ("app_update_status","get_app_update_status","app_version"): return _fmt_app_update_status(data)
         if intent == "top_selling_items": return _fmt_top_sellers(data)
         if intent == "expenses_summary": return _fmt_expenses(data)
         if intent == "sales_breakdown": return _fmt_sales_breakdown(data)
@@ -1854,6 +1879,10 @@ def _execute_single(intent: str, text: str, slots: dict):
     if any(k in tl for k in ["list batches", "show batches", "inventory batches", "batch list", "lots for", "stock batches"]):
         data=execute_tool("list_inventory_batches",{"item_id": slots.get("item_id")}); tools_used.append("list_inventory_batches")
         return _answer("inventory_batches", tools_used, data)
+
+    if any(k in tl for k in ["check for updates", "check update", "app update", "update app", "new version", "latest version", "what version", "app version", "software update"]):
+        data=execute_tool("get_app_update_status",{}); tools_used.append("get_app_update_status")
+        return _answer("app_update_status", tools_used, data)
 
     if intent=="capabilities_help":
         data=execute_tool("list_capabilities",{}); tools_used.append("list_capabilities")
