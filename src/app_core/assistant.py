@@ -661,6 +661,65 @@ def tool_business_partner_briefing(args=None):
     data["insights"] = insights
     return data
 
+def tool_get_expiring_batches(args=None):
+    try:
+        args = args or {}
+        days = args.get("within_days") or args.get("days")
+        try:
+            days = int(days) if days not in (None, "") else None
+        except Exception:
+            days = None
+        include_expired = bool(args.get("include_expired", True))
+        rows = services.get_expiring_batches(days, include_expired=include_expired)
+        out = [dict(r) for r in (rows or [])]
+        return {"batches": out, "count": len(out), "within_days": days, "include_expired": include_expired}
+    except Exception as e:
+        return {"error": str(e)}
+
+def tool_list_inventory_batches(args=None):
+    try:
+        args = args or {}
+        item_id = args.get("item_id")
+        try:
+            item_id = int(item_id) if item_id not in (None, "") else None
+        except Exception:
+            item_id = None
+        status = args.get("status") or None
+        expiring_within_days = args.get("expiring_within_days") or args.get("within_days")
+        try:
+            expiring_within_days = int(expiring_within_days) if expiring_within_days not in (None, "") else None
+        except Exception:
+            expiring_within_days = None
+        include_depleted = bool(args.get("include_depleted", False))
+        rows = services.list_inventory_batches(item_id=item_id, status=status, expiring_within_days=expiring_within_days, include_depleted=include_depleted)
+        out = [dict(r) for r in (rows or [])]
+        return {"batches": out, "count": len(out), "item_id": item_id}
+    except Exception as e:
+        return {"error": str(e)}
+
+def tool_trace_barcode(args=None):
+    try:
+        code = ((args or {}).get("code") or (args or {}).get("barcode") or (args or {}).get("sku") or "").strip()
+        if not code:
+            return {"error": "Provide a barcode/SKU/lot code to trace."}
+        res = services.resolve_barcode(code)
+        # enrich batch with recent movements if batch found
+        if res.get("type") == "batch" and res.get("batch"):
+            try:
+                bid = (res["batch"] or {}).get("id")
+                if bid:
+                    from .db import connect
+                    logs = connect().execute(
+                        "SELECT at, change_type, quantity, reference, unit_cost, balance_after FROM inventory_logs WHERE batch_id=? ORDER BY id DESC LIMIT 20",
+                        (bid,)).fetchall()
+                    res["batch_movements"] = [dict(r) for r in logs]
+            except Exception:
+                pass
+        return res
+    except Exception as e:
+        return {"error": str(e)}
+
+
 TOOLS = {
     "list_capabilities": {"fn": tool_list_capabilities, "description": "List assistant capabilities.", "parameters": {"type":"object","properties":{},"additionalProperties":False}},
     "get_property_stats": {"fn": tool_get_property_stats, "description": "Property counts/stats (guests, rooms, reservations by status, in-house, arrivals/departures today).", "parameters": {"type":"object","properties":{},"additionalProperties":False}},
@@ -693,6 +752,9 @@ TOOLS = {
     "get_reservation_summary": {"fn": tool_get_reservation_summary, "description": "Reservation details, balance, POS count.", "parameters": {"type":"object","properties":{"reservation_id":{"type":"integer"}},"required":["reservation_id"],"additionalProperties":False}},
     "get_guest_balance": {"fn": tool_get_guest_balance, "description": "Reservation/guest balance and breakdown.", "parameters": {"type":"object","properties":{"reservation_id":{"type":"integer"}},"required":["reservation_id"],"additionalProperties":False}},
     "get_recent_activity": {"fn": tool_get_recent_activity, "description": "Recent audit/activity log.", "parameters": {"type":"object","properties":{"limit":{"type":"integer"}},"additionalProperties":False}},
+    "get_expiring_batches": {"fn": tool_get_expiring_batches, "description": "List expiring/expired inventory batches (traceable lots) within days.", "parameters": {"type":"object","properties":{"within_days":{"type":"integer"},"include_expired":{"type":"boolean"}},"additionalProperties":False}},
+    "list_inventory_batches": {"fn": tool_list_inventory_batches, "description": "List inventory batches/lots with received/expiry/remaining/cost for an item or all.", "parameters": {"type":"object","properties":{"item_id":{"type":"integer"},"status":{"type":"string"},"expiring_within_days":{"type":"integer"},"include_depleted":{"type":"boolean"}},"additionalProperties":False}},
+    "trace_barcode": {"fn": tool_trace_barcode, "description": "Trace a barcode/SKU/lot code to the inventory item or batch (lot, received, expiry, remaining, movements).", "parameters": {"type":"object","properties":{"code":{"type":"string"},"barcode":{"type":"string"},"sku":{"type":"string"}},"additionalProperties":False}},
 }
 
 def execute_tool(name: str, args: dict | None = None) -> dict:
@@ -737,7 +799,7 @@ def _fmt_capabilities(data: dict) -> str:
     lines.append("**How to use (examples you can ask)**")
     lines.append("- **Business & ops:** `business partner briefing for this month`, `how are we doing?`, `today's ops`, `property stats`, `housekeeping status`, `reservation pipeline`, `available rooms tomorrow`")
     lines.append("- **Money & reports:** `who owes money?`, `P&L last month`, `cash flow this month`, `VAT 2026-11-01 to 2026-11-30`, `payment methods this month`, `occupancy last month`, `compare this month vs last month`, `expenses breakdown last month`, `top selling items this month`, `sales breakdown this week`")
-    lines.append("- **Inventory & catalog:** `any low stock items?`, `top selling items`, `menu`, `rate plans`, `list registered activities`, `activity booking statistics`")
+    lines.append("- **Inventory & catalog:** `any low stock items?`, `top selling items`, `what expires soon?`, `expiring batches in 7 days`, `list inventory batches`, `trace barcode LOT-...` / `trace SKU ...` (lot received/expiry/movements), `menu`, `rate plans`, `list registered activities`, `activity booking statistics`")
     lines.append("- **Guests (360°):** `find guest Ahmed`, `guest #3 profile`, `show guest #3 full portfolio` (all stays, POS/orders, payments, invoices, totals), `when was guest #3 last visit?`, `what did guest #3 order most on last visit?`, `guest #3 last visit spend`, `what activities did guest #3 book?`")
     lines.append("- **Reservations:** `reservation #12 summary`, `reservation #12 balance`")
     lines.append("- **Health & audit:** `ledger integrity check`, `recent activity`")
@@ -1336,6 +1398,66 @@ def _proactive_suggestions(intent: str, data: dict, answer_text: str = "") -> li
         seen.add(s); out.append(s)
     return out[:2]
 
+def _fmt_expiring_batches(data: dict) -> str:
+    if data.get("error"):
+        return f"I couldn’t load expiring batches ({data.get('error')})."
+    batches = data.get("batches") or []
+    days = data.get("within_days")
+    lines = [f"Inventory batches expiring/expired{f' within {days} day(s)' if days is not None else ''} (real, traceable lots):"]
+    if not batches:
+        lines.append("- None found. Stock looks clear for the selected window.")
+        return "\n".join(lines)
+    for b in batches[:25]:
+        st = b.get('expiry_state') or b.get('status') or ''
+        lines.append(f"- **{b.get('item_name') or ('Item #'+str(b.get('item_id')))}** lot `{b.get('lot_code')}`: remaining **{b.get('quantity_remaining')}** (recv {b.get('quantity_received')}), received {b.get('received_at') or '-'}, expiry {b.get('expiry_date') or '-'} [{st}], cost {_fmt_money(b.get('unit_cost',0))}, supplier {b.get('supplier') or '-'}")
+    if len(batches) > 25:
+        lines.append(f"- …and {len(batches)-25} more batches.")
+    return "\n".join(lines)
+
+def _fmt_inventory_batches(data: dict) -> str:
+    if data.get("error"):
+        return f"I couldn’t load inventory batches ({data.get('error')})."
+    batches = data.get("batches") or []
+    item_id = data.get("item_id")
+    lines = [f"Inventory batches/lots{f' for item #{item_id}' if item_id else ''} (traceable, real data):"]
+    if not batches:
+        lines.append("- No batches found for the given criteria.")
+        return "\n".join(lines)
+    for b in batches[:30]:
+        lines.append(f"- **{b.get('item_name') or ('Item #'+str(b.get('item_id')))}** lot `{b.get('lot_code')}` (#{b.get('id')}): remaining **{b.get('quantity_remaining')}**/{b.get('quantity_received')}, received {b.get('received_at') or '-'}, expiry {b.get('expiry_date') or '-'} [{b.get('expiry_state') or b.get('status') or ''}], cost {_fmt_money(b.get('unit_cost',0))}, ref {b.get('reference') or '-'}")
+    if len(batches) > 30:
+        lines.append(f"- …and {len(batches)-30} more.")
+    return "\n".join(lines)
+
+def _fmt_trace_barcode(data: dict) -> str:
+    if data.get("error"):
+        return f"I couldn’t trace that code ({data.get('error')}). { 'Try a different barcode/SKU/lot code.' if 'not found' in str(data.get('error','')).lower() else '' }".strip()
+    t = data.get("type")
+    if t == "item":
+        it = data.get("item") or {}
+        lines = [f"Barcode/SKU resolved to inventory item (real data):"]
+        lines.append(f"- **{it.get('item_name')}** (#{it.get('id')}), category {it.get('category') or '-'}, stock {it.get('stock_qty')} {it.get('unit') or ''}, sell {_fmt_money(it.get('selling_price',0))}, cost {_fmt_money(it.get('unit_cost',0))}")
+        lines.append(f"- SKU: {it.get('sku') or '-'} | Barcode: {it.get('barcode') or '-'} | Batches tracked: {'yes' if it.get('track_batches') else 'no'} | Shelf life: {it.get('shelf_life_days') or '-'} days")
+        return "\n".join(lines)
+    if t == "batch":
+        b = data.get("batch") or {}
+        it = data.get("item") or {}
+        lines = [f"Barcode/lot resolved to a traceable batch (real data):"]
+        if it:
+            lines.append(f"- Item: **{it.get('item_name')}** (#{it.get('id')}) SKU {it.get('sku') or '-'}")
+        lines.append(f"- Lot: `{b.get('lot_code')}` (batch #{b.get('id')}), status {b.get('status') or '-'} [{b.get('expiry_state') or ''}]")
+        lines.append(f"- Received: {b.get('received_at') or '-'} | Expiry: {b.get('expiry_date') or '-'} | Qty: remaining **{b.get('quantity_remaining')}** / received {b.get('quantity_received')}")
+        lines.append(f"- Unit cost: {_fmt_money(b.get('unit_cost',0))} | Supplier: {b.get('supplier') or '-'} | Ref: {b.get('reference') or '-'}")
+        if b.get('notes'): lines.append(f"- Notes: {_short(b.get('notes'), 140)}")
+        moves = data.get("batch_movements") or []
+        if moves:
+            lines.append("Recent movements:")
+            for m in moves[:8]:
+                lines.append(f"  - {m.get('at','')}: {m.get('change_type','')} qty {m.get('quantity')} (ref {m.get('reference') or '-'})")
+        return "\n".join(lines)
+    return _format_data("Trace result", data)
+
+
 def _apply_proactive(intent: str, data: dict, answer: str) -> str:
     sugg = _proactive_suggestions(intent, data or {}, answer)
     if not sugg: return answer
@@ -1356,6 +1478,9 @@ def _format_for_intent(intent: str, data: dict, fallback_title: str = "Result") 
         if intent == "compare_periods": return _fmt_compare(data)
         if intent == "outstanding_balances": return _fmt_outstanding(data)
         if intent == "inventory_alerts": return _fmt_inventory_alerts(data)
+        if intent in ("expiring_batches","get_expiring_batches"): return _fmt_expiring_batches(data)
+        if intent in ("inventory_batches","list_inventory_batches"): return _fmt_inventory_batches(data)
+        if intent in ("trace_barcode","barcode_trace"): return _fmt_trace_barcode(data)
         if intent == "top_selling_items": return _fmt_top_sellers(data)
         if intent == "expenses_summary": return _fmt_expenses(data)
         if intent == "sales_breakdown": return _fmt_sales_breakdown(data)
@@ -1703,6 +1828,33 @@ def _execute_single(intent: str, text: str, slots: dict):
             ans = "Hi! I’m your property manager assistant and business partner. I can help with reports, operations, guests (profiles/portfolios/last visits/bookings), reservations, balances, inventory, activities, and more — all grounded in real app data. What would you like to know?"
         return {"ok":True,"intent":intent,"tools_used":[], "data":{}, "answer":ans}
 
+    # quick keyword routing for batch/trace intents (grounded tools)
+    tl = _norm_text(text)
+    if any(k in tl for k in ["expir", "expire soon", "expiring", "expired batch", "what expires", "expiry"]):
+        days = None
+        import re as _re
+        m = _re.search(r"(\d+)\s*day", tl)
+        if m:
+            try: days = int(m.group(1))
+            except Exception: days = None
+        data=execute_tool("get_expiring_batches",{"within_days": days, "include_expired": True}); tools_used.append("get_expiring_batches")
+        return _answer("expiring_batches", tools_used, data)
+    if any(k in tl for k in ["trace barcode", "trace lot", "trace code", "scan barcode", "lookup barcode", "barcode lookup", "lot trace", "track lot", "received when", "when received", "batch trace"]):
+        code = slots.get("barcode") or slots.get("sku") or slots.get("code")
+        if not code:
+            import re as _re
+            m = _re.search(r"(?:barcode|sku|lot|code|trace)\s*[:#]?\s*([A-Za-z0-9._\-]+)", text or "", _re.I)
+            if m: code = m.group(1)
+        if not code:
+            import re as _re
+            toks = _re.findall(r"[A-Za-z0-9][A-Za-z0-9._\-]{2,}", text or "")
+            if toks: code = toks[-1]
+        data=execute_tool("trace_barcode",{"code": code}); tools_used.append("trace_barcode")
+        return _answer("trace_barcode", tools_used, data)
+    if any(k in tl for k in ["list batches", "show batches", "inventory batches", "batch list", "lots for", "stock batches"]):
+        data=execute_tool("list_inventory_batches",{"item_id": slots.get("item_id")}); tools_used.append("list_inventory_batches")
+        return _answer("inventory_batches", tools_used, data)
+
     if intent=="capabilities_help":
         data=execute_tool("list_capabilities",{}); tools_used.append("list_capabilities")
         return _answer(intent, tools_used, data)
@@ -1750,6 +1902,30 @@ def _execute_single(intent: str, text: str, slots: dict):
     if intent=="inventory_alerts":
         data=execute_tool("get_inventory_alerts",{}); tools_used.append("get_inventory_alerts")
         return _answer(intent, tools_used, data)
+    if intent in ("expiring_batches","get_expiring_batches"):
+        days = slots.get("days") or slots.get("within_days")
+        try: days = int(days) if days not in (None, "") else None
+        except Exception: days = None
+        data=execute_tool("get_expiring_batches",{"within_days": days, "include_expired": True}); tools_used.append("get_expiring_batches")
+        return _answer("expiring_batches", tools_used, data)
+    if intent in ("inventory_batches","list_inventory_batches"):
+        item_id = slots.get("item_id")
+        data=execute_tool("list_inventory_batches",{"item_id": item_id}); tools_used.append("list_inventory_batches")
+        return _answer("inventory_batches", tools_used, data)
+    if intent in ("trace_barcode","barcode_trace"):
+        code = slots.get("barcode") or slots.get("sku") or slots.get("code") or slots.get("lot_code") or slots.get("query") or slots.get("guest_query")
+        # try to extract code-like token from text
+        if not code:
+            import re as _re
+            m = _re.search(r"(?:barcode|sku|lot|code|trace)\s*[:#]?\s*([A-Za-z0-9._\-]+)", text, _re.I)
+            if m: code = m.group(1)
+        if not code:
+            # fallback: take last alnum token
+            import re as _re
+            toks = _re.findall(r"[A-Za-z0-9][A-Za-z0-9._\-]{2,}", text or "")
+            if toks: code = toks[-1]
+        data=execute_tool("trace_barcode",{"code": code}); tools_used.append("trace_barcode")
+        return _answer("trace_barcode", tools_used, data)
     if intent=="top_selling_items":
         data=execute_tool("get_top_selling_items",{"start":start,"end":end,"limit":10}); tools_used.append("get_top_selling_items")
         return _answer(intent, tools_used, data)
