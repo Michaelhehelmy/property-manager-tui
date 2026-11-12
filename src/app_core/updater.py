@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import urllib.error
@@ -24,6 +25,14 @@ REPO_URL = f"https://github.com/{REPO_SLUG}"
 API_COMMITS_URL = f"https://api.github.com/repos/{REPO_SLUG}/commits"
 DEFAULT_BRANCH = "main"
 USER_AGENT = "property-manager-tui-updater"
+_SAFE_REF_RE = re.compile(r"^[A-Za-z0-9._/\-]+$")
+
+
+def _validate_ref(name: str, value: str) -> str:
+    v = str(value or "").strip()
+    if not v or not _SAFE_REF_RE.match(v) or v.startswith("-") or ".." in v or v.endswith(".lock"):
+        raise ValueError(f"Invalid {name}: {value!r}")
+    return v
 
 
 def _project_root() -> Path:
@@ -124,9 +133,17 @@ def check_for_updates(branch: str = DEFAULT_BRANCH, limit: int = 20) -> dict[str
         "error": None,
         "notes": [],
     }
+    try:
+        branch = _validate_ref("branch", branch)
+        result["remote_branch"] = branch
+    except Exception as e:
+        result["ok"] = False
+        result["error"] = str(e)
+        return result
     local_commit = local.get("commit")
     try:
-        commits = _github_get(f"{API_COMMITS_URL}?sha={branch}&per_page={int(limit)}", timeout=12)
+        safe_limit = max(1, min(int(limit or 20), 100))
+        commits = _github_get(f"{API_COMMITS_URL}?sha={branch}&per_page={safe_limit}", timeout=12)
     except Exception as e:
         result["ok"] = False
         result["error"] = f"Could not check for updates: {e}"
@@ -220,6 +237,11 @@ def apply_update(branch: str = DEFAULT_BRANCH) -> dict[str, Any]:
             "Restart the app after a successful update.",
         ],
     }
+    try:
+        branch = _validate_ref("branch", branch)
+    except Exception as e:
+        res["error"] = str(e)
+        return res
     if not local.get("is_git_repo"):
         res["error"] = "Not a git installation; cannot auto-update. Reinstall using the latest installer/scripts."
         return res
@@ -228,7 +250,7 @@ def apply_update(branch: str = DEFAULT_BRANCH) -> dict[str, Any]:
         return res
 
     for name, args in [
-        ("fetch", ["fetch", "origin", branch, "--tags"]),
+        ("fetch", ["fetch", "--prune", "origin", branch, "--tags"]),
         ("pull", ["pull", "--ff-only", "origin", branch]),
     ]:
         rc, out, err = _run_git(args, cwd=root, timeout=120)

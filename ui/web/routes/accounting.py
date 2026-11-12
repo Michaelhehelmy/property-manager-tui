@@ -18,7 +18,7 @@ def accounting(request: Request):
 
 @router.post("/accounting/expense")
 async def expense(request: Request):
-    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    form = await deps.get_form(request)
     deps.require_unlock(request)
     try:
         services.record_operational_expense(int(form.get("cat_id")), form.get("param","Expense"), float(form.get("amount") or 0), float(form.get("vat") or 0), form.get("notes",""), form.get("method","Cash"))
@@ -28,7 +28,7 @@ async def expense(request: Request):
 
 @router.post("/accounting/expense/{eid}/void")
 async def void_expense(eid: int, request: Request):
-    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    form = await deps.get_form(request)
     deps.require_unlock(request)
     try: services.void_expense(eid, form.get("password","")); deps.add_flash(request,"Expense voided","success")
     except Exception as e: deps.add_flash(request,str(e),"error")
@@ -36,7 +36,7 @@ async def void_expense(eid: int, request: Request):
 
 @router.post("/accounting/payment")
 async def payment(request: Request):
-    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    form = await deps.get_form(request)
     deps.require_unlock(request)
     try:
         rid = form.get("reservation_id"); rid = int(rid) if rid else None
@@ -47,7 +47,7 @@ async def payment(request: Request):
 
 @router.post("/accounting/refund")
 async def refund(request: Request):
-    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    form = await deps.get_form(request)
     deps.require_unlock(request)
     try:
         services.record_refund(int(form.get("reservation_id")), float(form.get("amount") or 0), form.get("method","Cash"), form.get("notes",""), form.get("password",""))

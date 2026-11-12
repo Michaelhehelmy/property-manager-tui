@@ -245,12 +245,15 @@ def tool_list_capabilities(args=None):
         "Guests: search, profile, full 360° portfolio (all trips/stays, POS activity, payments, invoices, totals/stats), last visit, most-ordered items and spend on last visit, booked activities/trips",
         "Activities/Trips (excursions/experiences): registered catalog, booking/order stats, and guest/reservation bookings (booked like POS to folio/invoice)",
         "Reservations: summary/details, balance, outstanding balances/AR, pipeline",
-        "Inventory: alerts (low/over/negative), top-selling items; menu/meals",
-        "Expenses and sales breakdown; rate plans; room availability; ledger/data integrity",
+        "Inventory: alerts (low/over/negative), top-selling items, expiring/expired batches and batch/lot lists, barcode/SKU/lot traceability (resolved item or lot with received/expiry/remaining and recent movements); menu/meals",
+        "Expenses and sales breakdown; rate plans; room availability",
+        "Integrity & health: read-only ledger/data integrity checks (and in-app/web health probes)",
+        "App version & updates: local app version/commit state and how to check/apply updates in-app (changelog/details; git-based fast-forward apply; runtime data preserved, restart after apply)",
     ], "notes": [
         "All answers grounded in real backend data (read-only).",
         "Last visit = most recent Checked Out, else most recent non-deleted.",
         "Booked activities/trips are posted as POS charges to the reservation folio/invoice.",
+        "Inventory traceability is batch/lot-aware when enabled: you can review expiring batches, list lots, and trace barcodes/SKUs/lot codes to see received, expiry, remaining quantity, and movements.",
     ]}
 
 def tool_search_guests(args):
@@ -1402,6 +1405,25 @@ def _proactive_suggestions(intent: str, data: dict, answer_text: str = "") -> li
             sug.append("Ask me anything above — I’ll answer from real app data.")
     except Exception:
         pass
+    # batch/expiry/trace, integrity/health, updates
+    try:
+        if intent in ("expiring_batches", "get_expiring_batches"):
+            n = (data or {}).get("count", 0)
+            if n: sug.append("Want to trace a specific lot/barcode to see received date, expiry, and movements?")
+            sug.append("I can also list all inventory batches/lots or show inventory alerts.")
+        elif intent in ("inventory_batches", "list_inventory_batches"):
+            sug.append("Want to trace a barcode/SKU/lot code for full traceability (received/expiry/movements)?")
+            sug.append("I can also show batches expiring soon.")
+        elif intent in ("trace_barcode", "barcode_trace"):
+            sug.append("Want to list all batches for this item or see which batches are expiring soon?")
+        elif intent in ("ledger_integrity", "verify_ledger_integrity"):
+            ok = (data or {}).get("ok")
+            if ok is False: sug.append("Consider reviewing the flagged items in-app (Settings/health checks) before relying on reports.")
+            else: sug.append("Want today’s ops or a business partner briefing for a quick health/ops snapshot?")
+        elif intent in ("app_update_status", "get_app_update_status", "app_version"):
+            sug.append("For git-based installs you can check/apply updates in Settings → App updates (changelog shown; data preserved; restart after apply).")
+    except Exception:
+        pass
     # dedupe, keep max 2
     out=[]; seen=set()
     for s in sug:
@@ -1478,8 +1500,9 @@ def _fmt_app_update_status(data: dict) -> str:
     lines.append(f"- Installed commit: `{local.get('commit_short') or '—'}` {('— ' + local.get('commit_subject')) if local.get('commit_subject') else ''} {( '('+local.get('commit_date')+')' ) if local.get('commit_date') else ''}")
     lines.append(f"- Branch: {local.get('branch') or '—'} {'(local changes present)' if local.get('dirty') else ''}")
     if local.get('data_dir'): lines.append(f"- Data directory (preserved on update): {local.get('data_dir')}")
-    how = data.get('how_to_check') or "Use Settings → App updates to check for updates, view changelog, and update safely (DB/exports/invoices preserved)."
+    how = data.get('how_to_check') or "Use Settings → App updates to check for updates, view changelog, and apply safely (DB/exports/invoices preserved)."
     lines.append(f"- {how}")
+    lines.append("- In-app (Web & TUI, git-based installs): **Settings → App updates** lets you check for updates, review changelog/details, and apply a fast-forward update. Runtime data (DB, exports, invoices, configured data dir) is preserved; restart the app after applying.")
     return "\n".join(lines)
 
 

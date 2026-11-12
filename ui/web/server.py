@@ -35,15 +35,25 @@ def create_app(*, init_db: bool = True, run_startup: bool = True) -> FastAPI:
     async def session_middleware(request: Request, call_next):
         deps.get_session(request)
         deps.csrf_token(request)
-        # Best-effort header/JSON CSRF enforcement (form posts verified in handlers)
+        # Evaluate per-browser unlock expiry and slide activity for unlocked sessions.
+        if deps.is_unlocked(request):
+            deps.touch_web_unlock(request)
+            deps.sync_backend_session_if_possible()
+        # Enforce CSRF for state-changing requests. Form posts must include a form token
+        # (or header fallback); JSON/unsafe API-style requests must include x-csrf-token.
         if request.method.upper() in ("POST", "PUT", "PATCH", "DELETE"):
-            ct = (request.headers.get("content-type") or "").lower()
-            token = request.headers.get("x-csrf-token")
-            if "application/json" in ct or token is not None:
-                deps.verify_csrf(request, token)
+            path = request.url.path
+            if path not in ("/health", "/healthz"):
+                ct = (request.headers.get("content-type") or "").lower()
+                token = request.headers.get("x-csrf-token")
+                if "application/json" in ct or token is not None:
+                    deps.verify_csrf(request, token)
+                elif "multipart/form-data" in ct or "application/x-www-form-urlencoded" in ct or ct == "":
+                    form = await request.form()
+                    deps.verify_csrf(request, form.get("csrf"))
+                    request.state.cached_form = form
         response = await call_next(request)
-        if "pm_session" not in response.headers.get("set-cookie", ""):
-            deps.save_session(response, deps.get_session(request))
+        deps.save_session(response, deps.get_session(request))
         return response
 
     from ui.web.routes import accounting, assistant, dashboard, files, guests, pos_inventory, reports_analytics, reservations, settings_branding

@@ -26,7 +26,7 @@ def list_res(request: Request, q: str = ""):
 
 @router.post("/reservations/create")
 async def create(request: Request):
-    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    form = await deps.get_form(request)
     try:
         rid = services.create_reservation(form.get("guest_name",""), form.get("source","Direct"), int(form.get("room_id")),
               int(form["rate_plan_id"]) if form.get("rate_plan_id") else None, float(form.get("rate") or 0),
@@ -62,7 +62,7 @@ def detail(rid: int, request: Request):
     })
 
 async def _act(request, rid, fn, ok):
-    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    form = await deps.get_form(request)
     try:
         fn(form); deps.add_flash(request, ok, "success")
     except Exception as e:
@@ -75,7 +75,7 @@ async def checkin(rid: int, request: Request):
 
 @router.post("/reservations/{rid}/checkout")
 async def checkout(rid: int, request: Request):
-    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    form = await deps.get_form(request)
     try:
         needs, bal, _ = services.checkout_requires_override(rid)
         if needs:
@@ -87,7 +87,7 @@ async def checkout(rid: int, request: Request):
 
 @router.post("/reservations/{rid}/checkout-override")
 async def checkout_override(rid: int, request: Request):
-    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    form = await deps.get_form(request)
     deps.require_unlock(request)
     try:
         services.checkout_reservation(rid, override=True, password=form.get("password",""))
@@ -97,7 +97,7 @@ async def checkout_override(rid: int, request: Request):
 
 @router.post("/reservations/{rid}/cancel")
 async def cancel(rid: int, request: Request):
-    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    form = await deps.get_form(request)
     deps.require_unlock(request)
     try: services.cancel_reservation(rid, form.get("password","")); deps.add_flash(request,"Cancelled","success")
     except Exception as e: deps.add_flash(request,str(e),"error")
@@ -105,7 +105,7 @@ async def cancel(rid: int, request: Request):
 
 @router.post("/reservations/{rid}/noshow")
 async def noshow(rid: int, request: Request):
-    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    form = await deps.get_form(request)
     deps.require_unlock(request)
     try: services.mark_no_show(rid, form.get("password","")); deps.add_flash(request,"Marked no-show","success")
     except Exception as e: deps.add_flash(request,str(e),"error")
@@ -113,7 +113,7 @@ async def noshow(rid: int, request: Request):
 
 @router.post("/reservations/{rid}/delete")
 async def delete(rid: int, request: Request):
-    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    form = await deps.get_form(request)
     deps.require_unlock(request)
     try: services.delete_reservation(rid, form.get("password","")); deps.add_flash(request,"Deleted","success"); dest="/reservations"
     except Exception as e: deps.add_flash(request,str(e),"error"); dest=f"/reservations/{rid}"
@@ -121,7 +121,7 @@ async def delete(rid: int, request: Request):
 
 @router.post("/reservations/{rid}/modify")
 async def modify(rid: int, request: Request):
-    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    form = await deps.get_form(request)
     deps.require_unlock(request)
     try:
         services.modify_reservation(rid, float(form.get("rate") or 0), form.get("check_in",""), form.get("check_out",""), int(form.get("room_id")), form.get("password",""))
@@ -131,7 +131,7 @@ async def modify(rid: int, request: Request):
 
 @router.post("/reservations/{rid}/pay")
 async def pay(rid: int, request: Request):
-    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    form = await deps.get_form(request)
     try:
         services.record_payment(rid, float(form.get("amount") or 0), form.get("method","Cash"), form.get("notes",""), form.get("payment_type","Payment"))
         deps.add_flash(request,"Payment recorded","success")
@@ -140,7 +140,7 @@ async def pay(rid: int, request: Request):
 
 @router.post("/reservations/{rid}/refund")
 async def refund(rid: int, request: Request):
-    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    form = await deps.get_form(request)
     deps.require_unlock(request)
     try:
         services.record_refund(rid, float(form.get("amount") or 0), form.get("method","Cash"), form.get("notes",""), form.get("password",""))
@@ -150,7 +150,7 @@ async def refund(rid: int, request: Request):
 
 @router.post("/reservations/{rid}/invoice")
 async def invoice(rid: int, request: Request):
-    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    form = await deps.get_form(request)
     deps.require_unlock(request)
     try:
         text = services.generate_invoice_text(rid, form.get("currency","EGP"))
@@ -164,7 +164,7 @@ async def invoice(rid: int, request: Request):
 
 @router.post("/reservations/{rid}/book-activity")
 async def book_activity(rid: int, request: Request):
-    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    form = await deps.get_form(request)
     deps.require_unlock(request)
     try:
         act_id = int(form.get("activity_id"))

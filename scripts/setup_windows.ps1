@@ -232,9 +232,15 @@ function Ensure-Venv-And-Deps([string]$py) {
     }
   }
 
+  # Preserve runtime data across setup/updates (never delete DB/exports/invoices/data dir).
   foreach ($d in @('data','exports','invoices')) {
     $p = Join-Path $InstallDir $d
     if (-not (Test-Path $p)) { New-Item -ItemType Directory -Path $p -Force | Out-Null }
+  }
+  if ($env:PM_DATA_DIR) {
+    foreach ($d in @($env:PM_DATA_DIR, (Join-Path $env:PM_DATA_DIR 'exports'), (Join-Path $env:PM_DATA_DIR 'invoices'))) {
+      if ($d -and -not (Test-Path $d)) { New-Item -ItemType Directory -Path $d -Force | Out-Null }
+    }
   }
 
   if ($RunTests) {
@@ -263,9 +269,10 @@ Run (PowerShell):
 
 Tips:
   - Same device browser: HOST=127.0.0.1 -> http://127.0.0.1:$Port
-  - LAN/other devices: use -BindHost 0.0.0.0 and a strong `$env:PM_WEB_SECRET_KEY` (keep --workers 1).
-  - Updates: in-app Settings → App updates checks/applies git fast-forward updates and preserves DB/exports/invoices/data dir (restart after apply); or git pull --ff-only + re-run -Action setup.
-  - LAN access (other devices): HOST=0.0.0.0 -> http://<this-pc-ip>:$Port (set strong PM_WEB_SECRET_KEY)
+  - LAN/other devices: use -BindHost 0.0.0.0 and a strong `$env:PM_WEB_SECRET_KEY` (ALWAYS keep --workers 1).
+  - Runtime data is preserved: DB, exports, invoices, and PM_DATA_DIR are never deleted by setup/update scripts.
+  - Updates: in-app Settings → App updates (fast-forward, preserves runtime data) or git pull --ff-only + re-run -Action setup.
+  - Health check: python -m app_core.doctor (add --check-updates for remote update status)
   - If script execution is blocked: powershell -ExecutionPolicy Bypass -File scripts\setup_windows.ps1
 "@ | Write-Host
 }

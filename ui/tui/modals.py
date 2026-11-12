@@ -345,7 +345,7 @@ class VoidItemScreen(ProtectedModal):
     def compose(self):
         with VerticalScroll(id="protected_modal"):
             yield Static(f"🔒 {t('Void')} POS #{self.pos_id}", classes="title")
-            yield Static("Stock will be restored and COGS reversed.", classes="warn")
+            yield Static("Stock will be restored (to batch/lot if traceable) and COGS reversed.", classes="warn")
             yield Input(placeholder=t("Super Password"), id="pw_field", password=True)
             with Horizontal(classes="modal_buttons"):
                 yield Button("Void", id="btn_do", variant="error")
@@ -558,6 +558,82 @@ class QtyInputScreen(ModalScreen):
                 self.notify("Enter a positive integer.", severity="error")
         elif e.button.id == "btn_cancel":
             self.dismiss(None)
+    def action_cancel(self):
+        self.dismiss(None)
+
+
+class BatchSelectScreen(ModalScreen):
+    BINDINGS = [("escape", "cancel", "Cancel")]
+
+    def __init__(self, item_id, item_name, qty=1):
+        super().__init__()
+        self.item_id = item_id
+        self.item_name = item_name
+        self.qty = qty
+        self._batches = []
+
+    def compose(self):
+        with VerticalScroll(id="protected_modal"):
+            yield Static(f"Lot/Batch Selection — {self.item_name}", classes="title")
+            yield Static("Select a specific batch/lot or use Auto-FEFO (oldest expiry first).", classes="help")
+            yield DataTable(id="batch_sel_table")
+            with Horizontal(classes="modal_buttons"):
+                yield Button("Auto-FEFO", id="btn_auto", variant="primary")
+                yield Button(t("Select Batch"), id="btn_sel", variant="success")
+                yield Button(t("Cancel"), id="btn_cancel", variant="error")
+
+    def on_mount(self):
+        try:
+            self._batches = services.list_inventory_batches(item_id=self.item_id, include_depleted=False) or []
+        except Exception:
+            self._batches = []
+        t = self.query_one("#batch_sel_table", DataTable)
+        t.clear(columns=True)
+        t.cursor_type = "row"
+        t.add_columns("ID", "Lot", "Received", "Expiry", "Rem", "Cost", "State")
+        warn = int(services.get_setting("expiry_warn_days", "7") or 7)
+        for b in self._batches:
+            exp = b.get("expiry_date") or "-"
+            st = b.get("expiry_state") or b.get("status") or ""
+            try:
+                if b.get("expiry_state") == "expired":
+                    st = f"EXPIRED"
+                elif b.get("expiry_state") == "expiring" or (b.get("expiry_date") and b.get("days_to_expiry") is not None and int(b.get("days_to_expiry")) <= warn):
+                    st = f"expiring({b.get('days_to_expiry')})"
+            except Exception:
+                pass
+            try:
+                rem = float(b.get("quantity_remaining") or 0)
+            except Exception:
+                rem = 0
+            t.add_row(str(b.get("id")), str(b.get("lot_code", "")), str(b.get("received_at", "")),
+                      str(exp), f"{rem:g}", f"{float(b.get('unit_cost') or 0):.2f}", str(st))
+        if t.row_count == 0:
+            self.query_one("#batch_sel_table", Static) if False else None
+
+    def on_button_pressed(self, e):
+        if e.button.id == "btn_auto":
+            self.dismiss({"mode": "auto"})
+            return
+        elif e.button.id == "btn_sel":
+            try:
+                t = self.query_one("#batch_sel_table", DataTable)
+                bid = selected_id(t)
+                if bid is None and self._batches:
+                    bid = self._batches[0].get("id")
+                if bid is None:
+                    self.notify("No batch selected.", severity="error")
+                    return
+                b = next((x for x in self._batches if int(x.get("id")) == int(bid)), None)
+                self.dismiss({"mode": "specific", "batch_id": int(bid), "lot_code": b.get("lot_code") if b else None})
+                return
+            except Exception as exc:
+                self.notify(str(exc), severity="error")
+                return
+        elif e.button.id == "btn_cancel":
+            self.dismiss(None)
+            return
+
     def action_cancel(self):
         self.dismiss(None)
 
@@ -846,11 +922,17 @@ class GuestHistoryModal(ModalScreen):
 
         pt = self.query_one("#gh_pos", DataTable)
         pt.clear(columns=True)
-        pt.add_columns("When", "Res", "Room", "Item", "Qty", "Price", "Tax")
+        pt.add_columns("When", "Res", "Room", "Item", "Lot/Batch", "Qty", "Price", "Tax")
         for i in (p.get("all_pos") or [])[:250]:
+            try:
+                lot = i.get("lot_code") or ""
+                bid = i.get("batch_id")
+                lot_disp = f"{lot}#{bid}" if lot and bid else (lot or (f"#{bid}" if bid else ""))
+            except Exception:
+                lot_disp = ""
             pt.add_row(
                 str(i.get("created_at") or ""), str(i.get("reservation_id")), str(i.get("room_number") or ""),
-                str(i.get("item_description") or ""), str(i.get("quantity") or 0),
+                str(i.get("item_description") or ""), lot_disp, str(i.get("quantity") or 0),
                 f"{float(i.get('unit_price') or 0):.2f}", f"{float(i.get('tax_amount') or 0):.2f}",
             )
 
@@ -890,7 +972,13 @@ class GuestHistoryModal(ModalScreen):
         pos_items = trip.get("pos_items") or []
         for i in pos_items[:40]:
             tag = " [VOID]" if i.get("voided_at") else ""
-            lines.append(f"  - {i.get('item_description')} x{i.get('quantity')} @ {fmt(i.get('unit_price',0))} (tax {fmt(i.get('tax_amount',0))}){tag}")
+            try:
+                lot = i.get("lot_code") or ""
+                bid = i.get("batch_id")
+                lot_disp = f" [lot:{lot}#{bid}]" if lot or bid else ""
+            except Exception:
+                lot_disp = ""
+            lines.append(f"  - {i.get('item_description')} x{i.get('quantity')} @ {fmt(i.get('unit_price',0))} (tax {fmt(i.get('tax_amount',0))}){lot_disp}{tag}")
         if not pos_items:
             lines.append("  (none)")
         lines.append("")
@@ -1169,14 +1257,28 @@ class ViewFolioScreen(ModalScreen):
     def _load(self):
         table = self.query_one("#table", DataTable)
         table.clear(columns=True)
-        table.add_columns("ID", t("Item"), "Lot", t("Qty"), t("Price"), "Tax", "Gross")
+        table.add_columns("ID", t("Item"), "Lot/Batch", "Exp/Recv", t("Qty"), t("Price"), "Tax", "Gross")
+        from app_core.db import connect
         for p in services.get_pos_items(self.rid):
             gross = p["quantity"] * p["unit_price"] + p["tax_amount"]
             try:
-                lot = p["lot_code"] or (f"batch#{p['batch_id']}" if p["batch_id"] else "")
+                lot = p["lot_code"] or ""
+                bid = p["batch_id"]
+                lot_disp = f"{lot}#{bid}" if lot and bid else (lot or (f"#{bid}" if bid else ""))
+                extra = "-"
+                if bid:
+                    try:
+                        b = connect().execute("SELECT expiry_date, received_at FROM inventory_batches WHERE id=?", (bid,)).fetchone()
+                        if b:
+                            exp = b["expiry_date"] or "-"
+                            recv = b["received_at"] or "-"
+                            extra = f"exp:{exp}/recv:{recv}"
+                    except Exception:
+                        pass
             except Exception:
-                lot = ""
-            table.add_row(str(p["id"]), p["item_description"], lot, str(p["quantity"]),
+                lot_disp = ""
+                extra = "-"
+            table.add_row(str(p["id"]), p["item_description"], lot_disp, extra, str(p["quantity"]),
                           f"{p['unit_price']:.2f}", f"{p['tax_amount']:.2f}", f"{gross:.2f}")
     def on_button_pressed(self, e):
         if e.button.id == "btn_void":

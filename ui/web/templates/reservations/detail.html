@@ -54,6 +54,7 @@
   {% else %}<tr><td colspan="7" class="muted">None</td></tr>{% endfor %}</table>
 
     <details style="margin-top:10px"><summary><strong>Add POS / inventory charge</strong> (to folio, batch-aware)</summary>
+      <p class="muted">Traceable charge: select inventory item and optionally a specific batch/lot (shows received/bought time & expiry) or leave on <strong>Auto FEFO</strong>. For barcode/lot lookup use <a href="/pos?scan=" target="_blank">POS scan</a>.</p>
       <form method="post" action="/pos/add"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
         <input type="hidden" name="reservation_id" value="{{ r['id'] }}"/>
         <input type="hidden" name="next" value="/reservations/{{ r['id'] }}"/>
@@ -65,17 +66,17 @@
         <label>Inventory item (optional, enables stock/batch deduction)
           <select name="inv_id">
             <option value="">— None (manual charge) —</option>
-            {% for it in (inventory or []) %}{% if it.active %}<option value="{{it.id}}" data-price="{{'%.2f'|format(it.selling_price or 0)}}" data-name="{{it.item_name|e}}">{{it.item_name}} ({{it.category}}) — stock {{it.stock_qty}} {{it.unit}} @ {{'%.2f'|format(it.selling_price or 0)}}</option>{% endif %}{% endfor %}
+            {% for it in (inventory or []) %}{% if it.active %}<option value="{{it.id}}" data-price="{{'%.2f'|format(it.selling_price or 0)}}" data-name="{{it.item_name|e}}">{{it.item_name}} ({{it.category}}) — stock {{it.stock_qty}} {{it.unit or ''}} @ {{'%.2f'|format(it.selling_price or 0)}}{% if it.next_expiry %} · next exp {{it.next_expiry}}{% endif %}</option>{% endif %}{% endfor %}
           </select>
         </label>
-        <label>Batch (optional, FEFO/traceable; for tracked items)
+        <label>Batch (optional, FEFO/traceable; for tracked/expiring items)
           <select name="batch_id">
             <option value="">— Auto FEFO / none —</option>
-            {% for b in (active_batches or []) %}<option value="{{b.id}}" data-item="{{b.item_id}}" data-lot="{{b.lot_code|e}}" data-name="{{b.item_name|e}}">{{b.item_name}} · lot {{b.lot_code or '—'}} · rem {{b.quantity_remaining}}{% if b.expiry_date %} · exp {{b.expiry_date}}{% endif %}{% if b.received_at %} · recv {{b.received_at}}{% endif %} ({{b.expiry_state or b.status or 'active'}})</option>{% endfor %}
+            {% for b in (active_batches or []) %}<option value="{{b.id}}" data-item="{{b.item_id}}" data-lot="{{b.lot_code|e}}" data-name="{{b.item_name|e}}">{{b.item_name}} · lot {{b.lot_code or '—'}} · rem {{b.quantity_remaining}}{% if b.received_at %} · received {{b.received_at}}{% endif %}{% if b.expiry_date %} · exp {{b.expiry_date}}{% endif %}{% if b.expiry_state=='expired' %} [EXPIRED]{% elif b.expiry_state=='expiring' %} [EXPIRING]{% endif %}</option>{% endfor %}
           </select>
         </label>
-        <label>Lot code (optional override)<input name="lot_code" placeholder="e.g. LOT-..."/></label>
-        <p class="muted">Tip: select batch to sell a specific lot (traceable); leave batch empty for auto-FEFO on tracked items. You can also use <a href="/pos?scan=">POS scan</a> for barcode/batch lookup.</p>
+        <label>Lot code / scan (optional override)<input name="lot_code" placeholder="Scan or type lot code"/></label>
+        <p class="muted">Select a specific batch to sell that lot (traceability/receipt), or leave empty for automatic FEFO on batch-tracked items. Lot code can also identify a batch if known.</p>
         <button class="ok" type="submit" title="Add POS/inventory charge to this reservation folio">Add POS charge</button>
       </form>
     </details>

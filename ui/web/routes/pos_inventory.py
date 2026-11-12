@@ -93,7 +93,7 @@ def pos(request: Request, q: str = "", scan: str = "", batch_item: str = ""):
 @router.post("/pos/add")
 async def pos_add(request: Request):
     """Add a single POS item directly to an existing reservation (real backend)."""
-    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    form = await deps.get_form(request)
     deps.require_unlock(request)
     next_url = (form.get("next") or "/pos").strip() or "/pos"
     if not next_url.startswith("/") or next_url.startswith("//"):
@@ -112,7 +112,7 @@ async def pos_add(request: Request):
 
 @router.post("/pos/cart/add")
 async def cart_add(request: Request):
-    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    form = await deps.get_form(request)
     try:
         desc = (form.get("desc") or "").strip() or "Item"
         qty = int(form.get("qty") or 1)
@@ -137,7 +137,7 @@ async def cart_add(request: Request):
 
 @router.post("/pos/cart/remove")
 async def cart_remove(request: Request):
-    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    form = await deps.get_form(request)
     try:
         idx = int(form.get("idx"))
         cart = _get_cart(request)
@@ -154,7 +154,7 @@ async def cart_remove(request: Request):
 
 @router.post("/pos/cart/clear")
 async def cart_clear(request: Request):
-    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    form = await deps.get_form(request)
     deps.get_session(request)["walkin_cart"] = []
     deps.add_flash(request, "Walk-in cart cleared.", "info")
     r = deps.redirect("/pos"); deps.save_session(r, deps.get_session(request)); return r
@@ -163,7 +163,7 @@ async def cart_clear(request: Request):
 @router.post("/pos/walkin")
 async def walkin(request: Request):
     """Atomic walk-in checkout. Uses multi-item session cart when present; supports legacy single-item form."""
-    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    form = await deps.get_form(request)
     try:
         method = form.get("method", "Cash")
         notes = form.get("notes", "")
@@ -191,7 +191,7 @@ async def walkin(request: Request):
 
 @router.post("/pos/void/{pos_id}")
 async def pos_void(pos_id: int, request: Request):
-    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    form = await deps.get_form(request)
     deps.require_unlock(request)
     try:
         services.void_pos_item(pos_id, form.get("password", ""))
@@ -204,7 +204,7 @@ async def pos_void(pos_id: int, request: Request):
 
 @router.post("/inventory/restock")
 async def restock(request: Request):
-    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    form = await deps.get_form(request)
     deps.require_unlock(request)
     try:
         services.restock_inventory(int(form.get("item_id")), float(form.get("qty") or 0), float(form.get("unit_cost") or 0), form.get("password", ""))
@@ -216,7 +216,7 @@ async def restock(request: Request):
 
 @router.post("/inventory/add")
 async def inv_add(request: Request):
-    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    form = await deps.get_form(request)
     deps.require_unlock(request)
     try:
         services.add_inventory_item(
@@ -246,7 +246,7 @@ def _parse_recipe_components(text: str):
 
 @router.post("/recipes/set")
 async def recipe_set(request: Request):
-    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    form = await deps.get_form(request)
     deps.require_unlock(request)
     try:
         menu_id = int(form.get("menu_item_id") or form.get("item_id") or 0)
@@ -260,7 +260,7 @@ async def recipe_set(request: Request):
 
 @router.post("/recipes/clear")
 async def recipe_clear(request: Request):
-    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    form = await deps.get_form(request)
     deps.require_unlock(request)
     try:
         menu_id = int(form.get("menu_item_id") or form.get("item_id") or 0)
@@ -286,7 +286,7 @@ def _parse_meal_ingredients(text: str):
 
 @router.post("/meals/save")
 async def meal_save(request: Request):
-    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    form = await deps.get_form(request)
     deps.require_unlock(request)
     try:
         meal_id = (form.get("meal_id") or "").strip()
@@ -310,7 +310,7 @@ async def meal_save(request: Request):
 
 @router.post("/meals/delete")
 async def meal_delete(request: Request):
-    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    form = await deps.get_form(request)
     deps.require_unlock(request)
     try:
         services.delete_meal(int(form.get("meal_id") or 0), form.get("password", ""))
@@ -321,7 +321,7 @@ async def meal_delete(request: Request):
 
 @router.post("/activities/create")
 async def activity_create(request: Request):
-    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    form = await deps.get_form(request)
     deps.require_unlock(request)
     try:
         services.create_activity(form.get("name",""), form.get("description",""), form.get("category","Trip"), float(form.get("unit_price") or 0), 1)
@@ -332,7 +332,7 @@ async def activity_create(request: Request):
 
 @router.post("/activities/{aid}/toggle")
 async def activity_toggle(aid: int, request: Request):
-    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    form = await deps.get_form(request)
     deps.require_unlock(request)
     try:
         act = services.get_activity(aid)
@@ -346,7 +346,7 @@ async def activity_toggle(aid: int, request: Request):
 
 @router.post("/inventory/batch/receive")
 async def batch_receive(request: Request):
-    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    form = await deps.get_form(request)
     deps.require_unlock(request)
     try:
         batch = services.receive_inventory_batch(
@@ -364,7 +364,7 @@ async def batch_receive(request: Request):
 
 @router.post("/inventory/label/item/{item_id}")
 async def label_item(item_id: int, request: Request):
-    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    form = await deps.get_form(request)
     deps.require_unlock(request)
     try:
         ok, msg, p = services.print_item_label(item_id)
@@ -376,7 +376,7 @@ async def label_item(item_id: int, request: Request):
 
 @router.post("/inventory/label/batch/{batch_id}")
 async def label_batch(batch_id: int, request: Request):
-    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    form = await deps.get_form(request)
     deps.require_unlock(request)
     try:
         ok, msg, p = services.print_batch_label(batch_id)

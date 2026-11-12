@@ -1,7 +1,10 @@
 """Web dependencies: sessions, CSRF, auth, flash messages, safe file paths."""
 from __future__ import annotations
 
+import os
 import secrets
+import sys
+import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -10,8 +13,6 @@ from fastapi import HTTPException, Request
 from fastapi.responses import RedirectResponse
 from itsdangerous import BadSignature, URLSafeSerializer
 
-import os
-import sys
 from app_core import paths, services
 
 SESSION_COOKIE = "pm_session"
@@ -38,6 +39,8 @@ if not SECRET_KEY:
 
 _COOKIE_SECURE = os.environ.get("PM_WEB_COOKIE_SECURE", "").strip().lower() in ("1", "true", "yes", "on")
 _serializer = URLSafeSerializer(SECRET_KEY, salt="pm-session")
+
+_WEB_UNLOCK_LAST = "web_unlock_last"
 
 
 def _load_session(request: Request) -> dict[str, Any]:
@@ -98,18 +101,64 @@ def verify_csrf(request: Request, token: str | None) -> None:
         raise HTTPException(status_code=400, detail="Invalid CSRF token")
 
 
-async def require_csrf_form(request: Request):
-    """Centralized form CSRF verification helper. Returns parsed form."""
+async def get_form(request: Request):
+    """Return parsed form, reusing middleware-cached form when available."""
+    cached = getattr(request.state, "cached_form", None)
+    if cached is not None:
+        return cached
     try:
         form = await request.form()
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid form submission")
+    request.state.cached_form = form
+    return form
+
+
+async def require_csrf_form(request: Request):
+    """Centralized form CSRF verification helper. Returns parsed form."""
+    form = await get_form(request)
     verify_csrf(request, form.get("csrf"))
     return form
 
 
+def _session_timeout_minutes() -> int:
+    try:
+        timeout = int(services.get_setting("session_timeout_min", "5"))
+        return max(1, timeout)
+    except Exception:
+        return 5
+
+
+def touch_web_unlock(request: Request) -> None:
+    """Slide per-browser web unlock expiry on activity."""
+    sess = get_session(request)
+    if sess.get(_WEB_UNLOCK_LAST):
+        sess[_WEB_UNLOCK_LAST] = int(time.time())
+
+
 def is_unlocked(request: Request) -> bool:
-    return bool(get_session(request).get("unlocked"))
+    """Per-browser web unlock state with timeout/expiry (no global services._session)."""
+    sess = get_session(request)
+    last = sess.get(_WEB_UNLOCK_LAST)
+    if not last:
+        # Backward compat: honor legacy boolean flag but migrate to timed model.
+        if sess.get("unlocked"):
+            sess[_WEB_UNLOCK_LAST] = int(time.time())
+            sess.pop("unlocked", None)
+            last = sess[_WEB_UNLOCK_LAST]
+        else:
+            return False
+    try:
+        last_i = int(last)
+    except Exception:
+        sess.pop(_WEB_UNLOCK_LAST, None)
+        sess.pop("unlocked", None)
+        return False
+    if (int(time.time()) - last_i) > (_session_timeout_minutes() * 60):
+        sess.pop(_WEB_UNLOCK_LAST, None)
+        sess.pop("unlocked", None)
+        return False
+    return True
 
 
 def require_unlock(request: Request) -> None:
@@ -118,11 +167,22 @@ def require_unlock(request: Request) -> None:
         raise HTTPException(status_code=303, headers={"Location": f"/unlock?next={nxt}"})
 
 
+def sync_backend_session_if_possible() -> None:
+    """Best-effort compatibility for single-worker flows that may consult process-global
+    session state internally. Web authorization decisions MUST NOT rely on this."""
+    try:
+        services.touch_session()
+    except Exception:
+        pass
+
+
 def unlock(request: Request, password: str) -> bool:
     if services.verify_password(password):
-        get_session(request)["unlocked"] = True
+        sess = get_session(request)
+        sess[_WEB_UNLOCK_LAST] = int(time.time())
+        sess.pop("unlocked", None)
+        # Best-effort in-process alignment for legacy service internals (single-worker MVP).
         try:
-            # Keep backend in-process session aligned when available (single-worker MVP).
             if not services.unlock_session(password):
                 services.touch_session()
         except Exception:
@@ -132,7 +192,13 @@ def unlock(request: Request, password: str) -> bool:
 
 
 def lock(request: Request) -> None:
-    get_session(request)["unlocked"] = False
+    sess = get_session(request)
+    sess.pop(_WEB_UNLOCK_LAST, None)
+    sess.pop("unlocked", None)
+    try:
+        services.lock_session()
+    except Exception:
+        pass
 
 
 def safe_download_path(kind: str, name: str) -> Path:

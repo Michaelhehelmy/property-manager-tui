@@ -29,7 +29,7 @@ def guest_detail(gid: int, request: Request):
 @router.post("/guests/{gid}/update")
 async def guest_update(gid: int, request: Request):
     deps.require_unlock(request)
-    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    form = await deps.get_form(request)
     try:
         services.update_guest(gid, form.get("name",""), form.get("phone",""), form.get("email",""), form.get("notes",""), form.get("password",""))
         deps.add_flash(request, "Guest updated", "success")

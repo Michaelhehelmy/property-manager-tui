@@ -154,7 +154,11 @@ setup_venv_and_deps() {
     fi
   fi
 
+  # Preserve runtime data across setup/updates (never delete DB/exports/invoices/data dir).
   mkdir -p data exports invoices 2>/dev/null || true
+  if [ -n "${PM_DATA_DIR:-}" ]; then
+    mkdir -p "$PM_DATA_DIR" "$PM_DATA_DIR/exports" "$PM_DATA_DIR/invoices" 2>/dev/null || true
+  fi
 
   if [ "$RUN_TESTS" = "1" ]; then
     log "Running tests..."
@@ -182,7 +186,10 @@ Run (activate venv first):
 Client/server tips:
   - Same device browser: HOST=127.0.0.1 -> http://127.0.0.1:${PORT}
   - Other devices on LAN (iPhone/iPad Safari): HOST=0.0.0.0 -> http://<device-ip>:${PORT}
-    (Add to Home Screen for app-like use; keep --workers 1; set a strong PM_WEB_SECRET_KEY)
+    (Add to Home Screen for app-like use; ALWAYS use --workers 1; set a strong PM_WEB_SECRET_KEY)
+  - Runtime data is preserved: DB, exports, invoices, and PM_DATA_DIR are never deleted by setup/update scripts.
+  - Updates: in-app Settings → App updates or git pull --ff-only + re-run ACTION=setup.
+  - Health check: python3 -m app_core.doctor (add --check-updates for remote update status)
 EOF
   if [ $IS_ISH -eq 1 ]; then
     echo "  - iSH: TUI is most reliable; web deps/builds may be slow or unavailable (use SKIP_WEB=1)."

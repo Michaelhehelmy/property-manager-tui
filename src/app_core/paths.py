@@ -20,10 +20,21 @@ PROJECT_ROOT = _detect_project_root()
 def _detect_data_dir() -> Path:
     env = os.environ.get("PM_DATA_DIR")
     if env:
-        p = Path(env).expanduser().resolve()
+        raw = str(env).strip()
+        if not raw:
+            raise ValueError("PM_DATA_DIR is set but empty")
+        p = Path(raw).expanduser()
+        try:
+            p = p.resolve()
+        except Exception:
+            p = p.absolute()
+        # Never point runtime data at filesystem root by accident.
+        if p == p.parent:
+            raise ValueError(f"PM_DATA_DIR resolves to an unsafe path: {p}")
         p.mkdir(parents=True, exist_ok=True)
         return p
     # Legacy compatibility: if DB/dirs exist at project root, keep using root.
+    # This preserves existing runtime data locations across upgrades.
     root_db = PROJECT_ROOT / "property_manager.db"
     root_exports = PROJECT_ROOT / "exports"
     root_invoices = PROJECT_ROOT / "invoices"
@@ -42,7 +53,15 @@ BASE_DIR = DATA_DIR  # backward-compatible alias for code expecting BASE_DIR
 
 
 def ensure_data_dirs() -> None:
+    """Ensure runtime data directories exist. Never deletes DB/exports/invoices."""
     global DATA_DIR, DB_PATH, EXPORT_DIR, INVOICE_DIR, BASE_DIR
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    EXPORT_DIR.mkdir(parents=True, exist_ok=True)
-    INVOICE_DIR.mkdir(parents=True, exist_ok=True)
+    for p in (DATA_DIR, EXPORT_DIR, INVOICE_DIR):
+        try:
+            p.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            raise RuntimeError(f"Failed to create runtime data directory '{p}': {e}") from e
+    # Keep derived paths consistent if caller refreshed globals externally.
+    DB_PATH = DATA_DIR / "property_manager.db"
+    EXPORT_DIR = DATA_DIR / "exports"
+    INVOICE_DIR = DATA_DIR / "invoices"
+    BASE_DIR = DATA_DIR

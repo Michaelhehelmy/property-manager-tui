@@ -1,4 +1,12 @@
-"""Property manager — database layer. Single persistent connection with WAL."""
+"""Property manager — database layer. Single persistent connection with WAL.
+
+Safety notes:
+- Single shared connection with RLock serialization; all writes should go through
+  transaction()/execute helpers to preserve --workers 1 / single-process correctness.
+- WAL + foreign_keys + busy_timeout are enforced on every (re)connect.
+- Migrations are idempotent and guarded by PRAGMA user_version and provenance markers.
+- Runtime data (DB/exports/invoices under paths.DATA_DIR) is never deleted by this module.
+"""
 import sqlite3
 import threading
 from contextlib import contextmanager
@@ -14,6 +22,20 @@ _conn = None
 _lock = threading.RLock()
 
 
+def _apply_pragmas(conn):
+    # Safety/performance defaults for single-process app usage.
+    conn.execute("PRAGMA foreign_keys = ON")
+    # WAL is persistent for the DB file; set on each connection for clarity.
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA synchronous = NORMAL")
+    conn.execute("PRAGMA busy_timeout = 30000")
+    try:
+        conn.execute("PRAGMA trusted_schema = OFF")
+    except Exception:
+        # Older SQLite builds may not support trusted_schema; ignore safely.
+        pass
+
+
 def connect():
     global _conn
     if _conn is not None:
@@ -21,12 +43,15 @@ def connect():
     with _lock:
         if _conn is not None:
             return _conn
+        paths.ensure_data_dirs()
         _conn = sqlite3.connect(str(DB_PATH), check_same_thread=False, timeout=30.0)
         _conn.row_factory = sqlite3.Row
-        _conn.execute("PRAGMA foreign_keys = ON")
-        _conn.execute("PRAGMA journal_mode = WAL")
-        _conn.execute("PRAGMA synchronous = NORMAL")
-        _conn.execute("PRAGMA busy_timeout = 30000")
+        # Keep default autocommit mode for explicit transaction control.
+        try:
+            _conn.isolation_level = None
+        except Exception:
+            pass
+        _apply_pragmas(_conn)
         return _conn
 
 
@@ -34,15 +59,28 @@ def close():
     global _conn
     with _lock:
         if _conn is not None:
-            _conn.close()
-            _conn = None
+            try:
+                # Best-effort: do not mask app errors on shutdown, but avoid leaving txn open.
+                if _conn.in_transaction:
+                    _conn.execute("ROLLBACK")
+            except Exception:
+                pass
+            try:
+                _conn.close()
+            finally:
+                _conn = None
 
 
 @contextmanager
 def transaction():
-    """Serialized write transaction (BEGIN IMMEDIATE) on the shared connection."""
+    """Serialized write transaction (BEGIN IMMEDIATE) on the shared connection.
+
+    Uses explicit BEGIN/COMMIT/ROLLBACK to avoid implicit-transaction edge cases.
+    """
     conn = connect()
     with _lock:
+        if getattr(conn, "in_transaction", False):
+            raise RuntimeError("Nested/active transaction detected on shared DB connection")
         conn.execute("BEGIN IMMEDIATE")
         try:
             yield conn
@@ -69,7 +107,9 @@ def executemany(sql, seq_of_params):
 
 def query(sql, params=()):
     """Read helper (returns cursor rows)."""
-    return connect().execute(sql, params)
+    conn = connect()
+    with _lock:
+        return conn.execute(sql, params)
 
 
 def user_version():
@@ -78,6 +118,26 @@ def user_version():
 
 def is_fresh():
     return user_version() == 0
+
+
+def integrity_check(max_errors=20):
+    """Return (ok, details) from PRAGMA integrity_check/foreign_key_check."""
+    conn = connect()
+    with _lock:
+        try:
+            ic = [r[0] for r in conn.execute("PRAGMA integrity_check").fetchall()]
+        except Exception as e:
+            return False, [f"integrity_check error: {e}"]
+        try:
+            fk = [tuple(r) for r in conn.execute("PRAGMA foreign_key_check").fetchall()]
+        except Exception as e:
+            return False, ic[:max_errors] + [f"foreign_key_check error: {e}"]
+    ok = (len(ic) == 1 and str(ic[0]).lower() == "ok" and len(fk) == 0)
+    details = list(ic[:max_errors])
+    if fk:
+        details.append(f"foreign_key_violations={len(fk)}")
+        details.extend([str(x) for x in fk[:max_errors]])
+    return ok, details
 
 
 _SCHEMA = """
@@ -561,25 +621,59 @@ def _migrate_to_9(conn):
 
 
 def migrate():
+    """Create or upgrade schema to SCHEMA_VERSION.
+
+    Idempotent and serialized. Fresh DB is created inside an explicit transaction.
+    Step migrations run in order and user_version is advanced only after success.
+    Individual migration steps contain IF NOT EXISTS / column-existence / provenance guards.
+    """
     conn = connect()
-    version = conn.execute("PRAGMA user_version").fetchone()[0]
-    if version == 0:
-        conn.executescript(_SCHEMA)
-        conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
-        conn.commit()
-        return "created"
-    if version < SCHEMA_VERSION:
-        if version < 5:
-            _migrate_to_5(conn)
-        if version < 6:
-            _migrate_to_6(conn)
-        if version < 7:
-            _migrate_to_7(conn)
-        if version < 8:
-            _migrate_to_8(conn)
-        if version < 9:
-            _migrate_to_9(conn)
-        conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
-        conn.commit()
-        return "upgraded"
-    return "current"
+    with _lock:
+        # Defensive: clear any stray transaction state before migration control.
+        try:
+            if getattr(conn, "in_transaction", False):
+                conn.execute("ROLLBACK")
+        except Exception:
+            pass
+        version = conn.execute("PRAGMA user_version").fetchone()[0]
+        if version > SCHEMA_VERSION:
+            raise RuntimeError(
+                f"Database schema version {version} is newer than supported {SCHEMA_VERSION}. "
+                "Refusing to run to avoid data loss."
+            )
+        if version == 0:
+            try:
+                conn.executescript(_SCHEMA)
+                conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+            except Exception:
+                raise
+            return "created"
+        if version < SCHEMA_VERSION:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+            except Exception:
+                pass
+            try:
+                if version < 5:
+                    _migrate_to_5(conn)
+                if version < 6:
+                    _migrate_to_6(conn)
+                if version < 7:
+                    _migrate_to_7(conn)
+                if version < 8:
+                    _migrate_to_8(conn)
+                if version < 9:
+                    _migrate_to_9(conn)
+                conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+                try:
+                    conn.execute("COMMIT")
+                except Exception:
+                    pass
+            except Exception:
+                try:
+                    conn.execute("ROLLBACK")
+                except Exception:
+                    pass
+                raise
+            return "upgraded"
+        return "current"

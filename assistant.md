@@ -41,9 +41,26 @@ The table below summarizes the cumulative effort to build and mature the assista
 - **Tooling (representative, read-only):** briefing/decision support, stats/today ops, reports & comparisons, occupancy/housekeeping/pipeline/availability, AR/inventory alerts/**expiring batches**/**inventory batch/lot lists**/**barcode/SKU/lot trace** (resolved item/batch with lot, received/expiry, remaining, and recent movements), expenses/sales/top sellers/menu/rate plans, ledger/data **integrity/health checks**, activities, guest search/profile/**portfolio**/last visit/top items/spend/**activity bookings**, reservation summary/balance, recent activity, and **app version/update status** (local version/commit/branch and how to check/apply updates in-app).
 - **In-app updates & integrity (app surfaces):** Web & TUI expose **Settings → App updates** to check for updates, view changelog/details, and apply a safe git fast-forward update for git-based installs; runtime data (DB, exports, invoices, configured data dir) is preserved and restart is required after apply. Integrity/health checks are available in-app; web also serves `GET /health` and `GET /healthz`. Deploy the web server with `--workers 1` (SQLite).
 
+### 2.1 Examples (grounded, read-only)
+
+- **Batch/expiry/trace:** “what expires soon?”, “expiring batches in 7 days”, “list inventory batches”, “trace barcode LOT-123” / “trace SKU ...” (shows resolved item or lot with received, expiry, remaining, and recent movements when available).
+- **Integrity/health:** “run a health check”, “ledger integrity check”, “any data integrity issues?” (read-only ledger/data checks; CLI doctor also available: `PYTHONPATH=src python -m app_core.doctor`).
+- **App version/updates:** “what app version am I running?”, “check for updates”, “is there a changelog?” (local grounded status plus guidance: Settings → App updates to check/apply with changelog; data preserved; restart after apply).
+
 ---
 
-## 3) Enhancement plan — friendlier replies & smarter assistant (< 400 MB)
+## 3) Deployment, updates, integrity & security (assistant-relevant, current implementation)
+
+- **Deployment (Web):** run FastAPI with **`--workers 1`** (SQLite/shared state). Use `HOST=127.0.0.1` for local or `0.0.0.0` for LAN; prefer HTTPS (reverse proxy) or a private network (VPN/Tailscale) for remote access. Health probes: `GET /health`, `GET /healthz`.
+- **Updates (Web & TUI, git-based installs):** **Settings → App updates** → **Check for updates** (shows changelog/commit details) → **Apply/Update** (fast-forward). Runtime data is preserved (DB, exports, invoices, configured data dir such as `PM_DATA_DIR`/`data/` are not modified by source updates). Restart after apply. If local source changes exist, commit/stash/discard before applying. Manual CLI: `git pull --ff-only` then re-run setup; DB migrations run on startup (additive).
+- **Batch/barcode/traceability:** inventory supports traceable barcodes/SKUs/lots with batch/lot tracking (received, expiry, remaining quantity/cost, status/expiry state, movements). The assistant and UIs can show expiring/expired batches, list batches/lots, and trace a barcode/SKU/lot code to the resolved item or lot (including received/expiry/remaining and recent movements).
+- **Integrity/doctor:** read-only ledger/data integrity checks are available in-app (and via the assistant as health/integrity queries). A CLI **doctor** provides operational health checks (`PYTHONPATH=src python -m app_core.doctor`, see `--help`).
+- **Backup/restore:** create DB backups from Settings (**Backup now**, subject to unlock/CSRF where applicable) stored in the exports/data area; keep regular backups and back up before upgrades/migrations. Runtime data (DB/exports/invoices/data dir) is preserved across updates. Restore is a manual offline process (stop app, replace active DB/files from backup, restart; migrations apply on startup) — verify with health/integrity checks afterward.
+- **Security model (Web):** all state-changing requests are **CSRF**-protected (form tokens; middleware/handlers for JSON/header as applicable). Sensitive/destructive/admin mutations require **super-password unlock** (and CSRF), while some routine operational/front-desk flows remain usable with CSRF only (see `docs/web_authz_matrix.md` for the route-group matrix). Assistant asks/feedback follow configured unlock/allowlist policy and remain read-only. Use strong `PM_WEB_SECRET_KEY` for shared deployments.
+
+---
+
+## 4) Enhancement plan — friendlier replies & smarter assistant (< 400 MB)
 
 **Goal:** make replies consistently **warm, clear, and conversational** while becoming **smarter** at understanding, reasoning over grounded data, and helping proactively — without sacrificing factual correctness.  
 **Budget:** < 400 MB for assistant models/assets/runtime (choose options that fit together within this envelope).
@@ -79,7 +96,7 @@ The table below summarizes the cumulative effort to build and mature the assista
 
 ---
 
-## 4) Principles (guardrails)
+## 5) Principles (guardrails)
 
 - **Grounded truth:** never invent guests, amounts, dates, IDs, bookings, or actions; cite/derive from real tools/data or state uncertainty.
 - **Read-only by default:** assist and explain; do not perform unsafe/mutating actions outside explicit, guarded app flows.

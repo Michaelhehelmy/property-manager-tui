@@ -12,7 +12,7 @@ def unlock_page(request: Request, next: str = "/"):
 
 @router.post("/unlock")
 async def unlock_post(request: Request):
-    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    form = await deps.get_form(request)
     if deps.unlock(request, form.get("password","")):
         deps.add_flash(request, "Unlocked", "success")
         r=deps.redirect(form.get("next") or "/")
@@ -29,15 +29,15 @@ def unlock_recovery_page(request: Request, next: str = "/"):
 
 @router.post("/unlock/recovery")
 async def unlock_recovery_post(request: Request):
-    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    form = await deps.get_form(request)
     nxt = str(form.get("next") or "/")
     if not nxt.startswith("/") or nxt.startswith("//"):
         nxt = "/"
     try:
         services.use_recovery_code(form.get("code", ""), form.get("new_password", ""), form.get("confirm_password", ""))
-        if not services.unlock_session(form.get("new_password", "")):
-            services.touch_session()
-        deps.get_session(request)["unlocked"] = True
+        # Use new password to establish per-browser unlock (also best-effort backend compat).
+        if not deps.unlock(request, form.get("new_password", "")):
+            raise RuntimeError("Failed to establish unlocked session after recovery.")
         deps.add_flash(request, "Password reset with recovery code. Unlocked.", "success")
         r = deps.redirect(nxt)
     except Exception as e:
@@ -48,7 +48,7 @@ async def unlock_recovery_post(request: Request):
 
 @router.post("/lock")
 async def lock_post(request: Request):
-    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    form = await deps.get_form(request)
     deps.lock(request); deps.add_flash(request, "Locked", "info")
     r=deps.redirect("/"); deps.save_session(r, deps.get_session(request)); return r
 
@@ -76,7 +76,7 @@ def settings(request: Request):
 @router.post("/settings/branding")
 async def branding(request: Request):
     deps.require_unlock(request)
-    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    form = await deps.get_form(request)
     try:
         services.apply_branding_settings(form.get("display_name",""), form.get("tagline",""), form.get("animation","reveal"))
         deps.add_flash(request, "Branding updated", "success")
@@ -86,7 +86,7 @@ async def branding(request: Request):
 @router.post("/settings/save")
 async def save_settings(request: Request):
     deps.require_unlock(request)
-    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    form = await deps.get_form(request)
     changes = {}
     for k in services.SETTINGS_CATALOG.keys():
         if k in form and k != "schema_version":
@@ -101,7 +101,7 @@ async def save_settings(request: Request):
 @router.post("/settings/backup")
 async def backup(request: Request):
     deps.require_unlock(request)
-    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    form = await deps.get_form(request)
     try:
         path = services.backup_now(); deps.add_flash(request, f"Backup: {Path(path).name}", "success")
     except Exception as e: deps.add_flash(request, str(e), "error")
@@ -110,7 +110,7 @@ async def backup(request: Request):
 @router.post("/settings/demo-preset")
 async def demo_preset(request: Request):
     deps.require_unlock(request)
-    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    form = await deps.get_form(request)
     try:
         res = services.apply_demo_data_preset(form.get("preset","analysis_small"), form.get("password",""), form.get("confirm",""), allow_existing=False)
         deps.add_flash(request, f"Demo preset applied: {res['created']}", "success")
@@ -121,7 +121,7 @@ async def demo_preset(request: Request):
 @router.post("/settings/reset")
 async def reset_settings(request: Request):
     deps.require_unlock(request)
-    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    form = await deps.get_form(request)
     try:
         if str(form.get("confirm", "")).strip().upper() != "RESET DEFAULTS":
             raise ValueError("Confirmation text must be exactly: RESET DEFAULTS")
@@ -147,7 +147,7 @@ def rate_plans(request: Request):
 @router.post("/settings/rate-plans/add")
 async def rate_plan_add(request: Request):
     deps.require_unlock(request)
-    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    form = await deps.get_form(request)
     try:
         services.add_rate_plan(form.get("name", ""), float(form.get("modifier") or 0), form.get("password", ""))
         deps.add_flash(request, "Rate plan added.", "success")
@@ -159,7 +159,7 @@ async def rate_plan_add(request: Request):
 @router.post("/settings/rate-plans/{plan_id}/edit")
 async def rate_plan_edit(request: Request, plan_id: int):
     deps.require_unlock(request)
-    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    form = await deps.get_form(request)
     try:
         services.update_rate_plan(plan_id, form.get("name", ""), float(form.get("modifier") or 0), form.get("password", ""))
         deps.add_flash(request, "Rate plan updated.", "success")
@@ -171,7 +171,7 @@ async def rate_plan_edit(request: Request, plan_id: int):
 @router.post("/settings/rate-plans/{plan_id}/delete")
 async def rate_plan_delete(request: Request, plan_id: int):
     deps.require_unlock(request)
-    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    form = await deps.get_form(request)
     try:
         services.delete_rate_plan(plan_id, form.get("password", ""))
         deps.add_flash(request, "Rate plan deleted.", "success")
@@ -191,7 +191,7 @@ def settings_health(request: Request):
 @router.post("/settings/seed/export")
 async def seed_export(request: Request):
     deps.require_unlock(request)
-    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    form = await deps.get_form(request)
     try:
         path = services.export_seed_config()
         name = Path(path).name
@@ -206,7 +206,7 @@ async def seed_export(request: Request):
 @router.post("/settings/seed/import")
 async def seed_import(request: Request):
     deps.require_unlock(request)
-    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    form = await deps.get_form(request)
     upload = form.get("seed_file")
     try:
         if upload is None or not getattr(upload, "filename", ""):
@@ -233,7 +233,7 @@ async def seed_import(request: Request):
 @router.post("/settings/rooms/add")
 async def room_add(request: Request):
     deps.require_unlock(request)
-    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    form = await deps.get_form(request)
     try:
         rid = services.add_room(form.get("room_number", ""), form.get("room_type", ""), form.get("base_price", 0), form.get("housekeeping_status", "Clean"))
         deps.add_flash(request, f"Room added (#{rid}).", "success")
@@ -245,7 +245,7 @@ async def room_add(request: Request):
 @router.post("/settings/rooms/{room_id}/delete")
 async def room_delete(request: Request, room_id: int):
     deps.require_unlock(request)
-    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    form = await deps.get_form(request)
     try:
         services.delete_room(room_id)
         deps.add_flash(request, "Room deleted.", "success")
@@ -258,7 +258,7 @@ async def room_delete(request: Request, room_id: int):
 @router.post("/settings/test-label")
 async def test_label(request: Request):
     deps.require_unlock(request)
-    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    form = await deps.get_form(request)
     try:
         ok, msg, p = services.test_label_print()
         deps.add_flash(request, f"Test label: {msg} ({p})", "success" if ok else "warning")
@@ -269,7 +269,7 @@ async def test_label(request: Request):
 
 @router.post("/settings/updates/check")
 async def updates_check(request: Request):
-    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    form = await deps.get_form(request)
     try:
         result = updater.check_for_updates()
         deps.get_session(request)["last_update_check"] = result
@@ -289,7 +289,7 @@ async def updates_check(request: Request):
 @router.post("/settings/updates/apply")
 async def updates_apply(request: Request):
     deps.require_unlock(request)
-    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    form = await deps.get_form(request)
     try:
         if str(form.get("confirm", "")).strip().upper() != "UPDATE APP":
             raise ValueError("Confirmation text must be exactly: UPDATE APP")

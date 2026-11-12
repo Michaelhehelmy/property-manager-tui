@@ -16,12 +16,25 @@ def _now_iso():
     return datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
 
 
-def normalize_code(code):
+def normalize_code(code, max_len: int = 256):
     if code is None:
         return ""
     s = str(code).strip()
     # strip common control chars from scanners
-    s = re.sub(r"[\r\n\t]+", "", s)
+    s = re.sub(r"[\r\n\t\x00]+", "", s)
+    # remove other non-printable/control chars defensively
+    s = "".join(ch for ch in s if ch.isprintable())
+    if max_len and len(s) > max_len:
+        s = s[:max_len]
+    return s
+
+
+def sanitize_label_text(value, max_len: int = 120) -> str:
+    """Sanitize text embedded into printer command templates (ZPL/ESC-POS/TSPL/EPL-ish)."""
+    s = normalize_code(value, max_len=max_len)
+    # remove characters commonly significant in label languages
+    s = re.sub(r"[\^~\\\[\]`]+", " ", s)
+    s = re.sub(r"\s+", " ", s).strip()
     return s
 
 
@@ -187,22 +200,37 @@ def render_batch_label_text(item, batch, include_payload: bool = True) -> str:
 
 def render_label_for_print(fmt: str, item, batch=None, include_payload: bool = True):
     """Return (content, is_binary). Tier 0: text/command strings safe for file/raw print."""
-    fmt = (fmt or "code128").lower()
+    fmt = normalize_code(fmt or "code128", max_len=32).lower() or "code128"
+    allowed = {"code128", "qr", "zpl", "escpos", "text", "tspl", "epl"}
+    if fmt not in allowed:
+        fmt = "code128"
     if batch is not None:
         text = render_batch_label_text(item, batch, include_payload=include_payload)
     else:
         text = render_item_label_text(item)
     # ZPL/EPL/TSPL/ESC-POS command templates (simple, readable text fallback embedded)
+    try:
+        if batch is not None:
+            raw_code = (batch.get("lot_code") if isinstance(batch, dict) else getattr(batch, "lot_code", None))
+        else:
+            if isinstance(item, dict):
+                raw_code = item.get("barcode") or item.get("sku") or f"ITEM-{item.get('id','')}"
+            else:
+                raw_code = getattr(item, "barcode", None) or getattr(item, "sku", None) or f"ITEM-{getattr(item,'id','')}"
+    except Exception:
+        raw_code = "CODE"
+    code = sanitize_label_text(raw_code, max_len=80) or "CODE"
     if fmt == "zpl":
-        code = (getattr(batch, "lot_code", None) if batch is not None else None) or (batch["lot_code"] if batch is not None and not hasattr(batch, "lot_code") else None) if False else None
-        try:
-            code = batch["lot_code"] if batch is not None else (item["barcode"] or item["sku"] or f"ITEM-{item['id']}")
-        except Exception:
-            code = "CODE"
-        zpl = f"^XA^FO30,30^A0N,30,30^FD{str(code).replace('^',' ').replace('~',' ')}^FS^FO30,70^BY2^BCN,80,Y,N,N^FD{str(code).replace('^',' ')}^FS^XZ\n"
+        zpl = (
+            "^XA"
+            f"^FO30,30^A0N,30,30^FD{code}^FS"
+            "^FO30,70^BY2^BCN,80,Y,N,N"
+            f"^FD{code}^FS"
+            "^XZ\n"
+        )
         return zpl, False
     if fmt == "escpos":
         # readable text label; many ESC/POS printers will print it fine
         return text, False
-    # default: human-readable + payload text (works for code128/qr as content to encode by external tools/printers)
+    # default: human-readable + payload text (works for code128/qr/tspl/epl as content to encode by external tools/printers)
     return text, False

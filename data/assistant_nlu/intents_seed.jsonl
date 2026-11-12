@@ -279,3 +279,23 @@
 {"text": "is there a new version or changelog", "label": "app_update_status", "slots": {}}
 {"text": "app update status", "label": "app_update_status", "slots": {}}
 {"text": "show current version and update info", "label": "app_update_status", "slots": {}}
+{"text": "run a health check", "label": "ledger_integrity", "slots": {}}
+{"text": "ledger integrity check", "label": "ledger_integrity", "slots": {}}
+{"text": "is the database consistent", "label": "ledger_integrity", "slots": {}}
+{"text": "check data integrity and health", "label": "ledger_integrity", "slots": {}}
+{"text": "any ledger or data issues", "label": "ledger_integrity", "slots": {}}
+{"text": "run integrity health checks", "label": "ledger_integrity", "slots": {}}
+{"text": "sanity check the books and data", "label": "ledger_integrity", "slots": {}}
+{"text": "doctor health check for the app data", "label": "ledger_integrity", "slots": {}}
+{"text": "are there orphaned or mismatched records", "label": "ledger_integrity", "slots": {}}
+{"text": "audit data consistency and ledger integrity", "label": "ledger_integrity", "slots": {}}
+{"text": "which inventory batches expire soon", "label": "expiring_batches", "slots": {}}
+{"text": "show expired lots and batches", "label": "expiring_batches", "slots": {}}
+{"text": "any batches nearing expiry in 14 days", "label": "expiring_batches", "slots": {}}
+{"text": "list all inventory lots and batches", "label": "inventory_batches", "slots": {}}
+{"text": "show batch list with received and expiry dates", "label": "inventory_batches", "slots": {}}
+{"text": "trace this barcode and show lot movements", "label": "trace_barcode", "slots": {}}
+{"text": "scan and trace lot code received when and expires when", "label": "trace_barcode", "slots": {}}
+{"text": "barcode traceability for SKU or lot", "label": "trace_barcode", "slots": {}}
+{"text": "check for software updates and changelog", "label": "app_update_status", "slots": {}}
+{"text": "how do I update the app and is data preserved", "label": "app_update_status", "slots": {}}

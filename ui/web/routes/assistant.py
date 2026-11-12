@@ -40,8 +40,7 @@ def assistant_page(request: Request):
 
 @router.post("/assistant/ask")
 async def assistant_ask(request: Request):
-    form = await request.form()
-    deps.verify_csrf(request, form.get("csrf"))
+    form = await deps.get_form(request)
     if not _assistant_allowed(request):
         deps.add_flash(request, "Unlock required to use Manager Assistant (sensitive data).", "error")
         r = deps.redirect("/unlock?next=/assistant")
@@ -79,8 +78,7 @@ async def assistant_ask(request: Request):
 
 @router.post("/assistant/feedback")
 async def assistant_feedback(request: Request):
-    form = await request.form()
-    deps.verify_csrf(request, form.get("csrf"))
+    form = await deps.get_form(request)
     if not _assistant_allowed(request):
         deps.add_flash(request, "Unlock required.", "error")
         r = deps.redirect("/assistant"); deps.save_session(r, deps.get_session(request)); return r
@@ -142,8 +140,7 @@ async def assistant_feedback(request: Request):
 
 @router.post("/assistant/clear")
 async def assistant_clear(request: Request):
-    form = await request.form()
-    deps.verify_csrf(request, form.get("csrf"))
+    form = await deps.get_form(request)
     deps.get_session(request)["assistant_history"] = []
     if request.headers.get("HX-Request"):
         templates = request.app.state.templates

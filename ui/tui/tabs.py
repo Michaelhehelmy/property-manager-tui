@@ -17,6 +17,7 @@ from .modals import (
     GuestMergeModal, GuestCRMModal, GuestHistoryModal, InvoiceScreen, WalkInReceiptScreen,
     ReportScreen, ChartScreen, ViewFolioScreen, ReviewChangesModal, ImportSettingsModal,
     AuditLogScreen, LanguageScreen, ApplyDemoDataModal, BrandingWizardScreen, AssistantCorrectionModal,
+    BatchSelectScreen,
 )
 
 PAYMENT_METHODS = ["Cash", "Card", "OTA", "Bank Transfer"]
@@ -582,7 +583,7 @@ class NewOrderTab(VerticalScroll):
     def __init__(self):
         super().__init__()
         self._res_id = None
-        self._walkin_cart = []  # [{desc, qty, price, inv_id}]
+        self._walkin_cart = []  # [{desc, qty, price, inv_id, batch_id, lot_code}]
 
     def compose(self):
         yield Static(t("Target"), classes="title")
@@ -598,6 +599,10 @@ class NewOrderTab(VerticalScroll):
         with Horizontal(classes="button_row"):
             yield Input(placeholder=t("Search"), id="search")
             yield Select([("All", "All")], id="cat", prompt=t("Category"))
+        with Horizontal(classes="button_row"):
+            yield Input(placeholder="Scan/Lookup barcode or lot", id="scan_code")
+            yield Button("Scan/Lookup", id="btn_scan_pos", variant="primary")
+        yield Static("", id="pos_scan_result", classes="help")
         yield DataTable(id="grid")
         yield Static(t("Custom Item"), classes="title")
         with Horizontal(classes="button_row"):
@@ -664,31 +669,58 @@ class NewOrderTab(VerticalScroll):
     def _refresh_cart(self):
         cart = self.query_one("#cart", DataTable)
         cart.clear(columns=True)
-        cart.add_columns("ID", t("Item"), "Lot", t("Qty"), t("Price"), "Tax", "Gross")
+        cart.add_columns("ID", t("Item"), "Lot/Batch", "Exp/Recv", t("Qty"), t("Price"), "Tax", "Gross")
         if self._is_walkin():
             total = 0.0
+            from app_core.db import connect
             for i, it in enumerate(self._walkin_cart, start=1):
                 tax = services.calculate_tax(it["price"] * it["qty"], 0)
                 lot = it.get("lot_code") or ""
-                cart.add_row(f"W{i}", it["desc"], lot, str(it["qty"]),
+                batch_id = it.get("batch_id")
+                extra = ""
+                if batch_id:
+                    try:
+                        b = connect().execute("SELECT expiry_date, received_at FROM inventory_batches WHERE id=?", (batch_id,)).fetchone()
+                        if b:
+                            exp = b["expiry_date"] or "-"
+                            recv = b["received_at"] or "-"
+                            extra = f"exp:{exp}/recv:{recv}"
+                    except Exception:
+                        pass
+                lot_disp = f"{lot}#{batch_id}" if lot and batch_id else (lot or (f"#{batch_id}" if batch_id else ""))
+                cart.add_row(f"W{i}", it["desc"], lot_disp, extra or "-", str(it["qty"]),
                              f"{it['price']:.2f}", f"{tax['service']+tax['vat']+tax['city_tax']:.2f}",
                              f"{tax['gross']:.2f}")
                 total += tax["gross"]
             if self._walkin_cart:
-                cart.add_row("", "TOTAL", "", "", "", "", f"{total:.2f}")
+                cart.add_row("", "TOTAL", "", "", "", "", "", f"{total:.2f}")
         elif self._res_id:
             total = 0.0
+            from app_core.db import connect
             for p in services.get_pos_items(self._res_id):
                 gross = p["quantity"] * p["unit_price"] + p["tax_amount"]
                 try:
-                    lot = p["lot_code"] or (f"batch#{p['batch_id']}" if p["batch_id"] else "")
+                    lot = p["lot_code"] or ""
+                    bid = p["batch_id"]
+                    lot_disp = f"{lot}#{bid}" if lot and bid else (lot or (f"#{bid}" if bid else ""))
+                    extra = "-"
+                    if bid:
+                        try:
+                            b = connect().execute("SELECT expiry_date, received_at FROM inventory_batches WHERE id=?", (bid,)).fetchone()
+                            if b:
+                                exp = b["expiry_date"] or "-"
+                                recv = b["received_at"] or "-"
+                                extra = f"exp:{exp}/recv:{recv}"
+                        except Exception:
+                            pass
                 except Exception:
-                    lot = ""
-                cart.add_row(str(p["id"]), p["item_description"], lot, str(p["quantity"]),
+                    lot_disp = ""
+                    extra = "-"
+                cart.add_row(str(p["id"]), p["item_description"], lot_disp, extra, str(p["quantity"]),
                              f"{p['unit_price']:.2f}", f"{p['tax_amount']:.2f}", f"{gross:.2f}")
                 total += gross
             if total > 0:
-                cart.add_row("", "TOTAL", "", "", "", "", f"{total:.2f}")
+                cart.add_row("", "TOTAL", "", "", "", "", "", f"{total:.2f}")
 
     def on_input_changed(self, e):
         if e.input.id == "search":
@@ -696,7 +728,7 @@ class NewOrderTab(VerticalScroll):
 
     def on_input_submitted(self, e):
         if e.input.id == "scan_code":
-            self._do_scan_lookup()
+            self._do_pos_scan_lookup()
 
     def on_select_changed(self, e):
         if e.select.id == "cat":
@@ -719,18 +751,45 @@ class NewOrderTab(VerticalScroll):
                                     (item_name,)).fetchone()
             if not row:
                 return self.app.notify("Item not found.", severity="error")  # pragma: no cover - direct DB lookup miss branch
-            self._add_to_cart(item_name, qty, row["selling_price"], row["id"])
+            self._start_add_to_cart(item_name, qty, row["selling_price"], row["id"])
         except Exception as exc:  # pragma: no cover - defensive/widget-state branch
             self.app.notify(str(exc), severity="error")  # pragma: no cover - defensive/widget-state branch
 
-    def _add_to_cart(self, desc, qty, price, inv_id):
+    def _start_add_to_cart(self, desc, qty, price, inv_id, batch_id=None, lot_code=None):
+        try:
+            from app_core.db import connect
+            if batch_id is not None:
+                self._add_to_cart(desc, qty, price, inv_id, batch_id=batch_id, lot_code=lot_code)
+                return
+            if inv_id:
+                inv = connect().execute("SELECT id, track_batches, item_name FROM inventory WHERE id=?", (inv_id,)).fetchone()
+                if inv:
+                    tracked = int(inv["track_batches"] or 0) == 1
+                    has_batches = connect().execute("SELECT 1 FROM inventory_batches WHERE item_id=? AND status='active' AND quantity_remaining>0 LIMIT 1", (inv_id,)).fetchone() is not None
+                    if tracked or has_batches:
+                        def _cb(sel):
+                            if not sel:
+                                return
+                            b_id = sel.get("batch_id") if isinstance(sel, dict) else None
+                            l_code = sel.get("lot_code") if isinstance(sel, dict) else None
+                            self._add_to_cart(desc, qty, price, inv_id, batch_id=b_id, lot_code=l_code)
+                        self.app.push_screen(BatchSelectScreen(inv_id, inv["item_name"], qty), callback=_cb)
+                        return
+            self._add_to_cart(desc, qty, price, inv_id)
+        except Exception as exc:
+            self.app.notify(str(exc), severity="error")
+
+    def _add_to_cart(self, desc, qty, price, inv_id, batch_id=None, lot_code=None):
         if self._is_walkin():
-            self._walkin_cart.append({"desc": desc, "qty": qty, "price": price, "inv_id": inv_id})
+            self._walkin_cart.append({"desc": desc, "qty": qty, "price": price, "inv_id": inv_id, "batch_id": batch_id, "lot_code": lot_code})
             self._refresh_cart()
             return
         if not self._res_id:
             return show_error(self.app, "Load a reservation first, or switch to Walk-in.")  # pragma: no cover - defensive/widget-state branch
-        services.add_pos_item(self._res_id, desc, qty, price, inv_id)
+        try:
+            services.add_pos_item(self._res_id, desc, qty, price, inv_id, batch_id=batch_id, lot_code=lot_code)
+        except Exception as exc:
+            return show_error(self.app, str(exc))
         self.app.refresh_all_tables()
         self._refresh_cart()
 
@@ -744,6 +803,8 @@ class NewOrderTab(VerticalScroll):
                     self._res_id = None
                     return show_error(self.app, "Invalid reservation ID.")
                 self.refresh_data()
+            elif bid == "btn_scan_pos":
+                self._do_pos_scan_lookup()
             elif bid == "btn_custom":
                 desc = self.query_one("#custom_desc", Input).value.strip()
                 try:
@@ -755,7 +816,7 @@ class NewOrderTab(VerticalScroll):
                     return show_error(self.app, "Description required.")  # pragma: no cover - defensive/widget-state branch
                 if qty <= 0 or price < 0:
                     return show_error(self.app, "Qty must be positive; price >= 0.")  # pragma: no cover - defensive/widget-state branch
-                self._add_to_cart(desc, qty, price, None)
+                self._start_add_to_cart(desc, qty, price, None)
                 self.query_one("#custom_desc", Input).value = ""
                 self.query_one("#custom_price", Input).value = ""
             elif bid == "btn_void":
@@ -782,6 +843,55 @@ class NewOrderTab(VerticalScroll):
                 self._pay()
         except Exception as exc:  # pragma: no cover - defensive/widget-state branch
             show_error(self.app, str(exc))  # pragma: no cover - defensive/widget-state branch
+
+    def _do_pos_scan_lookup(self):
+        try:
+            code = self.query_one("#scan_code", Input).value.strip()
+            if not code:
+                return show_error(self.app, "Enter/scan a barcode or lot code.")
+            res = services.resolve_barcode(code)
+            if res.get("type") == "batch":
+                b = res.get("batch") or {}
+                i = res.get("item") or {}
+                msg = f"BATCH {b.get('lot_code')} | {i.get('item_name','')} (#{b.get('item_id')}) | recv {b.get('received_at')} | exp {b.get('expiry_date') or '-'} | rem {b.get('quantity_remaining')}"
+                try:
+                    self.query_one("#pos_scan_result", Static).update(msg)
+                except Exception:
+                    pass
+                self.app.notify(msg)
+                inv_id = i.get("id") or b.get("item_id")
+                name = i.get("item_name") or ""
+                price = float(i.get("selling_price") or 0)
+                self.app.push_screen(QtyInputScreen(name), callback=lambda qty: self._add_from_scan(inv_id, name, price, qty, batch_id=b.get("id"), lot_code=b.get("lot_code")) if qty else None)
+                return
+            elif res.get("type") == "item":
+                i = res.get("item") or {}
+                msg = f"ITEM {i.get('item_name')} (#{i.get('id')}) | SKU {i.get('sku') or '-'} | Barcode {i.get('barcode') or '-'} | stock {i.get('stock_qty')}"
+                try:
+                    self.query_one("#pos_scan_result", Static).update(msg)
+                except Exception:
+                    pass
+                self.app.notify(msg)
+                self.app.push_screen(QtyInputScreen(i.get("item_name")), callback=lambda qty: self._add_from_grid(i.get("item_name"), qty) if qty else None)
+                return
+            else:
+                msg = f"No match for: {res.get('code')}"
+                try:
+                    self.query_one("#pos_scan_result", Static).update(msg)
+                except Exception:
+                    pass
+                show_error(self.app, msg)
+        except Exception as exc:
+            show_error(self.app, str(exc))
+
+    def _add_from_scan(self, inv_id, name, price, qty, batch_id=None, lot_code=None):
+        try:
+            if inv_id:
+                self._start_add_to_cart(name, qty, price, inv_id, batch_id=batch_id, lot_code=lot_code)
+            else:
+                self._add_to_cart(name, qty, price, None, batch_id=batch_id, lot_code=lot_code)
+        except Exception as exc:
+            self.app.notify(str(exc), severity="error")
 
     def _pay(self):
         if not self._is_walkin():

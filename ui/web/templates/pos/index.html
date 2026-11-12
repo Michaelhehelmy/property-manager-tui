@@ -61,7 +61,7 @@
         <label style="flex:2">Batch (optional, traceable/FEFO)
           <select name="batch_id">
             <option value="">— Auto FEFO / none —</option>
-            {% for b in (batches or []) %}<option value="{{b.id}}" data-item="{{b.item_id}}" data-lot="{{b.lot_code|e}}">{{b.item_name}} · lot {{b.lot_code}} · rem {{b.quantity_remaining}}{% if b.expiry_date %} · exp {{b.expiry_date}}{% endif %}{% if b.received_at %} · recv {{b.received_at}}{% endif %} ({{b.expiry_state or b.status or 'active'}})</option>{% endfor %}
+            {% for b in (batches or []) %}<option value="{{b.id}}" data-item="{{b.item_id}}" data-lot="{{b.lot_code|e}}">{{b.item_name}} · lot {{b.lot_code or '—'}} · rem {{b.quantity_remaining}}{% if b.received_at %} · received {{b.received_at}}{% endif %}{% if b.expiry_date %} · exp {{b.expiry_date}}{% endif %}{% if b.expiry_state=='expired' %} [EXPIRED]{% elif b.expiry_state=='expiring' %} [EXPIRING]{% endif %}</option>{% endfor %}
           </select>
         </label>
         <label style="flex:1">Lot code / scan<input name="lot_code" placeholder="Scan or type lot"/></label>
@@ -110,7 +110,8 @@
   </div>
   <div class="panel"><h3>Inventory (add to cart) — meals with recipes auto-deduct ingredients</h3>
     <form method="get" class="row"><input name="q" value="{{q}}" placeholder="Search inventory"/><div style="flex:0"><button>Search</button></div></form>
-    <table><tr><th>ID</th><th>Name / Barcode</th><th>Sell</th><th>Stock</th><th>Next expiry</th><th>Recipe</th><th>Qty</th><th></th></tr>
+    <p class="muted">Add to walk-in cart or view batches for specific lot selection (auto-FEFO applies if no batch chosen).</p>
+    <table><tr><th>ID</th><th>Name / Barcode</th><th>Sell</th><th>Stock</th><th>Next expiry</th><th>Recipe</th><th>Qty / Batch</th><th></th></tr>
     {% for i in inv %}
     <tr>
       <td>{{i['id']}}</td>
@@ -124,10 +125,10 @@
           <input type="hidden" name="price" value="{{i['selling_price'] or 0}}"/>
           <input type="hidden" name="inv_id" value="{{i['id']}}"/>
           <input name="qty" type="number" value="1" min="1" style="width:64px;display:inline-block"/>
-          <button type="submit">Add</button>
+          <button type="submit" title="Add to walk-in cart (auto-FEFO if tracked)">Add</button>
         </form>
+        <a class="button-like" href="/pos?batch_item={{i['id']}}" title="View/select specific batch/lot for this item">Batches</a>
         <form method="post" action="/inventory/label/item/{{i['id']}}" class="inline"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><button type="submit" title="Print item label">Label</button></form>
-        <a href="/pos?batch_item={{i['id']}}">Batches</a>
       </td>
     </tr>
     {% else %}<tr><td colspan="8" class="muted">No items</td></tr>{% endfor %}</table>
@@ -158,9 +159,24 @@
         <input type="password" name="password" placeholder="Super password"/><button class="ok">Receive batch</button>
       </form>
       {% if batch_item %}<p class="muted">Showing batches for item #{{batch_item}}.</p>{% endif %}
-      <table><tr><th>ID</th><th>Item</th><th>Lot</th><th>Received</th><th>Expiry</th><th>Rem/Recv</th><th>Cost</th><th></th></tr>
+      <table><tr><th>ID</th><th>Item</th><th>Lot</th><th>Received</th><th>Expiry</th><th>Rem/Recv</th><th>Cost</th><th>Actions</th></tr>
       {% for b in batches or [] %}
-        <tr><td>{{b.id}}</td><td>{{b.item_name}} (#{{b.item_id}})</td><td><code>{{b.lot_code}}</code></td><td>{{b.received_at}}</td><td>{{b.expiry_date or '—'}} {% if b.expiry_state=='expired' %}<span class="err">EXPIRED</span>{% elif b.expiry_state=='expiring' %}<span class="warn">soon</span>{% endif %}</td><td>{{b.quantity_remaining}} / {{b.quantity_received}}</td><td>{{"%.2f"|format(b.unit_cost or 0)}}</td><td><form method="post" action="/inventory/label/batch/{{b.id}}" class="inline"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><button>Label</button></form></td></tr>
+        <tr>
+          <td>{{b.id}}</td>
+          <td>{{b.item_name}} (#{{b.item_id}})</td>
+          <td><code>{{b.lot_code}}</code></td>
+          <td class="muted">{{b.received_at}}</td>
+          <td>{{b.expiry_date or '—'}} {% if b.expiry_state=='expired' %}<span class="err">EXPIRED</span>{% elif b.expiry_state=='expiring' %}<span class="warn">expiring soon</span>{% endif %}</td>
+          <td>{{b.quantity_remaining}} / {{b.quantity_received}}</td>
+          <td>{{"%.2f"|format(b.unit_cost or 0)}}</td>
+          <td>
+            <form method="post" action="/pos/cart/add" class="inline"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><input type="hidden" name="desc" value="{{b.item_name}} [{{b.lot_code}}]"/><input type="hidden" name="inv_id" value="{{b.item_id}}"/><input type="hidden" name="batch_id" value="{{b.id}}"/><input type="hidden" name="lot_code" value="{{b.lot_code}}"/><input name="price" type="number" step="0.01" placeholder="Price" style="width:80px;display:inline-block" title="Unit price (enter selling price)"/><input name="qty" type="number" value="1" min="1" style="width:58px;display:inline-block"/><button type="submit" title="Add this exact batch/lot to walk-in cart">Cart</button></form>
+            <details class="inline"><summary title="Charge this batch to a reservation">Res</summary>
+              <form method="post" action="/pos/add" style="margin-top:4px"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><input type="hidden" name="desc" value="{{b.item_name}} [{{b.lot_code}}]"/><input type="hidden" name="inv_id" value="{{b.item_id}}"/><input type="hidden" name="batch_id" value="{{b.id}}"/><input type="hidden" name="lot_code" value="{{b.lot_code}}"/><input type="hidden" name="next" value="/pos?batch_item={{batch_item}}"/><select name="reservation_id" required style="min-width:160px">{% for r in reservations %}<option value="{{r['id']}}">#{{r['id']}} {{r['guest_name']}}</option>{% endfor %}</select><input name="price" type="number" step="0.01" placeholder="Price" style="width:80px"/><input name="qty" type="number" value="1" min="1" style="width:58px"/><button class="ok" type="submit">Charge</button></form>
+            </details>
+            <form method="post" action="/inventory/label/batch/{{b.id}}" class="inline"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><button type="submit">Label</button></form>
+          </td>
+        </tr>
       {% else %}<tr><td colspan="8" class="muted">No batches shown (select “Batches” on an item or receive one).</td></tr>{% endfor %}
       </table>
     </details>

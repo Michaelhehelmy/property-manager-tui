@@ -67,7 +67,34 @@ def _lan_ip_hint() -> str:
         return "<this-device-ip>"
 
 
+def _validate_host(host: str) -> str:
+    h = (host or "").strip()
+    if not h or any(ch.isspace() for ch in h) or h.startswith("-"):
+        raise ValueError(f"Invalid host: {host!r}")
+    # allow common forms: IPv4, IPv6, localhost, hostnames
+    if not all(c.isalnum() or c in ".:-_[]" for c in h):
+        raise ValueError(f"Invalid host: {host!r}")
+    return h
+
+
+def _validate_port(port: int) -> int:
+    try:
+        p = int(port)
+    except Exception:
+        raise ValueError(f"Invalid port: {port!r}")
+    if p < 1 or p > 65535:
+        raise ValueError(f"Invalid port: {port!r}")
+    return p
+
+
 def run_web(host: str = "127.0.0.1", port: int = 8000, open_browser: bool = True) -> int:
+    try:
+        host = _validate_host(host)
+        port = _validate_port(port)
+    except Exception as e:
+        print(f"\nInvalid web settings: {e}")
+        input("\nPress Enter to return to launcher...")
+        return 2
     ok, err = _web_deps_ok()
     if not ok:
         print("\nWeb dependencies are missing or incomplete.")
@@ -84,6 +111,7 @@ def run_web(host: str = "127.0.0.1", port: int = 8000, open_browser: bool = True
     print(f"Local: {url}")
     if host in ("0.0.0.0", "::"):
         print(f"LAN:   http://{_lan_ip_hint()}:{port}  (other devices on same network)")
+    print("Runtime data (DB/exports/invoices/data dir) is preserved across updates/restarts.")
     print("Press Ctrl+C to stop the web server and return to launcher.\n")
 
     env = _env()

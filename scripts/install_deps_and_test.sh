@@ -50,6 +50,7 @@ else
 fi
 
 echo ""
+echo "==> Runtime data note: DB/exports/invoices/data dir are preserved by setup/update flows; do not delete them."
 echo "==> Running tests (pytest)..."
 # conftest.py adds src/root to sys.path; PYTHONPATH is set for clarity.
 export PYTHONPATH="$ROOT/src:$ROOT${PYTHONPATH:+:$PYTHONPATH}"

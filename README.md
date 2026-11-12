@@ -11,9 +11,19 @@ Local-first property management system (reservations/front desk, POS & inventory
 - **POS & inventory:** catalog, sales, recipes/meals, expenses, and **traceable barcodes/SKUs/lots**. Inventory supports **batch/lot tracking** with received date, expiry, remaining quantity/cost, and movements; expiring/expired batches can be reviewed and items/lots traced by barcode/SKU/lot code.
 - **Activities/trips:** register and book activities with stats and folio/invoice posting.
 - **Accounting, reports & analytics:** ledger, P&L/cash flow/VAT/payment methods/occupancy/ops reports and decision support.
-- **Integrity & health checks:** read-only ledger/data integrity checks (app/services) plus runtime health probes (`GET /health`, `GET /healthz` for the web server).
-- **Grounded assistant:** read-only, data-backed help in Web & TUI for ops, reports, guests/portfolios, reservations/balances, inventory (including expiring batches, batch lists, barcode/lot trace with received/expiry/movements), integrity checks, and app version/update status.
-- **In-app updates (Web & TUI):** Settings provide **Check for updates**, changelog/details, and an **Update** action for git-based installs (fast-forward). Runtime data is preserved during updates (DB, exports, invoices, configured data dir). Restart after applying an update.
+- **Integrity & health checks:** read-only ledger/data integrity checks in-app (Web/TUI/services), CLI **doctor** checks, and web runtime health probes (`GET /health`, `GET /healthz`).
+- **Grounded assistant:** read-only, data-backed help in Web & TUI for ops, reports, guests/portfolios, reservations/balances, inventory (including expiring batches, batch lists, barcode/lot trace with received/expiry/movements), integrity/health checks, and app version/update status.
+- **In-app updates (Web & TUI):** Settings provide **Check for updates**, changelog/details, and an **Apply/Update** action for git-based installs (fast-forward). Runtime data is preserved during updates (DB, exports, invoices, configured data dir). Restart after applying an update.
+- **Backups & data safety:** in-app/manual database backups to the exports/data area; runtime data (DB/exports/invoices/data dir) is preserved across source updates. Restore is a manual, offline file operation (see **Backups & restore**).
+
+## Inventory, batches & traceability
+
+- **Barcodes/SKUs/lots:** inventory items can carry SKU/barcode identifiers; stock can be tracked per **batch/lot** (traceable lots).
+- **Batch fields:** each batch/lot records received date/time, expiry date, remaining (and received) quantity, unit cost, supplier/reference/notes, and status/expiry state.
+- **Expiring batches:** review batches expiring within a window (and expired batches) to manage shelf life and reduce waste.
+- **Batch lists:** list inventory batches/lots (per item or overall) with received/expiry/remaining/cost for traceability.
+- **Barcode/lot trace:** resolve a barcode/SKU/lot code to the inventory item or specific batch/lot and inspect **when received, when it expires, remaining quantity, and recent movements/logs** (grounded in real records).
+- **Grounded assistant:** ask for expiring batches, batch lists, or to trace a barcode/SKU/lot code; answers are read-only and based on real app data.
 
 ## Repository layout
 
@@ -249,14 +259,29 @@ PYTHONPATH=src python -m uvicorn ui.web.server:app --host 127.0.0.1 --port 8000 
 - **Single worker:** always run with `--workers 1` (SQLite/shared state). Do not increase workers for the built-in server.
 - **Secret:** set `PM_WEB_SECRET_KEY` to a strong random value for any non-local/shared deployment.
 - **Bind:** `127.0.0.1` = local only; `0.0.0.0` = reachable on network interfaces (LAN). Open firewall/port as needed.
-- **Security:** sensitive actions use CSRF + super-password/unlock flows. Prefer **HTTPS** (reverse proxy like Caddy/Nginx/Traefik) or a private network (VPN/Tailscale) for remote access; avoid exposing plain HTTP publicly.
+- **Transport security:** prefer **HTTPS** (reverse proxy like Caddy/Nginx/Traefik) or a private network (VPN/Tailscale) for remote/LAN access; avoid exposing plain HTTP publicly.
 - **Reverse proxy (example):** proxy to `127.0.0.1:8000`, terminate TLS, forward headers as usual.
 - **Service/autostart:** run via a process manager (systemd, launchd, NSSM/Task Scheduler on Windows, `supervisord`, Docker restart policy) executing the venv’s Python/uvicorn with `--workers 1`.
+- **Health probes:** `GET /health` and `GET /healthz` are available for liveness/readiness checks.
 - **Backups:** back up the DB and data/exports/invoices regularly (and before upgrades/migrations). Runtime data lives in the configured data dir (`PM_DATA_DIR` or default) and should be preserved across updates.
+
+## Security model (Web: CSRF & unlock)
+
+- **CSRF:** all state-changing web requests (POST/PUT/PATCH/DELETE) are CSRF-protected. Form posts verify a CSRF token; JSON/header requests are enforced by server middleware/handlers (see `docs/web_authz_matrix.md`).
+- **Super-password unlock:** sensitive/destructive/admin mutations (financial/accounting operations, inventory/stock/batch/recipe/meal/activity changes, voids/refunds/cancels/deletes/modifications, exports/backups/seed/demo/settings changes, labels, protected downloads, etc.) require an active unlock (super password) in addition to CSRF.
+- **Operational front-desk flows:** some routine operational actions (e.g. create/check-in/checkout/pay, POS cart operations, walk-in sale) remain usable where appropriate but still require CSRF; policy-sensitive overrides and destructive actions remain gated by unlock.
+- **Assistant unlock policy:** assistant ask/feedback follows configured unlock/allowlist policy while remaining read-only and grounded.
+- **Reference:** `docs/web_authz_matrix.md` documents the route-group matrix (CSRF/unlock/conditional) for `ui/web`. Keep deployments on trusted networks or behind HTTPS/VPN.
 
 ## Updates
 
-**In-app (recommended for git installs, Web & TUI):** open **Settings → App updates** to **Check for updates**, review the **changelog/commit details**, and **Apply update** (git fast-forward). The app preserves runtime data during updates (database, exports, invoices, and the configured data directory such as `PM_DATA_DIR` / `data/` are not modified by source updates). Restart the app after applying an update. If local source changes exist, commit/stash/discard them before applying.
+**In-app (recommended for git installs, Web & TUI):** open **Settings → App updates** to **Check for updates**, review the **changelog/commit details**, and **Apply/Update** (git fast-forward apply).
+
+- **Changelog/details:** available updates show commit/changelog details before applying.
+- **Data preserved:** runtime data is **not** modified by source updates (database, exports, invoices, and the configured data directory such as `PM_DATA_DIR` / `data/` are preserved).
+- **After apply:** restart the app/server to load the new version.
+- **Local changes:** if the working tree has local source changes, commit/stash/discard them before applying an in-app update.
+- **Assistant:** you can ask “check for updates / what app version?” for grounded local version/update status and guidance.
 
 **Manual (CLI):**
 ```bash
@@ -267,6 +292,22 @@ git pull --ff-only
 #   Win:  powershell -ExecutionPolicy Bypass -File scripts\setup_windows.ps1 -Action setup
 # DB migrations run on startup (additive). Runtime data (DB/exports/invoices/data dir) is preserved.
 ```
+
+## Integrity, health checks & doctor
+
+- **In-app (read-only):** ledger/data integrity checks are available in the app (and surfaced by the grounded assistant as “health check / ledger integrity”). Use them to detect inconsistencies before relying on reports.
+- **CLI doctor:** run operational health checks (safe/read-oriented where possible) with:
+  ```bash
+  PYTHONPATH=src python -m app_core.doctor
+  ```
+  (Supports JSON output and checks such as DB/open/migrations/integrity/writable paths depending on options; run `--help` for flags.)
+- **Web runtime probes:** `GET /health` and `GET /healthz` for liveness/readiness of the web server.
+
+## Backups & restore
+
+- **Create backups:** use **Settings → Backup now** in Web/TUI (when unlocked where required) to create a database backup (stored under the app’s exports/data area). Keep regular backups and take one before upgrades/migrations.
+- **What to preserve:** runtime data lives in the configured data directory (`PM_DATA_DIR` or the default `data/`/legacy locations), including the database, exports, and invoices. Source/app updates (in-app or `git pull`) do **not** modify this runtime data.
+- **Restore (manual):** stop the app/server, copy the desired backup DB/file back to the active database path for your data directory (and restore related exports/invoices if needed), then start the app. DB migrations run on startup (additive). Verify with a backup/health/integrity check after restore. (There is no destructive one-click in-app restore; perform restores deliberately offline.)
 
 ## Tests & checks
 

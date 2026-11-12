@@ -12,6 +12,8 @@ __pycache__/
 *.py[cod]
 *$py.class
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 .coverage
 .coverage.*
 htmlcov/
@@ -19,9 +21,13 @@ htmlcov/
 dist/
 build/
 .eggs/
+pip-wheel-metadata/
 .venv/
 venv/
 ENV/
+
+# Local/generated assistant models (trained artifacts; keep lightweight repo)
+models/
 
 # OS / editor
 .DS_Store

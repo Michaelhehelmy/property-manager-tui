@@ -1,0 +1,63 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "property-manager-tui"
+version = "0.1.0"
+description = "Local-first property manager with Textual TUI and FastAPI/HTMX web UI (shared app_core)."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Proprietary" }
+authors = [{ name = "Michael Helmy" }]
+dependencies = [
+  "textual>=0.47",
+]
+
+[project.optional-dependencies]
+# Web UI (FastAPI/HTMX). Run server with --workers 1 (SQLite).
+web = [
+  "fastapi>=0.110",
+  "uvicorn>=0.27",
+  "jinja2>=3.1",
+  "python-multipart>=0.0.9",
+  "itsdangerous>=2.1",
+]
+# Optional local intent-routing ML (sklearn/SetFit). Install only if you train/use ML NLU.
+assistant-ml = [
+  "scikit-learn>=1.3",
+  "joblib>=1.3",
+  "setfit>=1.0",
+  "sentence-transformers>=2.2",
+]
+# Optional local "talking" LLM runtime (GGUF via llama.cpp). Model files are not bundled.
+assistant-llm = [
+  "llama-cpp-python>=0.2",
+]
+# Development and test tools.
+dev = [
+  "pytest>=7.0",
+  "httpx>=0.24",
+]
+# Label/barcode printing uses configured system/default printers (and text/PDF exports);
+# no extra Python deps required by default. Kept as an extra for future/optional drivers.
+labels = []
+
+[project.scripts]
+property-manager = "launcher:main"
+property-manager-tui = "main:main"
+pm = "launcher:main"
+pm-tui = "main:main"
+
+[tool.setuptools]
+include-package-data = true
+py-modules = ["main", "launcher"]
+
+[tool.setuptools.packages.find]
+where = ["src", "."]
+include = ["app_core*", "ui*"]
+exclude = ["tests*", "scripts*", "docs*", "data*", "models*"]
+
+[tool.setuptools.package-dir]
+"" = "src"
+"ui" = "ui"
