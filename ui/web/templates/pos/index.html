@@ -195,16 +195,16 @@
 
 <div class="grid grid-2">
   <div class="panel"><h3>Recent walk-in POS lines (no reservation)</h3>
-    <table><tr><th>ID</th><th>At</th><th>Item</th><th>Qty</th><th>Gross-ish</th><th>Action</th></tr>
+    <table><tr><th>ID</th><th>At</th><th>Item</th><th>Lot</th><th>Qty</th><th>Gross-ish</th><th>Action</th></tr>
     {% for p in walkin_pos %}{% if not p['voided_at'] %}
     <tr>
-      <td>{{p['id']}}</td><td class="muted">{{p['created_at']}}</td><td>{{p['item_description']}}</td><td>{{p['quantity']}}</td>
+      <td>{{p['id']}}</td><td class="muted">{{p['created_at']}}</td><td>{{p['item_description']}}</td><td><code>{{ p['lot_code'] or '—' }}</code></td><td>{{p['quantity']}}</td>
       <td>{{"%.2f"|format((p['quantity']*p['unit_price']) + (p['tax_amount'] or 0))}}</td>
       <td>
         <form method="post" action="/pos/void/{{p['id']}}" class="inline"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><input type="hidden" name="next" value="/pos"/><input type="password" name="password" placeholder="Pwd" style="width:90px;display:inline-block"/><button class="err">Void</button></form>
       </td>
     </tr>
-    {% endif %}{% else %}<tr><td colspan="6" class="muted">None</td></tr>{% endfor %}</table>
+    {% endif %}{% else %}<tr><td colspan="7" class="muted">None</td></tr>{% endfor %}</table>
   </div>
   <div class="panel"><h3>Recent walk-in payments</h3>
     <table><tr><th>ID</th><th>At</th><th>Amount</th><th>Method</th><th>Notes</th></tr>
