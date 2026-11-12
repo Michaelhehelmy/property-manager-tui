@@ -664,26 +664,31 @@ class NewOrderTab(VerticalScroll):
     def _refresh_cart(self):
         cart = self.query_one("#cart", DataTable)
         cart.clear(columns=True)
-        cart.add_columns("ID", t("Item"), t("Qty"), t("Price"), "Tax", "Gross")
+        cart.add_columns("ID", t("Item"), "Lot", t("Qty"), t("Price"), "Tax", "Gross")
         if self._is_walkin():
             total = 0.0
             for i, it in enumerate(self._walkin_cart, start=1):
                 tax = services.calculate_tax(it["price"] * it["qty"], 0)
-                cart.add_row(f"W{i}", it["desc"], str(it["qty"]),
+                lot = it.get("lot_code") or ""
+                cart.add_row(f"W{i}", it["desc"], lot, str(it["qty"]),
                              f"{it['price']:.2f}", f"{tax['service']+tax['vat']+tax['city_tax']:.2f}",
                              f"{tax['gross']:.2f}")
                 total += tax["gross"]
             if self._walkin_cart:
-                cart.add_row("", "TOTAL", "", "", "", f"{total:.2f}")
+                cart.add_row("", "TOTAL", "", "", "", "", f"{total:.2f}")
         elif self._res_id:
             total = 0.0
             for p in services.get_pos_items(self._res_id):
                 gross = p["quantity"] * p["unit_price"] + p["tax_amount"]
-                cart.add_row(str(p["id"]), p["item_description"], str(p["quantity"]),
+                try:
+                    lot = p["lot_code"] or ""
+                except Exception:
+                    lot = ""
+                cart.add_row(str(p["id"]), p["item_description"], lot, str(p["quantity"]),
                              f"{p['unit_price']:.2f}", f"{p['tax_amount']:.2f}", f"{gross:.2f}")
                 total += gross
             if total > 0:
-                cart.add_row("", "TOTAL", "", "", "", f"{total:.2f}")
+                cart.add_row("", "TOTAL", "", "", "", "", f"{total:.2f}")
 
     def on_input_changed(self, e):
         if e.input.id == "search":

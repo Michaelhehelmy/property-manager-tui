@@ -1169,10 +1169,14 @@ class ViewFolioScreen(ModalScreen):
     def _load(self):
         table = self.query_one("#table", DataTable)
         table.clear(columns=True)
-        table.add_columns("ID", t("Item"), t("Qty"), t("Price"), "Tax", "Gross")
+        table.add_columns("ID", t("Item"), "Lot", t("Qty"), t("Price"), "Tax", "Gross")
         for p in services.get_pos_items(self.rid):
             gross = p["quantity"] * p["unit_price"] + p["tax_amount"]
-            table.add_row(str(p["id"]), p["item_description"], str(p["quantity"]),
+            try:
+                lot = p["lot_code"] or ""
+            except Exception:
+                lot = ""
+            table.add_row(str(p["id"]), p["item_description"], lot, str(p["quantity"]),
                           f"{p['unit_price']:.2f}", f"{p['tax_amount']:.2f}", f"{gross:.2f}")
     def on_button_pressed(self, e):
         if e.button.id == "btn_void":
