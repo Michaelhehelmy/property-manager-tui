@@ -23,7 +23,7 @@ REPO_URL="${REPO_URL:-https://github.com/Michaelhehelmy/property-manager-tui.git
 INSTALL_DIR="${INSTALL_DIR:-$HOME/property-manager-tui}"
 BRANCH="${BRANCH:-main}"
 MODE="${MODE:-auto}"                # auto|tui|web|both
-ACTION="${ACTION:-setup}"           # setup|run|deploy (deploy = setup + run)
+ACTION="${ACTION:-setup}"           # auto|setup|run|deploy
 SKIP_WEB="${SKIP_WEB:-auto}"        # auto|0|1
 INSTALL_DEV="${INSTALL_DEV:-0}"
 RUN_TESTS="${RUN_TESTS:-0}"
@@ -250,6 +250,23 @@ run_deploy() {
 main() {
   detect_env
   case "$ACTION" in
+    auto)
+      # Smart: first install -> full setup + launch launcher/app.
+      # Existing install -> update code, refresh deps, launch (no system pkg reinstall).
+      if [ -d "$INSTALL_DIR/.git" ] && [ -d "$INSTALL_DIR/.venv" ]; then
+        log "Existing install detected: checking for updates and launching..."
+        clone_or_update
+        setup_venv_and_deps
+        run_deploy
+      else
+        log "No existing install detected: running full setup and launch..."
+        install_system_packages
+        clone_or_update
+        setup_venv_and_deps
+        print_hints
+        run_deploy
+      fi
+      ;;
     setup)
       install_system_packages
       clone_or_update
@@ -257,7 +274,7 @@ main() {
       print_hints
       ;;
     run)
-      [ -d "$INSTALL_DIR/.venv" ] || { warn "Install not found at $INSTALL_DIR. Run ACTION=setup first."; exit 1; }
+      [ -d "$INSTALL_DIR/.venv" ] || { warn "Install not found at $INSTALL_DIR. Run ACTION=setup or ACTION=auto first."; exit 1; }
       run_deploy
       ;;
     deploy)
@@ -268,7 +285,7 @@ main() {
       run_deploy
       ;;
     *)
-      warn "Unknown ACTION=$ACTION (use setup|run|deploy)"
+      warn "Unknown ACTION=$ACTION (use auto|setup|run|deploy)"
       exit 1
       ;;
   esac

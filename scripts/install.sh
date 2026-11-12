@@ -8,19 +8,23 @@
 #   wget -qO-  https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh | sh
 #
 # With options (env vars):
-#   curl -fsSL .../install.sh | MODE=tui ACTION=deploy sh
-#   curl -fsSL .../install.sh | MODE=web ACTION=deploy HOST=0.0.0.0 PORT=8000 sh
-#   curl -fsSL .../install.sh | SKIP_WEB=1 MODE=tui ACTION=deploy sh   # iSH/low-resource
+#   curl -fsSL .../install.sh | sh                                 # install/update + launch launcher
+#   curl -fsSL .../install.sh | MODE=tui sh                        # prefer TUI
+#   curl -fsSL .../install.sh | MODE=web HOST=0.0.0.0 PORT=8000 sh
+#   curl -fsSL .../install.sh | SKIP_WEB=1 MODE=tui sh             # iSH/low-resource
 #
 # Env vars: REPO_URL, INSTALL_DIR, BRANCH, MODE, ACTION, SKIP_WEB, HOST, PORT,
 #           INSTALL_DEV, RUN_TESTS, PYTHON, PM_DATA_DIR, PM_WEB_SECRET_KEY
+# Default ACTION=auto: first run installs everything and launches launcher;
+# re-run checks for updates (git fast-forward), refreshes deps, and launches.
+# Use ACTION=setup to install/update only, or ACTION=run to run without updating.
 set -eu
 
 REPO_URL="${REPO_URL:-https://github.com/Michaelhehelmy/property-manager-tui.git}"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/property-manager-tui}"
 BRANCH="${BRANCH:-main}"
 MODE="${MODE:-auto}"
-ACTION="${ACTION:-setup}"
+ACTION="${ACTION:-auto}"
 SKIP_WEB="${SKIP_WEB:-auto}"
 HOST="${HOST:-127.0.0.1}"
 PORT="${PORT:-8000}"

@@ -77,18 +77,18 @@ The repo ships dynamic scripts that detect the OS/package manager, install prere
 
 ### Quick install (one-line, online)
 
-Run a single command from your shell/terminal on the target OS. All scripts preserve runtime data (DB/exports/invoices/`PM_DATA_DIR`) and keep the web server on **`--workers 1`** for SQLite.
+Run a single command from your shell/terminal on the target OS. **Same command works for first-time install and later re-runs:** it installs if needed, checks for updates (git fast-forward), refreshes deps, and launches the launcher so you can choose **TUI** or **Web**. All scripts preserve runtime data (DB/exports/invoices/`PM_DATA_DIR`) and keep the web server on **`--workers 1`** for SQLite.
 
 | OS / Environment | One-line command | Notes |
 |---|---|---|
-| **Linux / macOS / WSL / generic Unix** (curl) | `curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh \| MODE=auto ACTION=deploy sh` | Auto-detects; installs deps via apt/apk/pkg/brew if possible. |
-| **Linux / macOS / WSL** (wget) | `wget -qO- https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh \| MODE=auto ACTION=deploy sh` | Fallback if `curl` missing. |
-| **TUI only (minimal / headless / iSH)** | `curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh \| SKIP_WEB=1 MODE=tui ACTION=deploy sh` | Most reliable for iSH/low-resource systems. |
-| **Web server for LAN/phones (same network)** | `curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh \| MODE=web ACTION=deploy HOST=0.0.0.0 PORT=8000 sh` | Set `PM_WEB_SECRET_KEY` and open `http://<device-ip>:8000`. Add to Home Screen on iOS/Android. |
-| **Android (Termux)** | `pkg update -y && pkg install -y curl && curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh \| MODE=both ACTION=deploy HOST=0.0.0.0 PORT=8000 sh` | TUI in Termux or web from browser/other LAN devices; SSH also works. |
-| **iOS (iSH / Alpine)** | `apk add --no-cache curl && curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh \| SKIP_WEB=1 MODE=tui ACTION=deploy sh` | Prefer TUI; SSH from another device is a great option too. |
-| **Windows (PowerShell)** | `irm https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install_windows.ps1 \| iex` | Uses `winget` to install Python/Git if missing (Admin recommended). Customize with `$env:MODE/$env:ACTION/$env:HOST/$env:PORT`. |
-| **Windows (CMD)** | `curl -fsSL -o install_windows.cmd https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install_windows.cmd && install_windows.cmd -Action deploy -Mode tui` | Or run directly from repo: `scripts\install_windows.cmd`. |
+| **Linux / macOS / WSL / generic Unix** (curl) | `curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh \| sh` | Auto-detects OS/pkg manager, installs everything, launches launcher (choose TUI or Web). Re-run anytime to update & launch. |
+| **Linux / macOS / WSL** (wget) | `wget -qO- https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh \| sh` | Fallback if `curl` missing. |
+| **TUI only (minimal / headless / iSH)** | `curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh \| SKIP_WEB=1 MODE=tui sh` | Most reliable for iSH/low-resource systems. |
+| **Web server for LAN/phones (same network)** | `curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh \| MODE=web HOST=0.0.0.0 PORT=8000 sh` | Set `PM_WEB_SECRET_KEY` and open `http://<device-ip>:8000`. Add to Home Screen on iOS/Android. |
+| **Android (Termux)** | `pkg update -y && pkg install -y curl && curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh \| sh` | Launches launcher (TUI or Web). For LAN web, add `MODE=web HOST=0.0.0.0 PORT=8000`. |
+| **iOS (iSH / Alpine)** | `apk add --no-cache curl && curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh \| SKIP_WEB=1 MODE=tui sh` | Prefer TUI; SSH from another device or Web UI on another host also works. |
+| **Windows (PowerShell)** | `irm https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install_windows.ps1 \| iex` | Bootstraps Python/Git via winget if missing (Admin recommended), installs/updates, and runs setup. Customize with `$env:MODE/$env:ACTION/$env:HOST/$env:PORT` (e.g. `$env:ACTION='deploy'`). |
+| **Windows (CMD)** | `curl -fsSL -o install_windows.cmd https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install_windows.cmd && install_windows.cmd -Action deploy -Mode auto` | Downloads and runs bootstrap; launcher lets you choose TUI/Web. |
 
 **Env/customization:** set `INSTALL_DIR`, `BRANCH`, `REPO_URL`, `PM_DATA_DIR`, `PM_WEB_SECRET_KEY` before the command as shown above. After install: `cd ~/property-manager-tui && . .venv/bin/activate && python3 launcher.py` (or `--tui`). Updates via in-app **Settings → App updates** (fast-forward, restart) or `git pull --ff-only && sh scripts/setup.sh ACTION=setup`. Remote access to phones: use **SSH** for TUI, or bind web to `0.0.0.0` + VPN/HTTPS/tunnel for off-LAN.
 
