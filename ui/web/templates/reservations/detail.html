@@ -106,8 +106,8 @@
     </details>
   </div>
 
-  <div class="panel"><h3>Payments</h3><table><tr><th>ID</th><th>Type</th><th>Amount</th><th>Method</th><th>Notes</th></tr>
+  <div class="panel"><h3>Payments</h3><div class="table-wrap"><table><tr><th>ID</th><th>Type</th><th>Amount</th><th>Method</th><th>Notes</th></tr>
   {% for p in pays %}{% if not p['voided_at'] %}<tr><td>{{p['id']}}</td><td>{{p['payment_type']}}</td><td>{{p['amount']}}</td><td>{{p['method']}}</td><td>{{p['notes']}}</td></tr>{% endif %}
-  {% else %}<tr><td colspan="5" class="muted">None</td></tr>{% endfor %}</table></div>
+  {% else %}<tr><td colspan="5" class="muted">None</td></tr>{% endfor %}</table></div></div>
 </div>
 {% endblock %}

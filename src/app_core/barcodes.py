@@ -7,9 +7,10 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 
 DATE_FMT = "%Y-%m-%d"
+ALLOWED_BARCODE_TYPES = {"code128", "qr", "zpl", "escpos", "text", "tspl", "epl", "datamatrix"}
 
 
 def _now_iso():
@@ -23,13 +24,30 @@ def normalize_code(code, max_len: int = 256):
         max_len = max(1, min(int(max_len or 256), 4096))
     except Exception:
         max_len = 256
-    s = str(code).strip()
-    # strip common control chars from scanners
-    s = re.sub(r"[\r\n\t\x00]+", "", s)
+    s = str(code)
+    # strip common control chars from scanners and embedded NULs
+    s = s.replace("\x00", "")
+    s = re.sub(r"[\r\n\t]+", "", s)
+    s = s.strip()
     # remove other non-printable/control chars defensively
     s = "".join(ch for ch in s if ch.isprintable())
     if max_len and len(s) > max_len:
         s = s[:max_len]
+    return s
+
+
+def normalize_barcode_type(value, default: str = "code128") -> str:
+    t = normalize_code(value, max_len=32).lower()
+    return t if t in ALLOWED_BARCODE_TYPES else default
+
+
+def validate_barcode_value(code, *, allow_empty: bool = False, max_len: int = 256) -> str:
+    s = normalize_code(code, max_len=max_len)
+    if not s and not allow_empty:
+        raise ValueError("Barcode/lot code is required")
+    # conservative charset to avoid label/transport injection while supporting common symbologies
+    if s and not re.fullmatch(r"[A-Za-z0-9._:/#()+\-=@ ]+", s):
+        raise ValueError("Barcode/lot code contains unsupported characters")
     return s
 
 
@@ -55,7 +73,13 @@ def make_lot_code(item_id: int, received_at: str | None = None, seq: int | None 
                 pass
     dt = dt or datetime.now()
     stamp = dt.strftime("%y%m%d")
-    suffix = f"{int(seq):04d}" if seq is not None else datetime.now().strftime("%H%M%S")
+    if seq is not None:
+        try:
+            suffix = f"{max(0, int(seq)):04d}"
+        except Exception:
+            suffix = datetime.now().strftime("%H%M%S")
+    else:
+        suffix = datetime.now().strftime("%H%M%S%f")[:10]
     return f"L{int(item_id)}-{stamp}-{suffix}"
 
 
@@ -117,7 +141,6 @@ def suggest_expiry(received_at: str | None, shelf_life_days) -> str | None:
             except Exception:
                 pass
     dt = dt or datetime.now()
-    from datetime import timedelta
     return (dt + timedelta(days=days)).strftime(DATE_FMT)
 
 
@@ -206,18 +229,17 @@ def render_batch_label_text(item, batch, include_payload: bool = True) -> str:
 
 def render_label_for_print(fmt: str, item, batch=None, include_payload: bool = True):
     """Return (content, is_binary). Tier 0: text/command strings safe for file/raw print."""
-    fmt = normalize_code(fmt or "code128", max_len=32).lower() or "code128"
-    allowed = {"code128", "qr", "zpl", "escpos", "text", "tspl", "epl"}
-    if fmt not in allowed:
-        fmt = "code128"
+    fmt = normalize_barcode_type(fmt or "code128", default="code128")
     if batch is not None:
-        text = render_batch_label_text(item, batch, include_payload=include_payload)
+        text_label = render_batch_label_text(item, batch, include_payload=include_payload)
     else:
-        text = render_item_label_text(item)
+        text_label = render_item_label_text(item)
     # ZPL/EPL/TSPL/ESC-POS command templates (simple, readable text fallback embedded)
     try:
         if batch is not None:
             raw_code = (batch.get("lot_code") if isinstance(batch, dict) else getattr(batch, "lot_code", None))
+            if not raw_code:
+                raw_code = (batch.get("barcode_value") if isinstance(batch, dict) else getattr(batch, "barcode_value", None))
         else:
             if isinstance(item, dict):
                 raw_code = item.get("barcode") or item.get("sku") or f"ITEM-{item.get('id','')}"
@@ -235,8 +257,5 @@ def render_label_for_print(fmt: str, item, batch=None, include_payload: bool = T
             "^XZ\n"
         )
         return zpl, False
-    if fmt == "escpos":
-        # readable text label; many ESC/POS printers will print it fine
-        return text, False
-    # default: human-readable + payload text (works for code128/qr/tspl/epl as content to encode by external tools/printers)
-    return text, False
+    # escpos/text/qr/code128/tspl/epl/datamatrix: readable label content (safe for file/raw text output)
+    return text_label, False

@@ -74,6 +74,87 @@ def get_gift_attribution():
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# HARDENING HELPERS (rounding / traceability / safe file+print boundaries)
+# ═══════════════════════════════════════════════════════════════════════════
+
+_MONEY_Q = 0.01
+_QTY_Q = 0.0001
+
+
+def _round_money(value):
+    try:
+        return round(float(value or 0) + 0.0, 2)
+    except Exception:
+        return 0.0
+
+
+def _round_qty(value):
+    try:
+        return round(float(value or 0) + 0.0, 4)
+    except Exception:
+        return 0.0
+
+
+def _qty_eq(a, b, eps=1e-9):
+    return abs(float(a or 0) - float(b or 0)) <= eps
+
+
+def _traceability_text(lot_code=None, batch_id=None, expiry_date=None, received_at=None):
+    parts = []
+    if lot_code:
+        parts.append(f"lot {lot_code}")
+    if batch_id not in (None, "", 0):
+        parts.append(f"batch #{batch_id}")
+    if expiry_date:
+        parts.append(f"exp {expiry_date}")
+    if received_at:
+        recv = str(received_at)
+        parts.append(f"rcv {recv[:19]}")
+    return ", ".join(parts)
+
+
+def _allowed_print_roots():
+    roots = [EXPORT_DIR, INVOICE_DIR, DATA_DIR]
+    try:
+        roots.append(paths.DATA_DIR)
+    except Exception:
+        pass
+    out = []
+    for r in roots:
+        try:
+            out.append(Path(r).resolve())
+        except Exception:
+            pass
+    # de-dup while preserving order
+    seen = set()
+    uniq = []
+    for r in out:
+        s = str(r)
+        if s not in seen:
+            uniq.append(r)
+            seen.add(s)
+    return uniq
+
+
+def _is_under_allowed_root(path_obj):
+    try:
+        p = Path(path_obj).resolve()
+    except Exception:
+        return False
+    for root in _allowed_print_roots():
+        if p == root or root in p.parents:
+            return True
+    return False
+
+
+def _sanitize_command_arg(value, label="value"):
+    s = str(value or "")
+    if "\x00" in s or "\n" in s or "\r" in s:
+        raise ValueError(f"Invalid {label}.")
+    return s
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # SETTINGS CATALOG
 # (label, type, default, section, help, options)
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1710,27 +1791,73 @@ def _void_pos_for_reservation(cur, rid):
 def _void_pos_item_inner(cur, pos_row):
     pid = pos_row["id"]
     _reverse(cur, "POS", pid, entry_type_filter=("CHARGE", "COGS"))
-    if pos_row["inventory_item_id"]:
-        # restore aggregate
-        cur.execute("UPDATE inventory SET stock_qty = stock_qty + ? WHERE id=?",
-                    (pos_row["quantity"], pos_row["inventory_item_id"]))
+
+    inv_id = None
+    try:
+        inv_id = pos_row["inventory_item_id"]
+    except Exception:
+        inv_id = None
+    qty = float(pos_row["quantity"] or 0)
+
+    # Restore recipe ingredient deductions (if any) using recorded OUT_RECIPE logs for this POS.
+    # This is required because recipe sales deduct ingredient stock/batches, not the menu item stock.
+    try:
+        recipe_logs = cur.execute(
+            "SELECT id, item_id, quantity, batch_id, unit_cost, reference FROM inventory_logs WHERE change_type='OUT_RECIPE' AND reference LIKE ? ORDER BY id",
+            (f"POS #{pid} %",),
+        ).fetchall()
+    except Exception:
+        recipe_logs = []
+
+    if recipe_logs:
+        for lg in recipe_logs:
+            try:
+                lqty = float(lg["quantity"] or 0)
+            except Exception:
+                lqty = 0.0
+            if abs(lqty) <= 1e-12:
+                continue
+            try:
+                bid = lg["batch_id"]
+            except Exception:
+                bid = None
+            if bid:
+                cur.execute(
+                    "UPDATE inventory_batches SET quantity_remaining = quantity_remaining + ?, status=CASE WHEN quantity_remaining + ? > 0 AND status='depleted' THEN 'active' ELSE status END WHERE id=?",
+                    (lqty, lqty, bid),
+                )
+            cur.execute("UPDATE inventory SET stock_qty = stock_qty + ? WHERE id=?", (lqty, lg["item_id"]))
+            cur.execute(
+                """INSERT INTO inventory_logs (item_id, change_type, quantity, reference, batch_id, unit_cost)
+                   VALUES (?, 'IN_VOID_RECIPE', ?, ?, ?, ?)""",
+                (lg["item_id"], lqty, f"void recipe POS #{pid}", bid, lg["unit_cost"] if "unit_cost" in lg.keys() else None),
+            )
+        # Menu/recipe item itself does not hold physical stock in recipe sales.
+    elif inv_id:
+        # Standard inventory (or non-recipe) sale: restore menu/inventory item and its batch if recorded.
         bid = None
         try:
             bid = pos_row["batch_id"]
         except Exception:
             bid = None
-        if bid:
-            cur.execute("UPDATE inventory_batches SET quantity_remaining = quantity_remaining + ?, status=CASE WHEN status='depleted' THEN 'active' ELSE status END WHERE id=?",
-                        (pos_row["quantity"], bid))
         lot = None
         try:
             lot = pos_row["lot_code"]
         except Exception:
             lot = None
+        if bid:
+            cur.execute(
+                "UPDATE inventory_batches SET quantity_remaining = quantity_remaining + ?, status=CASE WHEN quantity_remaining + ? > 0 AND status='depleted' THEN 'active' ELSE status END WHERE id=?",
+                (qty, qty, bid),
+            )
+        cur.execute("UPDATE inventory SET stock_qty = stock_qty + ? WHERE id=?", (qty, inv_id))
         ref = f"void POS #{pid}" + (f" lot {lot}" if lot else "")
-        cur.execute("""INSERT INTO inventory_logs (item_id, change_type, quantity, reference, batch_id)
-                       VALUES (?, 'IN_VOID', ?, ?, ?)""",
-                    (pos_row["inventory_item_id"], pos_row["quantity"], ref, bid))
+        cur.execute(
+            """INSERT INTO inventory_logs (item_id, change_type, quantity, reference, batch_id)
+               VALUES (?, 'IN_VOID', ?, ?, ?)""",
+            (inv_id, qty, ref, bid),
+        )
+
     cur.execute("UPDATE pos_tabs SET voided_at=datetime('now','localtime') WHERE id=?", (pid,))
 
 
@@ -2056,18 +2183,19 @@ def _safe_export_filename(base: str, suffix: str = ".txt") -> str:
     safe = re.sub(r"[^A-Za-z0-9._-]+", "_", str(base or "label")).strip("._")
     if not safe:
         safe = "label"
-    return safe[:120] + suffix
+    suffix = suffix if str(suffix).startswith(".") else f".{suffix}"
+    # keep room for suffix
+    return safe[: max(1, 120 - len(suffix))] + suffix
 
 
 def _print_text_label(text, filename_base, printer=None, fmt="code128"):
     EXPORT_DIR.mkdir(parents=True, exist_ok=True)
-    content, is_bin = barcodes.render_label_for_print(fmt, {}, None, True) if False else (text, False)
     filename = _safe_export_filename(filename_base, ".txt")
     path = (EXPORT_DIR / filename).resolve()
     base = EXPORT_DIR.resolve()
     if base != path and base not in path.parents:
         raise ValueError("Refusing to write label outside export directory.")
-    path.write_text(text, encoding="utf-8")
+    path.write_text(str(text or ""), encoding="utf-8")
     target = printer if printer is not None else get_label_printer()
     ok, msg = print_to_printer(str(path), target)
     return ok, msg, str(path)
@@ -2421,20 +2549,20 @@ def complete_walkin_sale(items, method, notes="", payment_type="Payment"):
         cur = conn.cursor()
         pos_ids = []
         total_gross = 0.0
-        receipt_items = []
         for it in items:
             desc = (it.get("desc") or "").strip()
             qty = int(it.get("qty") or 0)
-            price = float(it.get("price") or 0)
+            price = _round_money(float(it.get("price") or 0))
             inv_id = it.get("inv_id")
             batch_id = it.get("batch_id")
             lot_code = it.get("lot_code")
             res = _add_pos_item_tx(conn, None, desc, qty, price, inv_id, batch_id=batch_id, lot_code=lot_code)
             ids = res.get("pos_ids") or ([res.get("pos_id")] if res.get("pos_id") else [])
-            pos_ids.extend(ids)
-            total_gross += res["gross"]
-            receipt_items.append({"desc": desc, "qty": qty, "price": price, "gross": res["gross"], "lot_code": lot_code})
-        total_gross = round(total_gross, 2)
+            for pid0 in ids:
+                if pid0:
+                    pos_ids.append(int(pid0))
+            total_gross += _round_money(res.get("gross", 0))
+        total_gross = _round_money(total_gross)
         if total_gross <= 0:
             raise ValueError("Sale total must be positive.")
         conn.execute("""INSERT INTO payments
@@ -2444,6 +2572,32 @@ def complete_walkin_sale(items, method, notes="", payment_type="Payment"):
         _post(cur, "WALKIN_PAY", pid, "PAYMENT", "", 0, 0, 0, 0, method,
               f"{payment_type or 'Payment'} via {method} (walk-in)", gross_override=total_gross)
         _audit("walkin_sale", "payment", pid, f"{total_gross} via {method} items={len(pos_ids)}")
+
+        # Build receipt items from committed POS rows for accurate batch/lot/expiry/received traceability.
+        receipt_items = []
+        if pos_ids:
+            ph = ",".join("?" * len(pos_ids))
+            rows = conn.execute(f"""
+                SELECT p.id, p.item_description, p.quantity, p.unit_price, p.tax_amount, p.batch_id, p.lot_code,
+                       b.expiry_date AS batch_expiry_date, b.received_at AS batch_received_at,
+                       (SELECT COALESCE(SUM(gross),0) FROM general_ledger WHERE ref_type='POS' AND ref_id=p.id AND entry_type IN ('CHARGE','VOID_CHARGE')) AS gross
+                FROM pos_tabs p
+                LEFT JOIN inventory_batches b ON b.id = p.batch_id
+                WHERE p.id IN ({ph})
+                ORDER BY p.id
+            """, pos_ids).fetchall()
+            for r in rows:
+                receipt_items.append({
+                    "pos_id": r["id"],
+                    "desc": r["item_description"],
+                    "qty": r["quantity"],
+                    "price": _round_money(r["unit_price"] or 0),
+                    "gross": _round_money(r["gross"] or (float(r["quantity"] or 0) * float(r["unit_price"] or 0) + float(r["tax_amount"] or 0))),
+                    "lot_code": r["lot_code"],
+                    "batch_id": r["batch_id"],
+                    "expiry_date": r["batch_expiry_date"],
+                    "received_at": r["batch_received_at"],
+                })
     receipt_text = generate_walkin_receipt_text(receipt_items, total_gross, method, payment_id=pid)
     try:
         receipt_path = save_walkin_receipt_file(receipt_text, pid)
@@ -2468,13 +2622,15 @@ def void_pos_item(pos_id, password):
     if not verify_password(password):
         raise PermissionError("Invalid super password.")
     from .db import connect, transaction
-    row = db.connect().execute("SELECT * FROM pos_tabs WHERE id=? AND voided_at IS NULL", (pos_id,)).fetchone()
-    if not row:
-        raise ValueError("POS item not found or already voided.")
     with transaction() as conn:
+        row = conn.execute("SELECT * FROM pos_tabs WHERE id=? AND voided_at IS NULL", (pos_id,)).fetchone()
+        if not row:
+            raise ValueError("POS item not found or already voided.")
         cur = conn.cursor()
         _void_pos_item_inner(cur, row)
-    _audit("pos_void", "pos", pos_id, row["item_description"])
+        desc = row["item_description"]
+        pid = row["id"]
+    _audit("pos_void", "pos", pid, desc)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -3062,37 +3218,39 @@ def update_activity(activity_id, name, description="", category="Trip", unit_pri
     if not name or not str(name).strip():
         raise ValueError("Activity name is required.")
     try:
-        price = float(unit_price or 0)
+        price = _round_money(float(unit_price or 0))
     except Exception:
         raise ValueError("Price must be a number.")
     if price < 0:
         raise ValueError("Price cannot be negative.")
     from .db import connect, transaction
-    row = db.connect().execute("SELECT id FROM activities WHERE id=?", (int(activity_id),)).fetchone()
-    if not row:
-        raise ValueError("Activity not found.")
+    aid = int(activity_id)
     with transaction() as conn:
+        row = conn.execute("SELECT id FROM activities WHERE id=?", (aid,)).fetchone()
+        if not row:
+            raise ValueError("Activity not found.")
         try:
             conn.execute(
                 """UPDATE activities SET name=?, description=?, category=?, unit_price=?, active=?, updated_at=datetime('now','localtime') WHERE id=?""",
-                (str(name).strip(), (description or "").strip(), (category or "Trip").strip() or "Trip", price, 1 if active else 0, int(activity_id)),
+                (str(name).strip(), (description or "").strip(), (category or "Trip").strip() or "Trip", price, 1 if active else 0, aid),
             )
         except Exception as e:
             if "UNIQUE" in str(e).upper():
                 raise ValueError("An activity with this name already exists.")
             raise
-    _audit("activity_update", "activity", int(activity_id), name)
+    _audit("activity_update", "activity", aid, name)
     return True
 
 
 def set_activity_active(activity_id, active):
-    from .db import connect
-    row = db.connect().execute("SELECT id FROM activities WHERE id=?", (int(activity_id),)).fetchone()
-    if not row:
-        raise ValueError("Activity not found.")
+    from .db import connect, transaction
+    aid = int(activity_id)
     with transaction() as conn:
-        conn.execute("UPDATE activities SET active=?, updated_at=datetime('now','localtime') WHERE id=?", (1 if active else 0, int(activity_id)))
-    _audit("activity_toggle", "activity", int(activity_id), f"active={1 if active else 0}")
+        row = conn.execute("SELECT id FROM activities WHERE id=?", (aid,)).fetchone()
+        if not row:
+            raise ValueError("Activity not found.")
+        conn.execute("UPDATE activities SET active=?, updated_at=datetime('now','localtime') WHERE id=?", (1 if active else 0, aid))
+    _audit("activity_toggle", "activity", aid, f"active={1 if active else 0}")
     return True
 
 
@@ -3116,9 +3274,11 @@ def book_activity(reservation_id, activity_id, quantity=1, scheduled_at=None, no
         n = str(notes).strip()
         if n:
             desc = f"{desc} - {n[:80]}"
-    pos_id = add_pos_item(int(reservation_id), desc, qty, float(act["unit_price"] or 0), inv_id=None, activity_id=int(activity_id))
+    res = add_pos_item(int(reservation_id), desc, qty, _round_money(float(act["unit_price"] or 0)), inv_id=None, activity_id=int(activity_id))
+    pos_id = res.get("pos_id") if isinstance(res, dict) else res
+    pos_ids = res.get("pos_ids") if isinstance(res, dict) else [pos_id]
     _audit("activity_book", "activity_booking", pos_id, f"res={reservation_id} activity={activity_id} qty={qty}")
-    return {"pos_id": pos_id, "reservation_id": int(reservation_id), "activity_id": int(activity_id), "quantity": qty, "unit_price": float(act["unit_price"] or 0)}
+    return {"pos_id": pos_id, "pos_ids": pos_ids or [], "reservation_id": int(reservation_id), "activity_id": int(activity_id), "quantity": qty, "unit_price": _round_money(float(act["unit_price"] or 0))}
 
 
 def list_activity_bookings(activity_id=None, reservation_id=None, guest_id=None, limit=500):
@@ -3328,42 +3488,47 @@ def generate_invoice_text(reservation_id, currency=CURRENCY):
         WHERE ref_type='RES' AND ref_id=? AND entry_type IN ({ph})
     """, (reservation_id, *types)).fetchone()
     pos_items = conn.execute(f"""
-        SELECT p.item_description, p.quantity, p.unit_price, p.tax_amount, p.lot_code, p.batch_id,
+        SELECT p.id, p.item_description, p.quantity, p.unit_price, p.tax_amount, p.lot_code, p.batch_id,
+               b.expiry_date AS batch_expiry_date, b.received_at AS batch_received_at,
                (SELECT COALESCE(SUM(gross),0) FROM general_ledger
                 WHERE ref_type='POS' AND ref_id=p.id AND entry_type IN ({ph})) AS gross
-        FROM pos_tabs p WHERE p.reservation_id=? AND p.voided_at IS NULL
+        FROM pos_tabs p
+        LEFT JOIN inventory_batches b ON b.id = p.batch_id
+        WHERE p.reservation_id=? AND p.voided_at IS NULL
+        ORDER BY p.id
     """, (*types, reservation_id)).fetchall()
     payments = conn.execute("""
-        SELECT amount, method, payment_type, notes FROM payments
+        SELECT amount, method, payment_type, notes, at FROM payments
         WHERE reservation_id=? AND voided_at IS NULL ORDER BY id
     """, (reservation_id,)).fetchall()
-    accom_net = accom_row["net"] or 0
-    accom_service = accom_row["service"] or 0
-    accom_vat = accom_row["vat"] or 0
-    accom_city = accom_row["city_tax"] or 0
-    accom_gross = accom_row["gross"] or 0
-    pos_gross = sum((p["gross"] or 0) for p in pos_items)
-    total_paid = sum(p["amount"] for p in payments)
-    balance = round(accom_gross + pos_gross - total_paid, 2)
+    accom_net = _round_money(accom_row["net"] or 0)
+    accom_service = _round_money(accom_row["service"] or 0)
+    accom_vat = _round_money(accom_row["vat"] or 0)
+    accom_city = _round_money(accom_row["city_tax"] or 0)
+    accom_gross = _round_money(accom_row["gross"] or 0)
+    pos_gross = _round_money(sum((p["gross"] or 0) for p in pos_items))
+    total_paid = _round_money(sum(p["amount"] for p in payments))
+    balance = _round_money(accom_gross + pos_gross - total_paid)
     cfg = get_tax_config()
-    factor = 1.0 if currency == "EGP" else (1.0 / cfg["usd_to_egp"])
+    factor = 1.0 if currency == "EGP" else (1.0 / float(cfg["usd_to_egp"] or 1.0))
     def m(v):
-        return f"{v * factor:,.2f} {currency}"
-    W = 60
+        return f"{_round_money(v) * factor:,.2f} {currency}"
+    W = 72
     display_name = get_setting("property_name", "") or get_app_display_name()
     lines = ["=" * W, display_name.center(W), "INVOICE / RECEIPT".center(W), "=" * W]
     addr = get_setting("property_address", "")
     if addr:
-        for ln in addr.split("\n"):
-            lines.append(ln.center(W))  # pragma: no cover
+        for ln in str(addr).split("\n"):
+            if ln.strip():
+                lines.append(ln.strip().center(W))
     phone = get_setting("property_phone", "")
     if phone:
-        lines.append(phone.center(W))
+        lines.append(str(phone).strip().center(W))
     if currency != "EGP":
         lines.append(f"(USD view at 1 USD = {cfg['usd_to_egp']:.2f} EGP)")
     lines += [
         f"Invoice #:    INV-{reservation_id:05d}",
-        f"Date:         {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+        f"Generated:    {datetime.now().strftime('%Y-%m-%d %H:%M')}",
         f"Status:       {r['status']}",
         "-" * W,
         f"Guest:        {r['guest_name']}",
@@ -3381,23 +3546,32 @@ def generate_invoice_text(reservation_id, currency=CURRENCY):
         f"  City tax: {m(accom_city)}",
         f"  Accommodation total: {m(accom_gross)}",
         "-" * W,
-        "POS / EXTRA",
+        "POS / EXTRA (traceable)",
     ]
     if pos_items:
         for p in pos_items:
-            lot = ""
-            try:
-                lot = f" [lot {p['lot_code']}]" if p["lot_code"] else ""
-            except Exception:
-                lot = ""
-            lines.append(f"  {p['item_description']}{lot} x{p['quantity']} @ {m(p['unit_price'])} = {m(p['gross'] or 0)}")
+            trace = _traceability_text(
+                lot_code=(p["lot_code"] if "lot_code" in p.keys() else None),
+                batch_id=(p["batch_id"] if "batch_id" in p.keys() else None),
+                expiry_date=(p["batch_expiry_date"] if "batch_expiry_date" in p.keys() else None),
+                received_at=(p["batch_received_at"] if "batch_received_at" in p.keys() else None),
+            )
+            trace_s = f" [{trace}]" if trace else ""
+            desc = p["item_description"] or "Item"
+            # avoid duplicate lot marker if description already includes it
+            if p["lot_code"] and f"[lot {p['lot_code']}]" in desc:
+                desc_trace = trace.replace(f"lot {p['lot_code']}", "").strip(", ").strip()
+                trace_s = f" [{desc_trace}]" if desc_trace else ""
+            lines.append(f"  {desc}{trace_s} x{p['quantity']} @ {m(p['unit_price'])} = {m(p['gross'] or 0)}")
     else:
         lines.append("  (none)")
     lines += ["-" * W, "PAYMENTS"]
     if payments:
         for p in payments:
-            sign = "-" if p["amount"] < 0 else ""
-            lines.append(f"  [{p['payment_type']}] {p['method']}: {sign}{m(abs(p['amount']))}")
+            sign = "-" if float(p["amount"] or 0) < 0 else ""
+            at = (p["at"] or "") if "at" in p.keys() else ""
+            at_s = f" @ {str(at)[:16]}" if at else ""
+            lines.append(f"  [{p['payment_type']}] {p['method']}: {sign}{m(abs(float(p['amount'] or 0)))}{at_s}")
     else:
         lines.append("  (none)")
     lines += [
@@ -3414,36 +3588,50 @@ def generate_invoice_text(reservation_id, currency=CURRENCY):
 
 def save_invoice_file(text, reservation_id, currency):
     INVOICE_DIR.mkdir(exist_ok=True)
-    suffix = "" if currency == "EGP" else f"_{currency.lower()}"
-    path = INVOICE_DIR / f"invoice_Res{reservation_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}{suffix}.txt"
-    path.write_text(text, encoding="utf-8")
+    suffix = "" if currency == "EGP" else f"_{str(currency).lower()}"
+    rid = int(reservation_id)
+    path = (INVOICE_DIR / f"invoice_Res{rid}_{datetime.now().strftime('%Y%m%d_%H%M%S')}{suffix}.txt").resolve()
+    base = INVOICE_DIR.resolve()
+    if base != path and base not in path.parents:
+        raise ValueError("Refusing to write invoice outside invoice directory.")
+    path.write_text(str(text or ""), encoding="utf-8")
     return str(path)
 
 
 def generate_walkin_receipt_text(receipt_items, total_gross, method, payment_id=None, when=None):
-    """Receipt text for an atomic walk-in sale (many items on same receipt)."""
-    W = 48
+    """Receipt text for an atomic walk-in sale (many items on same receipt). Includes batch traceability when available."""
+    W = 60
     display_name = (get_app_display_name() or "Property Manager").upper()
     when = when or datetime.now()
     ref = f"Payment #{payment_id}" if payment_id else "Walk-in"
     lines = ["=" * W, f"{display_name} — WALK-IN RECEIPT".center(W), "=" * W,
              when.strftime("%Y-%m-%d %H:%M"),
              f"Ref: {ref}",
-             "-" * W]
+             "-" * W, "ITEMS (traceable when batched)"]
     for it in receipt_items or []:
         desc = it.get("desc") or it.get("item_description") or "Item"
         qty = it.get("qty", it.get("quantity", 1))
-        price = float(it.get("price", it.get("unit_price", 0)) or 0)
-        gross = float(it.get("gross", 0) or 0)
+        price = _round_money(it.get("price", it.get("unit_price", 0)) or 0)
+        gross = _round_money(it.get("gross", 0) or 0)
         if gross == 0 and price:
             try:
-                gross = float(qty) * price
+                gross = _round_money(float(qty) * price)
             except Exception:
-                gross = 0
-        lot = it.get("lot_code") or ""
-        lot_s = f" [lot {lot}]" if lot and "[lot " not in str(desc) else ""
-        lines.append(f"  {desc}{lot_s}  x{qty}  @ {price:.2f}  = {gross:.2f}")
-    lines += ["-" * W, f"  TOTAL: {float(total_gross):.2f} EGP",
+                gross = 0.0
+        trace = _traceability_text(
+            lot_code=it.get("lot_code"),
+            batch_id=it.get("batch_id"),
+            expiry_date=it.get("expiry_date") or it.get("batch_expiry_date"),
+            received_at=it.get("received_at") or it.get("batch_received_at"),
+        )
+        trace_s = f" [{trace}]" if trace else ""
+        if it.get("lot_code") and f"[lot {it.get('lot_code')}]" in str(desc):
+            # avoid duplicate lot token in desc
+            trace2 = trace.replace(f"lot {it.get('lot_code')}", "").strip(", ").strip() if trace else ""
+            trace_s = f" [{trace2}]" if trace2 else ""
+        lines.append(f"  {desc}{trace_s}")
+        lines.append(f"    x{qty} @ {price:.2f} = {gross:.2f} EGP")
+    lines += ["-" * W, f"  TOTAL: {_round_money(total_gross):.2f} EGP",
               f"  Paid by: {method}", "=" * W,
               "", "Thank you!", "=" * W]
     return "\n".join(lines)
@@ -3453,8 +3641,11 @@ def save_walkin_receipt_file(text, payment_id):
     """Save walk-in receipt with distinct naming (avoids reservation invoice_Res00000 ambiguity)."""
     INVOICE_DIR.mkdir(exist_ok=True)
     safe_id = int(payment_id) if payment_id else 0
-    path = INVOICE_DIR / f"walkin_receipt_Pay{safe_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
-    path.write_text(text, encoding="utf-8")
+    path = (INVOICE_DIR / f"walkin_receipt_Pay{safe_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt").resolve()
+    base = INVOICE_DIR.resolve()
+    if base != path and base not in path.parents:
+        raise ValueError("Refusing to write receipt outside invoice directory.")
+    path.write_text(str(text or ""), encoding="utf-8")
     return str(path)
 
 
@@ -3510,14 +3701,17 @@ def _validate_print_target(target: str):
     t = (target or "").strip()
     if not t:
         return "", None
+    if len(t) > 200:
+        raise ValueError("Printer target is too long.")
+    _sanitize_command_arg(t, "printer target")
     if t.startswith("cups:"):
         name = t[5:].strip()
-        if not name or any(ch in name for ch in ("\n", "\r", "\x00")):
+        if not name or len(name) > 128 or not re.fullmatch(r"[A-Za-z0-9._@\-]+", name):
             raise ValueError("Invalid CUPS printer name.")
         return "cups", name
     if t.startswith("win:"):
         name = t[4:].strip()
-        if not name or any(ch in name for ch in ("\n", "\r", "\x00")):
+        if not name or len(name) > 128 or not re.fullmatch(r"[A-Za-z0-9 ._()#\-]+", name):
             raise ValueError("Invalid Windows printer name.")
         return "win", name
     if t.startswith("raw:"):
@@ -3526,7 +3720,7 @@ def _validate_print_target(target: str):
             raise ValueError("Raw printer target must be raw:host:port")
         host, port_s = spec.rsplit(":", 1)
         host = host.strip()
-        if not host or any(ch in host for ch in ("\n", "\r", "\x00", " ", "\t")):
+        if not host or len(host) > 253 or not re.fullmatch(r"[A-Za-z0-9.\-:\[\]]+", host):
             raise ValueError("Invalid raw printer host.")
         try:
             port = int(port_s)
@@ -3535,47 +3729,61 @@ def _validate_print_target(target: str):
         if port < 1 or port > 65535:
             raise ValueError("Invalid raw printer port.")
         return "raw", (host, port)
-    raise ValueError(f"Unknown printer target: {t}")
+    raise ValueError(f"Unsupported printer target: {t}")
 
 
-def print_to_printer(filepath, printer=None):
-    p = Path(filepath).expanduser()
+def _validate_print_filepath(filepath):
+    p = Path(str(filepath or "")).expanduser()
     try:
         p = p.resolve()
     except Exception:
         p = Path(os.path.abspath(str(p)))
     if not p.exists() or not p.is_file():
-        return False, f"File not found: {p}"
+        raise FileNotFoundError(f"File not found: {p}")
+    if not _is_under_allowed_root(p):
+        raise ValueError("Refusing to print files outside approved data/export/invoice directories.")
+    try:
+        size = p.stat().st_size
+    except Exception:
+        size = 0
+    if size > 5 * 1024 * 1024:
+        raise ValueError("Refusing to print oversized file (>5MB).")
+    return p
+
+
+def print_to_printer(filepath, printer=None):
     target = printer if printer is not None else get_setting("default_printer", "")
     try:
+        p = _validate_print_filepath(filepath)
         kind, value = _validate_print_target(str(target or ""))
+        path_s = _sanitize_command_arg(str(p), "print file path")
         if kind == "":
             if platform.system() == "Windows":
-                os.startfile(str(p), "print")
+                os.startfile(path_s, "print")
             else:
-                r = subprocess.run(["lp", str(p)], capture_output=True, text=True, timeout=15)
+                r = subprocess.run(["lp", path_s], capture_output=True, text=True, timeout=15, check=False)
                 if r.returncode != 0:
                     return False, f"Print failed: {(r.stderr or '').strip()}"
             return True, f"Sent to default printer: {p}"
         if kind == "cups":
-            r = subprocess.run(["lp", "-d", value, str(p)], capture_output=True, text=True, timeout=15)
+            r = subprocess.run(["lp", "-d", value, path_s], capture_output=True, text=True, timeout=15, check=False)
             return (True, f"Sent to {value}") if r.returncode == 0 else (False, f"CUPS error: {(r.stderr or '').strip()}")
         if kind == "win":
-            os.startfile(str(p), "printto", value)
+            os.startfile(path_s, "printto", value)
             return True, f"Sent to {value}"
         if kind == "raw":
             host, port = value
             _print_raw_socket(host, port, str(p))
             return True, f"Raw {host}:{port}"
-        return False, f"Unknown target: {target}"
+        return False, f"Unsupported target: {target}"
     except subprocess.TimeoutExpired:
-        return False, f"Print timed out. Saved: {p}"
-    except ValueError as e:
+        return False, f"Print timed out. Saved: {filepath}"
+    except (ValueError, FileNotFoundError) as e:
         return False, str(e)
-    except FileNotFoundError:  # pragma: no cover — only if `lp`/`startfile` missing
-        return False, f"No printer command. Saved: {p}"
+    except FileNotFoundError as e:  # pragma: no cover
+        return False, f"No printer command or file missing. {e}"
     except Exception as e:  # pragma: no cover — network/OS
-        return False, f"Print error: {e}. Saved: {p}"
+        return False, f"Print error: {e}. Saved: {filepath}"
 
 
 def test_print(printer=None):

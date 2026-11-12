@@ -46,19 +46,28 @@ def _project_root() -> Path:
 def _run_git(args: list[str], cwd: Path | None = None, timeout: int = 20) -> tuple[int, str, str]:
     cwd = cwd or _project_root()
     try:
+        t = max(1, min(int(timeout or 20), 300))
+    except Exception:
+        t = 20
+    env = os.environ.copy()
+    # non-interactive, no prompts/pagers; avoids hangs in TUI/web contexts
+    env.setdefault("GIT_TERMINAL_PROMPT", "0")
+    env.setdefault("GIT_PAGER", "cat")
+    try:
         p = subprocess.run(
             ["git", *args],
             cwd=str(cwd),
             capture_output=True,
             text=True,
-            timeout=timeout,
+            timeout=t,
             check=False,
+            env=env,
         )
         return p.returncode, (p.stdout or "").strip(), (p.stderr or "").strip()
     except FileNotFoundError:
         return 127, "", "git not found"
     except subprocess.TimeoutExpired:
-        return 124, "", "git command timed out"
+        return 124, "", f"git command timed out after {t}s"
     except Exception as e:
         return 1, "", str(e)
 
@@ -120,7 +129,7 @@ def _github_get(url: str, timeout: int = 12) -> Any:
     return json.loads(data)
 
 
-def check_for_updates(branch: str = DEFAULT_BRANCH, limit: int = 20) -> dict[str, Any]:
+def check_for_updates(branch: str = DEFAULT_BRANCH, limit: int = 20, timeout: int = 12) -> dict[str, Any]:
     """Check GitHub for newer commits and return changelog/details. Read-only."""
     local = get_local_state()
     result: dict[str, Any] = {
@@ -136,6 +145,7 @@ def check_for_updates(branch: str = DEFAULT_BRANCH, limit: int = 20) -> dict[str
         "error": None,
         "notes": [],
     }
+    result["notes"].append("Runtime data (DB, exports, invoices, PM_DATA_DIR/DATA_DIR) is preserved during updates/backups/restores.")
     try:
         branch = _validate_ref("branch", branch)
         result["remote_branch"] = branch
@@ -143,15 +153,21 @@ def check_for_updates(branch: str = DEFAULT_BRANCH, limit: int = 20) -> dict[str
         result["ok"] = False
         result["error"] = str(e)
         return result
+    try:
+        timeout = max(2, min(int(timeout or 12), 30))
+    except Exception:
+        timeout = 12
     local_commit = local.get("commit")
     try:
         safe_limit = max(1, min(int(limit or 20), 100))
         q = urllib.parse.urlencode({"sha": branch, "per_page": str(safe_limit)})
-        commits = _github_get(f"{API_COMMITS_URL}?{q}", timeout=12)
+        commits = _github_get(f"{API_COMMITS_URL}?{q}", timeout=timeout)
     except Exception as e:
         result["ok"] = False
         result["error"] = f"Could not check for updates: {e}"
         result["notes"].append("Update check needs network access to GitHub (or configure GITHUB_TOKEN/GH_TOKEN if rate-limited).")
+        if not local.get("is_git_repo"):
+            result["notes"].append("Not a git-based install: auto-update/apply is unavailable; reinstall from the latest release/installer to update source while preserving runtime data.")
         return result
 
     if not isinstance(commits, list) or not commits:
@@ -239,6 +255,7 @@ def apply_update(branch: str = DEFAULT_BRANCH) -> dict[str, Any]:
         "notes": [
             "Update uses 'git pull --ff-only' and does not modify ignored runtime data (DB, exports, invoices).",
             "Restart the app after a successful update.",
+            "Run backup/doctor checks before and after updates in production-like environments.",
         ],
     }
     try:
@@ -252,12 +269,14 @@ def apply_update(branch: str = DEFAULT_BRANCH) -> dict[str, Any]:
     if local.get("dirty"):
         res["error"] = "Local source has uncommitted changes. Commit/stash/discard them before updating to avoid conflicts."
         return res
+    if local.get("branch") and local.get("branch") not in ("HEAD", branch):
+        res["notes"].append(f"Current branch is '{local.get('branch')}'; update will fetch/pull origin/{branch} via fast-forward only.")
 
     for name, args in [
         ("fetch", ["fetch", "--prune", "origin", branch, "--tags"]),
         ("pull", ["pull", "--ff-only", "origin", branch]),
     ]:
-        rc, out, err = _run_git(args, cwd=root, timeout=120)
+        rc, out, err = _run_git(args, cwd=root, timeout=180)
         res["steps"].append({"step": name, "rc": rc, "stdout": out, "stderr": err})
         if rc != 0:
             msg = err or out or f"{name} failed"

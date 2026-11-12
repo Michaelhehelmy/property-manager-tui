@@ -10,15 +10,27 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "Proprietary" }
 authors = [{ name = "Michael Helmy" }]
+keywords = ["property", "hotel", "pms", "pos", "inventory", "tui", "fastapi", "htmx", "sqlite"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Environment :: Console",
+  "Environment :: Web Environment",
+  "Intended Audience :: End Users/Desktop",
+  "Topic :: Office/Business",
+]
 dependencies = [
   "textual>=0.47",
 ]
 
 [project.optional-dependencies]
-# Web UI (FastAPI/HTMX). Run server with --workers 1 (SQLite).
+# Web UI (FastAPI/HTMX). Always run server with --workers 1 (SQLite).
 web = [
   "fastapi>=0.110",
-  "uvicorn>=0.27",
+  "uvicorn[standard]>=0.27",
   "jinja2>=3.1",
   "python-multipart>=0.0.9",
   "itsdangerous>=2.1",
@@ -38,10 +50,21 @@ assistant-llm = [
 dev = [
   "pytest>=7.0",
   "httpx>=0.24",
+  "pytest-cov>=4.0",
 ]
 # Label/barcode printing uses configured system/default printers (and text/PDF exports);
-# no extra Python deps required by default. Kept as an extra for future/optional drivers.
+# no extra Python deps required by default.
 labels = []
+# Convenience extra to install common web + dev tooling
+all = [
+  "fastapi>=0.110",
+  "uvicorn[standard]>=0.27",
+  "jinja2>=3.1",
+  "python-multipart>=0.0.9",
+  "itsdangerous>=2.1",
+  "pytest>=7.0",
+  "httpx>=0.24",
+]
 
 [project.scripts]
 property-manager = "launcher:main"
@@ -56,7 +79,7 @@ py-modules = ["main", "launcher"]
 [tool.setuptools.packages.find]
 where = ["src", "."]
 include = ["app_core*", "ui*"]
-exclude = ["tests*", "scripts*", "docs*", "data*", "models*"]
+exclude = ["tests*", "scripts*", "docs*", "data*", "models*", "**/__pycache__"]
 
 [tool.setuptools.package-dir]
 "" = "src"

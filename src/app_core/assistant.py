@@ -39,7 +39,7 @@ INTENT_LABELS = [
     "guest_top_items_last_visit", "guest_last_visit_spend", "guest_activity_bookings",
     "list_activities", "activity_stats",
     "reservation_summary", "reservation_balance",
-    "recent_activity", "expiring_batches", "inventory_batches", "trace_barcode", "app_update_status",
+    "recent_activity", "expiring_batches", "inventory_batches", "trace_barcode", "app_update_status", "health_diagnostics",
     "ambiguous_needs_clarification", "unsupported_or_unsafe", "compound_multi_intent",
 ]
 
@@ -246,11 +246,12 @@ def tool_list_capabilities(args=None):
         "Activities/Trips (excursions/experiences): registered catalog, booking/order stats, and guest/reservation bookings (booked like POS to folio/invoice)",
         "Reservations: summary/details, balance, outstanding balances/AR, pipeline",
         "Inventory: alerts (low/over/negative), top-selling items, expiring/expired batches and batch/lot lists, barcode/SKU/lot traceability (resolved item or lot with received/expiry/remaining and recent movements); menu/meals",
+        "Integrity, doctor & readiness: read-only ledger/data integrity checks and doctor/health diagnostics (schema, SQLite/FK integrity, batch-stock consistency, printer/update readiness, backup/restore readiness guidance)",
+        "App version & updates: local app version/commit state and safe update guidance (in-app git-based fast-forward check/apply with changelog/details; runtime data DB/exports/invoices preserved, restart after apply)",
         "Expenses and sales breakdown; rate plans; room availability",
-        "Integrity & health: read-only ledger/data integrity checks (and in-app/web health probes)",
-        "App version & updates: local app version/commit state and how to check/apply updates in-app (changelog/details; git-based fast-forward apply; runtime data preserved, restart after apply)",
     ], "notes": [
         "All answers grounded in real backend data (read-only).",
+        "Doctor/health diagnostics are read-only and never delete or modify runtime data.",
         "Last visit = most recent Checked Out, else most recent non-deleted.",
         "Booked activities/trips are posted as POS charges to the reservation folio/invoice.",
         "Inventory traceability is batch/lot-aware when enabled: you can review expiring batches, list lots, and trace barcodes/SKUs/lot codes to see received, expiry, remaining quantity, and movements.",
@@ -669,7 +670,35 @@ def tool_get_app_update_status(args=None):
     try:
         from . import updater
         local = updater.get_local_state()
-        return {"app_version": local.get("app_version"), "local": local, "how_to_check": "Use Settings → App updates → Check for updates (web/TUI) to see available updates, changelog, and apply safely while preserving data (DB/exports/invoices)."}
+        notes = [
+            "Use Settings → App updates → Check for updates (web/TUI) to see available updates, changelog, and apply safely while preserving data (DB/exports/invoices).",
+            "For git-based installs, apply uses fast-forward pull only; restart the app after a successful update.",
+            "Create/verify a backup before applying updates in production-like environments; runtime data is preserved.",
+        ]
+        return {"app_version": local.get("app_version"), "local": local, "how_to_check": notes[0], "notes": notes}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def tool_get_health_diagnostics(args=None):
+    """Read-only doctor/health diagnostics (paths, schema, integrity, batch-stock, printer, backup/restore, update)."""
+    try:
+        from . import doctor
+        report = doctor.collect_health(check_updates=False)
+        return {
+            "ok": report.get("ok"),
+            "checked_at": report.get("checked_at"),
+            "paths": report.get("paths"),
+            "schema": report.get("schema"),
+            "db": report.get("db"),
+            "integrity": report.get("integrity"),
+            "consistency": report.get("consistency"),
+            "readiness": report.get("readiness"),
+            "backup_restore": report.get("backup_restore"),
+            "update": (report.get("update") or {}).get("local") or report.get("update"),
+            "config_issues": report.get("config_issues"),
+            "notes": report.get("notes"),
+        }
     except Exception as e:
         return {"error": str(e)}
 
@@ -769,6 +798,7 @@ TOOLS = {
     "list_inventory_batches": {"fn": tool_list_inventory_batches, "description": "List inventory batches/lots with received/expiry/remaining/cost for an item or all.", "parameters": {"type":"object","properties":{"item_id":{"type":"integer"},"status":{"type":"string"},"expiring_within_days":{"type":"integer"},"include_depleted":{"type":"boolean"}},"additionalProperties":False}},
     "trace_barcode": {"fn": tool_trace_barcode, "description": "Trace a barcode/SKU/lot code to the inventory item or batch (lot, received, expiry, remaining, movements).", "parameters": {"type":"object","properties":{"code":{"type":"string"},"barcode":{"type":"string"},"sku":{"type":"string"}},"additionalProperties":False}},
     "get_app_update_status": {"fn": tool_get_app_update_status, "description": "Get local app version/commit/update state and how to check/apply updates (data preserved).", "parameters": {"type":"object","properties":{},"additionalProperties":False}},
+    "get_health_diagnostics": {"fn": tool_get_health_diagnostics, "description": "Read-only doctor/health diagnostics: schema/integrity, batch-stock consistency, printer/update readiness, and backup/restore guidance.", "parameters": {"type":"object","properties":{},"additionalProperties":False}},
 }
 
 def execute_tool(name: str, args: dict | None = None) -> dict:
@@ -816,7 +846,7 @@ def _fmt_capabilities(data: dict) -> str:
     lines.append("- **Inventory & catalog:** `any low stock items?`, `top selling items`, `what expires soon?`, `expiring batches in 7 days`, `list inventory batches`, `trace barcode LOT-...` / `trace SKU ...` (lot received/expiry/movements), `menu`, `rate plans`, `list registered activities`, `activity booking statistics`")
     lines.append("- **Guests (360°):** `find guest Ahmed`, `guest #3 profile`, `show guest #3 full portfolio` (all stays, POS/orders, payments, invoices, totals), `when was guest #3 last visit?`, `what did guest #3 order most on last visit?`, `guest #3 last visit spend`, `what activities did guest #3 book?`")
     lines.append("- **Reservations:** `reservation #12 summary`, `reservation #12 balance`")
-    lines.append("- **Health, audit & updates:** `ledger integrity check`, `recent activity`, `check for updates` / `what app version`")
+    lines.append("- **Health, doctor & updates:** `ledger integrity check`, `doctor report` / `health check` / `backup restore readiness`, `batch stock mismatch`, `recent activity`, `check for updates` / `what app version`")
     lines.append("")
     lines.append("**Tips**")
     lines.append("- Be specific when you can: use IDs (`guest #3`, `reservation #12`), names (`find guest Sara`), report names, or date ranges (`2026-10-01 to 2026-10-31`, `last month`, `this week`).")
@@ -1118,11 +1148,57 @@ def _fmt_rate_plans(data: dict) -> str:
         lines.append(f"- **{name}** (#{p.get('id')}): modifier {mod}{used_s}")
     return "\n".join(lines)
 
+def _fmt_health_diagnostics(data: dict) -> str:
+    if data.get("error"): return f"I couldn’t collect health/doctor diagnostics ({data.get('error')})."
+    lines = [f"Doctor/health diagnostics ({'OK' if data.get('ok') else 'issues detected'}, real local data):"]
+    sch = data.get("schema") or {}
+    if sch:
+        lines.append(f"- Schema: version {sch.get('user_version')} (expected {sch.get('expected_version')}), matches={sch.get('matches_expected')}")
+        t = sch.get("tables") or {}
+        if t: lines.append(f"  - Tables: ok={t.get('ok')} present={t.get('present_count')} missing={len(t.get('missing_tables') or [])}")
+    integ = (data.get("integrity") or {}).get("sqlite") or {}
+    if integ:
+        lines.append(f"- SQLite integrity: {integ.get('integrity_check')} | FK violations: {len(integ.get('foreign_key_violations') or [])}")
+    ledger = (data.get("integrity") or {}).get("ledger")
+    if ledger is not None:
+        lines.append(f"- Ledger integrity: {ledger}")
+    cons = (data.get("consistency") or {}).get("batch_stock") or {}
+    if cons:
+        lines.append(f"- Batch/stock consistency: ok={cons.get('ok')} checked={cons.get('checked')} mismatches={cons.get('mismatch_count', 0)}")
+        for m in (cons.get("mismatches") or [])[:3]:
+            lines.append(f"  - item #{m.get('item_id')} {m.get('item_name')}: stock {m.get('stock_qty')} vs active batch remaining {m.get('batch_remaining_active')}")
+    pr = (data.get("readiness") or {}).get("printer") or {}
+    if pr:
+        lines.append(f"- Printer readiness: configured={pr.get('configured')} mode={pr.get('mode','')} target_set={pr.get('target_set', False)}")
+    br = data.get("backup_restore") or {}
+    if br:
+        rd = br.get("readiness") or {}
+        lines.append(f"- Backup/restore readiness: db_exists={rd.get('db_exists')} data_dir_writable={rd.get('data_dir_writable')}")
+        b = br.get("backup") or {}
+        if b:
+            lines.append(f"  - Backup helper: {b.get('cli_helper')} (stop app recommended={b.get('stop_app_first')})")
+        r = br.get("restore") or {}
+        if r:
+            lines.append(f"  - Restore verify helper: {r.get('verify_helper')}")
+    upd = data.get("update") or {}
+    if isinstance(upd, dict) and (upd.get("app_version") or upd.get("commit_short") or upd.get("branch")):
+        lines.append(f"- App/update (local): version={upd.get('app_version') or '-'} commit={upd.get('commit_short') or '-'} branch={upd.get('branch') or '-'} dirty={upd.get('dirty')}")
+    issues = data.get("config_issues") or []
+    if issues:
+        lines.append(f"- Config issues: {len(issues)}")
+        for iss in issues[:5]:
+            lines.append(f"  - [{iss.get('severity','info')}] {iss.get('code')}: {iss.get('message')}")
+    lines.append("Diagnostics are read-only and grounded in local data; runtime data (DB/exports/invoices) is preserved by doctor/update/backup guidance.")
+    return "\n".join(lines)
+
+
 def _fmt_integrity(data: dict) -> str:
-    if data.get("error"): return f"I couldn’t run the integrity check ({data.get('error')})."
+    if data.get("error"): return f"I couldn’t run the integrity/health check ({data.get('error')})."
+    if "backup_restore" in data or "consistency" in data or "readiness" in data:
+        return _fmt_health_diagnostics(data)
     ok = data.get("ok")
-    if ok: return "Ledger/data integrity check: **OK** — no issues reported by the current checks (real data)."
-    # show issues summary
+    if ok:
+        return "Ledger/data integrity check: **OK** — no issues reported by the current read-only checks (real data)."
     issues = data.get("issues") or data.get("errors") or data.get("problems")
     lines = ["Ledger/data integrity check: **issues found** (real data)."]
     if isinstance(issues, list) and issues:
@@ -1130,12 +1206,11 @@ def _fmt_integrity(data: dict) -> str:
     elif issues:
         lines.append(f"- {issues}")
     else:
-        # dump keys hints
         for k,v in data.items():
             if k=="ok": continue
             if v and isinstance(v,(list,dict,str)) and len(lines)<12:
                 lines.append(f"- {k}: {_short(json.dumps(v, ensure_ascii=False, default=str) if not isinstance(v,str) else v, 140)}")
-    lines.append("I recommend opening the Health Check in the app to review and resolve these before relying on reports.")
+    lines.append("Ask for a `doctor report` for full schema/batch-stock/printer/backup-readiness diagnostics (read-only).")
     return "\n".join(lines)
 
 def _fmt_recent_activity(data: dict) -> str:
@@ -1499,10 +1574,12 @@ def _fmt_app_update_status(data: dict) -> str:
     lines.append(f"- App version: **{data.get('app_version') or local.get('app_version') or '—'}**")
     lines.append(f"- Installed commit: `{local.get('commit_short') or '—'}` {('— ' + local.get('commit_subject')) if local.get('commit_subject') else ''} {( '('+local.get('commit_date')+')' ) if local.get('commit_date') else ''}")
     lines.append(f"- Branch: {local.get('branch') or '—'} {'(local changes present)' if local.get('dirty') else ''}")
-    if local.get('data_dir'): lines.append(f"- Data directory (preserved on update): {local.get('data_dir')}")
+    if local.get('project_root'): lines.append(f"- Project root: {local.get('project_root')}")
+    if local.get('data_dir'): lines.append(f"- Data directory (preserved on update/backup/restore): {local.get('data_dir')}")
     how = data.get('how_to_check') or "Use Settings → App updates to check for updates, view changelog, and apply safely (DB/exports/invoices preserved)."
     lines.append(f"- {how}")
-    lines.append("- In-app (Web & TUI, git-based installs): **Settings → App updates** lets you check for updates, review changelog/details, and apply a fast-forward update. Runtime data (DB, exports, invoices, configured data dir) is preserved; restart the app after applying.")
+    lines.append("- In-app (Web & TUI, git-based installs): check for updates, review changelog/details, and apply a safe fast-forward update.")
+    lines.append("- Runtime data (DB, exports, invoices, configured data dir) is preserved; restart after apply. For safety, verify backups before/after updates.")
     return "\n".join(lines)
 
 
@@ -1539,6 +1616,7 @@ def _format_for_intent(intent: str, data: dict, fallback_title: str = "Result") 
         if intent == "menu_info": return _fmt_menu(data)
         if intent == "rate_plans": return _fmt_rate_plans(data)
         if intent == "ledger_integrity": return _fmt_integrity(data)
+        if intent in ("health_diagnostics", "doctor_report"): return _fmt_health_diagnostics(data)
         if intent == "recent_activity": return _fmt_recent_activity(data)
         if intent == "list_activities": return _fmt_activities_catalog(data)
         if intent == "activity_stats": return _fmt_activity_stats(data)
@@ -1881,8 +1959,11 @@ def _execute_single(intent: str, text: str, slots: dict):
             ans = "Hi! I’m your property manager assistant and business partner. I can help with reports, operations, guests (profiles/portfolios/last visits/bookings), reservations, balances, inventory, activities, and more — all grounded in real app data. What would you like to know?"
         return {"ok":True,"intent":intent,"tools_used":[], "data":{}, "answer":ans}
 
-    # quick keyword routing for batch/trace intents (grounded tools)
+    # quick keyword routing for batch/trace/health/update intents (grounded tools)
     tl = _norm_text(text)
+    if any(k in tl for k in ["doctor report", "health check", "health diagnostics", "system health", "backup readiness", "restore readiness", "backup and restore", "printer readiness", "batch stock mismatch", "batch stock consistency", "db health", "database health"]):
+        data=execute_tool("get_health_diagnostics",{}); tools_used.append("get_health_diagnostics")
+        return _answer("health_diagnostics", tools_used, data)
     if any(k in tl for k in ["expir", "expire soon", "expiring", "expired batch", "what expires", "expiry"]):
         days = None
         import re as _re
@@ -1936,7 +2017,7 @@ def _execute_single(intent: str, text: str, slots: dict):
             return {"ok":True,"intent":intent,"needs_clarification":True,"tools_used":[],"data":{"missing":"report_kind"},
                     "answer":"Which report would you like — **P&L, cash flow, VAT, payment methods, occupancy, or daily ops** — and for what date/range (e.g. `P&L last month` or `daily ops today`)?"}
         return {"ok":True,"intent":intent,"needs_clarification":True,"tools_used":[],"data":{"missing":"context"},
-                "answer":"I want to make sure I get this right — could you rephrase with a bit more detail? I can help with briefings, property/ops stats, reports & comparisons, who owes money, inventory alerts, top sellers, expenses/sales, expiring batches and batch/lot lists, barcode/lot traceability (received/expiry/movements), guests (search/profile/full portfolio/last visit/orders/spend/activities), reservations/balances/pipeline, housekeeping, availability, activities, menus, rate plans, integrity/health checks, and app version/update status."}
+                "answer":"I want to make sure I get this right — could you rephrase with a bit more detail? I can help with briefings, property/ops stats, reports & comparisons, who owes money, inventory alerts, top sellers, expenses/sales, expiring batches and batch/lot lists, barcode/lot traceability (received/expiry/movements), guests (search/profile/full portfolio/last visit/orders/spend/activities), reservations/balances/pipeline, housekeeping, availability, activities, menus, rate plans, integrity/doctor/health diagnostics (including backup/restore readiness and batch-stock consistency), and app version/update status."}
 
     if intent=="property_stats":
         data=execute_tool("get_property_stats",{}); tools_used.append("get_property_stats")
@@ -2009,7 +2090,11 @@ def _execute_single(intent: str, text: str, slots: dict):
         data=execute_tool("list_rate_plans",{}); tools_used.append("list_rate_plans")
         return _answer(intent, tools_used, data)
     if intent=="ledger_integrity":
-        data=execute_tool("verify_ledger_integrity",{}); tools_used.append("verify_ledger_integrity")
+        data=execute_tool("get_health_diagnostics",{}); tools_used.append("get_health_diagnostics")
+        return _answer("ledger_integrity", tools_used, data)
+    if intent in ("health_diagnostics","doctor_report"):
+        data=execute_tool("get_health_diagnostics",{}); tools_used.append("get_health_diagnostics")
+        return _answer("health_diagnostics", tools_used, data)
         return _answer(intent, tools_used, data)
     if intent=="recent_activity":
         data=execute_tool("get_recent_activity",{}); tools_used.append("get_recent_activity")
@@ -2090,7 +2175,7 @@ def _execute_compound(text: str, slots: dict):
     if _has_any(tl,["top selling","best seller","most sold"]): subs.append(("top_selling_items",slots))
     if _has_any(tl,["expense breakdown","expenses by category","where did we spend"]): subs.append(("expenses_summary",slots))
     if _has_any(tl,["rate plan","pricing plan"]): subs.append(("rate_plans",slots))
-    if _has_any(tl,["health check","integrity","ledger integrity"]): subs.append(("ledger_integrity",slots))
+    if _has_any(tl,["doctor report","health check","health diagnostics","backup readiness","restore readiness","printer readiness","batch stock mismatch","batch stock consistency","integrity","ledger integrity"]): subs.append(("health_diagnostics",slots))
     if _has_any(tl,["expiring batch","expired batch","what expires","expires soon","expiry"]): subs.append(("expiring_batches",slots))
     if _has_any(tl,["list batches","show batches","inventory batches","batch list","stock batches","lots for"]): subs.append(("inventory_batches",slots))
     if _has_any(tl,["trace barcode","trace lot","trace code","lookup barcode","barcode lookup","lot trace","track lot","batch trace"]): subs.append(("trace_barcode",slots))

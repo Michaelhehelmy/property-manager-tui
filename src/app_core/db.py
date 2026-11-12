@@ -112,8 +112,32 @@ def query(sql, params=()):
         return conn.execute(sql, params)
 
 
+def query_all(sql, params=()):
+    cur = query(sql, params)
+    try:
+        return cur.fetchall()
+    finally:
+        try:
+            cur.close()
+        except Exception:
+            pass
+
+
+def query_one(sql, params=()):
+    cur = query(sql, params)
+    try:
+        return cur.fetchone()
+    finally:
+        try:
+            cur.close()
+        except Exception:
+            pass
+
+
 def user_version():
-    return connect().execute("PRAGMA user_version").fetchone()[0]
+    conn = connect()
+    with _lock:
+        return conn.execute("PRAGMA user_version").fetchone()[0]
 
 
 def is_fresh():
@@ -122,6 +146,10 @@ def is_fresh():
 
 def integrity_check(max_errors=20):
     """Return (ok, details) from PRAGMA integrity_check/foreign_key_check."""
+    try:
+        max_errors = max(1, min(int(max_errors or 20), 200))
+    except Exception:
+        max_errors = 20
     conn = connect()
     with _lock:
         try:
@@ -138,6 +166,54 @@ def integrity_check(max_errors=20):
         details.append(f"foreign_key_violations={len(fk)}")
         details.extend([str(x) for x in fk[:max_errors]])
     return ok, details
+
+
+def _record_migration_meta(conn, status: str, from_version: int | None = None, to_version: int | None = None):
+    """Best-effort provenance marker in app_metadata (idempotent/safe if table absent)."""
+    try:
+        has = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='app_metadata'").fetchone()
+        if not has:
+            return
+        now = conn.execute("SELECT datetime('now','localtime')").fetchone()[0]
+        pairs = [
+            ("schema_version", str(to_version if to_version is not None else conn.execute('PRAGMA user_version').fetchone()[0])),
+            ("schema_migration_status", str(status)),
+            ("schema_migration_at", str(now)),
+        ]
+        if from_version is not None:
+            pairs.append(("schema_migration_from", str(from_version)))
+        for k, v in pairs:
+            conn.execute(
+                "INSERT OR REPLACE INTO app_metadata(key,value,hash_signature) VALUES(?,?,COALESCE((SELECT hash_signature FROM app_metadata WHERE key=?), ''))",
+                (k, v, k),
+            )
+    except Exception:
+        # never block migrations for provenance bookkeeping
+        pass
+
+
+def ensure_runtime_indexes(conn=None):
+    """Create/ensure safe performance indexes for batch/traceability/reporting queries (idempotent)."""
+    own = conn is None
+    if own:
+        conn = connect()
+    stmts = [
+        "CREATE INDEX IF NOT EXISTS idx_batches_item_status ON inventory_batches(item_id, status)",
+        "CREATE INDEX IF NOT EXISTS idx_batches_item_expiry ON inventory_batches(item_id, expiry_date)",
+        "CREATE INDEX IF NOT EXISTS idx_batches_barcode_item ON inventory_batches(barcode_value, item_id)",
+        "CREATE INDEX IF NOT EXISTS idx_invlogs_item_at ON inventory_logs(item_id, at)",
+        "CREATE INDEX IF NOT EXISTS idx_invlogs_batch_at ON inventory_logs(batch_id, at)",
+        "CREATE INDEX IF NOT EXISTS idx_pos_item_created ON pos_tabs(inventory_item_id, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_pos_batch_created ON pos_tabs(batch_id, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_res_guest_status ON reservations(guest_id, status)",
+    ]
+    with _lock:
+        for sql in stmts:
+            try:
+                conn.execute(sql)
+            except Exception:
+                # keep safe/idempotent: ignore index creation errors on partial/legacy states
+                pass
 
 
 _SCHEMA = """
@@ -645,10 +721,13 @@ def migrate():
             try:
                 conn.executescript(_SCHEMA)
                 conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+                ensure_runtime_indexes(conn)
+                _record_migration_meta(conn, status="created", from_version=0, to_version=SCHEMA_VERSION)
             except Exception:
                 raise
             return "created"
         if version < SCHEMA_VERSION:
+            from_version = version
             try:
                 conn.execute("BEGIN IMMEDIATE")
             except Exception:
@@ -665,6 +744,8 @@ def migrate():
                 if version < 9:
                     _migrate_to_9(conn)
                 conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+                ensure_runtime_indexes(conn)
+                _record_migration_meta(conn, status="upgraded", from_version=from_version, to_version=SCHEMA_VERSION)
                 try:
                     conn.execute("COMMIT")
                 except Exception:
@@ -676,4 +757,10 @@ def migrate():
                     pass
                 raise
             return "upgraded"
+        # Even on current schema, ensure helper indexes/provenance markers are present (idempotent).
+        try:
+            ensure_runtime_indexes(conn)
+            _record_migration_meta(conn, status="current", from_version=version, to_version=version)
+        except Exception:
+            pass
         return "current"

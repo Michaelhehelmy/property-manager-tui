@@ -18,21 +18,32 @@ def _detect_project_root() -> Path:
 PROJECT_ROOT = _detect_project_root()
 
 
+def _resolve_existingish(path: Path) -> Path:
+    try:
+        return path.expanduser().resolve(strict=False)
+    except Exception:
+        try:
+            return path.expanduser().absolute()
+        except Exception:
+            return path
+
+
 def _detect_data_dir() -> Path:
     env = os.environ.get("PM_DATA_DIR")
     if env:
         raw = str(env).strip()
         if not raw:
             raise ValueError("PM_DATA_DIR is set but empty")
-        p = Path(raw).expanduser()
-        try:
-            p = p.resolve()
-        except Exception:
-            p = p.absolute()
-        # Never point runtime data at filesystem root by accident.
+        if "\x00" in raw:
+            raise ValueError("PM_DATA_DIR contains NUL byte")
+        p = _resolve_existingish(Path(raw))
+        # Never point runtime data at filesystem root or unresolved/unsafe targets.
         if p == p.parent:
             raise ValueError(f"PM_DATA_DIR resolves to an unsafe path: {p}")
-        p.mkdir(parents=True, exist_ok=True)
+        try:
+            p.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            raise ValueError(f"PM_DATA_DIR is not usable: {p} ({e})") from e
         return p
     # Legacy compatibility: if DB/dirs exist at project root, keep using root.
     # This preserves existing runtime data locations across upgrades.
@@ -56,12 +67,12 @@ BASE_DIR = DATA_DIR  # backward-compatible alias for code expecting BASE_DIR
 def ensure_data_dirs() -> None:
     """Ensure runtime data directories exist. Never deletes DB/exports/invoices."""
     global DATA_DIR, DB_PATH, EXPORT_DIR, INVOICE_DIR, BASE_DIR
-    for p in (DATA_DIR, EXPORT_DIR, INVOICE_DIR):
+    DATA_DIR = _resolve_existingish(Path(DATA_DIR))
+    for p in (DATA_DIR, DATA_DIR / "exports", DATA_DIR / "invoices"):
         try:
             p.mkdir(parents=True, exist_ok=True)
         except Exception as e:
             raise RuntimeError(f"Failed to create runtime data directory '{p}': {e}") from e
-    # Keep derived paths consistent if caller refreshed globals externally.
     DB_PATH = DATA_DIR / "property_manager.db"
     EXPORT_DIR = DATA_DIR / "exports"
     INVOICE_DIR = DATA_DIR / "invoices"
@@ -71,8 +82,8 @@ def ensure_data_dirs() -> None:
 def is_path_within(path: str | Path, root: str | Path) -> bool:
     """Return True if resolved path is inside resolved root (path confinement helper)."""
     try:
-        p = Path(path).expanduser().resolve()
-        r = Path(root).expanduser().resolve()
+        p = _resolve_existingish(Path(path))
+        r = _resolve_existingish(Path(root))
         return p == r or r in p.parents
     except Exception:
         return False
@@ -83,7 +94,7 @@ _SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
 
 def sanitize_filename_component(value: object, default: str = "file", max_len: int = 120) -> str:
     """Sanitize a value for safe use as a single filename component (no path separators/traversal)."""
-    s = str(value or "").strip().replace("\\", "/")
+    s = str(value or "").replace("\x00", "").strip().replace("\\", "/")
     s = s.rsplit("/", 1)[-1]
     s = s.strip().strip(".")
     s = _SAFE_NAME_RE.sub("_", s)
@@ -95,13 +106,32 @@ def sanitize_filename_component(value: object, default: str = "file", max_len: i
 
 def safe_child_path(root: str | Path, filename: str, *, must_exist: bool = False) -> Path:
     """Build a confined child path under root from an untrusted filename component."""
-    base = Path(root).expanduser().resolve()
-    name = sanitize_filename_component(filename, default="file")
+    raw = str(filename or "")
+    if "\x00" in raw:
+        raise ValueError("Unsafe filename")
+    base = _resolve_existingish(Path(root))
+    name = sanitize_filename_component(raw, default="file")
     if name in {"", ".", ".."}:
         raise ValueError("Unsafe filename")
-    candidate = (base / name).resolve()
+    candidate = _resolve_existingish(base / name)
     if not is_path_within(candidate, base):
         raise ValueError(f"Path escapes allowed root: {base}")
     if must_exist and not candidate.exists():
         raise FileNotFoundError(str(candidate))
     return candidate
+
+
+def runtime_data_summary() -> dict:
+    """Non-destructive summary of runtime data locations (for doctor/diagnostics)."""
+    try:
+        ensure_data_dirs()
+    except Exception:
+        pass
+    return {
+        "project_root": str(PROJECT_ROOT),
+        "data_dir": str(DATA_DIR),
+        "db_path": str(DB_PATH),
+        "export_dir": str(EXPORT_DIR),
+        "invoice_dir": str(INVOICE_DIR),
+        "preserved_on_update_backup_restore": True,
+    }

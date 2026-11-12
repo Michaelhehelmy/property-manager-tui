@@ -136,6 +136,8 @@ def _backup_restore_guidance() -> dict[str, Any]:
     data_dir = Path(paths.DATA_DIR)
     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
     backup_name = f"property_manager.backup.{ts}.db"
+    wal = Path(str(db_path) + "-wal")
+    shm = Path(str(db_path) + "-shm")
     return {
         "runtime_data_preserved": ["DB", "exports", "invoices", "configured data dir (PM_DATA_DIR/DATA_DIR)"],
         "backup": {
@@ -143,7 +145,9 @@ def _backup_restore_guidance() -> dict[str, Any]:
             "copy_db_file": str(db_path),
             "suggested_backup_path": str(data_dir / backup_name),
             "cli_helper": "python3 -m app_core.doctor --backup  (or --backup-to <path>)",
-            "note": "Copy while app is stopped for a consistent snapshot. Also preserve exports/ and invoices/; WAL/SHM sidecars are not required when stopped.",
+            "wal_exists": wal.exists(),
+            "shm_exists": shm.exists(),
+            "note": "Prefer backups while app is stopped. CLI --backup uses SQLite backup API when possible; verify the backup after creation. Preserve exports/ and invoices/ alongside DB backups.",
         },
         "restore": {
             "stop_app_first": True,
@@ -151,11 +155,18 @@ def _backup_restore_guidance() -> dict[str, Any]:
             "verify_helper": "python3 -m app_core.doctor --verify-backup <path>",
             "steps": [
                 "Stop TUI/Web processes (run web with --workers 1).",
+                "Create a fresh safety backup of current runtime data if available.",
                 "Verify candidate backup: python3 -m app_core.doctor --verify-backup <backup.db>",
                 "Copy verified backup over the target DB path (and keep exports/invoices/data dir).",
                 "Restart app; it will run safe/idempotent migrations if needed.",
                 "Run: python3 -m app_core.doctor --json",
             ],
+        },
+        "readiness": {
+            "db_exists": db_path.exists(),
+            "data_dir_exists": data_dir.exists(),
+            "data_dir_writable": os.access(str(data_dir), os.W_OK) if data_dir.exists() else os.access(str(data_dir.parent), os.W_OK),
+            "recommendation": "Verify backups before restore and never delete runtime data during update/backup/restore operations.",
         },
     }
 
@@ -308,12 +319,24 @@ def collect_health(check_updates: bool = False) -> dict[str, Any]:
         ("db_path", Path(paths.DB_PATH)),
     ]:
         report["data_dirs"][key] = _exists_info(p)
+    # SQLite sidecars are informational; safe backups are preferred when stopped or via SQLite backup API.
+    try:
+        dbp = Path(paths.DB_PATH)
+        for key, p in [("db_wal", Path(str(dbp) + "-wal")), ("db_shm", Path(str(dbp) + "-shm"))]:
+            if p.exists():
+                report["data_dirs"][key] = _exists_info(p)
+    except Exception:
+        pass
 
     db_path = Path(paths.DB_PATH)
     report["db"]["path"] = str(db_path)
     report["db"]["exists"] = db_path.exists()
     if db_path.exists():
         try:
+            try:
+                report["db"]["size_bytes"] = db_path.stat().st_size
+            except Exception:
+                pass
             conn = sqlite3.connect(str(db_path), timeout=5.0)
             try:
                 conn.row_factory = sqlite3.Row
@@ -328,6 +351,12 @@ def collect_health(check_updates: bool = False) -> dict[str, Any]:
                 report["consistency"]["batch_stock"] = _batch_stock_consistency(conn)
                 try:
                     report["db"]["table_count"] = len([r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()])
+                except Exception:
+                    pass
+                try:
+                    report["db"]["journal_mode"] = conn.execute("PRAGMA journal_mode").fetchone()[0]
+                    report["db"]["foreign_keys"] = conn.execute("PRAGMA foreign_keys").fetchone()[0]
+                    report["db"]["busy_timeout"] = conn.execute("PRAGMA busy_timeout").fetchone()[0]
                 except Exception:
                     pass
             finally:
@@ -414,6 +443,9 @@ def format_health_report(report: dict[str, Any]) -> str:
         lines.append(f"  - foreign_key_violations: {len(integ.get('foreign_key_violations') or [])}")
         for k in ("integrity_error", "foreign_key_error"):
             if integ.get(k): lines.append(f"  - {k}: {integ.get(k)}")
+    dbi = report.get("db") or {}
+    if dbi.get("journal_mode") is not None or dbi.get("busy_timeout") is not None:
+        lines.append(f"  - db: journal_mode={dbi.get('journal_mode')} foreign_keys={dbi.get('foreign_keys')} busy_timeout={dbi.get('busy_timeout')}")
     ledger = (report.get("integrity") or {}).get("ledger")
     if ledger is not None:
         lines.append(f"  - ledger_integrity: {ledger}")
@@ -422,6 +454,9 @@ def format_health_report(report: dict[str, Any]) -> str:
         lines.append("\nBatch/stock consistency:")
         lines.append(f"  - ok: {cons.get('ok')} checked={cons.get('checked')} mismatches={cons.get('mismatch_count', 0)}")
         if cons.get("error"): lines.append(f"  - error: {cons.get('error')}")
+        if cons.get("mismatches"):
+            for m in (cons.get("mismatches") or [])[:5]:
+                lines.append(f"  - item {m.get('item_id')} {m.get('item_name')}: stock={m.get('stock_qty')} active_batch_remaining={m.get('batch_remaining_active')}")
     pr = ((report.get("readiness") or {}).get("printer") or {})
     if pr:
         lines.append("\nPrinter readiness:")
@@ -447,9 +482,16 @@ def format_health_report(report: dict[str, Any]) -> str:
         lines.append("\nBackup/restore guidance:")
         lines.append("  - Runtime data preserved: " + ", ".join(br.get("runtime_data_preserved") or []))
         b = br.get("backup") or {}
-        if b: lines.append(f"  - Backup: stop_app={b.get('stop_app_first')} db={b.get('copy_db_file')} suggested={b.get('suggested_backup_path')}")
+        if b:
+            lines.append(f"  - Backup: stop_app={b.get('stop_app_first')} db={b.get('copy_db_file')} suggested={b.get('suggested_backup_path')}")
+            if b.get("wal_exists") or b.get("shm_exists"):
+                lines.append(f"  - WAL/SHM present: wal={bool(b.get('wal_exists'))} shm={bool(b.get('shm_exists'))} (prefer consistent backup/stop app)")
         r = br.get("restore") or {}
-        if r: lines.append(f"  - Restore: stop_app={r.get('stop_app_first')} replace_db={r.get('replace_db_file')}")
+        if r:
+            lines.append(f"  - Restore: stop_app={r.get('stop_app_first')} replace_db={r.get('replace_db_file')} verify={r.get('verify_helper')}")
+        rd = br.get("readiness") or {}
+        if rd:
+            lines.append(f"  - Readiness: db_exists={rd.get('db_exists')} data_dir_writable={rd.get('data_dir_writable')}")
     notes = report.get("notes") or []
     if notes:
         lines.append("\nNotes:")

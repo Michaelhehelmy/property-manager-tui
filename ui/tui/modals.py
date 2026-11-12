@@ -456,15 +456,22 @@ class InventoryEditScreen(ModalScreen):
         over_default = it.get("overstock_threshold") if it.get("overstock_threshold") is not None else services.get_setting("overstock_threshold", "100")
         with VerticalScroll(id="inv_edit_dialog"):
             yield Static(t("Add Item") if self.mode == "add" else t("Edit"), classes="title")
-            yield Input(placeholder="Item Name", id="name", value=it.get("item_name", ""))
-            yield Input(placeholder="Category", id="cat", value=it.get("category", ""))
-            yield Input(placeholder="Unit", id="unit", value=it.get("unit", ""))
+            yield Input(placeholder="Item Name", id="name", value=str(it.get("item_name", "") or ""))
+            yield Input(placeholder="SKU", id="sku", value=str(it.get("sku", "") or ""))
+            yield Input(placeholder="Barcode", id="barcode", value=str(it.get("barcode", "") or ""))
+            yield Input(placeholder="Barcode Type (e.g. code128)", id="barcode_type", value=str(it.get("barcode_type", "") or "code128"))
+            yield Input(placeholder="Category", id="cat", value=str(it.get("category", "") or ""))
+            yield Input(placeholder="Unit", id="unit", value=str(it.get("unit", "") or ""))
             if self.mode == "add":
                 yield Input(placeholder="Stock Qty", id="stock", value="0")
-            yield Input(placeholder="Unit Cost", id="cost", value=str(it.get("unit_cost", 0)))
-            yield Input(placeholder="Selling Price", id="sell", value=str(it.get("selling_price", 0)))
+            yield Input(placeholder="Unit Cost", id="cost", value=str(it.get("unit_cost", 0) or 0))
+            yield Input(placeholder="Selling Price", id="sell", value=str(it.get("selling_price", 0) or 0))
             yield Input(placeholder="Low Stock Threshold", id="low", value=str(low_default))
             yield Input(placeholder="Overstock Threshold", id="over", value=str(over_default))
+            yield Input(placeholder="Track Batches/Lots (1=yes, 0=no)", id="track_batches", value=str(it.get("track_batches", 0) or 0))
+            sld = it.get("shelf_life_days")
+            yield Input(placeholder="Shelf Life Days (blank if none)", id="shelf_life_days", value="" if sld in (None, "") else str(sld))
+            yield Input(placeholder="Default Supplier", id="default_supplier", value=str(it.get("default_supplier", "") or ""))
             yield Input(placeholder=t("Super Password"), id="pw", password=True)
             with Horizontal(classes="modal_buttons"):
                 yield Button(t("Save"), id="btn_save", variant="success")
@@ -613,7 +620,12 @@ class BatchSelectScreen(ModalScreen):
 
     def on_button_pressed(self, e):
         if e.button.id == "btn_auto":
-            self.dismiss({"mode": "auto"})
+            # Auto-FEFO: service allocates oldest-expiry lots at sale time; show context from available batches.
+            if not self._batches:
+                self.notify("No active batches; auto-FEFO will use service allocation rules.", severity="warning")
+            else:
+                self.notify(f"Auto-FEFO selected ({len(self._batches)} batch(es) available). Oldest expiry first.")
+            self.dismiss({"mode": "auto", "batch_id": None, "lot_code": None})
             return
         elif e.button.id == "btn_sel":
             try:
@@ -624,8 +636,9 @@ class BatchSelectScreen(ModalScreen):
                 if bid is None:
                     self.notify("No batch selected.", severity="error")
                     return
-                b = next((x for x in self._batches if int(x.get("id")) == int(bid)), None)
-                self.dismiss({"mode": "specific", "batch_id": int(bid), "lot_code": b.get("lot_code") if b else None})
+                b = next((x for x in self._batches if str(x.get("id")) == str(bid)), None)
+                lot = (b.get("lot_code") if b else None) or None
+                self.dismiss({"mode": "specific", "batch_id": int(bid), "lot_code": lot})
                 return
             except Exception as exc:
                 self.notify(str(exc), severity="error")
@@ -1075,19 +1088,64 @@ class InvoiceScreen(ModalScreen):
         self._show("EGP")
     def _show(self, currency):
         if currency not in self.texts:
-            self.texts[currency] = services.generate_invoice_text(self.reservation_id, currency)
+            try:
+                text = services.generate_invoice_text(self.reservation_id, currency)
+            except Exception:
+                text = ""
+            # Augment with batch/lot/expiry/received where available
+            try:
+                from app_core.db import connect
+                conn = connect()
+                pos_items = conn.execute("""
+                    SELECT p.item_description, p.quantity, p.lot_code, p.batch_id
+                    FROM pos_tabs p WHERE p.reservation_id=? AND p.voided_at IS NULL
+                """, (self.reservation_id,)).fetchall()
+                trace = []
+                for p in pos_items:
+                    lot = p["lot_code"] or ""
+                    bid = p["batch_id"]
+                    if not lot and not bid:
+                        continue
+                    lot_disp = f"{lot}#{bid}" if lot and bid else (lot or f"#{bid}")
+                    exp = recv = None
+                    if bid:
+                        try:
+                            b = conn.execute("SELECT expiry_date, received_at FROM inventory_batches WHERE id=?", (bid,)).fetchone()
+                            if b:
+                                exp = b["expiry_date"]
+                                recv = b["received_at"]
+                        except Exception:
+                            pass
+                    trace.append(f"  - {p['item_description']} x{p['quantity']}: lot {lot_disp} | exp {exp or '-'} | recv {recv or '-'}")
+                if trace and "Batch traceability:" not in text:
+                    text = text.rstrip() + "\n\nBATCH TRACEABILITY\n" + "\n".join(trace) + "\n" + "=" * 60
+            except Exception:
+                pass
+            self.texts[currency] = text
             if self.save:
-                self.paths[currency] = services.save_invoice_file(
-                    self.texts[currency], self.reservation_id, currency)
+                try:
+                    self.paths[currency] = services.save_invoice_file(
+                        self.texts[currency], self.reservation_id, currency)
+                except Exception:
+                    self.paths[currency] = "(not saved)"
         self.currency = currency
         log = self.query_one("#invoice_body", RichLog)
         log.clear()
-        for ln in self.texts[currency].split("\n"):
-            log.write(ln)
+        try:
+            for ln in self.texts.get(currency, "").split("\n"):
+                log.write(ln)
+        except Exception:
+            pass
         path = self.paths.get(currency, "(not saved)")
-        self.query_one("#path_info", Static).update(f"Saved: {path}")
-        btn = self.query_one("#btn_cur", Button)
-        btn.label = t("Show in EGP") if currency == "USD" else t("Show in USD")
+        try:
+            self.query_one("#path_info", Static).update(f"Saved: {path}")
+        except Exception:
+            pass
+        try:
+            btn = self.query_one("#btn_cur", Button)
+            btn.label = t("Show in EGP") if currency == "USD" else t("Show in USD")
+        except Exception:
+            pass
     def on_button_pressed(self, e):
         if e.button.id == "btn_cur":
             self._show("USD" if self.currency == "EGP" else "EGP")

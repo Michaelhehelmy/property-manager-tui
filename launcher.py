@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
-"""Unified entry point for Property Manager: choose TUI or Web UI and switch between them."""
+"""Unified entry point for Property Manager: choose TUI or Web UI and switch between them.
+
+Robust, cross-platform launcher with safe defaults (web uses --workers 1).
+Runtime data (DB/exports/invoices/PM_DATA_DIR) is preserved across updates/restarts.
+"""
 from __future__ import annotations
 
 import argparse
 import os
+import shutil
 import socket
 import subprocess
 import sys
@@ -20,8 +25,12 @@ def _env() -> dict[str, str]:
     pp = env.get("PYTHONPATH", "")
     parts = [str(SRC), str(ROOT)]
     if pp:
-        parts.append(pp)
+        # Avoid duplicates while preserving order
+        for p in pp.split(os.pathsep):
+            if p and p not in parts:
+                parts.append(p)
     env["PYTHONPATH"] = os.pathsep.join(parts)
+    # Ensure child processes see consistent python executable context if needed
     return env
 
 
@@ -30,39 +39,73 @@ def _clear():
         if os.name == "nt":
             os.system("cls")
         else:
-            print("\033[2J\033[H", end="")
+            # ANSI clear; ignore failures on constrained terminals
+            sys.stdout.write("\033[2J\033[H")
+            sys.stdout.flush()
     except Exception:
         pass
 
 
+def _run_cmd(cmd: list[str], cwd: str | None = None, env: dict[str, str] | None = None) -> int:
+    try:
+        return subprocess.call(cmd, cwd=cwd or str(ROOT), env=env or _env())
+    except FileNotFoundError as e:
+        print(f"\nCommand not found: {e}")
+        return 127
+    except KeyboardInterrupt:
+        print("\nInterrupted.")
+        return 130
+    except Exception as e:
+        print(f"\nFailed to launch: {e}")
+        return 1
+
+
 def run_tui() -> int:
-    print("\nStarting TUI... (exit the TUI to return to launcher)\n")
+    print("\nStarting TUI... (exit the TUI to return to launcher)")
+    print("Tip: runtime data (DB/exports/invoices/PM_DATA_DIR) is preserved.\n")
     try:
         return subprocess.call([sys.executable, str(ROOT / "main.py")], cwd=str(ROOT), env=_env())
     except KeyboardInterrupt:
         print("\nTUI interrupted.")
         return 130
+    except Exception as e:
+        print(f"\nFailed to start TUI: {e}")
+        print("Try: python3 launcher.py --tui  or  . .venv/bin/activate && python3 main.py")
+        return 1
 
 
 def _web_deps_ok() -> tuple[bool, str]:
+    missing = []
+    for mod in ("fastapi", "uvicorn", "jinja2"):
+        try:
+            __import__(mod)
+        except Exception as e:
+            missing.append(f"{mod}: {e}")
+    # python-multipart is commonly imported as multipart
     try:
-        import fastapi  # noqa: F401
-        import uvicorn  # noqa: F401
-        import jinja2  # noqa: F401
         import multipart  # noqa: F401
-        return True, ""
     except Exception as e:
-        return False, str(e)
+        missing.append(f"python-multipart/multipart: {e}")
+    try:
+        import itsdangerous  # noqa: F401
+    except Exception:
+        # itsdangerous often optional in some setups; don't hard-fail alone
+        pass
+    if missing:
+        return False, "; ".join(missing)
+    return True, ""
 
 
 def _lan_ip_hint() -> str:
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.settimeout(0.2)
-        s.connect(("8.8.8.8", 80))
-        ip = s.getsockname()[0]
-        s.close()
-        return ip
+        try:
+            s.connect(("8.8.8.8", 80))
+            ip = s.getsockname()[0]
+            return ip
+        finally:
+            s.close()
     except Exception:
         return "<this-device-ip>"
 
@@ -93,7 +136,10 @@ def run_web(host: str = "127.0.0.1", port: int = 8000, open_browser: bool = True
         port = _validate_port(port)
     except Exception as e:
         print(f"\nInvalid web settings: {e}")
-        input("\nPress Enter to return to launcher...")
+        try:
+            input("\nPress Enter to return to launcher...")
+        except Exception:
+            pass
         return 2
     ok, err = _web_deps_ok()
     if not ok:
@@ -101,8 +147,12 @@ def run_web(host: str = "127.0.0.1", port: int = 8000, open_browser: bool = True
         print(f"Details: {err}")
         print("\nInstall with:")
         print(f"  {sys.executable} -m pip install -r requirements-web.txt")
+        print("  or: pip install '.[web]'  (if installed in editable/development mode)")
         print("\nTip: on iSH or constrained environments, use TUI mode (SKIP_WEB=1).")
-        input("\nPress Enter to return to launcher...")
+        try:
+            input("\nPress Enter to return to launcher...")
+        except Exception:
+            pass
         return 1
 
     url_host = "127.0.0.1" if host in ("0.0.0.0", "::") else host
@@ -111,14 +161,18 @@ def run_web(host: str = "127.0.0.1", port: int = 8000, open_browser: bool = True
     print(f"Local: {url}")
     if host in ("0.0.0.0", "::"):
         print(f"LAN:   http://{_lan_ip_hint()}:{port}  (other devices on same network)")
-    print("Runtime data (DB/exports/invoices/data dir) is preserved across updates/restarts.")
-    print("Health check: python3 -m app_core.doctor --json  (add --check-updates as needed)")
+    print("Runtime data (DB/exports/invoices/data dir/PM_DATA_DIR) is preserved across updates/restarts.")
+    print("Health:  python3 -m app_core.doctor --json   |   Probes: GET /health, GET /healthz")
+    print("Backup:  python3 scripts/backup_runtime.py --backup   (or Settings → Backup now)")
+    print("Updates: Settings → App updates (git fast-forward). Restart after applying updates.")
+    print("Note:    Always run with --workers 1 (SQLite). Set PM_WEB_SECRET_KEY for non-local/shared deployments.")
     print("Press Ctrl+C to stop the web server and return to launcher.\n")
 
     env = _env()
     cmd = [sys.executable, "-m", "uvicorn", "ui.web.server:app", "--host", host, "--port", str(port), "--workers", "1"]
-    proc = subprocess.Popen(cmd, cwd=str(ROOT), env=env)
+    proc = None
     try:
+        proc = subprocess.Popen(cmd, cwd=str(ROOT), env=env)
         if open_browser:
             time.sleep(1.2)
             try:
@@ -128,20 +182,35 @@ def run_web(host: str = "127.0.0.1", port: int = 8000, open_browser: bool = True
         return proc.wait()
     except KeyboardInterrupt:
         print("\nStopping web server...")
-        try:
-            proc.terminate()
-        except Exception:
-            pass
-        try:
-            proc.wait(timeout=5)
-        except Exception:
+        if proc is not None:
             try:
-                proc.kill()
+                proc.terminate()
             except Exception:
                 pass
+            try:
+                proc.wait(timeout=5)
+            except Exception:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
         print("Web UI stopped. Returning to launcher...")
-        time.sleep(0.4)
+        time.sleep(0.3)
         return 0
+    except FileNotFoundError:
+        print("\nuvicorn not found. Install web deps: pip install -r requirements-web.txt")
+        try:
+            input("\nPress Enter to return to launcher...")
+        except Exception:
+            pass
+        return 1
+    except Exception as e:
+        print(f"\nFailed to start web server: {e}")
+        try:
+            input("\nPress Enter to return to launcher...")
+        except Exception:
+            pass
+        return 1
 
 
 def _prompt(msg: str, default: str = "") -> str:
@@ -162,18 +231,20 @@ def menu_loop(default_host: str = "127.0.0.1", default_port: int = 8000) -> int:
     last = None
     while True:
         _clear()
-        print("=" * 52)
+        print("=" * 56)
         print("  Property Manager — Launcher")
-        print("=" * 52)
+        print("=" * 56)
         print("  [1] TUI  — Textual terminal app (local)")
-        print("  [2] Web  — FastAPI + HTMX (browser/client-server)")
+        print("  [2] Web  — FastAPI + HTMX (browser/client-server, --workers 1)")
         print("  [s] Web settings (host/port)")
         print("  [q] Quit")
         if last is not None:
             print(f"\n  Last session exited with code: {last}")
         print(f"\n  Web target: http://{host}:{port}  {'(LAN)' if host in ('0.0.0.0','::') else '(local)'}")
-        print("  Tip: web runs with --workers 1; DB/exports/invoices/PM_DATA_DIR are preserved.")
-        print("  Health: python3 -m app_core.doctor   Tip: exit TUI or stop Web (Ctrl+C) to return here.")
+        print("  Tip: Web runs with --workers 1 (SQLite). Runtime data preserved.")
+        print("  Health/backup: python3 -m app_core.doctor | python3 scripts/backup_runtime.py --backup")
+        print("  Updates: Settings → App updates (git ff-only). Restart after apply. Data preserved.")
+        print("  Exit: stop TUI or press Ctrl+C in web mode to return here.")
 
         try:
             choice = input("\nChoose 1, 2, s, or q: ").strip().lower()

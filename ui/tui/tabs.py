@@ -674,10 +674,14 @@ class NewOrderTab(VerticalScroll):
             total = 0.0
             from app_core.db import connect
             for i, it in enumerate(self._walkin_cart, start=1):
-                tax = services.calculate_tax(it["price"] * it["qty"], 0)
+                try:
+                    tax = services.calculate_tax(it.get("price", 0) * it.get("qty", 0), 0)
+                except Exception:
+                    tax = {"service": 0, "vat": 0, "city_tax": 0, "gross": 0}
                 lot = it.get("lot_code") or ""
                 batch_id = it.get("batch_id")
-                extra = ""
+                batch_mode = it.get("batch_mode")
+                extra = "-"
                 if batch_id:
                     try:
                         b = connect().execute("SELECT expiry_date, received_at FROM inventory_batches WHERE id=?", (batch_id,)).fetchone()
@@ -687,22 +691,47 @@ class NewOrderTab(VerticalScroll):
                             extra = f"exp:{exp}/recv:{recv}"
                     except Exception:
                         pass
-                lot_disp = f"{lot}#{batch_id}" if lot and batch_id else (lot or (f"#{batch_id}" if batch_id else ""))
-                cart.add_row(f"W{i}", it["desc"], lot_disp, extra or "-", str(it["qty"]),
-                             f"{it['price']:.2f}", f"{tax['service']+tax['vat']+tax['city_tax']:.2f}",
-                             f"{tax['gross']:.2f}")
-                total += tax["gross"]
+                elif batch_mode == "auto":
+                    extra = "FEFO(auto)"
+                if lot and batch_id:
+                    lot_disp = f"{lot}#{batch_id}"
+                elif lot:
+                    lot_disp = lot
+                elif batch_id:
+                    lot_disp = f"#{batch_id}"
+                elif batch_mode == "auto":
+                    lot_disp = "AUTO-FEFO"
+                else:
+                    lot_disp = ""
+                cart.add_row(f"W{i}", str(it.get("desc", "")), lot_disp or "-", extra, str(it.get("qty", "")),
+                             f"{float(it.get('price') or 0):.2f}", f"{tax.get('service',0)+tax.get('vat',0)+tax.get('city_tax',0):.2f}",
+                             f"{tax.get('gross',0):.2f}")
+                total += tax.get("gross", 0)
             if self._walkin_cart:
-                cart.add_row("", "TOTAL", "", "", "", "", "", f"{total:.2f}")
+                cart.add_row("", "TOTAL", "-", "-", "", "", "", f"{total:.2f}")
         elif self._res_id:
             total = 0.0
             from app_core.db import connect
-            for p in services.get_pos_items(self._res_id):
-                gross = p["quantity"] * p["unit_price"] + p["tax_amount"]
+            try:
+                items = services.get_pos_items(self._res_id) or []
+            except Exception:
+                items = []
+            for p in items:
+                try:
+                    gross = float(p["quantity"] or 0) * float(p["unit_price"] or 0) + float(p["tax_amount"] or 0)
+                except Exception:
+                    gross = 0.0
                 try:
                     lot = p["lot_code"] or ""
                     bid = p["batch_id"]
-                    lot_disp = f"{lot}#{bid}" if lot and bid else (lot or (f"#{bid}" if bid else ""))
+                    if lot and bid:
+                        lot_disp = f"{lot}#{bid}"
+                    elif lot:
+                        lot_disp = lot
+                    elif bid:
+                        lot_disp = f"#{bid}"
+                    else:
+                        lot_disp = "-"
                     extra = "-"
                     if bid:
                         try:
@@ -714,13 +743,16 @@ class NewOrderTab(VerticalScroll):
                         except Exception:
                             pass
                 except Exception:
-                    lot_disp = ""
+                    lot_disp = "-"
                     extra = "-"
-                cart.add_row(str(p["id"]), p["item_description"], lot_disp, extra, str(p["quantity"]),
-                             f"{p['unit_price']:.2f}", f"{p['tax_amount']:.2f}", f"{gross:.2f}")
+                try:
+                    cart.add_row(str(p["id"]), str(p["item_description"] or "-"), lot_disp, extra, str(p["quantity"]),
+                                 f"{float(p['unit_price'] or 0):.2f}", f"{float(p['tax_amount'] or 0):.2f}", f"{gross:.2f}")
+                except Exception:
+                    continue
                 total += gross
             if total > 0:
-                cart.add_row("", "TOTAL", "", "", "", "", "", f"{total:.2f}")
+                cart.add_row("", "TOTAL", "-", "-", "", "", "", f"{total:.2f}")
 
     def on_input_changed(self, e):
         if e.input.id == "search":
@@ -759,7 +791,7 @@ class NewOrderTab(VerticalScroll):
         try:
             from app_core.db import connect
             if batch_id is not None:
-                self._add_to_cart(desc, qty, price, inv_id, batch_id=batch_id, lot_code=lot_code)
+                self._add_to_cart(desc, qty, price, inv_id, batch_id=batch_id, lot_code=lot_code, batch_mode="specific")
                 return
             if inv_id:
                 inv = connect().execute("SELECT id, track_batches, item_name FROM inventory WHERE id=?", (inv_id,)).fetchone()
@@ -770,18 +802,24 @@ class NewOrderTab(VerticalScroll):
                         def _cb(sel):
                             if not sel:
                                 return
+                            mode = sel.get("mode") if isinstance(sel, dict) else None
                             b_id = sel.get("batch_id") if isinstance(sel, dict) else None
                             l_code = sel.get("lot_code") if isinstance(sel, dict) else None
-                            self._add_to_cart(desc, qty, price, inv_id, batch_id=b_id, lot_code=l_code)
+                            if mode == "auto":
+                                self.notify(f"Auto-FEFO: {inv['item_name']} x{qty} (oldest expiry first).")
+                            self._add_to_cart(desc, qty, price, inv_id, batch_id=b_id, lot_code=l_code, batch_mode=mode)
                         self.app.push_screen(BatchSelectScreen(inv_id, inv["item_name"], qty), callback=_cb)
                         return
             self._add_to_cart(desc, qty, price, inv_id)
         except Exception as exc:
             self.app.notify(str(exc), severity="error")
 
-    def _add_to_cart(self, desc, qty, price, inv_id, batch_id=None, lot_code=None):
+    def _add_to_cart(self, desc, qty, price, inv_id, batch_id=None, lot_code=None, batch_mode=None):
         if self._is_walkin():
-            self._walkin_cart.append({"desc": desc, "qty": qty, "price": price, "inv_id": inv_id, "batch_id": batch_id, "lot_code": lot_code})
+            self._walkin_cart.append({
+                "desc": desc, "qty": qty, "price": price, "inv_id": inv_id,
+                "batch_id": batch_id, "lot_code": lot_code, "batch_mode": batch_mode,
+            })
             self._refresh_cart()
             return
         if not self._res_id:

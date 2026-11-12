@@ -299,3 +299,12 @@
 {"text": "barcode traceability for SKU or lot", "label": "trace_barcode", "slots": {}}
 {"text": "check for software updates and changelog", "label": "app_update_status", "slots": {}}
 {"text": "how do I update the app and is data preserved", "label": "app_update_status", "slots": {}}
+{"text": "run doctor and show health report", "label": "ledger_integrity", "slots": {}}
+{"text": "verify backup file integrity before restore", "label": "ledger_integrity", "slots": {}}
+{"text": "create a backup and verify it", "label": "ledger_integrity", "slots": {}}
+{"text": "check batch stock consistency and data integrity", "label": "ledger_integrity", "slots": {}}
+{"text": "is it safe to apply update and will it refuse on dirty repo", "label": "app_update_status", "slots": {}}
+{"text": "check update status but do not apply changes", "label": "app_update_status", "slots": {}}
+{"text": "trace lot received date expiry date and movements", "label": "trace_barcode", "slots": {}}
+{"text": "which batches expire soon and need traceability review", "label": "expiring_batches", "slots": {}}
+{"text": "list inventory batches with expiry and remaining stock", "label": "inventory_batches", "slots": {}}

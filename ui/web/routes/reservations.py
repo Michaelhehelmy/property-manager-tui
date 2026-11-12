@@ -2,11 +2,48 @@ from __future__ import annotations
 from pathlib import Path
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Form, Request
-from app_core import services
+from app_core import barcodes, services
 from app_core.db import connect
 from ui.web import deps
 from ui.web.rendering import render
 router = APIRouter()
+
+
+def _enrich_pos_rows(rows):
+    """Attach batch trace fields (received/expiry/state) to POS rows when missing."""
+    out = []
+    warn = 7
+    try:
+        warn = int(services.get_setting("expiry_warn_days", "7") or 7)
+    except Exception:
+        pass
+    batch_ids = {r["batch_id"] for r in rows if r["batch_id"]}
+    batch_map = {}
+    if batch_ids:
+        ph = ",".join("?" * len(batch_ids))
+        b_rows = connect().execute(
+            f"SELECT id, lot_code, received_at, expiry_date, quantity_received, quantity_remaining, supplier FROM inventory_batches WHERE id IN ({ph})",
+            tuple(batch_ids),
+        ).fetchall()
+        for b in b_rows:
+            bd = dict(b)
+            st, days = barcodes.expiry_status(bd.get("expiry_date"), warn)
+            bd["expiry_state"] = st
+            bd["days_to_expiry"] = days
+            batch_map[bd["id"]] = bd
+    for r in rows:
+        d = dict(r)
+        b = batch_map.get(d.get("batch_id"))
+        if b:
+            d.setdefault("lot_code", b.get("lot_code"))
+            d["batch_lot_code"] = b.get("lot_code")
+            d["batch_received_at"] = b.get("received_at")
+            d["batch_expiry_date"] = b.get("expiry_date")
+            d["batch_expiry_state"] = b.get("expiry_state")
+            d["batch_days_to_expiry"] = b.get("days_to_expiry")
+            d["batch_supplier"] = b.get("supplier")
+        out.append(d)
+    return out
 
 def _rooms(): return connect().execute("SELECT id, room_number, room_type, base_price FROM rooms ORDER BY room_number").fetchall()
 def _plans(): return connect().execute("SELECT id, name, price_modifier FROM rate_plans ORDER BY name").fetchall()
@@ -41,7 +78,14 @@ def detail(rid: int, request: Request):
     res = services.get_reservation(rid)
     if not res: deps.add_flash(request,"Not found","error"); return deps.redirect("/reservations")
     folio = services.get_balance_breakdown(rid) or {}
-    pos = connect().execute("SELECT * FROM pos_tabs WHERE reservation_id=? ORDER BY id DESC", (rid,)).fetchall()
+    pos = connect().execute(
+        """SELECT p.*, i.item_name AS inventory_item_name, i.track_batches, a.name AS activity_name
+           FROM pos_tabs p
+           LEFT JOIN inventory i ON i.id = p.inventory_item_id
+           LEFT JOIN activities a ON a.id = p.activity_id
+           WHERE p.reservation_id=? ORDER BY p.id DESC""", (rid,)
+    ).fetchall()
+    pos = _enrich_pos_rows(pos)
     pays = connect().execute("SELECT * FROM payments WHERE reservation_id=? ORDER BY id DESC", (rid,)).fetchall()
     try:
         activities = services.list_activities(active_only=True)

@@ -2,12 +2,51 @@ from __future__ import annotations
 
 from pathlib import Path
 from fastapi import APIRouter, Request
-from app_core import services
+from app_core import barcodes, services
 from app_core.db import connect
 from ui.web import deps
 from ui.web.rendering import render
 
 router = APIRouter()
+
+
+def _warn_days() -> int:
+    try:
+        return int(services.get_setting("expiry_warn_days", "7") or 7)
+    except Exception:
+        return 7
+
+
+def _enrich_pos_rows(rows):
+    out = []
+    warn = _warn_days()
+    batch_ids = {r["batch_id"] for r in rows if r["batch_id"]}
+    batch_map = {}
+    if batch_ids:
+        ph = ",".join("?" * len(batch_ids))
+        b_rows = connect().execute(
+            f"SELECT id, lot_code, received_at, expiry_date, quantity_received, quantity_remaining, supplier FROM inventory_batches WHERE id IN ({ph})",
+            tuple(batch_ids),
+        ).fetchall()
+        for b in b_rows:
+            bd = dict(b)
+            st, days = barcodes.expiry_status(bd.get("expiry_date"), warn)
+            bd["expiry_state"] = st
+            bd["days_to_expiry"] = days
+            batch_map[bd["id"]] = bd
+    for r in rows:
+        d = dict(r)
+        b = batch_map.get(d.get("batch_id"))
+        if b:
+            d.setdefault("lot_code", b.get("lot_code"))
+            d["batch_lot_code"] = b.get("lot_code")
+            d["batch_received_at"] = b.get("received_at")
+            d["batch_expiry_date"] = b.get("expiry_date")
+            d["batch_expiry_state"] = b.get("expiry_state")
+            d["batch_days_to_expiry"] = b.get("days_to_expiry")
+            d["batch_supplier"] = b.get("supplier")
+        out.append(d)
+    return out
 
 
 def _get_cart(request: Request):
@@ -16,6 +55,38 @@ def _get_cart(request: Request):
         cart = []
         deps.get_session(request)["walkin_cart"] = cart
     return cart
+
+
+def _batch_trace(batch_id=None, lot_code=None):
+    if not batch_id and not lot_code:
+        return {}
+    row = None
+    try:
+        if batch_id:
+            row = connect().execute(
+                "SELECT id, lot_code, received_at, expiry_date, supplier, quantity_remaining FROM inventory_batches WHERE id=?",
+                (int(batch_id),),
+            ).fetchone()
+        elif lot_code:
+            row = connect().execute(
+                "SELECT id, lot_code, received_at, expiry_date, supplier, quantity_remaining FROM inventory_batches WHERE lot_code=? ORDER BY id DESC LIMIT 1",
+                (str(lot_code).strip(),),
+            ).fetchone()
+    except Exception:
+        row = None
+    if not row:
+        return {"lot_code": (lot_code or "").strip()}
+    d = dict(row)
+    st, days = barcodes.expiry_status(d.get("expiry_date"), _warn_days())
+    return {
+        "batch_id": d.get("id"),
+        "lot_code": d.get("lot_code"),
+        "batch_received_at": d.get("received_at"),
+        "batch_expiry_date": d.get("expiry_date"),
+        "batch_expiry_state": st,
+        "batch_days_to_expiry": days,
+        "batch_supplier": d.get("supplier"),
+    }
 
 
 def _cart_view(cart):
@@ -27,7 +98,7 @@ def _cart_view(cart):
         tax = services.calculate_tax(price * qty, 0)
         gross = float(tax.get("gross", 0) or 0)
         total += gross
-        lines.append({
+        line = {
             "idx": i,
             "desc": it.get("desc") or "",
             "qty": qty,
@@ -37,7 +108,14 @@ def _cart_view(cart):
             "lot_code": (it.get("lot_code") or "").strip(),
             "tax": round(float(tax.get("service", 0) or 0) + float(tax.get("vat", 0) or 0) + float(tax.get("city_tax", 0) or 0), 2),
             "gross": round(gross, 2),
-        })
+        }
+        # Prefer persisted trace on cart item; enrich from DB if missing (graceful if gone).
+        for k in ("batch_received_at", "batch_expiry_date", "batch_expiry_state", "batch_days_to_expiry", "batch_supplier"):
+            if it.get(k):
+                line[k] = it.get(k)
+        if not line.get("batch_received_at") and (line.get("batch_id") or line.get("lot_code")):
+            line.update({k: v for k, v in _batch_trace(line.get("batch_id"), line.get("lot_code")).items() if v not in (None, "")})
+        lines.append(line)
     return lines, round(total, 2)
 
 
@@ -60,7 +138,14 @@ def pos(request: Request, q: str = "", scan: str = "", batch_item: str = ""):
         meals = services.list_meals(active_only=False) if hasattr(services, 'list_meals') else []
     except Exception:
         meals = []
-    walkin_pos = connect().execute("SELECT * FROM pos_tabs WHERE reservation_id IS NULL ORDER BY id DESC LIMIT 20").fetchall()
+    walkin_pos = connect().execute(
+        """SELECT p.*, i.item_name AS inventory_item_name, a.name AS activity_name
+           FROM pos_tabs p
+           LEFT JOIN inventory i ON i.id = p.inventory_item_id
+           LEFT JOIN activities a ON a.id = p.activity_id
+           WHERE p.reservation_id IS NULL ORDER BY p.id DESC LIMIT 20"""
+    ).fetchall()
+    walkin_pos = _enrich_pos_rows(walkin_pos)
     walkin_payments = connect().execute("SELECT * FROM payments WHERE reservation_id IS NULL ORDER BY id DESC LIMIT 20").fetchall()
     scan_result = None
     if scan:
@@ -81,9 +166,10 @@ def pos(request: Request, q: str = "", scan: str = "", batch_item: str = ""):
         batches = services.list_inventory_batches(item_id=bi, include_depleted=False)
     except Exception:
         batches = []
+    cart_lines, cart_total = _cart_view(cart)
     return render(request, "pos/index.html", {
         "title":"POS / Inventory",
-        "cart": _cart_view(cart)[0], "cart_lines": _cart_view(cart)[0], "cart_total": _cart_view(cart)[1],
+        "cart": cart_lines, "cart_lines": cart_lines, "cart_total": cart_total,
         "reservations": reservations, "inv": inv, "activities": activities, "activity_stats": activity_stats,
         "q": q, "meals": meals, "walkin_pos": walkin_pos, "walkin_payments": walkin_payments,
         "scan": scan, "scan_result": scan_result, "expiring_batches": expiring, "batches": batches, "batch_item": batch_item,
@@ -127,7 +213,10 @@ async def cart_add(request: Request):
         if price < 0:
             raise ValueError("Price cannot be negative.")
         cart = _get_cart(request)
-        cart.append({"desc": desc, "qty": qty, "price": price, "inv_id": inv_id, "batch_id": batch_id, "lot_code": lot_code})
+        item = {"desc": desc, "qty": qty, "price": price, "inv_id": inv_id, "batch_id": batch_id, "lot_code": lot_code}
+        # Persist trace metadata for UI/receipt context (graceful if missing).
+        item.update({k: v for k, v in _batch_trace(batch_id, lot_code).items() if v not in (None, "")})
+        cart.append(item)
         deps.get_session(request)["walkin_cart"] = cart
         deps.add_flash(request, f"Added to walk-in cart: {desc} x{qty}", "success")
     except Exception as e:
