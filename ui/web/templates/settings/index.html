@@ -4,6 +4,77 @@
 <p class="muted">Configure property, branding, master data, and maintenance. Protected actions require unlock/super password.</p>
 <details class="help-box"><summary>How to use Settings</summary><ul><li><strong>Branding & general:</strong> update property name/tagline and app settings (some changes may require unlock).</li><li><strong>Seed config (first-time / master data):</strong> <em>Export</em> current config to JSON, edit, then <em>Import/Apply</em> (requires unlock + super password + confirmation, and is only allowed when no operational data exists) — use this to seed rooms, rate plans, inventory (incl. SKU/barcodes & batch/expiry fields), expense categories, meals, and activities.</li><li><strong>Demo data presets:</strong> load synthetic operational/business demo data (reservations, POS, booked activities, payments, expenses) on a DB with no operational data to explore the app quickly.</li><li><strong>Rooms:</strong> add/remove rooms (removal blocked if referenced by reservations).</li><li><strong>Rate plans / backups / health:</strong> manage pricing plans, backups, and run health/integrity checks.</li></ul></details>
 <p><a href="/settings/rate-plans">Manage Rate Plans</a> (add/edit/delete with real backend validation) · <a href="/settings/health">Ledger/Data Health Check</a> (read-only, unlock required)</p>
+
+<div class="panel" style="margin:14px 0">
+  <h3>App updates (preserves your data)</h3>
+  <p class="muted">Checks GitHub for newer versions of this app and can fast-forward update the installed source code. Your runtime data is preserved (database, exports, invoices, and configured data directory are not modified by updates).</p>
+  <table>
+    <tr><th>App version</th><td>{{ (update_local.app_version or '—') }}</td></tr>
+    <tr><th>Installed commit</th><td><code>{{ (update_local.commit_short or '—') }}</code> {% if update_local.commit_subject %}— {{ update_local.commit_subject }}{% endif %} {% if update_local.commit_date %}<span class="muted">({{ update_local.commit_date }})</span>{% endif %}</td></tr>
+    <tr><th>Branch</th><td>{{ update_local.branch or '—' }} {% if update_local.dirty %}<span class="warn">(local changes present)</span>{% endif %}</td></tr>
+    <tr><th>Install</th><td class="muted">{{ update_local.project_root or '' }}</td></tr>
+    <tr><th>Data (preserved)</th><td class="muted">{{ update_local.data_dir or '' }}</td></tr>
+  </table>
+  <form method="post" action="/settings/updates/check" style="margin-top:10px"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><button type="submit">Check for updates</button></form>
+
+  {% if update_check %}
+    <div style="margin-top:12px">
+      {% if update_check.error %}
+        <div class="err"><strong>Check failed:</strong> {{ update_check.error }}</div>
+      {% else %}
+        {% if update_check.update_available %}
+          <div class="warn"><strong>Update available</strong>{% if update_check.commits_behind is not none %} — {{ update_check.commits_behind }} new commit(s){% endif %}. Latest: <code>{{ (update_check.latest.commit_short if update_check.latest else '—') }}</code> {{ (update_check.latest.subject if update_check.latest else '') }}</div>
+        {% else %}
+          <div class="ok"><strong>Up to date.</strong> Latest: <code>{{ (update_check.latest.commit_short if update_check.latest else (update_local.commit_short or '—')) }}</code> {{ (update_check.latest.subject if update_check.latest else '') }}</div>
+        {% endif %}
+        {% if update_check.notes %}
+          <ul class="muted">{% for n in update_check.notes %}<li>{{ n }}</li>{% endfor %}</ul>
+        {% endif %}
+        {% if update_check.changelog %}
+          <h4>What’s in this update</h4>
+          <ul>
+            {% for c in update_check.changelog %}
+              <li><code>{{ c.commit_short }}</code> <strong>{{ c.subject }}</strong> <span class="muted">{% if c.author %}— {{ c.author }}{% endif %}{% if c.date %} ({{ c.date }}){% endif %}</span>
+                {% if c.details %}<div class="muted" style="margin-left:10px">{% for d in c.details %}<div>• {{ d }}</div>{% endfor %}</div>{% endif %}
+                {% if c.url %}<div><a href="{{ c.url }}" target="_blank" rel="noopener">View commit</a></div>{% endif %}
+              </li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+        {% if update_check.compare_url %}<p><a href="{{ update_check.compare_url }}" target="_blank" rel="noopener">Compare changes on GitHub</a></p>{% endif %}
+        {% if update_check.update_available %}
+          <div class="panel" style="margin-top:10px;border:1px solid #f59e0b;background:#fffbeb">
+            <strong>Update now</strong>
+            <p class="muted">Runs a safe <code>git pull --ff-only</code> from origin (requires unlock). Source code is updated; your data (DB, exports, invoices, data dir) is preserved. Restart the app after updating. If local source changes exist, stash/commit/discard them first.</p>
+            <form method="post" action="/settings/updates/apply"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+              <input name="confirm" placeholder="UPDATE APP"/>
+              <button class="warn" type="submit">Update app</button>
+            </form>
+          </div>
+        {% endif %}
+      {% endif %}
+    </div>
+  {% endif %}
+
+  {% if update_apply %}
+    <div style="margin-top:12px">
+      {% if update_apply.ok %}
+        <div class="ok"><strong>Update applied.</strong> Restart the app to load the new version. Data preserved.</div>
+        {% if update_apply.local_after %}<div class="muted">Now at: <code>{{ update_apply.local_after.commit_short }}</code> {{ update_apply.local_after.commit_subject or '' }}</div>{% endif %}
+      {% else %}
+        <div class="err"><strong>Update failed:</strong> {{ update_apply.error }}</div>
+      {% endif %}
+      {% if update_apply.steps %}
+        <details><summary>Update steps</summary><pre style="white-space:pre-wrap">{% for s in update_apply.steps %}{{ s.step }} (rc={{ s.rc }})
+{{ s.stdout }}
+{{ s.stderr }}
+
+{% endfor %}</pre></details>
+      {% endif %}
+    </div>
+  {% endif %}
+</div>
+
 <div class="grid grid-2">
   <div class="panel"><h3>Barcode / Label devices</h3>
     <p class="muted">Configure scanner & label printer in the settings catalog below (barcode_*, label_printer, label_format, expiry policy). Keyboard-wedge scanners need no driver (scan into fields). Test label printing uses the configured label/default printer or saves to export.</p>

@@ -1,7 +1,7 @@
 from __future__ import annotations
 from pathlib import Path
 from fastapi import APIRouter, Request
-from app_core import services
+from app_core import services, updater
 from ui.web import deps
 from ui.web.rendering import render
 router = APIRouter()
@@ -59,9 +59,16 @@ def settings(request: Request):
         demo_presets = services.list_demo_data_presets()
     except Exception:
         demo_presets = []
+    try:
+        update_local = updater.get_local_state()
+    except Exception:
+        update_local = {}
+    update_check = deps.get_session(request).pop("last_update_check", None)
+    update_apply = deps.get_session(request).pop("last_update_apply", None)
     return render(request, "settings/index.html", {"title":"Settings / Branding",
         "catalog": services.SETTINGS_CATALOG, "values": services.get_all_settings(),
         "rooms": rooms, "demo_presets": demo_presets,
+        "update_local": update_local, "update_check": update_check, "update_apply": update_apply,
         "brand": {"name": services.get_app_display_name(), "tagline": services.get_app_tagline(),
                   "animation": services.get_loading_animation(), "configured": services.is_branding_configured(),
                   "gift": services.get_gift_attribution()}})
@@ -256,5 +263,43 @@ async def test_label(request: Request):
         ok, msg, p = services.test_label_print()
         deps.add_flash(request, f"Test label: {msg} ({p})", "success" if ok else "warning")
     except Exception as e:
+        deps.add_flash(request, str(e), "error")
+    r = deps.redirect("/settings"); deps.save_session(r, deps.get_session(request)); return r
+
+
+@router.post("/settings/updates/check")
+async def updates_check(request: Request):
+    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    try:
+        result = updater.check_for_updates()
+        deps.get_session(request)["last_update_check"] = result
+        if result.get("error"):
+            deps.add_flash(request, result["error"], "error")
+        elif result.get("update_available"):
+            n = result.get("commits_behind")
+            deps.add_flash(request, f"Update available ({n} commit(s) behind)." if n is not None else "Update available.", "info")
+        else:
+            deps.add_flash(request, "You are up to date.", "success")
+    except Exception as e:
+        deps.get_session(request)["last_update_check"] = {"ok": False, "error": str(e)}
+        deps.add_flash(request, f"Update check failed: {e}", "error")
+    r = deps.redirect("/settings"); deps.save_session(r, deps.get_session(request)); return r
+
+
+@router.post("/settings/updates/apply")
+async def updates_apply(request: Request):
+    deps.require_unlock(request)
+    form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    try:
+        if str(form.get("confirm", "")).strip().upper() != "UPDATE APP":
+            raise ValueError("Confirmation text must be exactly: UPDATE APP")
+        result = updater.apply_update()
+        deps.get_session(request)["last_update_apply"] = result
+        if result.get("ok"):
+            deps.add_flash(request, "Update applied (fast-forward). Restart the app to use the new version. Your data (DB/exports/invoices) was preserved.", "success")
+        else:
+            deps.add_flash(request, result.get("error") or "Update failed.", "error")
+    except Exception as e:
+        deps.get_session(request)["last_update_apply"] = {"ok": False, "error": str(e)}
         deps.add_flash(request, str(e), "error")
     r = deps.redirect("/settings"); deps.save_session(r, deps.get_session(request)); return r
