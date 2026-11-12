@@ -15,15 +15,28 @@ import sys
 from app_core import paths, services
 
 SESSION_COOKIE = "pm_session"
-# Phase 0.1: load secret from env for deployment; keep explicit dev fallback for localhost MVP.
+# Secret/cookie hardening
 _SECRET_ENV = "PM_WEB_SECRET_KEY"
-SECRET_KEY = os.environ.get(_SECRET_ENV) or "pm-web-local-dev-secret-change-me"
-if not os.environ.get(_SECRET_ENV):
+_ALLOW_INSECURE_ENV = "PM_WEB_ALLOW_INSECURE_DEV"
+SECRET_KEY = os.environ.get(_SECRET_ENV)
+_insecure_dev = False
+if not SECRET_KEY:
+    host_hint = (os.environ.get("HOST") or os.environ.get("PM_WEB_HOST") or "127.0.0.1")
+    non_local = host_hint not in ("127.0.0.1", "localhost", "::1")
+    if non_local and os.environ.get(_ALLOW_INSECURE_ENV) != "1":
+        raise RuntimeError(
+            f"{_SECRET_ENV} must be set for non-local web deployment (HOST={host_hint}). "
+            f"Set {_ALLOW_INSECURE_ENV}=1 only for explicit local/dev override."
+        )
+    SECRET_KEY = "pm-web-local-dev-secret-change-me"
+    _insecure_dev = True
     print(
         f"[pm-web] WARNING: {_SECRET_ENV} not set; using insecure development secret. "
         "Set PM_WEB_SECRET_KEY for any non-local/shared deployment.",
         file=sys.stderr,
     )
+
+_COOKIE_SECURE = os.environ.get("PM_WEB_COOKIE_SECURE", "").strip().lower() in ("1", "true", "yes", "on")
 _serializer = URLSafeSerializer(SECRET_KEY, salt="pm-session")
 
 
@@ -39,7 +52,14 @@ def _load_session(request: Request) -> dict[str, Any]:
 
 
 def save_session(response, data: dict[str, Any]) -> None:
-    response.set_cookie(SESSION_COOKIE, _serializer.dumps(data), httponly=True, samesite="lax")
+    secure = _COOKIE_SECURE
+    response.set_cookie(
+        SESSION_COOKIE,
+        _serializer.dumps(data),
+        httponly=True,
+        samesite="lax",
+        secure=secure,
+    )
 
 
 def get_session(request: Request) -> dict[str, Any]:
@@ -115,6 +135,33 @@ def safe_download_path(kind: str, name: str) -> Path:
     if not p.exists() or not p.is_file():
         raise HTTPException(status_code=404, detail="File not found")
     return p
+
+
+
+
+def enforce_csrf_for_unsafe(request: Request) -> None:
+    """Call from middleware/dependency for state-changing methods."""
+    if request.method.upper() in ("POST", "PUT", "PATCH", "DELETE"):
+        # form token or header
+        token = request.headers.get("x-csrf-token")
+        if token is None:
+            # try cached form? cannot read body here safely; routes should verify.
+            return
+        verify_csrf(request, token)
+
+
+async def csrf_middleware(request: Request, call_next):
+    # Best-effort: enforce header token for unsafe API-style requests; form posts
+    # are validated in route handlers via verify_csrf(request, csrf_token_form).
+    if request.method.upper() in ("POST", "PUT", "PATCH", "DELETE"):
+        ct = (request.headers.get("content-type") or "").lower()
+        if "application/json" in ct or request.headers.get("x-csrf-token"):
+            token = request.headers.get("x-csrf-token")
+            if token is None:
+                # JSON unsafe requests must provide header
+                raise HTTPException(status_code=400, detail="Invalid CSRF token")
+            verify_csrf(request, token)
+    return await call_next(request)
 
 
 def redirect(url: str, status: int = 303) -> RedirectResponse:

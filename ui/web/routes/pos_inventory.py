@@ -92,6 +92,9 @@ def pos(request: Request, q: str = "", scan: str = "", batch_item: str = ""):
 async def pos_add(request: Request):
     """Add a single POS item directly to an existing reservation (real backend)."""
     form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    next_url = (form.get("next") or "/pos").strip() or "/pos"
+    if not next_url.startswith("/") or next_url.startswith("//"):
+        next_url = "/pos"
     try:
         rid = form.get("reservation_id"); rid = int(rid) if rid else None
         inv_id = form.get("inv_id"); inv_id = int(inv_id) if inv_id else None
@@ -101,7 +104,7 @@ async def pos_add(request: Request):
         deps.add_flash(request, "POS item added to reservation", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
-    r = deps.redirect("/pos"); deps.save_session(r, deps.get_session(request)); return r
+    r = deps.redirect(next_url); deps.save_session(r, deps.get_session(request)); return r
 
 
 @router.post("/pos/cart/add")

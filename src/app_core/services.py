@@ -9,12 +9,14 @@ import unicodedata
 import re
 import difflib
 import json
+import sqlite3
 import csv
 import shutil
 from datetime import datetime, timedelta
 from pathlib import Path
 
 from . import db, paths
+from . import barcodes
 
 BASE_DIR = paths.BASE_DIR
 DATA_DIR = paths.DATA_DIR
@@ -22,6 +24,7 @@ EXPORT_DIR = paths.EXPORT_DIR
 INVOICE_DIR = paths.INVOICE_DIR
 CURRENCY = "EGP"
 DATE_FMT = "%Y-%m-%d"
+DATETIME_FMT = "%Y-%m-%d %H:%M:%S"
 
 GIFT_SALT = "_SUKOON_SECURE_SALT_2026"
 LEGACY_GIFT_ATTRIBUTION = "Gifted with love from Michael Helmy to Sukoon Camp"
@@ -483,7 +486,7 @@ def _seed_defaults():
 
 def get_setting(key, default=""):
     from .db import connect
-    row = connect().execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+    row = db.connect().execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
     return row["value"] if row else default
 
 
@@ -495,7 +498,7 @@ def set_setting(key, value):
 
 def get_all_settings():
     from .db import connect
-    return {r["key"]: r["value"] for r in connect().execute("SELECT key, value FROM settings").fetchall()}
+    return {r["key"]: r["value"] for r in db.connect().execute("SELECT key, value FROM settings").fetchall()}
 
 
 def _validate_setting(key, raw):
@@ -637,7 +640,7 @@ def _audit(action, target_type="", target_id="", details=""):
 
 def get_audit_log(limit=200):
     from .db import connect
-    return connect().execute(
+    return db.connect().execute(
         "SELECT id, at, actor, action, target_type, target_id, details FROM audit_log ORDER BY id DESC LIMIT ?",
         (limit,)).fetchall()
 
@@ -657,7 +660,7 @@ def _scrypt_hash(password, salt_hex):
 
 def has_super_password():
     from .db import connect
-    row = connect().execute("SELECT value FROM app_metadata WHERE key='super_password_hash'").fetchone()
+    row = db.connect().execute("SELECT value FROM app_metadata WHERE key='super_password_hash'").fetchone()
     return bool(row and row["value"])
 
 
@@ -685,7 +688,7 @@ def verify_password(password):
     if not password:
         return False
     from .db import connect, transaction
-    conn = connect()
+    conn = db.connect()
     rows = {r["key"]: r["value"] for r in conn.execute(
         "SELECT key, value FROM app_metadata WHERE key IN ('super_password_salt','super_password_hash','failed_attempts','lockout_until')")}
     salt = rows.get("super_password_salt")
@@ -753,7 +756,7 @@ def generate_recovery_codes(password):
 def verify_recovery_code(code):
     ch = hashlib.sha256(code.strip().upper().encode()).hexdigest()
     from .db import connect
-    row = connect().execute("SELECT 1 FROM app_metadata WHERE key=?", (f"recovery_{ch}",)).fetchone()
+    row = db.connect().execute("SELECT 1 FROM app_metadata WHERE key=?", (f"recovery_{ch}",)).fetchone()
     return bool(row)
 
 
@@ -769,7 +772,7 @@ def use_recovery_code(code, new_password, confirm_password):
     ch = hashlib.sha256(code_norm.encode()).hexdigest()
     key = f"recovery_{ch}"
     from .db import connect, transaction
-    conn = connect()
+    conn = db.connect()
     row = conn.execute("SELECT 1 FROM app_metadata WHERE key=?", (key,)).fetchone()
     if not row:
         raise ValueError("Invalid or already-used recovery code.")
@@ -959,7 +962,7 @@ def find_guest_matches(name, phone="", email="", threshold=0.82):
     from .db import connect
     p_norm = _norm_phone(phone)
     e_norm = (email or "").lower().strip()
-    candidates = connect().execute("SELECT id, canonical_name, phone, email FROM guests").fetchall()
+    candidates = db.connect().execute("SELECT id, canonical_name, phone, email FROM guests").fetchall()
     scored = []
     for c in candidates:
         score = _name_score(name, c["canonical_name"])
@@ -968,7 +971,7 @@ def find_guest_matches(name, phone="", email="", threshold=0.82):
         elif e_norm and (c["email"] or "").lower().strip() == e_norm:
             score = max(score, 0.98)
         if score >= threshold:
-            stays = connect().execute(
+            stays = db.connect().execute(
                 "SELECT COUNT(*), MAX(check_in_date) FROM reservations WHERE guest_id=?",
                 (c["id"],)).fetchone()
             scored.append({
@@ -1009,16 +1012,16 @@ def get_all_guests(search=""):
         GROUP BY g.id ORDER BY g.canonical_name
     """
     if q:
-        rows = connect().execute(base_sql.format(where="WHERE g.canonical_name LIKE ? OR g.phone LIKE ? OR g.email LIKE ?"), (q, q, q)).fetchall()
+        rows = db.connect().execute(base_sql.format(where="WHERE g.canonical_name LIKE ? OR g.phone LIKE ? OR g.email LIKE ?"), (q, q, q)).fetchall()
     else:
-        rows = connect().execute(base_sql.format(where=""),).fetchall()
+        rows = db.connect().execute(base_sql.format(where=""),).fetchall()
     # enrich with real outstanding (sum balances across non-deleted/cancelled/no-show? balance func already handles)
     out = []
     for r in rows:
         d = dict(r)
         try:
             due = 0.0
-            res_ids = connect().execute("SELECT id FROM reservations WHERE guest_id=?", (r["id"],)).fetchall()
+            res_ids = db.connect().execute("SELECT id FROM reservations WHERE guest_id=?", (r["id"],)).fetchall()
             for rr in res_ids:
                 try:
                     b = calculate_guest_balance(rr["id"])
@@ -1035,7 +1038,7 @@ def get_all_guests(search=""):
 
 def get_guest_by_id(guest_id):
     from .db import connect
-    row = connect().execute(
+    row = db.connect().execute(
         "SELECT id, canonical_name, phone, email, notes FROM guests WHERE id=?", (guest_id,)).fetchone()
     if not row:
         return None
@@ -1045,7 +1048,7 @@ def get_guest_by_id(guest_id):
 
 def get_guest_history_by_id(guest_id):
     from .db import connect
-    return connect().execute("""
+    return db.connect().execute("""
         SELECT r.id, rm.room_number, r.check_in_date, r.check_out_date, r.status,
                r.agreed_nightly_rate, r.tax_amount
         FROM reservations r JOIN rooms rm ON r.room_id = rm.id
@@ -1075,7 +1078,7 @@ def assistant_get_guest_last_visit(guest_id):
     guest = get_guest_by_id(guest_id)
     if not guest:
         return None
-    row = connect().execute("""
+    row = db.connect().execute("""
         SELECT r.id, r.guest_id, r.guest_name, rm.room_number, r.check_in_date, r.check_out_date,
                r.status, r.agreed_nightly_rate, r.tax_amount, rp.name AS rate_plan_name
         FROM reservations r
@@ -1100,7 +1103,7 @@ def assistant_get_top_items_for_reservation(reservation_id, limit=5):
     from .db import connect
     rid = int(reservation_id)
     limit = max(1, min(int(limit or 5), 25))
-    rows = connect().execute("""
+    rows = db.connect().execute("""
         SELECT COALESCE(NULLIF(item_description, ''), 'Item') AS item_name,
                COALESCE(inventory_item_id, 0) AS inventory_item_id,
                SUM(quantity) AS total_qty,
@@ -1135,7 +1138,7 @@ def assistant_reservation_summary(reservation_id):
     """Read-only reservation summary with balance and POS totals (real backend)."""
     from .db import connect
     rid = int(reservation_id)
-    row = connect().execute("""
+    row = db.connect().execute("""
         SELECT r.*, rm.room_number, rp.name AS rate_plan_name, g.canonical_name AS guest_canonical_name
         FROM reservations r
         JOIN rooms rm ON r.room_id = rm.id
@@ -1150,7 +1153,7 @@ def assistant_reservation_summary(reservation_id):
         bal = calculate_guest_balance(rid)
     except Exception as e:
         bal = {"error": str(e)}
-    pos_count = connect().execute("SELECT COUNT(*) FROM pos_tabs WHERE reservation_id=? AND voided_at IS NULL", (rid,)).fetchone()[0]
+    pos_count = db.connect().execute("SELECT COUNT(*) FROM pos_tabs WHERE reservation_id=? AND voided_at IS NULL", (rid,)).fetchone()[0]
     return {"reservation": {k: row[k] for k in row.keys()}, "balance": bal, "active_pos_item_lines": pos_count}
 
 
@@ -1170,7 +1173,7 @@ def update_guest(guest_id, name, phone, email, notes, password):
 def get_duplicate_suggestions():
     """Fast: only compares same first-letter + same phone-tail buckets."""
     from .db import connect
-    guests = connect().execute("SELECT id, canonical_name, phone FROM guests").fetchall()
+    guests = db.connect().execute("SELECT id, canonical_name, phone FROM guests").fetchall()
     buckets = {}
     for g in guests:
         key = (_norm_text(g["canonical_name"])[:1] or "?", _norm_phone(g["phone"])[-4:] or "")
@@ -1239,7 +1242,7 @@ def get_guest_portfolio(guest_id):
     guest = get_guest_by_id(gid)
     if not guest:
         return None
-    conn = connect()
+    conn = db.connect()
     # reservations/trips (all, including cancelled/no-show for history; mark clearly)
     rows = conn.execute("""
         SELECT r.*, rm.room_number, rm.room_type, rp.name AS rate_plan_name
@@ -1270,7 +1273,7 @@ def get_guest_portfolio(guest_id):
             nights = 0
         bd = get_balance_breakdown(rid) or {}
         pos = [dict(x) for x in conn.execute(
-            "SELECT id, item_description, quantity, unit_price, tax_amount, voided_at, created_at FROM pos_tabs WHERE reservation_id=? ORDER BY id",
+            "SELECT id, item_description, quantity, unit_price, tax_amount, voided_at, created_at, batch_id, lot_code, inventory_item_id, activity_id, cost_at_sale FROM pos_tabs WHERE reservation_id=? ORDER BY id",
             (rid,)).fetchall()]
         pos_active = [x for x in pos if not x.get("voided_at")]
         pays = [dict(x) for x in conn.execute(
@@ -1354,13 +1357,13 @@ def get_guest_portfolio(guest_id):
 
 def get_all_rooms():
     from .db import connect
-    return connect().execute(
+    return db.connect().execute(
         "SELECT id, room_number, room_type, base_price, housekeeping_status FROM rooms ORDER BY room_number").fetchall()
 
 
 def get_room(room_id):
     from .db import connect
-    row = connect().execute(
+    row = db.connect().execute(
         "SELECT id, room_number, room_type, base_price, housekeeping_status FROM rooms WHERE id=?",
         (room_id,)).fetchone()
     if not row:
@@ -1405,7 +1408,7 @@ def update_room_type(room_id, new_type, password):
 
 def get_all_rate_plans():
     from .db import connect
-    return connect().execute("SELECT id, name, price_modifier FROM rate_plans ORDER BY id").fetchall()
+    return db.connect().execute("SELECT id, name, price_modifier FROM rate_plans ORDER BY id").fetchall()
 
 
 def add_rate_plan(name, modifier, password):
@@ -1414,7 +1417,7 @@ def add_rate_plan(name, modifier, password):
     if not name or not name.strip():
         raise ValueError("Name is required.")
     from .db import connect, transaction
-    if connect().execute("SELECT 1 FROM rate_plans WHERE LOWER(name)=LOWER(?)", (name.strip(),)).fetchone():
+    if db.connect().execute("SELECT 1 FROM rate_plans WHERE LOWER(name)=LOWER(?)", (name.strip(),)).fetchone():
         raise ValueError("Name already exists.")
     with transaction() as conn:
         conn.execute("INSERT INTO rate_plans (name, price_modifier) VALUES (?, ?)",
@@ -1428,7 +1431,7 @@ def update_rate_plan(plan_id, name, modifier, password):
     if not name or not name.strip():
         raise ValueError("Name is required.")
     from .db import connect, transaction
-    if connect().execute("SELECT 1 FROM rate_plans WHERE LOWER(name)=LOWER(?) AND id!=?",
+    if db.connect().execute("SELECT 1 FROM rate_plans WHERE LOWER(name)=LOWER(?) AND id!=?",
                          (name.strip(), plan_id)).fetchone():
         raise ValueError("Name already exists.")
     with transaction() as conn:
@@ -1441,7 +1444,7 @@ def delete_rate_plan(plan_id, password):
     if not verify_password(password):
         raise PermissionError("Invalid super password.")
     from .db import connect, transaction
-    used = connect().execute("SELECT COUNT(*) FROM reservations WHERE rate_plan_id=?", (plan_id,)).fetchone()[0]
+    used = db.connect().execute("SELECT COUNT(*) FROM reservations WHERE rate_plan_id=?", (plan_id,)).fetchone()[0]
     if used > 0:
         raise ValueError(f"Cannot delete: {used} reservations use it.")
     with transaction() as conn:
@@ -1456,7 +1459,7 @@ def delete_rate_plan(plan_id, password):
 
 def count_reservations_using_plan(plan_id):
     from .db import connect
-    return connect().execute(
+    return db.connect().execute(
         "SELECT COUNT(*) FROM reservations WHERE rate_plan_id=?", (plan_id,)
     ).fetchone()[0]
 
@@ -1485,7 +1488,7 @@ def check_room_availability(room_id, ci, co, exclude_res_id=None):
     if exclude_res_id is not None:
         q += " AND id != ?"
         p.append(exclude_res_id)
-    return connect().execute(q, p).fetchone()[0] == 0
+    return db.connect().execute(q, p).fetchone()[0] == 0
 
 
 def create_reservation(guest_name, source, room_id, rate_plan_id, agreed_nightly_rate,
@@ -1547,7 +1550,7 @@ def create_reservation(guest_name, source, room_id, rate_plan_id, agreed_nightly
 
 def update_reservation_status(rid, new_status):
     from .db import connect, transaction
-    row = connect().execute("SELECT status, room_id FROM reservations WHERE id=?", (rid,)).fetchone()
+    row = db.connect().execute("SELECT status, room_id FROM reservations WHERE id=?", (rid,)).fetchone()
     if not row:
         raise ValueError("Reservation not found.")
     current = row["status"]
@@ -1601,7 +1604,7 @@ def _cancellation_refund_amount(cur, rid, policy):
 def estimate_cancellation_outcome(rid, mode):
     """Pure estimate for UI: no mutation, mirrors cancel/no-show policy math."""
     from .db import connect
-    conn = connect()
+    conn = db.connect()
     row = conn.execute(
         "SELECT status, agreed_nightly_rate FROM reservations WHERE id=?",
         (rid,),
@@ -1631,7 +1634,7 @@ def _reservation_has_payments(rid, conn=None):
 
 def cancel_reservation(rid, password=None):
     from .db import connect, transaction
-    row = connect().execute("SELECT status FROM reservations WHERE id=?", (rid,)).fetchone()
+    row = db.connect().execute("SELECT status FROM reservations WHERE id=?", (rid,)).fetchone()
     if not row:
         raise ValueError("Reservation not found.")
     if "Cancelled" not in STATUS_TRANSITIONS.get(row["status"], []):
@@ -1658,7 +1661,7 @@ def cancel_reservation(rid, password=None):
 
 def mark_no_show(rid, password=None):
     from .db import connect, transaction
-    row = connect().execute("SELECT status FROM reservations WHERE id=?", (rid,)).fetchone()
+    row = db.connect().execute("SELECT status FROM reservations WHERE id=?", (rid,)).fetchone()
     if not row:
         raise ValueError("Reservation not found.")
     if "No-Show" not in STATUS_TRANSITIONS.get(row["status"], []):
@@ -1740,7 +1743,7 @@ def modify_reservation(rid, new_rate, new_ci, new_co, new_room_id, password=None
     if not allow_over and not check_room_availability(new_room_id, new_ci, new_co, exclude_res_id=rid):
         raise ValueError("Room not available.")
     from .db import connect, transaction
-    row = connect().execute(
+    row = db.connect().execute(
         "SELECT status, room_id, agreed_nightly_rate, tax_amount FROM reservations WHERE id=?",
         (rid,)).fetchone()
     if not row:
@@ -1784,7 +1787,7 @@ def delete_reservation(rid, password=None):
 
 def get_reservation(rid):
     from .db import connect
-    return connect().execute("SELECT * FROM reservations WHERE id=?", (rid,)).fetchone()
+    return db.connect().execute("SELECT * FROM reservations WHERE id=?", (rid,)).fetchone()
 
 
 
@@ -1811,7 +1814,7 @@ def resolve_barcode(code):
     lot = raw
     if payload:
         lot = payload.get("lot") or raw
-    conn = connect()
+    conn = db.connect()
     batch = conn.execute("SELECT * FROM inventory_batches WHERE lot_code=? OR barcode_value=? ORDER BY id DESC LIMIT 1", (lot, raw)).fetchone()
     item = None
     if batch:
@@ -1835,7 +1838,7 @@ def resolve_barcode(code):
 
 def get_inventory_item(item_id):
     from .db import connect
-    return connect().execute("SELECT * FROM inventory WHERE id=?", (item_id,)).fetchone()
+    return db.connect().execute("SELECT * FROM inventory WHERE id=?", (item_id,)).fetchone()
 
 
 def get_inventory_items(query="", category="", stock_filter="", include_inactive=False):
@@ -1873,7 +1876,7 @@ def get_inventory_items(query="", category="", stock_filter="", include_inactive
         sql += " AND EXISTS (SELECT 1 FROM inventory_batches b WHERE b.item_id=i.id AND b.status='active' AND b.quantity_remaining>0 AND b.expiry_date IS NOT NULL AND date(b.expiry_date) <= date('now','localtime', ?))"
         params.append(f"+{warn} days")
     sql += " ORDER BY i.item_name, i.id"
-    return connect().execute(sql, params).fetchall()
+    return db.connect().execute(sql, params).fetchall()
 
 
 def list_inventory_batches(item_id=None, status=None, expiring_within_days=None, include_depleted=False):
@@ -1893,7 +1896,7 @@ def list_inventory_batches(item_id=None, status=None, expiring_within_days=None,
         sql += " AND b.expiry_date IS NOT NULL AND b.expiry_date <> '' AND date(b.expiry_date) <= date('now','localtime', ?)"
         params.append(f"+{int(expiring_within_days)} days")
     sql += " ORDER BY CASE WHEN b.expiry_date IS NULL OR b.expiry_date='' THEN 1 ELSE 0 END, b.expiry_date, b.received_at, b.id"
-    rows = connect().execute(sql, params).fetchall()
+    rows = db.connect().execute(sql, params).fetchall()
     warn = int(get_setting("expiry_warn_days", "7") or 7)
     out = []
     for r in rows:
@@ -1907,7 +1910,7 @@ def list_inventory_batches(item_id=None, status=None, expiring_within_days=None,
 
 def get_inventory_batch(batch_id):
     from .db import connect
-    row = connect().execute("""SELECT b.*, i.item_name, i.sku, i.unit, i.barcode AS item_barcode
+    row = db.connect().execute("""SELECT b.*, i.item_name, i.sku, i.unit, i.barcode AS item_barcode
         FROM inventory_batches b JOIN inventory i ON i.id=b.item_id WHERE b.id=?""", (batch_id,)).fetchone()
     if not row:
         return None
@@ -1925,7 +1928,7 @@ def get_expiring_batches(within_days=None, include_expired=True):
     if include_expired:
         # also include already expired active
         from .db import connect
-        rows = connect().execute("""SELECT b.*, i.item_name, i.sku, i.unit
+        rows = db.connect().execute("""SELECT b.*, i.item_name, i.sku, i.unit
             FROM inventory_batches b JOIN inventory i ON i.id=b.item_id
             WHERE b.status='active' AND b.quantity_remaining>0 AND b.expiry_date IS NOT NULL AND b.expiry_date<>'' AND date(b.expiry_date) < date('now','localtime')
             ORDER BY b.expiry_date""").fetchall()
@@ -1951,7 +1954,10 @@ def _unique_lot_code(conn, base):
 def create_inventory_batch(item_id, quantity, unit_cost=0.0, received_at=None, expiry_date=None,
                            supplier="", reference="", notes="", lot_code=None, password=None, actor="system"):
     """Receive stock into a traceable batch. Updates aggregate stock and logs movement."""
-    if password is not None and password != "":
+    if password == "__session__":
+        if not is_session_unlocked():
+            raise PermissionError("Session is locked. Unlock settings first.")
+    elif password is not None and password != "":
         if not verify_password(password):
             raise PermissionError("Invalid super password.")
     try:
@@ -2048,7 +2054,7 @@ def _print_text_label(text, filename_base, printer=None, fmt="code128"):
 
 def print_item_label(item_id, printer=None):
     from .db import connect
-    item = connect().execute("SELECT * FROM inventory WHERE id=?", (item_id,)).fetchone()
+    item = db.connect().execute("SELECT * FROM inventory WHERE id=?", (item_id,)).fetchone()
     if not item:
         raise ValueError("Item not found.")
     fmt = (get_setting("label_format", "code128") or "code128").lower()
@@ -2058,13 +2064,13 @@ def print_item_label(item_id, printer=None):
 
 def print_batch_label(batch_id, printer=None):
     from .db import connect
-    row = connect().execute("""SELECT b.*, i.item_name, i.sku, i.unit, i.barcode AS item_barcode, i.barcode_type AS item_barcode_type
+    row = db.connect().execute("""SELECT b.*, i.item_name, i.sku, i.unit, i.barcode AS item_barcode, i.barcode_type AS item_barcode_type
         FROM inventory_batches b JOIN inventory i ON i.id=b.item_id WHERE b.id=?""", (batch_id,)).fetchone()
     if not row:
         raise ValueError("Batch not found.")
     fmt = (get_setting("label_format", "code128") or "code128").lower()
     include_payload = get_setting("label_include_qr_payload", "true") == "true"
-    item = connect().execute("SELECT * FROM inventory WHERE id=?", (row["item_id"],)).fetchone()
+    item = db.connect().execute("SELECT * FROM inventory WHERE id=?", (row["item_id"],)).fetchone()
     text, _ = barcodes.render_label_for_print(fmt, item, row, include_payload=include_payload)
     return _print_text_label(text, f"batch_label_{batch_id}_{row['lot_code']}", printer=printer, fmt=fmt)
 
@@ -2425,8 +2431,9 @@ def complete_walkin_sale(items, method, notes="", payment_type="Payment"):
 
 def get_pos_items(reservation_id):
     from .db import connect
-    return connect().execute("""
-        SELECT id, item_description, quantity, unit_price, tax_amount, voided_at
+    return db.connect().execute("""
+        SELECT id, item_description, quantity, unit_price, tax_amount, voided_at,
+               batch_id, lot_code, inventory_item_id, cost_at_sale, created_at, activity_id
         FROM pos_tabs WHERE reservation_id=? AND voided_at IS NULL ORDER BY id
     """, (reservation_id,)).fetchall()
 
@@ -2435,7 +2442,7 @@ def void_pos_item(pos_id, password):
     if not verify_password(password):
         raise PermissionError("Invalid super password.")
     from .db import connect, transaction
-    row = connect().execute("SELECT * FROM pos_tabs WHERE id=? AND voided_at IS NULL", (pos_id,)).fetchone()
+    row = db.connect().execute("SELECT * FROM pos_tabs WHERE id=? AND voided_at IS NULL", (pos_id,)).fetchone()
     if not row:
         raise ValueError("POS item not found or already voided.")
     with transaction() as conn:
@@ -2455,7 +2462,7 @@ def search_inventory(query="", category="", stock_filter=""):
 
 def get_inventory_categories():
     from .db import connect
-    return [r["category"] for r in connect().execute(
+    return [r["category"] for r in db.connect().execute(
         "SELECT DISTINCT category FROM inventory WHERE active=1 ORDER BY category").fetchall()]
 
 
@@ -2463,7 +2470,7 @@ def get_inventory_warnings():
     from .db import connect
     low = float(get_setting("low_stock_threshold", "5"))
     over = float(get_setting("overstock_threshold", "100"))
-    items = connect().execute(
+    items = db.connect().execute(
         "SELECT id, item_name, stock_qty, low_stock_threshold, overstock_threshold FROM inventory WHERE active=1").fetchall()
     neg, lo, ov = [], [], []
     for i in items:
@@ -2480,7 +2487,7 @@ def get_inventory_warnings():
 
 def get_recent_inventory_logs(limit=20):
     from .db import connect  # pragma: no cover
-    return connect().execute("""
+    return db.connect().execute("""
         SELECT l.at, i.item_name, l.change_type, l.quantity, l.reference
         FROM inventory_logs l JOIN inventory i ON l.item_id = i.id
         ORDER BY l.id DESC LIMIT ?
@@ -2573,7 +2580,7 @@ def delete_inventory_item(item_id, password):
     if not verify_password(password):
         raise PermissionError("Invalid super password.")
     from .db import connect, transaction
-    row = connect().execute("SELECT stock_qty FROM inventory WHERE id=?", (item_id,)).fetchone()
+    row = db.connect().execute("SELECT stock_qty FROM inventory WHERE id=?", (item_id,)).fetchone()
     if not row:
         raise ValueError("Item not found.")
     if row["stock_qty"] != 0:
@@ -2587,7 +2594,7 @@ def delete_inventory_item(item_id, password):
 def get_recipe_components(menu_item_id):
     """Return recipe/BOM components for a sellable menu inventory item."""
     from .db import connect
-    rows = connect().execute("""
+    rows = db.connect().execute("""
         SELECT rc.menu_item_id, rc.ingredient_item_id, rc.qty_per_sale,
                i.item_name AS ingredient_name, i.unit, i.stock_qty, i.unit_cost, i.active
         FROM recipe_components rc
@@ -2603,7 +2610,7 @@ def set_recipe_components(menu_item_id, components, password):
     if not verify_password(password):
         raise PermissionError("Invalid super password.")
     from .db import connect, transaction
-    conn = connect()
+    conn = db.connect()
     menu = conn.execute("SELECT id, item_name, active FROM inventory WHERE id=?", (menu_item_id,)).fetchone()
     if not menu:
         raise ValueError("Menu item not found.")
@@ -2649,7 +2656,7 @@ def clear_recipe_components(menu_item_id, password):
 def inventory_has_recipe(inv_id):
     try:
         from .db import connect
-        row = connect().execute("SELECT 1 FROM recipe_components WHERE menu_item_id=? LIMIT 1", (inv_id,)).fetchone()
+        row = db.connect().execute("SELECT 1 FROM recipe_components WHERE menu_item_id=? LIMIT 1", (inv_id,)).fetchone()
         return bool(row)
     except Exception:
         return False
@@ -2730,7 +2737,7 @@ def create_meal(name, description, preparation, selling_price, ingredients, pass
     if price < 0:
         raise ValueError("Selling price cannot be negative.")
     from .db import connect, transaction
-    conn = connect()
+    conn = db.connect()
     norm = _normalize_meal_ingredients(conn, ingredients)
     with transaction() as c2:
         try:
@@ -2761,7 +2768,7 @@ def update_meal(meal_id, name, description, preparation, selling_price, ingredie
     except Exception:
         raise ValueError("Selling price must be a number.")
     from .db import connect, transaction
-    conn = connect()
+    conn = db.connect()
     row = conn.execute("SELECT * FROM meals WHERE id=?", (meal_id,)).fetchone()
     if not row:
         raise ValueError("Meal not found.")
@@ -2795,15 +2802,15 @@ def list_meals(active_only=False):
     if active_only:
         q += " WHERE m.active=1"
     q += " ORDER BY m.name COLLATE NOCASE, m.id"
-    return [dict(r) for r in connect().execute(q, params).fetchall()]
+    return [dict(r) for r in db.connect().execute(q, params).fetchall()]
 
 
 def get_meal(meal_id):
     from .db import connect
-    m = connect().execute("SELECT * FROM meals WHERE id=?", (meal_id,)).fetchone()
+    m = db.connect().execute("SELECT * FROM meals WHERE id=?", (meal_id,)).fetchone()
     if not m:
         return None
-    ings = connect().execute("""
+    ings = db.connect().execute("""
         SELECT mi.inventory_item_id, mi.qty_per_sale, mi.note, i.item_name, i.unit, i.stock_qty, i.active
         FROM meal_ingredients mi JOIN inventory i ON i.id=mi.inventory_item_id
         WHERE mi.meal_id=? ORDER BY i.item_name, mi.inventory_item_id
@@ -2817,7 +2824,7 @@ def delete_meal(meal_id, password):
     if not verify_password(password):
         raise PermissionError("Invalid super password.")
     from .db import connect, transaction
-    m = connect().execute("SELECT name, linked_inventory_id FROM meals WHERE id=?", (meal_id,)).fetchone()
+    m = db.connect().execute("SELECT name, linked_inventory_id FROM meals WHERE id=?", (meal_id,)).fetchone()
     if not m:
         raise ValueError("Meal not found.")
     with transaction() as c2:
@@ -2832,7 +2839,10 @@ def delete_meal(meal_id, password):
 
 def restock_inventory(item_id, qty, unit_cost=0.0, password=""):
     """Restock by creating a received batch (traceable: received_at now). For full control (expiry/supplier) use create/receive_inventory_batch."""
-    if not verify_password(password):
+    if password == "__session__":
+        if not is_session_unlocked():
+            raise PermissionError("Session is locked. Unlock settings first.")
+    elif not verify_password(password):
         raise PermissionError("Invalid super password.")
     if not isinstance(item_id, int) or item_id <= 0:
         raise ValueError("Invalid item ID.")
@@ -2864,7 +2874,7 @@ def record_payment(reservation_id, amount, method, notes="", payment_type="Payme
         raise ValueError("Invalid reservation ID.")
     from .db import connect, transaction
     if reservation_id is not None:
-        r = connect().execute("SELECT status FROM reservations WHERE id=?", (reservation_id,)).fetchone()
+        r = db.connect().execute("SELECT status FROM reservations WHERE id=?", (reservation_id,)).fetchone()
         if not r:
             raise ValueError("Reservation not found.")
         if r["status"] in ("Cancelled", "No-Show", "Deleted", "Checked Out"):
@@ -2911,7 +2921,7 @@ def record_refund(reservation_id, amount, method, notes, password):
 
 def get_expense_categories():
     from .db import connect
-    return connect().execute("SELECT id, category_name FROM expense_categories ORDER BY category_name").fetchall()
+    return db.connect().execute("SELECT id, category_name FROM expense_categories ORDER BY category_name").fetchall()
 
 
 def record_operational_expense(cat_id, param, amount, tax_amount=0.0, notes="", method="Cash"):
@@ -2939,7 +2949,7 @@ def void_expense(expense_id, password):
     if not verify_password(password):
         raise PermissionError("Invalid super password.")
     from .db import connect, transaction
-    row = connect().execute("SELECT * FROM operational_expenses WHERE id=? AND voided_at IS NULL",
+    row = db.connect().execute("SELECT * FROM operational_expenses WHERE id=? AND voided_at IS NULL",
                             (expense_id,)).fetchone()
     if not row:
         raise ValueError("Expense not found or already voided.")
@@ -2953,7 +2963,7 @@ def void_expense(expense_id, password):
 
 def get_recent_expenses(limit=50):
     from .db import connect
-    return connect().execute("""
+    return db.connect().execute("""
         SELECT e.id, e.at, c.category_name, e.parameter_name, e.net_amount, e.vat_amount, e.method, e.notes
         FROM operational_expenses e JOIN expense_categories c ON e.category_id = c.id
         WHERE e.voided_at IS NULL ORDER BY e.id DESC LIMIT ?
@@ -2972,12 +2982,12 @@ def list_activities(active_only=False):
     if active_only:
         q += " WHERE active=1"
     q += " ORDER BY name COLLATE NOCASE, id"
-    return [dict(r) for r in connect().execute(q, params).fetchall()]
+    return [dict(r) for r in db.connect().execute(q, params).fetchall()]
 
 
 def get_activity(activity_id):
     from .db import connect
-    r = connect().execute("SELECT * FROM activities WHERE id=?", (int(activity_id),)).fetchone()
+    r = db.connect().execute("SELECT * FROM activities WHERE id=?", (int(activity_id),)).fetchone()
     return dict(r) if r else None
 
 
@@ -3019,7 +3029,7 @@ def update_activity(activity_id, name, description="", category="Trip", unit_pri
     if price < 0:
         raise ValueError("Price cannot be negative.")
     from .db import connect, transaction
-    row = connect().execute("SELECT id FROM activities WHERE id=?", (int(activity_id),)).fetchone()
+    row = db.connect().execute("SELECT id FROM activities WHERE id=?", (int(activity_id),)).fetchone()
     if not row:
         raise ValueError("Activity not found.")
     with transaction() as conn:
@@ -3038,7 +3048,7 @@ def update_activity(activity_id, name, description="", category="Trip", unit_pri
 
 def set_activity_active(activity_id, active):
     from .db import connect
-    row = connect().execute("SELECT id FROM activities WHERE id=?", (int(activity_id),)).fetchone()
+    row = db.connect().execute("SELECT id FROM activities WHERE id=?", (int(activity_id),)).fetchone()
     if not row:
         raise ValueError("Activity not found.")
     with transaction() as conn:
@@ -3051,7 +3061,7 @@ def book_activity(reservation_id, activity_id, quantity=1, scheduled_at=None, no
     """Book/order a registered activity/trip for a reservation.
     Creates a POS charge (like POS) linked to the activity so it is added to the reservation folio, balance, and invoice."""
     from .db import connect
-    act = connect().execute("SELECT * FROM activities WHERE id=? AND active=1", (int(activity_id),)).fetchone()
+    act = db.connect().execute("SELECT * FROM activities WHERE id=? AND active=1", (int(activity_id),)).fetchone()
     if not act:
         raise ValueError("Activity/trip not found or inactive.")
     try:
@@ -3097,7 +3107,7 @@ def list_activity_bookings(activity_id=None, reservation_id=None, guest_id=None,
         LIMIT ?
     """
     params.append(int(limit or 500))
-    return [dict(r) for r in connect().execute(q, params).fetchall()]
+    return [dict(r) for r in db.connect().execute(q, params).fetchall()]
 
 
 def get_activity_stats(activity_id=None):
@@ -3107,7 +3117,7 @@ def get_activity_stats(activity_id=None):
     filt = "WHERE p.voided_at IS NULL AND p.activity_id IS NOT NULL"
     if activity_id is not None:
         filt += " AND p.activity_id=?"; params.append(int(activity_id))
-    rows = connect().execute(f"""
+    rows = db.connect().execute(f"""
         SELECT p.activity_id, a.name AS activity_name, a.category, a.unit_price, a.active,
                COUNT(*) AS bookings, COALESCE(SUM(p.quantity),0) AS total_qty,
                COALESCE(SUM(p.quantity*p.unit_price + p.tax_amount),0) AS gross_revenue,
@@ -3121,7 +3131,7 @@ def get_activity_stats(activity_id=None):
     # include registered activities with zero bookings when listing all
     if activity_id is None:
         seen = {s["activity_id"] for s in stats}
-        for a in connect().execute("SELECT id, name, category, unit_price, active FROM activities ORDER BY name").fetchall():
+        for a in db.connect().execute("SELECT id, name, category, unit_price, active FROM activities ORDER BY name").fetchall():
             if a["id"] not in seen:
                 stats.append({"activity_id": a["id"], "activity_name": a["name"], "category": a["category"], "unit_price": a["unit_price"], "active": a["active"],
                               "bookings": 0, "total_qty": 0, "gross_revenue": 0.0, "first_booked": None, "last_booked": None})
@@ -3134,7 +3144,7 @@ def get_activity_stats(activity_id=None):
 
 def calculate_guest_balance(rid):
     from .db import connect
-    conn = connect()
+    conn = db.connect()
     r = conn.execute("SELECT status FROM reservations WHERE id=?", (rid,)).fetchone()
     if not r or r["status"] in ("Cancelled", "No-Show", "Deleted"):
         return 0.0
@@ -3147,7 +3157,7 @@ def calculate_guest_balance(rid):
 
 def get_balance_breakdown(rid):
     from .db import connect
-    conn = connect()
+    conn = db.connect()
     r = conn.execute("SELECT status FROM reservations WHERE id=?", (rid,)).fetchone()
     if not r:
         return None
@@ -3179,7 +3189,7 @@ def get_balance_breakdown(rid):
 
 def get_general_ledger_summary():
     from .db import connect
-    conn = connect()
+    conn = db.connect()
     charge_types = _net_types(("CHARGE",))
     exp_types = _net_types(("EXPENSE",))
     cogs_types = _net_types(("COGS",))
@@ -3234,7 +3244,7 @@ def get_general_ledger_summary():
 
 def get_recent_ledger(limit=100):
     from .db import connect
-    return connect().execute("""
+    return db.connect().execute("""
         SELECT id, at, ref_type, ref_id, entry_type, category, gross, vat, description
         FROM general_ledger ORDER BY id DESC LIMIT ?
     """, (limit,)).fetchall()
@@ -3242,7 +3252,7 @@ def get_recent_ledger(limit=100):
 
 def verify_app_attribution():
     from .db import connect
-    row = connect().execute("SELECT value, hash_signature FROM app_metadata WHERE key='gift_attribution'").fetchone()
+    row = db.connect().execute("SELECT value, hash_signature FROM app_metadata WHERE key='gift_attribution'").fetchone()
     if not row:
         return False, "Attribution record missing."
     stored_value = row["value"] or ""
@@ -3261,7 +3271,7 @@ def verify_app_attribution():
 
 def generate_invoice_text(reservation_id, currency=CURRENCY):
     from .db import connect
-    conn = connect()
+    conn = db.connect()
     r = conn.execute("""
         SELECT r.*, rm.room_number, rm.room_type FROM reservations r
         JOIN rooms rm ON r.room_id = rm.id WHERE r.id=?
@@ -3279,7 +3289,7 @@ def generate_invoice_text(reservation_id, currency=CURRENCY):
         WHERE ref_type='RES' AND ref_id=? AND entry_type IN ({ph})
     """, (reservation_id, *types)).fetchone()
     pos_items = conn.execute(f"""
-        SELECT p.item_description, p.quantity, p.unit_price, p.tax_amount,
+        SELECT p.item_description, p.quantity, p.unit_price, p.tax_amount, p.lot_code, p.batch_id,
                (SELECT COALESCE(SUM(gross),0) FROM general_ledger
                 WHERE ref_type='POS' AND ref_id=p.id AND entry_type IN ({ph})) AS gross
         FROM pos_tabs p WHERE p.reservation_id=? AND p.voided_at IS NULL
@@ -3336,7 +3346,12 @@ def generate_invoice_text(reservation_id, currency=CURRENCY):
     ]
     if pos_items:
         for p in pos_items:
-            lines.append(f"  {p['item_description']} x{p['quantity']} @ {m(p['unit_price'])} = {m(p['gross'] or 0)}")
+            lot = ""
+            try:
+                lot = f" [lot {p['lot_code']}]" if p["lot_code"] else ""
+            except Exception:
+                lot = ""
+            lines.append(f"  {p['item_description']}{lot} x{p['quantity']} @ {m(p['unit_price'])} = {m(p['gross'] or 0)}")
     else:
         lines.append("  (none)")
     lines += ["-" * W, "PAYMENTS"]
@@ -3386,7 +3401,9 @@ def generate_walkin_receipt_text(receipt_items, total_gross, method, payment_id=
                 gross = float(qty) * price
             except Exception:
                 gross = 0
-        lines.append(f"  {desc}  x{qty}  @ {price:.2f}  = {gross:.2f}")
+        lot = it.get("lot_code") or ""
+        lot_s = f" [lot {lot}]" if lot and "[lot " not in str(desc) else ""
+        lines.append(f"  {desc}{lot_s}  x{qty}  @ {price:.2f}  = {gross:.2f}")
     lines += ["-" * W, f"  TOTAL: {float(total_gross):.2f} EGP",
               f"  Paid by: {method}", "=" * W,
               "", "Thank you!", "=" * W]
@@ -3488,7 +3505,7 @@ def test_print(printer=None):
 def get_front_desk_summary():
     from .db import connect
     today = datetime.now().strftime(DATE_FMT)
-    conn = connect()
+    conn = db.connect()
     total = conn.execute("SELECT COUNT(*) FROM rooms").fetchone()[0]
     occ = conn.execute("""SELECT COUNT(*) FROM reservations WHERE status IN ('Reserved','Checked In')
                           AND check_in_date <= ? AND check_out_date > ?""", (today, today)).fetchone()[0]
@@ -3508,7 +3525,7 @@ def get_front_desk_summary():
 
 def get_rooms_available_between(ci, co):
     from .db import connect
-    return connect().execute("""SELECT r.id, r.room_number, r.room_type, r.base_price, r.housekeeping_status
+    return db.connect().execute("""SELECT r.id, r.room_number, r.room_type, r.base_price, r.housekeeping_status
         FROM rooms r WHERE r.id NOT IN (
             SELECT room_id FROM reservations WHERE status IN ('Reserved','Checked In')
             AND NOT (check_out_date <= ? OR check_in_date >= ?)
@@ -3518,7 +3535,7 @@ def get_rooms_available_between(ci, co):
 def get_upcoming_reservations_for_room(room_id):
     from .db import connect
     today = datetime.now().strftime(DATE_FMT)
-    return connect().execute("""SELECT id, guest_name, check_in_date, check_out_date, status, agreed_nightly_rate
+    return db.connect().execute("""SELECT id, guest_name, check_in_date, check_out_date, status, agreed_nightly_rate
         FROM reservations WHERE room_id=? AND check_in_date >= ?
         AND status IN ('Reserved','Checked In') ORDER BY check_in_date""", (room_id, today)).fetchall()
 
@@ -3528,9 +3545,9 @@ def get_occupancy_for_window(start, end):
     d1 = datetime.strptime(start, DATE_FMT)
     d2 = datetime.strptime(end, DATE_FMT)
     days = max(1, (d2 - d1).days + 1)
-    total_rooms = connect().execute("SELECT COUNT(*) FROM rooms").fetchone()[0]
+    total_rooms = db.connect().execute("SELECT COUNT(*) FROM rooms").fetchone()[0]
     trn = total_rooms * days
-    rows = connect().execute("""SELECT check_in_date, check_out_date FROM reservations
+    rows = db.connect().execute("""SELECT check_in_date, check_out_date FROM reservations
         WHERE status IN ('Reserved','Checked In','Checked Out')
         AND NOT (check_out_date <= ? OR check_in_date >= ?)""", (start, end)).fetchall()
     occupied = 0
@@ -3539,7 +3556,7 @@ def get_occupancy_for_window(start, end):
         b = min(datetime.strptime(r["check_out_date"], DATE_FMT), d2 + timedelta(days=1))
         if b > a:
             occupied += (b - a).days
-    rev = connect().execute("""SELECT COALESCE(SUM(net + service), 0) FROM general_ledger
+    rev = db.connect().execute("""SELECT COALESCE(SUM(net + service), 0) FROM general_ledger
         WHERE entry_type IN ('CHARGE','VOID_CHARGE') AND category='Accommodation' AND ref_type='RES'
         AND ref_id IN (
             SELECT id FROM reservations
@@ -3559,7 +3576,7 @@ def get_occupancy_for_window(start, end):
 
 def get_daily_revenue_expense_series(start, end):
     from .db import connect
-    conn = connect()
+    conn = db.connect()
     charge_types = _net_types(("CHARGE",))
     cost_types = _net_types(("EXPENSE", "COGS"))
     cph = ",".join("?" * len(charge_types))
@@ -3595,7 +3612,7 @@ def get_payment_method_dict(start, end):
     from .db import connect
     types = _net_types(("PAYMENT", "REFUND"))
     ph = ",".join("?" * len(types))
-    return {r[0]: round(r[1] or 0, 2) for r in connect().execute(
+    return {r[0]: round(r[1] or 0, 2) for r in db.connect().execute(
         f"""SELECT method, SUM(gross) FROM general_ledger
             WHERE entry_type IN ({ph}) AND date(at) BETWEEN date(?) AND date(?)
               AND method IS NOT NULL AND method <> ''
@@ -3608,12 +3625,12 @@ def get_daily_occupancy_series(start, end):
     from .db import connect
     d1 = datetime.strptime(start, DATE_FMT)
     d2 = datetime.strptime(end, DATE_FMT)
-    total_rooms = connect().execute("SELECT COUNT(*) FROM rooms").fetchone()[0]
+    total_rooms = db.connect().execute("SELECT COUNT(*) FROM rooms").fetchone()[0]
     out = []
     cur = d1
     while cur <= d2:
         day = cur.strftime(DATE_FMT)
-        occ = connect().execute("""SELECT COUNT(*) FROM reservations
+        occ = db.connect().execute("""SELECT COUNT(*) FROM reservations
             WHERE status IN ('Reserved','Checked In','Checked Out')
             AND check_in_date <= ? AND check_out_date > ?""", (day, day)).fetchone()[0]
         out.append((day, round((occ / total_rooms * 100) if total_rooms else 0, 1)))
@@ -3630,8 +3647,8 @@ def get_occupancy_heatmap_data(start, end):
     while cur <= d2:
         dates.append(cur.strftime(DATE_FMT))
         cur += timedelta(days=1)
-    rooms = connect().execute("SELECT id, room_number FROM rooms ORDER BY room_number").fetchall()
-    res = connect().execute("""SELECT room_id, check_in_date, check_out_date FROM reservations
+    rooms = db.connect().execute("SELECT id, room_number FROM rooms ORDER BY room_number").fetchall()
+    res = db.connect().execute("""SELECT room_id, check_in_date, check_out_date FROM reservations
         WHERE status IN ('Reserved','Checked In','Checked Out')
         AND NOT (check_out_date <= ? OR check_in_date >= ?)""", (start, end)).fetchall()
     matrix = []
@@ -3654,7 +3671,7 @@ def _range_where(start, end, col="at"):
 
 def report_pl_statement(start, end):
     from .db import connect
-    conn = connect()
+    conn = db.connect()
     where, params = _range_where(start, end)
     charge_types = _net_types(("CHARGE",))
     cogs_types = _net_types(("COGS",))
@@ -3697,7 +3714,7 @@ def report_pl_statement(start, end):
 
 def report_cash_flow(start, end):
     from .db import connect
-    conn = connect()
+    conn = db.connect()
     where, params = _range_where(start, end)
     cash_types = _net_types(("PAYMENT", "REFUND", "EXPENSE", "ASSET_IN"))
     csh = ",".join("?" * len(cash_types))
@@ -3729,7 +3746,7 @@ def report_payment_methods(start, end):
 
 def report_vat(start, end):
     from .db import connect
-    conn = connect()
+    conn = db.connect()
     where, params = _range_where(start, end)
     out_types = _net_types(("CHARGE",))
     in_types = _net_types(("EXPENSE", "ASSET_IN"))
@@ -3761,11 +3778,11 @@ def report_occupancy(start, end):
 
 def report_daily_ops(date):
     from .db import connect
-    arr = connect().execute("SELECT id, guest_name FROM reservations WHERE check_in_date=? AND status IN ('Reserved','Checked In')",
+    arr = db.connect().execute("SELECT id, guest_name FROM reservations WHERE check_in_date=? AND status IN ('Reserved','Checked In')",
                             (date,)).fetchall()
-    dep = connect().execute("SELECT id, guest_name FROM reservations WHERE check_out_date=? AND status IN ('Reserved','Checked In')",
+    dep = db.connect().execute("SELECT id, guest_name FROM reservations WHERE check_out_date=? AND status IN ('Reserved','Checked In')",
                             (date,)).fetchall()
-    inh = connect().execute("""SELECT id, guest_name, check_in_date, check_out_date FROM reservations
+    inh = db.connect().execute("""SELECT id, guest_name, check_in_date, check_out_date FROM reservations
         WHERE status='Checked In' AND check_in_date <= ? AND check_out_date >= ?""", (date, date)).fetchall()
     lines = [f"DAILY OPS   {date}", "=" * 60, f"ARRIVALS ({len(arr)}):"]
     for r in arr:
@@ -3806,9 +3823,9 @@ def backup_now():
 def list_walkin_pos(limit=200):
     """Non-voided walk-in POS lines (reservation_id IS NULL), for management/void flows."""
     from .db import connect
-    return connect().execute("""
+    return db.connect().execute("""
         SELECT p.id, p.created_at, p.item_description, p.quantity, p.unit_price, p.tax_amount,
-               p.inventory_item_id, p.voided_at
+               p.inventory_item_id, p.voided_at, p.batch_id, p.lot_code, p.cost_at_sale
         FROM pos_tabs p
         WHERE p.reservation_id IS NULL
         ORDER BY p.id DESC LIMIT ?
@@ -3818,7 +3835,7 @@ def list_walkin_pos(limit=200):
 def list_walkin_payments(limit=100):
     """Walk-in payments (reservation_id IS NULL)."""
     from .db import connect
-    return connect().execute("""
+    return db.connect().execute("""
         SELECT id, at, amount, method, payment_type, notes, voided_at
         FROM payments
         WHERE reservation_id IS NULL
@@ -3829,7 +3846,7 @@ def list_walkin_payments(limit=100):
 def verify_ledger_integrity():
     """Read-only health check: ledger/ref consistency and basic money sanity."""
     from .db import connect
-    conn = connect()
+    conn = db.connect()
     issues = []
     warnings = []
     stats = {}
@@ -3907,6 +3924,85 @@ def verify_ledger_integrity():
         stats["balances_sampled"] = min(100, stats.get("reservations", 0))
     except Exception as e:
         warnings.append(f"balance sample: {e}")
+
+    # Inventory / batch / traceability integrity
+    try:
+        stats["inventory_items"] = conn.execute("SELECT COUNT(*) FROM inventory").fetchone()[0]
+        stats["inventory_batches"] = conn.execute("SELECT COUNT(*) FROM inventory_batches").fetchone()[0]
+    except Exception as e:
+        warnings.append(f"inventory stats: {e}")
+
+    try:
+        # batches with missing inventory
+        rows = conn.execute("""
+            SELECT b.id, b.item_id, b.lot_code FROM inventory_batches b
+            WHERE b.item_id NOT IN (SELECT id FROM inventory) LIMIT 20
+        """).fetchall()
+        if rows:
+            issues.append({"type": "orphan_batch_item", "detail": [(r[0], r[1], r[2]) for r in rows]})
+    except Exception as e:
+        warnings.append(f"batch item check: {e}")
+
+    try:
+        # negative remaining (should not happen)
+        rows = conn.execute("""
+            SELECT id, item_id, lot_code, quantity_remaining FROM inventory_batches
+            WHERE quantity_remaining < -1e-9 LIMIT 20
+        """).fetchall()
+        if rows:
+            issues.append({"type": "negative_batch_remaining", "detail": [(r[0], r[1], r[2], r[3]) for r in rows]})
+    except Exception as e:
+        warnings.append(f"batch remaining check: {e}")
+
+    try:
+        # pos_tabs batch refs missing or mismatched
+        rows = conn.execute("""
+            SELECT p.id, p.batch_id, p.inventory_item_id FROM pos_tabs p
+            WHERE p.batch_id IS NOT NULL AND p.batch_id NOT IN (SELECT id FROM inventory_batches)
+            LIMIT 20
+        """).fetchall()
+        if rows:
+            issues.append({"type": "orphan_pos_batch", "detail": [(r[0], r[1], r[2]) for r in rows]})
+        rows = conn.execute("""
+            SELECT p.id, p.batch_id, p.inventory_item_id, b.item_id
+            FROM pos_tabs p JOIN inventory_batches b ON b.id = p.batch_id
+            WHERE p.inventory_item_id IS NOT NULL AND p.inventory_item_id != b.item_id
+            LIMIT 20
+        """).fetchall()
+        if rows:
+            issues.append({"type": "pos_batch_item_mismatch", "detail": [(r[0], r[1], r[2], r[3]) for r in rows]})
+    except Exception as e:
+        warnings.append(f"pos batch ref check: {e}")
+
+    try:
+        # stock vs batch remaining drift (for items that have batches)
+        allow_neg = get_setting("allow_negative_stock", "true") == "true"
+        rows = conn.execute("""
+            SELECT i.id, i.item_name, i.stock_qty,
+                   COALESCE(SUM(b.quantity_remaining), 0) AS batch_remaining,
+                   COUNT(b.id) AS batch_count
+            FROM inventory i
+            LEFT JOIN inventory_batches b ON b.item_id = i.id
+            GROUP BY i.id
+            HAVING batch_count > 0 AND ABS(i.stock_qty - COALESCE(SUM(b.quantity_remaining), 0)) > 0.0001
+            LIMIT 30
+        """).fetchall()
+        if rows:
+            detail = [{"item_id": r[0], "item": r[1], "stock_qty": r[2], "batch_remaining": r[3], "batches": r[4]} for r in rows]
+            # drift can be serious; flag as issue unless clearly explainable
+            issues.append({"type": "stock_batch_drift", "detail": detail})
+        # items with nonzero stock but no batches (legacy/untracked) - warn
+        rows = conn.execute("""
+            SELECT i.id, i.item_name, i.stock_qty
+            FROM inventory i
+            WHERE ABS(COALESCE(i.stock_qty,0)) > 0.0001
+              AND NOT EXISTS (SELECT 1 FROM inventory_batches b WHERE b.item_id = i.id)
+            LIMIT 20
+        """).fetchall()
+        if rows:
+            warnings.append({"type": "stock_without_batches", "detail": [(r[0], r[1], r[2]) for r in rows]})
+    except Exception as e:
+        warnings.append(f"stock/batch drift check: {e}")
 
     return {
         "ok": len(issues) == 0,
@@ -4197,7 +4293,7 @@ def generate_unified_report(preset="management_pack", start=None, end=None, form
 
 def has_operational_data():
     from .db import connect
-    c = connect()
+    c = db.connect()
     checks = [
         ("reservations", "SELECT 1 FROM reservations LIMIT 1"),
         ("payments", "SELECT 1 FROM payments LIMIT 1"),
@@ -4249,7 +4345,7 @@ def apply_demo_data_preset(name, password, confirm_text, allow_existing=False):
 
     preset = DEMO_DATA_PRESETS[name]
     from .db import connect
-    conn = connect()
+    conn = db.connect()
     rooms = conn.execute("SELECT id, base_price, room_type FROM rooms ORDER BY id").fetchall()
     inv = conn.execute("SELECT id, item_name, selling_price, unit_cost FROM inventory WHERE active=1 ORDER BY id").fetchall()
     cats = conn.execute("SELECT id, category_name FROM expense_categories ORDER BY id").fetchall()
@@ -4337,7 +4433,7 @@ def apply_demo_data_preset(name, password, confirm_text, allow_existing=False):
 
         # payments: deposit/full/partial depending on timing
         try:
-            status_row = connect().execute("SELECT status FROM reservations WHERE id=?", (rid,)).fetchone()
+            status_row = db.connect().execute("SELECT status FROM reservations WHERE id=?", (rid,)).fetchone()
             status = status_row["status"] if status_row else "Reserved"
             total_est = round(rate * stay * 1.24, 2)  # rough
             paid = False
@@ -4395,7 +4491,7 @@ def apply_demo_data_preset(name, password, confirm_text, allow_existing=False):
 
     # approximate guests count (unique names created via reservations)
     try:
-        created["guests"] = connect().execute("SELECT COUNT(*) AS c FROM guests").fetchone()["c"]
+        created["guests"] = db.connect().execute("SELECT COUNT(*) AS c FROM guests").fetchone()["c"]
     except Exception:
         pass
 
@@ -4414,7 +4510,7 @@ SEED_CONFIG_VERSION = 2  # v2 adds inventory barcode/batch fields and activities
 def export_seed_config():
     """Export editable master/seed data (rooms, rate plans, inventory, expense categories, meals, activities) to JSON."""
     EXPORT_DIR.mkdir(exist_ok=True)
-    conn = connect()
+    conn = db.connect()
     rooms = [dict(r) for r in conn.execute(
         "SELECT room_number, room_type, base_price, housekeeping_status FROM rooms ORDER BY room_number").fetchall()]
     plans = [dict(r) for r in conn.execute(
@@ -4610,93 +4706,91 @@ def import_seed_config(filepath, password, confirm_text):
             "active": 1 if int((a or {}).get("active", 1) or 0) else 0,
         })
 
-    conn = connect()
+    from .db import transaction as db_transaction
     try:
-        conn.execute("BEGIN IMMEDIATE")
-        conn.execute("DELETE FROM meal_ingredients")
-        conn.execute("DELETE FROM meals")
-        conn.execute("DELETE FROM recipe_components")
-        conn.execute("DELETE FROM inventory_logs")
-        conn.execute("DELETE FROM inventory_batches")
-        conn.execute("DELETE FROM inventory")
-        conn.execute("DELETE FROM expense_categories")
-        conn.execute("DELETE FROM rate_plans")
-        conn.execute("DELETE FROM rooms")
-        try:
-            conn.execute("DELETE FROM activities")
-        except Exception:
-            pass
-
-        for r in norm_rooms:
-            conn.execute(
-                "INSERT INTO rooms (room_number, room_type, base_price, housekeeping_status) VALUES (?, ?, ?, ?)",
-                (r["room_number"], r["room_type"], r["base_price"], r["housekeeping_status"]))
-        for pl in norm_plans:
-            conn.execute("INSERT INTO rate_plans (name, price_modifier) VALUES (?, ?)", (pl["name"], pl["price_modifier"]))
-        for it in norm_inv:
-            conn.execute(
-                """INSERT INTO inventory (item_name, category, stock_qty, unit, unit_cost, selling_price, low_stock_threshold, overstock_threshold, active,
-                                         sku, barcode, barcode_type, track_batches, shelf_life_days, default_supplier)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (it["item_name"], it["category"], it["stock_qty"], it["unit"], it["unit_cost"], it["selling_price"],
-                 it["low_stock_threshold"], it["overstock_threshold"], it["active"],
-                 it.get("sku"), it.get("barcode"), it.get("barcode_type", "code128"), int(it.get("track_batches", 0) or 0),
-                 it.get("shelf_life_days"), it.get("default_supplier", "")))
-            item_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-            qty = float(it.get("stock_qty") or 0)
-            if abs(qty) > 1e-9:
-                lot = f"SEED-{item_id}"
-                exp = None
-                sld = it.get("shelf_life_days")
-                if sld and int(sld) > 0:
-                    exp = (datetime.now() + timedelta(days=int(sld))).strftime(DATE_FMT)
-                now_s = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                conn.execute("""INSERT INTO inventory_batches
-                    (item_id, lot_code, barcode_value, barcode_type, quantity_received, quantity_remaining,
-                     unit_cost, received_at, expiry_date, supplier, reference, notes, status, payload_json)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                    (item_id, lot, lot, it.get("barcode_type", "code128"), qty, qty, float(it.get("unit_cost") or 0),
-                     now_s, exp, it.get("default_supplier", ""), "seed_import", "Seed/import opening stock", "active", "{}"))
-                bid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-                try:
-                    payload = json.dumps({"v": 1, "t": "lot", "item": item_id, "name": it["item_name"], "lot": lot, "recv": now_s, "exp": exp or "", "qty": qty, "rem": qty, "cost": float(it.get("unit_cost") or 0)}, separators=(",", ":"), ensure_ascii=False)
-                    conn.execute("UPDATE inventory_batches SET payload_json=? WHERE id=?", (payload, bid))
-                except Exception:
-                    pass
-                conn.execute("""INSERT INTO inventory_logs (item_id, change_type, quantity, reference, batch_id, unit_cost, balance_after)
-                               VALUES (?, 'OPENING', ?, 'seed import opening batch', ?, ?, ?)""",
-                            (item_id, qty, bid, float(it.get("unit_cost") or 0), qty))
-        for c in norm_cats:
-            conn.execute("INSERT OR IGNORE INTO expense_categories (category_name) VALUES (?)", (c,))
-        for a in norm_activities:
+        with db_transaction() as conn:
+            conn.execute("DELETE FROM meal_ingredients")
+            conn.execute("DELETE FROM meals")
+            conn.execute("DELETE FROM recipe_components")
+            conn.execute("DELETE FROM inventory_logs")
+            conn.execute("DELETE FROM inventory_batches")
+            conn.execute("DELETE FROM inventory")
+            conn.execute("DELETE FROM expense_categories")
+            conn.execute("DELETE FROM rate_plans")
+            conn.execute("DELETE FROM rooms")
             try:
-                conn.execute("""INSERT OR IGNORE INTO activities (name, description, category, unit_price, active, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, datetime('now','localtime'), datetime('now','localtime'))""",
-                    (a["name"], a["description"], a["category"], float(a["unit_price"] or 0), int(a["active"] or 0)))
+                conn.execute("DELETE FROM activities")
             except Exception:
                 pass
 
-        inv_name_to_id = {r["item_name"].strip().lower(): r["id"] for r in conn.execute("SELECT id, item_name FROM inventory").fetchall()}
-        for m in norm_meals:
-            cur = conn.execute(
-                """INSERT INTO meals (name, description, preparation, selling_price, category, active, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, datetime('now','localtime'), datetime('now','localtime'))""",
-                (m["name"], m["description"], m["preparation"], m["selling_price"], m["category"], m["active"]))
-            meal_id = cur.lastrowid
-            for ing in m["ingredients"]:
-                iid = inv_name_to_id.get(ing["inventory_item_name"].strip().lower())
-                if iid is None:
-                    raise ValueError(f"Meal '{m['name']}' ingredient not found in inventory: {ing['inventory_item_name']}")
+            for r in norm_rooms:
                 conn.execute(
-                    "INSERT OR REPLACE INTO meal_ingredients (meal_id, inventory_item_id, qty_per_sale, note) VALUES (?, ?, ?, ?)",
-                    (meal_id, iid, float(ing["qty_per_sale"] or 0), ing["note"] or ""))
-        conn.commit()
+                    "INSERT INTO rooms (room_number, room_type, base_price, housekeeping_status) VALUES (?, ?, ?, ?)",
+                    (r["room_number"], r["room_type"], r["base_price"], r["housekeeping_status"]))
+            for pl in norm_plans:
+                conn.execute("INSERT INTO rate_plans (name, price_modifier) VALUES (?, ?)", (pl["name"], pl["price_modifier"]))
+            for it in norm_inv:
+                conn.execute(
+                    """INSERT INTO inventory (item_name, category, stock_qty, unit, unit_cost, selling_price, low_stock_threshold, overstock_threshold, active,
+                                             sku, barcode, barcode_type, track_batches, shelf_life_days, default_supplier)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (it["item_name"], it["category"], it["stock_qty"], it["unit"], it["unit_cost"], it["selling_price"],
+                     it["low_stock_threshold"], it["overstock_threshold"], it["active"],
+                     it.get("sku"), it.get("barcode"), it.get("barcode_type", "code128"), int(it.get("track_batches", 0) or 0),
+                     it.get("shelf_life_days"), it.get("default_supplier", "")))
+                item_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+                qty = float(it.get("stock_qty") or 0)
+                if abs(qty) > 1e-9:
+                    lot = f"SEED-{item_id}"
+                    exp = None
+                    sld = it.get("shelf_life_days")
+                    if sld and int(sld) > 0:
+                        exp = (datetime.now() + timedelta(days=int(sld))).strftime(DATE_FMT)
+                    now_s = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    conn.execute("""INSERT INTO inventory_batches
+                        (item_id, lot_code, barcode_value, barcode_type, quantity_received, quantity_remaining,
+                         unit_cost, received_at, expiry_date, supplier, reference, notes, status, payload_json)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (item_id, lot, lot, it.get("barcode_type", "code128"), qty, qty, float(it.get("unit_cost") or 0),
+                         now_s, exp, it.get("default_supplier", ""), "seed_import", "Seed/import opening stock", "active", "{}"))
+                    bid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+                    try:
+                        payload = json.dumps({"v": 1, "t": "lot", "item": item_id, "name": it["item_name"], "lot": lot, "recv": now_s, "exp": exp or "", "qty": qty, "rem": qty, "cost": float(it.get("unit_cost") or 0)}, separators=(",", ":"), ensure_ascii=False)
+                        conn.execute("UPDATE inventory_batches SET payload_json=? WHERE id=?", (payload, bid))
+                    except Exception:
+                        pass
+                    conn.execute("""INSERT INTO inventory_logs (item_id, change_type, quantity, reference, batch_id, unit_cost, balance_after)
+                                   VALUES (?, 'OPENING', ?, 'seed import opening batch', ?, ?, ?)""",
+                                (item_id, qty, bid, float(it.get("unit_cost") or 0), qty))
+            for c in norm_cats:
+                conn.execute("INSERT OR IGNORE INTO expense_categories (category_name) VALUES (?)", (c,))
+            for a in norm_activities:
+                try:
+                    conn.execute("""INSERT OR IGNORE INTO activities (name, description, category, unit_price, active, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, datetime('now','localtime'), datetime('now','localtime'))""",
+                        (a["name"], a["description"], a["category"], float(a["unit_price"] or 0), int(a["active"] or 0)))
+                except Exception:
+                    pass
+
+            inv_name_to_id = {r["item_name"].strip().lower(): r["id"] for r in conn.execute("SELECT id, item_name FROM inventory").fetchall()}
+            for m in norm_meals:
+                cur = conn.execute(
+                    """INSERT INTO meals (name, description, preparation, selling_price, category, active, created_at, updated_at)
+                       VALUES (?, ?, ?, ?, ?, ?, datetime('now','localtime'), datetime('now','localtime'))""",
+                    (m["name"], m["description"], m["preparation"], m["selling_price"], m["category"], m["active"]))
+                meal_id = cur.lastrowid
+                for ing in m["ingredients"]:
+                    iid = inv_name_to_id.get(ing["inventory_item_name"].strip().lower())
+                    if iid is None:
+                        raise ValueError(f"Meal '{m['name']}' ingredient not found in inventory: {ing['inventory_item_name']}")
+                    conn.execute(
+                        "INSERT OR REPLACE INTO meal_ingredients (meal_id, inventory_item_id, qty_per_sale, note) VALUES (?, ?, ?, ?)",
+                        (meal_id, iid, float(ing["qty_per_sale"] or 0), ing["note"] or ""))
     except Exception:
-        conn.rollback()
         raise
 
     try:
-        conn2 = connect()
+        conn2 = db.connect()
         for row in conn2.execute("SELECT id, name, category, selling_price FROM meals").fetchall():
             ings = [dict(r) for r in conn2.execute(
                 "SELECT inventory_item_id, qty_per_sale, note FROM meal_ingredients WHERE meal_id=?",
@@ -4745,10 +4839,10 @@ def add_room(room_number, room_type, base_price, housekeeping_status="Clean"):
 
 def delete_room(room_id):
     rid = int(room_id)
-    row = connect().execute("SELECT id, room_number FROM rooms WHERE id=?", (rid,)).fetchone()
+    row = db.connect().execute("SELECT id, room_number FROM rooms WHERE id=?", (rid,)).fetchone()
     if not row:
         raise ValueError("Room not found.")
-    ref = connect().execute("SELECT 1 FROM reservations WHERE room_id=? LIMIT 1", (rid,)).fetchone()
+    ref = db.connect().execute("SELECT 1 FROM reservations WHERE room_id=? LIMIT 1", (rid,)).fetchone()
     if ref:
         raise ValueError("Cannot delete room: it is referenced by reservations.")
     from .db import transaction

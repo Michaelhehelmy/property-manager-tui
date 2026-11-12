@@ -35,6 +35,12 @@ def create_app(*, init_db: bool = True, run_startup: bool = True) -> FastAPI:
     async def session_middleware(request: Request, call_next):
         deps.get_session(request)
         deps.csrf_token(request)
+        # Best-effort header/JSON CSRF enforcement (form posts verified in handlers)
+        if request.method.upper() in ("POST", "PUT", "PATCH", "DELETE"):
+            ct = (request.headers.get("content-type") or "").lower()
+            token = request.headers.get("x-csrf-token")
+            if "application/json" in ct or token is not None:
+                deps.verify_csrf(request, token)
         response = await call_next(request)
         if "pm_session" not in response.headers.get("set-cookie", ""):
             deps.save_session(response, deps.get_session(request))

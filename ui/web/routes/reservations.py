@@ -47,7 +47,19 @@ def detail(rid: int, request: Request):
         activities = services.list_activities(active_only=True)
     except Exception:
         activities = []
-    return render(request, "reservations/detail.html", {"title":f"Reservation #{rid}","r":res,"folio":folio,"pos":pos,"pays":pays,"rooms":_rooms(),"activities":activities,"today":datetime.now().strftime("%Y-%m-%d")})
+    try:
+        inventory = services.get_inventory_items("")
+    except Exception:
+        inventory = []
+    try:
+        active_batches = services.list_inventory_batches(include_depleted=False)
+    except Exception:
+        active_batches = []
+    return render(request, "reservations/detail.html", {
+        "title":f"Reservation #{rid}","r":res,"folio":folio,"pos":pos,"pays":pays,
+        "rooms":_rooms(),"activities":activities,"inventory":inventory,"active_batches":active_batches,
+        "today":datetime.now().strftime("%Y-%m-%d")
+    })
 
 async def _act(request, rid, fn, ok):
     form = await request.form(); deps.verify_csrf(request, form.get("csrf"))

@@ -1,5 +1,6 @@
 """Property manager — database layer. Single persistent connection with WAL."""
 import sqlite3
+import threading
 from contextlib import contextmanager
 
 from . import paths
@@ -10,37 +11,65 @@ DB_PATH = paths.DB_PATH
 SCHEMA_VERSION = 9
 
 _conn = None
+_lock = threading.RLock()
 
 
 def connect():
     global _conn
     if _conn is not None:
         return _conn
-    _conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
-    _conn.row_factory = sqlite3.Row
-    _conn.execute("PRAGMA foreign_keys = ON")
-    _conn.execute("PRAGMA journal_mode = WAL")
-    _conn.execute("PRAGMA synchronous = NORMAL")
-    _conn.execute("PRAGMA busy_timeout = 5000")
-    return _conn
+    with _lock:
+        if _conn is not None:
+            return _conn
+        _conn = sqlite3.connect(str(DB_PATH), check_same_thread=False, timeout=30.0)
+        _conn.row_factory = sqlite3.Row
+        _conn.execute("PRAGMA foreign_keys = ON")
+        _conn.execute("PRAGMA journal_mode = WAL")
+        _conn.execute("PRAGMA synchronous = NORMAL")
+        _conn.execute("PRAGMA busy_timeout = 30000")
+        return _conn
 
 
 def close():
     global _conn
-    if _conn is not None:
-        _conn.close()
-        _conn = None
+    with _lock:
+        if _conn is not None:
+            _conn.close()
+            _conn = None
 
 
 @contextmanager
 def transaction():
+    """Serialized write transaction (BEGIN IMMEDIATE) on the shared connection."""
     conn = connect()
-    try:
-        yield conn
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
+    with _lock:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            yield conn
+            conn.execute("COMMIT")
+        except Exception:
+            try:
+                conn.execute("ROLLBACK")
+            except Exception:
+                pass
+            raise
+
+
+def execute(sql, params=()):
+    conn = connect()
+    with _lock:
+        return conn.execute(sql, params)
+
+
+def executemany(sql, seq_of_params):
+    conn = connect()
+    with _lock:
+        return conn.executemany(sql, seq_of_params)
+
+
+def query(sql, params=()):
+    """Read helper (returns cursor rows)."""
+    return connect().execute(sql, params)
 
 
 def user_version():

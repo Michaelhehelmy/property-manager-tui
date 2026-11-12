@@ -68,6 +68,7 @@ def settings(request: Request):
 
 @router.post("/settings/branding")
 async def branding(request: Request):
+    deps.require_unlock(request)
     form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
     try:
         services.apply_branding_settings(form.get("display_name",""), form.get("tagline",""), form.get("animation","reveal"))
@@ -92,6 +93,7 @@ async def save_settings(request: Request):
 
 @router.post("/settings/backup")
 async def backup(request: Request):
+    deps.require_unlock(request)
     form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
     try:
         path = services.backup_now(); deps.add_flash(request, f"Backup: {Path(path).name}", "success")
@@ -223,6 +225,7 @@ async def seed_import(request: Request):
 
 @router.post("/settings/rooms/add")
 async def room_add(request: Request):
+    deps.require_unlock(request)
     form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
     try:
         rid = services.add_room(form.get("room_number", ""), form.get("room_type", ""), form.get("base_price", 0), form.get("housekeeping_status", "Clean"))
@@ -234,6 +237,7 @@ async def room_add(request: Request):
 
 @router.post("/settings/rooms/{room_id}/delete")
 async def room_delete(request: Request, room_id: int):
+    deps.require_unlock(request)
     form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
     try:
         services.delete_room(room_id)
