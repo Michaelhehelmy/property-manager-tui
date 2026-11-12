@@ -5,7 +5,7 @@ from textual.widgets import (Static, DataTable, Button, Input, RichLog, Select,
                               RadioSet, RadioButton, Checkbox, Collapsible, TabbedContent, TabPane)
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual import events
-from app_core import services
+from app_core import services, updater
 from app_core.services import t, fmt, selected_id, SETTINGS_CATALOG
 from app_core import assistant as assistant_backend
 from .modals import (
@@ -1481,6 +1481,8 @@ class SettingsTab(VerticalScroll):
         await m_row.mount(Button("Import Seed Config", id="unlocked_btn_seed_import", variant="warning"))
         await m_row.mount(Button("Health Check", id="unlocked_btn_health", variant="primary"))
         await m_row.mount(Button("Load Demo Data (Guarded)", id="unlocked_btn_demo_data", variant="warning"))
+        await m_row.mount(Button("Check Updates", id="unlocked_btn_update_check", variant="primary"))
+        await m_row.mount(Button("Apply Update", id="unlocked_btn_update_apply", variant="warning"))
 
         self._reload_rp()
         self._reload_rooms()
@@ -1578,6 +1580,33 @@ class SettingsTab(VerticalScroll):
                 push_modal(self.app, ResetDefaultsModal(),
                            on_success=lambda: (self.app.notify("Settings reset to defaults."),
                                                self.app.call_later(self._async_unlock)))
+            elif bid == "unlocked_btn_update_check":
+                res = updater.check_for_updates()
+                if res.get("error"):
+                    self.app.notify(f"Update check failed: {res['error']}", severity="error", timeout=8)
+                elif res.get("update_available"):
+                    n = res.get("commits_behind")
+                    latest = (res.get("latest") or {}).get("subject") or ""
+                    msg = f"Update available ({n} commit(s)). Latest: {latest}" if n is not None else f"Update available. Latest: {latest}"
+                    # show top changelog subjects
+                    changes = [c.get("subject","") for c in (res.get("changelog") or [])[:5] if c.get("subject")]
+                    if changes:
+                        msg += " | " + "; ".join(changes)
+                    msg += " (data preserved on update; restart after apply)"
+                    self.app.notify(msg, timeout=12)
+                else:
+                    self.app.notify("Up to date. " + ((res.get("latest") or {}).get("subject") or ""), timeout=6)
+            elif bid == "unlocked_btn_update_apply":
+                def _after_confirm(ok):
+                    if not ok:
+                        return
+                    result = updater.apply_update()
+                    if result.get("ok"):
+                        after = (result.get("local_after") or {}).get("commit_short") or ""
+                        self.app.notify(f"Update applied ({after}). Restart app to load new version. Data (DB/exports/invoices) preserved.", timeout=12)
+                    else:
+                        self.app.notify(result.get("error") or "Update failed.", severity="error", timeout=10)
+                self.app.push_screen(ConfirmModal("Apply app update now? Uses git pull --ff-only, preserves DB/exports/invoices. Restart required after update.", "UPDATE APP"), callback=_after_confirm)
             elif bid == "unlocked_btn_health":
                 self.app.notify("Running ledger/data health check...", severity="information", timeout=2)
                 def _work():
