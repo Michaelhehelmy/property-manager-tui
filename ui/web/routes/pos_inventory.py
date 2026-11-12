@@ -33,6 +33,8 @@ def _cart_view(cart):
             "qty": qty,
             "price": price,
             "inv_id": it.get("inv_id"),
+            "batch_id": it.get("batch_id"),
+            "lot_code": (it.get("lot_code") or "").strip(),
             "tax": round(float(tax.get("service", 0) or 0) + float(tax.get("vat", 0) or 0) + float(tax.get("city_tax", 0) or 0), 2),
             "gross": round(gross, 2),
         })
@@ -92,6 +94,7 @@ def pos(request: Request, q: str = "", scan: str = "", batch_item: str = ""):
 async def pos_add(request: Request):
     """Add a single POS item directly to an existing reservation (real backend)."""
     form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    deps.require_unlock(request)
     next_url = (form.get("next") or "/pos").strip() or "/pos"
     if not next_url.startswith("/") or next_url.startswith("//"):
         next_url = "/pos"

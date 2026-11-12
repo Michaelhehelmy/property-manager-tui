@@ -98,6 +98,16 @@ def verify_csrf(request: Request, token: str | None) -> None:
         raise HTTPException(status_code=400, detail="Invalid CSRF token")
 
 
+async def require_csrf_form(request: Request):
+    """Centralized form CSRF verification helper. Returns parsed form."""
+    try:
+        form = await request.form()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid form submission")
+    verify_csrf(request, form.get("csrf"))
+    return form
+
+
 def is_unlocked(request: Request) -> bool:
     return bool(get_session(request).get("unlocked"))
 

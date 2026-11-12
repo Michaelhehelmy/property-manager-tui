@@ -39,7 +39,8 @@ INTENT_LABELS = [
     "guest_top_items_last_visit", "guest_last_visit_spend", "guest_activity_bookings",
     "list_activities", "activity_stats",
     "reservation_summary", "reservation_balance",
-    "recent_activity", "ambiguous_needs_clarification", "unsupported_or_unsafe", "compound_multi_intent",
+    "recent_activity", "expiring_batches", "inventory_batches", "trace_barcode", "app_update_status",
+    "ambiguous_needs_clarification", "unsupported_or_unsafe", "compound_multi_intent",
 ]
 
 # ── Utilities ────────────────────────────────────────────────────────────────
@@ -1721,6 +1722,10 @@ _INTENT_CUES = {
   "rate_plans": (1.3, ["rate plan","pricing plan","plans/packages","catalog of rate plans"]),
   "ledger_integrity": (1.4, ["health check","integrity","ledger integrity","data integrity","reconcile ledger","orphaned","mismatched records","sanity check","audit the database","consistency","books/data consistency"]),
   "recent_activity": (1.2, ["recent activity","audit log","what changed lately","recent changes"]),
+  "expiring_batches": (1.5, ["expiring batch","expiring batches","expired batch","what expires","expires soon","expiry soon","nearing expiry","batches expiring","items expiring"]),
+  "inventory_batches": (1.4, ["list batches","show batches","inventory batches","batch list","stock batches","lots for","list lots","inventory lots"]),
+  "trace_barcode": (1.5, ["trace barcode","trace lot","trace code","scan barcode","lookup barcode","barcode lookup","lot trace","track lot","batch trace","received when","when received","barcode trace","sku trace"]),
+  "app_update_status": (1.5, ["check for updates","check update","app update","update app","new version","latest version","what version","app version","software update","changelog","update status"]),
   "list_activities": (1.4, ["list activities","available activities","available trips","available excursions","available tours","activities catalog","trips catalog","excursions catalog","register activities","registered activities","registered trips","what activities","what trips can","what excursions"]),
   "activity_stats": (1.4, ["activity stats","activity statistics","trip stats","trip statistics","excursion stats","bookings stats","how many booked","most popular activity","most popular trip","most popular excursion","activity revenue","trip bookings"]),
   "guest_portfolio": (1.5, ["full portfolio","guest portfolio","360","360°","all trips","all stays","all reservations","complete history","entire history","all invoices","all his invoices","all her invoices","all their invoices","all pos orders","all orders","all activities for guest","all payments for guest","everything for guest","full history","complete guest record","lifetime","all visits"]),
@@ -1908,7 +1913,7 @@ def _execute_single(intent: str, text: str, slots: dict):
             return {"ok":True,"intent":intent,"needs_clarification":True,"tools_used":[],"data":{"missing":"report_kind"},
                     "answer":"Which report would you like — **P&L, cash flow, VAT, payment methods, occupancy, or daily ops** — and for what date/range (e.g. `P&L last month` or `daily ops today`)?"}
         return {"ok":True,"intent":intent,"needs_clarification":True,"tools_used":[],"data":{"missing":"context"},
-                "answer":"I want to make sure I get this right — could you rephrase with a bit more detail? I can help with briefings, property/ops stats, reports & comparisons, who owes money, inventory alerts, top sellers, expenses/sales, guests (search/profile/full portfolio/last visit/orders/spend/activities), reservations/balances/pipeline, housekeeping, availability, activities, menus, rate plans, and integrity checks."}
+                "answer":"I want to make sure I get this right — could you rephrase with a bit more detail? I can help with briefings, property/ops stats, reports & comparisons, who owes money, inventory alerts, top sellers, expenses/sales, expiring batches and batch/lot lists, barcode/lot traceability (received/expiry/movements), guests (search/profile/full portfolio/last visit/orders/spend/activities), reservations/balances/pipeline, housekeeping, availability, activities, menus, rate plans, integrity/health checks, and app version/update status."}
 
     if intent=="property_stats":
         data=execute_tool("get_property_stats",{}); tools_used.append("get_property_stats")
@@ -2063,6 +2068,10 @@ def _execute_compound(text: str, slots: dict):
     if _has_any(tl,["expense breakdown","expenses by category","where did we spend"]): subs.append(("expenses_summary",slots))
     if _has_any(tl,["rate plan","pricing plan"]): subs.append(("rate_plans",slots))
     if _has_any(tl,["health check","integrity","ledger integrity"]): subs.append(("ledger_integrity",slots))
+    if _has_any(tl,["expiring batch","expired batch","what expires","expires soon","expiry"]): subs.append(("expiring_batches",slots))
+    if _has_any(tl,["list batches","show batches","inventory batches","batch list","stock batches","lots for"]): subs.append(("inventory_batches",slots))
+    if _has_any(tl,["trace barcode","trace lot","trace code","lookup barcode","barcode lookup","lot trace","track lot","batch trace"]): subs.append(("trace_barcode",slots))
+    if _has_any(tl,["check for updates","app update","new version","latest version","app version","changelog","update status"]): subs.append(("app_update_status",slots))
     if _has_any(tl,["housekeeping"]): subs.append(("housekeeping_summary",slots))
     if _has_any(tl,["pipeline","upcoming arrivals"]): subs.append(("reservation_pipeline",slots))
     if _has_any(tl,["list activities","available activities","activities catalog","registered activities","registered trips","available excursions"]): subs.append(("list_activities",slots))

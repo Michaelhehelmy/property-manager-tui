@@ -5,6 +5,16 @@ Local-first property management system (reservations/front desk, POS & inventory
 - **TUI:** runs locally in a terminal (best for constrained/mobile terminals like iSH).
 - **Web UI:** FastAPI server (`--workers 1`, SQLite) accessed from a browser (desktop/mobile, LAN or remote). Health probes: `GET /health`, `GET /healthz`.
 
+## Key features (current)
+
+- **Front desk & reservations:** guests, rooms/rate plans, availability, check-in/out flows, folio/balances, invoices.
+- **POS & inventory:** catalog, sales, recipes/meals, expenses, and **traceable barcodes/SKUs/lots**. Inventory supports **batch/lot tracking** with received date, expiry, remaining quantity/cost, and movements; expiring/expired batches can be reviewed and items/lots traced by barcode/SKU/lot code.
+- **Activities/trips:** register and book activities with stats and folio/invoice posting.
+- **Accounting, reports & analytics:** ledger, P&L/cash flow/VAT/payment methods/occupancy/ops reports and decision support.
+- **Integrity & health checks:** read-only ledger/data integrity checks (app/services) plus runtime health probes (`GET /health`, `GET /healthz` for the web server).
+- **Grounded assistant:** read-only, data-backed help in Web & TUI for ops, reports, guests/portfolios, reservations/balances, inventory (including expiring batches, batch lists, barcode/lot trace with received/expiry/movements), integrity checks, and app version/update status.
+- **In-app updates (Web & TUI):** Settings provide **Check for updates**, changelog/details, and an **Update** action for git-based installs (fast-forward). Runtime data is preserved during updates (DB, exports, invoices, configured data dir). Restart after applying an update.
+
 ## Repository layout
 
 ```text
@@ -236,23 +246,26 @@ PYTHONPATH=src python -m uvicorn ui.web.server:app --host 127.0.0.1 --port 8000 
 
 ## Web deployment notes (important)
 
-- **Single worker:** always run with `--workers 1` (SQLite/shared state).
+- **Single worker:** always run with `--workers 1` (SQLite/shared state). Do not increase workers for the built-in server.
 - **Secret:** set `PM_WEB_SECRET_KEY` to a strong random value for any non-local/shared deployment.
 - **Bind:** `127.0.0.1` = local only; `0.0.0.0` = reachable on network interfaces (LAN). Open firewall/port as needed.
 - **Security:** sensitive actions use CSRF + super-password/unlock flows. Prefer **HTTPS** (reverse proxy like Caddy/Nginx/Traefik) or a private network (VPN/Tailscale) for remote access; avoid exposing plain HTTP publicly.
 - **Reverse proxy (example):** proxy to `127.0.0.1:8000`, terminate TLS, forward headers as usual.
 - **Service/autostart:** run via a process manager (systemd, launchd, NSSM/Task Scheduler on Windows, `supervisord`, Docker restart policy) executing the venv’s Python/uvicorn with `--workers 1`.
-- **Backups:** back up the DB and data/exports/invoices regularly (and before upgrades/migrations).
+- **Backups:** back up the DB and data/exports/invoices regularly (and before upgrades/migrations). Runtime data lives in the configured data dir (`PM_DATA_DIR` or default) and should be preserved across updates.
 
 ## Updates
 
+**In-app (recommended for git installs, Web & TUI):** open **Settings → App updates** to **Check for updates**, review the **changelog/commit details**, and **Apply update** (git fast-forward). The app preserves runtime data during updates (database, exports, invoices, and the configured data directory such as `PM_DATA_DIR` / `data/` are not modified by source updates). Restart the app after applying an update. If local source changes exist, commit/stash/discard them before applying.
+
+**Manual (CLI):**
 ```bash
 cd <install-dir>
-git pull
+git pull --ff-only
 # re-run setup to refresh deps:
 #   Unix: MODE=<tui|web|both> ACTION=setup sh scripts/setup.sh
 #   Win:  powershell -ExecutionPolicy Bypass -File scripts\setup_windows.ps1 -Action setup
-# DB migrations run on startup (additive).
+# DB migrations run on startup (additive). Runtime data (DB/exports/invoices/data dir) is preserved.
 ```
 
 ## Tests & checks
@@ -275,4 +288,4 @@ bash scripts/install_deps_and_test.sh
 ## More
 
 - `assistant.md` — assistant capabilities, local-only architecture, and enhancement plan.
-- In-app help/tooltips in Web & TUI for flows (POS/inventory/barcodes & batches, activities, settings, etc.).
+- In-app help/tooltips in Web & TUI for flows (POS/inventory/barcodes & batches and lot traceability, activities, settings, updates, health checks, etc.).

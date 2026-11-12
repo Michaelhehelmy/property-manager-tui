@@ -6,6 +6,11 @@ Dynamic setup/deploy script for property-manager-tui on Windows.
 Auto-bootstraps prerequisites (installs Python/Git via winget if missing), clones/updates
 repo, creates .venv, installs deps, and can run TUI or Web UI.
 
+.NOTES
+Git-based installs can be updated in-app via Settings → App updates (check/changelog/apply
+fast-forward), which preserves runtime data (DB, exports, invoices, configured data dir).
+Manual refresh: git pull --ff-only then re-run -Action setup. Web mode requires --workers 1.
+
 .PARAMETER Action
 setup | run | deploy  (deploy = setup + run). Default: setup
 
@@ -258,6 +263,8 @@ Run (PowerShell):
 
 Tips:
   - Same device browser: HOST=127.0.0.1 -> http://127.0.0.1:$Port
+  - LAN/other devices: use -BindHost 0.0.0.0 and a strong `$env:PM_WEB_SECRET_KEY` (keep --workers 1).
+  - Updates: in-app Settings → App updates checks/applies git fast-forward updates and preserves DB/exports/invoices/data dir (restart after apply); or git pull --ff-only + re-run -Action setup.
   - LAN access (other devices): HOST=0.0.0.0 -> http://<this-pc-ip>:$Port (set strong PM_WEB_SECRET_KEY)
   - If script execution is blocked: powershell -ExecutionPolicy Bypass -File scripts\setup_windows.ps1
 "@ | Write-Host

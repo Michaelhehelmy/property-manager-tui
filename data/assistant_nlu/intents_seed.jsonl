@@ -259,3 +259,23 @@
 {"text": "which activity is most popular", "label": "activity_stats", "slots": {}}
 {"text": "excursion stats", "label": "activity_stats", "slots": {}}
 {"text": "show activity performance and bookings", "label": "activity_stats", "slots": {}}
+{"text": "what items are expiring soon", "label": "expiring_batches", "slots": {}}
+{"text": "show expiring batches", "label": "expiring_batches", "slots": {}}
+{"text": "any expired inventory lots", "label": "expiring_batches", "slots": {}}
+{"text": "expiring batches in 7 days", "label": "expiring_batches", "slots": {}}
+{"text": "what expires this week in stock", "label": "expiring_batches", "slots": {}}
+{"text": "list inventory batches", "label": "inventory_batches", "slots": {}}
+{"text": "show all batches and lots", "label": "inventory_batches", "slots": {}}
+{"text": "inventory batch list", "label": "inventory_batches", "slots": {}}
+{"text": "show stock batches for items", "label": "inventory_batches", "slots": {}}
+{"text": "list lots in inventory", "label": "inventory_batches", "slots": {}}
+{"text": "trace barcode LOT-123", "label": "trace_barcode", "slots": {}}
+{"text": "trace lot code to see received and expiry", "label": "trace_barcode", "slots": {}}
+{"text": "lookup barcode for movements and traceability", "label": "trace_barcode", "slots": {}}
+{"text": "when was this batch received and when does it expire", "label": "trace_barcode", "slots": {}}
+{"text": "trace SKU ABC123 batch received expiry movements", "label": "trace_barcode", "slots": {}}
+{"text": "check for app updates", "label": "app_update_status", "slots": {}}
+{"text": "what app version am I running", "label": "app_update_status", "slots": {}}
+{"text": "is there a new version or changelog", "label": "app_update_status", "slots": {}}
+{"text": "app update status", "label": "app_update_status", "slots": {}}
+{"text": "show current version and update info", "label": "app_update_status", "slots": {}}

@@ -49,7 +49,7 @@
 </div>
 
 <div class="grid grid-2">
-  <div class="panel"><h3>Add POS item to reservation (immediate)</h3>
+  <div class="panel"><h3>Add POS item to reservation (immediate, batch-aware)</h3>
     <form method="post" action="/pos/add"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
       <label>Reservation<select name="reservation_id" required>
         <option value="">Select reservation</option>
@@ -57,25 +57,36 @@
       </select></label>
       <label>Description<input name="desc" required placeholder="Item description"/></label>
       <div class="row"><label>Qty<input name="qty" type="number" value="1" min="1"/></label><label>Unit price<input name="price" type="number" step="0.01" required/></label><label>Inventory ID (opt)<input name="inv_id" type="number" placeholder="optional"/></label></div>
-      <button type="submit" title="Post this POS item to the selected reservation folio immediately">Add to reservation</button>
+      <div class="row">
+        <label style="flex:2">Batch (optional, traceable/FEFO)
+          <select name="batch_id">
+            <option value="">— Auto FEFO / none —</option>
+            {% for b in (batches or []) %}<option value="{{b.id}}" data-item="{{b.item_id}}" data-lot="{{b.lot_code|e}}">{{b.item_name}} · lot {{b.lot_code}} · rem {{b.quantity_remaining}}{% if b.expiry_date %} · exp {{b.expiry_date}}{% endif %}{% if b.received_at %} · recv {{b.received_at}}{% endif %} ({{b.expiry_state or b.status or 'active'}})</option>{% endfor %}
+          </select>
+        </label>
+        <label style="flex:1">Lot code / scan<input name="lot_code" placeholder="Scan or type lot"/></label>
+      </div>
+      <p class="muted" style="margin:4px 0 8px">Tip: scan/lookup above to resolve a lot, or choose a batch for traceable deduction; leave empty for auto-FEFO on tracked items.</p>
+      <button type="submit" title="Post this POS item to the selected reservation folio immediately (batch/lot aware)">Add to reservation</button>
     </form>
   </div>
 
   <div class="panel"><h3>Walk-in cart ({{ cart|length }} items) — same atomic sale</h3>
     <table>
-      <tr><th>Item</th><th>Qty</th><th>Unit</th><th>Tax</th><th>Gross</th><th></th></tr>
+      <tr><th>Item</th><th>Lot/Batch</th><th>Qty</th><th>Unit</th><th>Tax</th><th>Gross</th><th></th></tr>
       {% for it in cart %}
       <tr>
         <td>{{it.desc}}{% if it.inv_id %} <span class="muted">[inv {{it.inv_id}}]</span>{% endif %}</td>
+        <td><code>{{ it.lot_code or ('#' ~ it.batch_id if it.batch_id else '—') }}</code></td>
         <td>{{it.qty}}</td><td>{{"%.2f"|format(it.price)}}</td><td>{{"%.2f"|format(it.tax)}}</td><td>{{"%.2f"|format(it.gross)}}</td>
         <td>
           <form method="post" action="/pos/cart/remove" class="inline"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><input type="hidden" name="idx" value="{{it.idx}}"/><button class="err">Remove</button></form>
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="6" class="muted">Cart is empty. Add items below.</td></tr>
+      <tr><td colspan="7" class="muted">Cart is empty. Add items below.</td></tr>
       {% endfor %}
-      <tr><th colspan="4">TOTAL</th><th colspan="2">{{"%.2f"|format(cart_total)}} EGP</th></tr>
+      <tr><th colspan="5">TOTAL</th><th colspan="2">{{"%.2f"|format(cart_total)}} EGP</th></tr>
     </table>
     <div class="row" style="margin-top:8px">
       <form method="post" action="/pos/cart/clear" class="inline"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><button class="warn" type="submit">Clear cart</button></form>

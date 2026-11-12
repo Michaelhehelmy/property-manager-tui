@@ -2042,10 +2042,21 @@ def get_label_printer():
     return (get_setting("default_printer", "") or "").strip() or None
 
 
+def _safe_export_filename(base: str, suffix: str = ".txt") -> str:
+    safe = re.sub(r"[^A-Za-z0-9._-]+", "_", str(base or "label")).strip("._")
+    if not safe:
+        safe = "label"
+    return safe[:120] + suffix
+
+
 def _print_text_label(text, filename_base, printer=None, fmt="code128"):
     EXPORT_DIR.mkdir(parents=True, exist_ok=True)
     content, is_bin = barcodes.render_label_for_print(fmt, {}, None, True) if False else (text, False)
-    path = EXPORT_DIR / f"{filename_base}.txt"
+    filename = _safe_export_filename(filename_base, ".txt")
+    path = (EXPORT_DIR / filename).resolve()
+    base = EXPORT_DIR.resolve()
+    if base != path and base not in path.parents:
+        raise ValueError("Refusing to write label outside export directory.")
     path.write_text(text, encoding="utf-8")
     target = printer if printer is not None else get_label_printer()
     ok, msg = print_to_printer(str(path), target)
@@ -3464,43 +3475,92 @@ def list_printers():
 
 
 def _print_raw_socket(host, port, filepath):
-    with open(filepath, "rb") as f:
+    p = Path(filepath).expanduser()
+    try:
+        p = p.resolve()
+    except Exception:
+        p = Path(os.path.abspath(str(p)))
+    if not p.exists() or not p.is_file():
+        raise FileNotFoundError(f"File not found: {p}")
+    with open(p, "rb") as f:
         data = f.read()
     data = data.replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.settimeout(10)
-        s.connect((host, port))
+        s.connect((host, int(port)))
         s.sendall(data)
 
 
+def _validate_print_target(target: str):
+    t = (target or "").strip()
+    if not t:
+        return "", None
+    if t.startswith("cups:"):
+        name = t[5:].strip()
+        if not name or any(ch in name for ch in ("\n", "\r", "\x00")):
+            raise ValueError("Invalid CUPS printer name.")
+        return "cups", name
+    if t.startswith("win:"):
+        name = t[4:].strip()
+        if not name or any(ch in name for ch in ("\n", "\r", "\x00")):
+            raise ValueError("Invalid Windows printer name.")
+        return "win", name
+    if t.startswith("raw:"):
+        spec = t[4:].strip()
+        if ":" not in spec:
+            raise ValueError("Raw printer target must be raw:host:port")
+        host, port_s = spec.rsplit(":", 1)
+        host = host.strip()
+        if not host or any(ch in host for ch in ("\n", "\r", "\x00", " ", "\t")):
+            raise ValueError("Invalid raw printer host.")
+        try:
+            port = int(port_s)
+        except Exception:
+            raise ValueError("Invalid raw printer port.")
+        if port < 1 or port > 65535:
+            raise ValueError("Invalid raw printer port.")
+        return "raw", (host, port)
+    raise ValueError(f"Unknown printer target: {t}")
+
+
 def print_to_printer(filepath, printer=None):
-    if not os.path.exists(filepath):
-        return False, f"File not found: {filepath}"
+    p = Path(filepath).expanduser()
+    try:
+        p = p.resolve()
+    except Exception:
+        p = Path(os.path.abspath(str(p)))
+    if not p.exists() or not p.is_file():
+        return False, f"File not found: {p}"
     target = printer if printer is not None else get_setting("default_printer", "")
     try:
-        if not target:
+        kind, value = _validate_print_target(str(target or ""))
+        if kind == "":
             if platform.system() == "Windows":
-                os.startfile(filepath, "print")
+                os.startfile(str(p), "print")
             else:
-                r = subprocess.run(["lp", filepath], capture_output=True, text=True, timeout=15)
+                r = subprocess.run(["lp", str(p)], capture_output=True, text=True, timeout=15)
                 if r.returncode != 0:
-                    return False, f"Print failed: {r.stderr.strip()}"
-            return True, f"Sent to default printer: {filepath}"
-        if target.startswith("cups:"):
-            r = subprocess.run(["lp", "-d", target[5:], filepath], capture_output=True, text=True, timeout=15)
-            return (True, f"Sent to {target[5:]}") if r.returncode == 0 else (False, f"CUPS error: {r.stderr}")
-        if target.startswith("win:"):
-            os.startfile(filepath, "printto", target[4:])
-            return True, f"Sent to {target[4:]}"
-        if target.startswith("raw:"):
-            host, port = target[4:].rsplit(":", 1)
-            _print_raw_socket(host, int(port), filepath)
+                    return False, f"Print failed: {(r.stderr or '').strip()}"
+            return True, f"Sent to default printer: {p}"
+        if kind == "cups":
+            r = subprocess.run(["lp", "-d", value, str(p)], capture_output=True, text=True, timeout=15)
+            return (True, f"Sent to {value}") if r.returncode == 0 else (False, f"CUPS error: {(r.stderr or '').strip()}")
+        if kind == "win":
+            os.startfile(str(p), "printto", value)
+            return True, f"Sent to {value}"
+        if kind == "raw":
+            host, port = value
+            _print_raw_socket(host, port, str(p))
             return True, f"Raw {host}:{port}"
         return False, f"Unknown target: {target}"
+    except subprocess.TimeoutExpired:
+        return False, f"Print timed out. Saved: {p}"
+    except ValueError as e:
+        return False, str(e)
     except FileNotFoundError:  # pragma: no cover — only if `lp`/`startfile` missing
-        return False, f"No printer command. Saved: {filepath}"
+        return False, f"No printer command. Saved: {p}"
     except Exception as e:  # pragma: no cover — network/OS
-        return False, f"Print error: {e}. Saved: {filepath}"
+        return False, f"Print error: {e}. Saved: {p}"
 
 
 def test_print(printer=None):

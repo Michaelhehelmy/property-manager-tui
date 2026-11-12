@@ -3,6 +3,10 @@
 # Detects environment (iSH/Alpine, Termux, Debian/Ubuntu, macOS, generic Linux)
 # and installs dependencies + prepares/runs the app (TUI or Web).
 #
+# Updates: git-based installs can be updated in-app via Settings → App updates
+# (check/changelog/apply fast-forward) which preserves runtime data (DB, exports,
+# invoices, configured data dir). Manual refresh: git pull --ff-only then re-run ACTION=setup.
+#
 # Usage:
 #   sh scripts/setup_ish_alpine.sh
 #   MODE=tui|web|both|auto ACTION=setup|run|deploy sh scripts/setup_ish_alpine.sh
@@ -183,6 +187,8 @@ Client/server tips:
   - Same device browser: HOST=127.0.0.1 -> http://127.0.0.1:${PORT}
   - Other devices on LAN (iPhone/iPad Safari): HOST=0.0.0.0 -> http://<device-ip>:${PORT}
     (Add to Home Screen for app-like use; keep --workers 1; set a strong PM_WEB_SECRET_KEY)
+  - Updates: use in-app Settings → App updates (check/changelog/apply, preserves DB/exports/invoices/data dir)
+    or git pull --ff-only + re-run ACTION=setup to refresh deps.
 EOF
   if [ $IS_ISH -eq 1 ]; then
     echo "  - iSH: TUI is most reliable; web deps/builds may be slow or unavailable (use SKIP_WEB=1)."

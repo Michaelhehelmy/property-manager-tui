@@ -71,7 +71,7 @@
         <label>Batch (optional, FEFO/traceable; for tracked items)
           <select name="batch_id">
             <option value="">— Auto FEFO / none —</option>
-            {% for b in (active_batches or []) %}<option value="{{b.id}}" data-item="{{b.item_id}}" data-lot="{{b.lot_code|e}}" data-name="{{b.item_name|e}}">{{b.item_name}} · lot {{b.lot_code}} · rem {{b.quantity_remaining}}{% if b.expiry_date %} · exp {{b.expiry_date}}{% endif %} ({{b.expiry_state}})</option>{% endfor %}
+            {% for b in (active_batches or []) %}<option value="{{b.id}}" data-item="{{b.item_id}}" data-lot="{{b.lot_code|e}}" data-name="{{b.item_name|e}}">{{b.item_name}} · lot {{b.lot_code or '—'}} · rem {{b.quantity_remaining}}{% if b.expiry_date %} · exp {{b.expiry_date}}{% endif %}{% if b.received_at %} · recv {{b.received_at}}{% endif %} ({{b.expiry_state or b.status or 'active'}})</option>{% endfor %}
           </select>
         </label>
         <label>Lot code (optional override)<input name="lot_code" placeholder="e.g. LOT-..."/></label>

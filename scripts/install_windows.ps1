@@ -4,6 +4,10 @@ One-command Windows installer/bootstrap for property-manager-tui.
 - Clones or updates the repo
 - Runs setup_windows.ps1 (setup/deploy)
 
+Notes: git-based installs can be updated later via in-app Settings → App updates
+(check/changelog/apply fast-forward) which preserves runtime data (DB, exports,
+invoices, configured data dir). Web mode should run with --workers 1.
+
 Usage (PowerShell, run as Administrator recommended for winget installs):
   irm https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install_windows.ps1 | iex
 

@@ -681,7 +681,7 @@ class NewOrderTab(VerticalScroll):
             for p in services.get_pos_items(self._res_id):
                 gross = p["quantity"] * p["unit_price"] + p["tax_amount"]
                 try:
-                    lot = p["lot_code"] or ""
+                    lot = p["lot_code"] or (f"batch#{p['batch_id']}" if p["batch_id"] else "")
                 except Exception:
                     lot = ""
                 cart.add_row(str(p["id"]), p["item_description"], lot, str(p["quantity"]),

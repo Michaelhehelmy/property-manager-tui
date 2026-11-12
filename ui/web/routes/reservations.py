@@ -151,6 +151,7 @@ async def refund(rid: int, request: Request):
 @router.post("/reservations/{rid}/invoice")
 async def invoice(rid: int, request: Request):
     form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    deps.require_unlock(request)
     try:
         text = services.generate_invoice_text(rid, form.get("currency","EGP"))
         path = services.save_invoice_file(text, rid, form.get("currency","EGP"))
@@ -164,6 +165,7 @@ async def invoice(rid: int, request: Request):
 @router.post("/reservations/{rid}/book-activity")
 async def book_activity(rid: int, request: Request):
     form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    deps.require_unlock(request)
     try:
         act_id = int(form.get("activity_id"))
         qty = int(form.get("qty") or 1)
