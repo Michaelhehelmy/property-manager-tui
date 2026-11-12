@@ -244,6 +244,7 @@ def _parse_recipe_components(text: str):
 @router.post("/recipes/set")
 async def recipe_set(request: Request):
     form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    deps.require_unlock(request)
     try:
         menu_id = int(form.get("menu_item_id") or form.get("item_id") or 0)
         comps = _parse_recipe_components(form.get("components") or "")
@@ -257,6 +258,7 @@ async def recipe_set(request: Request):
 @router.post("/recipes/clear")
 async def recipe_clear(request: Request):
     form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    deps.require_unlock(request)
     try:
         menu_id = int(form.get("menu_item_id") or form.get("item_id") or 0)
         services.clear_recipe_components(menu_id, form.get("password", ""))
@@ -282,6 +284,7 @@ def _parse_meal_ingredients(text: str):
 @router.post("/meals/save")
 async def meal_save(request: Request):
     form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    deps.require_unlock(request)
     try:
         meal_id = (form.get("meal_id") or "").strip()
         name = form.get("name", "")
@@ -305,6 +308,7 @@ async def meal_save(request: Request):
 @router.post("/meals/delete")
 async def meal_delete(request: Request):
     form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    deps.require_unlock(request)
     try:
         services.delete_meal(int(form.get("meal_id") or 0), form.get("password", ""))
         deps.add_flash(request, "Meal deleted.", "success")
@@ -315,6 +319,7 @@ async def meal_delete(request: Request):
 @router.post("/activities/create")
 async def activity_create(request: Request):
     form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    deps.require_unlock(request)
     try:
         services.create_activity(form.get("name",""), form.get("description",""), form.get("category","Trip"), float(form.get("unit_price") or 0), 1)
         deps.add_flash(request, "Activity/trip registered", "success")
@@ -325,6 +330,7 @@ async def activity_create(request: Request):
 @router.post("/activities/{aid}/toggle")
 async def activity_toggle(aid: int, request: Request):
     form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    deps.require_unlock(request)
     try:
         act = services.get_activity(aid)
         if not act: raise ValueError("Activity not found")
@@ -338,6 +344,7 @@ async def activity_toggle(aid: int, request: Request):
 @router.post("/inventory/batch/receive")
 async def batch_receive(request: Request):
     form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    deps.require_unlock(request)
     try:
         batch = services.receive_inventory_batch(
             int(form.get("item_id")), float(form.get("qty") or 0), float(form.get("unit_cost") or 0),

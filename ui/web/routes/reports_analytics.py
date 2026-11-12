@@ -26,6 +26,7 @@ def reports(request: Request):
 @router.post("/reports/run")
 async def run_report(request: Request):
     form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    deps.require_unlock(request)
     kind = form.get("kind","pl"); start = form.get("start"); end = form.get("end")
     try:
         text = {
@@ -40,6 +41,7 @@ async def run_report(request: Request):
 @router.post("/reports/analytics-export")
 async def analytics_export(request: Request):
     form = await request.form(); deps.verify_csrf(request, form.get("csrf"))
+    deps.require_unlock(request)
     try:
         res = services.generate_unified_report(form.get("preset","management_pack"), form.get("start"), form.get("end"))
         deps.add_flash(request, f"Analytics export created: {', '.join(res.get('outputs',{}).keys())}", "success")
