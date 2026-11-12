@@ -922,7 +922,8 @@ class GuestHistoryModal(ModalScreen):
 
         pt = self.query_one("#gh_pos", DataTable)
         pt.clear(columns=True)
-        pt.add_columns("When", "Res", "Room", "Item", "Lot/Batch", "Qty", "Price", "Tax")
+        pt.add_columns("When", "Res", "Room", "Item", "Lot/Batch", "Exp/Recv", "Qty", "Price", "Tax")
+        from app_core.db import connect
         for i in (p.get("all_pos") or [])[:250]:
             try:
                 lot = i.get("lot_code") or ""
@@ -930,10 +931,30 @@ class GuestHistoryModal(ModalScreen):
                 lot_disp = f"{lot}#{bid}" if lot and bid else (lot or (f"#{bid}" if bid else ""))
             except Exception:
                 lot_disp = ""
+                bid = None
+            extra = "-"
+            try:
+                exp = i.get("expiry_date")
+                recv = i.get("received_at")
+                if (not exp or not recv) and bid:
+                    b = connect().execute("SELECT expiry_date, received_at FROM inventory_batches WHERE id=?", (bid,)).fetchone()
+                    if b:
+                        exp = exp or b["expiry_date"]
+                        recv = recv or b["received_at"]
+                if exp or recv:
+                    extra = f"exp:{exp or '-'}/recv:{recv or '-'}"
+            except Exception:
+                extra = "-"
+            try:
+                qty = i.get("quantity") or 0
+                up = float(i.get("unit_price") or 0)
+                tax = float(i.get("tax_amount") or 0)
+            except Exception:
+                qty, up, tax = 0, 0.0, 0.0
             pt.add_row(
-                str(i.get("created_at") or ""), str(i.get("reservation_id")), str(i.get("room_number") or ""),
-                str(i.get("item_description") or ""), lot_disp, str(i.get("quantity") or 0),
-                f"{float(i.get('unit_price') or 0):.2f}", f"{float(i.get('tax_amount') or 0):.2f}",
+                str(i.get("created_at") or "-"), str(i.get("reservation_id") or "-"), str(i.get("room_number") or "-"),
+                str(i.get("item_description") or "-"), lot_disp or "-", extra, str(qty),
+                f"{up:.2f}", f"{tax:.2f}",
             )
 
         payt = self.query_one("#gh_pay", DataTable)
@@ -970,15 +991,37 @@ class GuestHistoryModal(ModalScreen):
             "POS / Activity:",
         ]
         pos_items = trip.get("pos_items") or []
+        from app_core.db import connect
         for i in pos_items[:40]:
             tag = " [VOID]" if i.get("voided_at") else ""
             try:
                 lot = i.get("lot_code") or ""
                 bid = i.get("batch_id")
-                lot_disp = f" [lot:{lot}#{bid}]" if lot or bid else ""
+                lot_disp = f"{lot}#{bid}" if lot and bid else (lot or (f"#{bid}" if bid else ""))
             except Exception:
                 lot_disp = ""
-            lines.append(f"  - {i.get('item_description')} x{i.get('quantity')} @ {fmt(i.get('unit_price',0))} (tax {fmt(i.get('tax_amount',0))}){lot_disp}{tag}")
+                bid = None
+            exp_recv = ""
+            try:
+                exp = i.get("expiry_date")
+                recv = i.get("received_at")
+                if (not exp or not recv) and bid:
+                    b = connect().execute("SELECT expiry_date, received_at FROM inventory_batches WHERE id=?", (bid,)).fetchone()
+                    if b:
+                        exp = exp or b["expiry_date"]
+                        recv = recv or b["received_at"]
+                if exp or recv or lot_disp:
+                    exp_recv = f" [lot:{lot_disp or '-'} exp:{exp or '-'} recv:{recv or '-'}]"
+            except Exception:
+                exp_recv = f" [lot:{lot_disp or '-'}]" if lot_disp else ""
+            try:
+                qty = i.get("quantity") or 0
+                up = float(i.get("unit_price") or 0)
+                tax = float(i.get("tax_amount") or 0)
+                desc = i.get("item_description") or "?"
+            except Exception:
+                qty, up, tax, desc = 0, 0.0, 0.0, "?"
+            lines.append(f"  - {desc} x{qty} @ {fmt(up)} (tax {fmt(tax)}){exp_recv}{tag}")
         if not pos_items:
             lines.append("  (none)")
         lines.append("")
@@ -1104,6 +1147,31 @@ class WalkInReceiptScreen(ModalScreen):
                     self._path = services.save_walkin_receipt_file(text, 0)
                 except Exception:
                     self._path = services.save_invoice_file(text, 0, "EGP")
+        # UI-only traceability augmentation for display (services text may omit batch details)
+        try:
+            trace_lines = []
+            from app_core.db import connect
+            for it in (self.items or []):
+                bid = (it or {}).get("batch_id")
+                lot = (it or {}).get("lot_code") or ""
+                if not bid and not lot:
+                    continue
+                lot_disp = f"{lot}#{bid}" if lot and bid else (lot or f"#{bid}")
+                exp = recv = None
+                if bid:
+                    try:
+                        b = connect().execute("SELECT expiry_date, received_at FROM inventory_batches WHERE id=?", (bid,)).fetchone()
+                        if b:
+                            exp = b["expiry_date"]
+                            recv = b["received_at"]
+                    except Exception:
+                        pass
+                desc = (it or {}).get("desc") or (it or {}).get("item_description") or "item"
+                trace_lines.append(f"  - {desc}: lot {lot_disp} | exp {exp or '-'} | recv {recv or '-'}")
+            if trace_lines and "Batch traceability:" not in text:
+                text = text.rstrip() + "\n\nBatch traceability:\n" + "\n".join(trace_lines)
+        except Exception:
+            pass
         log = self.query_one("#body", RichLog)
         log.clear()
         for ln in text.split("\n"):

@@ -204,10 +204,14 @@ async def pos_void(pos_id: int, request: Request):
 
 @router.post("/inventory/restock")
 async def restock(request: Request):
-    form = await deps.get_form(request)
-    deps.require_unlock(request)
+    form = await deps.require_unlocked_form(request)
     try:
-        services.restock_inventory(int(form.get("item_id")), float(form.get("qty") or 0), float(form.get("unit_cost") or 0), form.get("password", ""))
+        services.restock_inventory(
+            int(form.get("item_id")),
+            float(form.get("qty") or 0),
+            float(form.get("unit_cost") or 0),
+            deps.service_password(request, form, allow_session_sentinel=True),
+        )
         deps.add_flash(request, "Inventory restocked (batch recorded with received time)", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
@@ -346,15 +350,15 @@ async def activity_toggle(aid: int, request: Request):
 
 @router.post("/inventory/batch/receive")
 async def batch_receive(request: Request):
-    form = await deps.get_form(request)
-    deps.require_unlock(request)
+    form = await deps.require_unlocked_form(request)
     try:
         batch = services.receive_inventory_batch(
             int(form.get("item_id")), float(form.get("qty") or 0), float(form.get("unit_cost") or 0),
             received_at=(form.get("received_at") or "").strip() or None,
             expiry_date=(form.get("expiry_date") or "").strip() or None,
             supplier=form.get("supplier", ""), reference=form.get("reference", ""), notes=form.get("notes", ""),
-            password=form.get("password", ""), print_label_after=bool(form.get("print_label"))
+            password=deps.service_password(request, form, allow_session_sentinel=True),
+            print_label_after=bool(form.get("print_label")),
         )
         deps.add_flash(request, f"Batch received: lot {batch.get('lot_code')} (received {batch.get('received_at')}, expiry {batch.get('expiry_date') or 'n/a'})", "success")
     except Exception as e:

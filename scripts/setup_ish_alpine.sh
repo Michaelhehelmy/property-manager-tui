@@ -27,6 +27,17 @@ HOST="${HOST:-127.0.0.1}"
 PORT="${PORT:-8000}"
 PYTHON="${PYTHON:-python3}"
 
+validate_web_target() {
+  # basic validation to avoid shell/arg injection or invalid targets
+  case "$HOST" in
+    ""|*[!A-Za-z0-9._:-\[\]]*) warn "Invalid HOST='$HOST'; falling back to 127.0.0.1"; HOST="127.0.0.1" ;;
+  esac
+  case "$PORT" in
+    ''|*[!0-9]*) warn "Invalid PORT='$PORT'; falling back to 8000"; PORT="8000" ;;
+    *) if [ "$PORT" -lt 1 ] || [ "$PORT" -gt 65535 ]; then warn "Invalid PORT='$PORT'; falling back to 8000"; PORT="8000"; fi ;;
+  esac
+}
+
 log() { printf '%s\n' "==> $*"; }
 warn() { printf '%s\n' "WARNING: $*" >&2; }
 
@@ -189,7 +200,8 @@ Client/server tips:
     (Add to Home Screen for app-like use; ALWAYS use --workers 1; set a strong PM_WEB_SECRET_KEY)
   - Runtime data is preserved: DB, exports, invoices, and PM_DATA_DIR are never deleted by setup/update scripts.
   - Updates: in-app Settings → App updates or git pull --ff-only + re-run ACTION=setup.
-  - Health check: python3 -m app_core.doctor (add --check-updates for remote update status)
+  - Health/backup: python3 -m app_core.doctor (add --check-updates); safe backup/verify:
+      python3 scripts/backup_runtime.py --backup  |  --verify <backup.db>
 EOF
   if [ $IS_ISH -eq 1 ]; then
     echo "  - iSH: TUI is most reliable; web deps/builds may be slow or unavailable (use SKIP_WEB=1)."
@@ -204,6 +216,7 @@ run_deploy() {
   # shellcheck disable=SC1091
   . .venv/bin/activate
   export PYTHONPATH="$INSTALL_DIR/src:$INSTALL_DIR${PYTHONPATH:+:$PYTHONPATH}"
+  validate_web_target
   case "$MODE" in
     tui)
       log "Launching TUI..."
@@ -215,6 +228,7 @@ run_deploy() {
         exit 1
       fi
       log "Launching Web server on ${HOST}:${PORT} (workers=1)..."
+      log "Runtime data (DB/exports/invoices/PM_DATA_DIR) is preserved. Health: python3 -m app_core.doctor"
       exec python3 -m uvicorn ui.web.server:app --host "$HOST" --port "$PORT" --workers 1
       ;;
     both|auto)

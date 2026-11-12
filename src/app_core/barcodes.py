@@ -19,6 +19,10 @@ def _now_iso():
 def normalize_code(code, max_len: int = 256):
     if code is None:
         return ""
+    try:
+        max_len = max(1, min(int(max_len or 256), 4096))
+    except Exception:
+        max_len = 256
     s = str(code).strip()
     # strip common control chars from scanners
     s = re.sub(r"[\r\n\t\x00]+", "", s)
@@ -32,10 +36,12 @@ def normalize_code(code, max_len: int = 256):
 def sanitize_label_text(value, max_len: int = 120) -> str:
     """Sanitize text embedded into printer command templates (ZPL/ESC-POS/TSPL/EPL-ish)."""
     s = normalize_code(value, max_len=max_len)
-    # remove characters commonly significant in label languages
-    s = re.sub(r"[\^~\\\[\]`]+", " ", s)
+    # remove characters commonly significant in label languages and template delimiters
+    s = re.sub(r"[\^~\\\[\]`{}<>]+", " ", s)
+    # avoid command/control-like sequences and excessive punctuation runs
+    s = re.sub(r"[^\w\s\-\.:/#()+=,]", " ", s, flags=re.UNICODE)
     s = re.sub(r"\s+", " ", s).strip()
-    return s
+    return s[:max(1, min(int(max_len or 120), 512))]
 
 
 def make_lot_code(item_id: int, received_at: str | None = None, seq: int | None = None) -> str:

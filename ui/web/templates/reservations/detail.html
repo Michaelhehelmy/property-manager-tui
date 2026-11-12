@@ -48,10 +48,20 @@
 </div>
 <div class="grid grid-2">
   <div class="panel"><h3>POS / Charges / Activities</h3>
-    <table><tr><th>ID</th><th>Desc</th><th>Lot</th><th>Type</th><th>Qty</th><th>Unit</th><th>Action</th></tr>
-  {% for p in pos %}{% if not p['voided_at'] %}<tr><td>{{p['id']}}</td><td>{{p['item_description']}}</td><td><code>{{ p['lot_code'] or '—' }}</code></td><td>{% if p['activity_id'] %}<span class="ok">Activity/Trip</span>{% elif p['inventory_item_id'] %}POS/Inventory{% else %}Charge{% endif %}</td><td>{{p['quantity']}}</td><td>{{"%.2f"|format(p['unit_price'] or 0)}}</td>
+    <p class="muted">Traceability shown per line when available (lot/batch, received/bought time, expiry). Generated invoices/receipts should reflect these charge details; missing fields are omitted gracefully.</p>
+    <div class="table-wrap"><table><tr><th>ID</th><th>Desc</th><th>Batch / Lot trace</th><th>Type</th><th>Qty</th><th>Unit</th><th>Action</th></tr>
+  {% for p in pos %}{% if not p['voided_at'] %}<tr><td>{{p['id']}}</td><td>{{p['item_description']}}</td>
+    <td>
+      <code>{{ p.get('lot_code') or p.get('batch_lot_code') or ('#' ~ p.get('batch_id') if p.get('batch_id') else '—') }}</code>
+      {% if p.get('batch_id') %}<span class="badge muted">batch #{{ p.get('batch_id') }}</span>{% endif %}
+      {% if p.get('received_at') or p.get('batch_received_at') %}<span class="trace-meta">Received: {{ p.get('received_at') or p.get('batch_received_at') }}</span>{% endif %}
+      {% if p.get('expiry_date') or p.get('batch_expiry_date') %}<span class="trace-meta">Expiry: {{ p.get('expiry_date') or p.get('batch_expiry_date') }}
+        {% if (p.get('expiry_state') or p.get('batch_expiry_state')) == 'expired' %}<span class="badge err">EXPIRED</span>{% elif (p.get('expiry_state') or p.get('batch_expiry_state')) == 'expiring' %}<span class="badge warn">EXPIRING</span>{% endif %}
+      </span>{% endif %}
+    </td>
+    <td>{% if p['activity_id'] %}<span class="ok">Activity/Trip</span>{% elif p['inventory_item_id'] %}POS/Inventory{% else %}Charge{% endif %}</td><td>{{p['quantity']}}</td><td>{{"%.2f"|format(p['unit_price'] or 0)}}</td>
   <td><form method="post" action="/pos/void/{{p['id']}}" class="inline"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><input type="hidden" name="next" value="/reservations/{{r['id']}}"/><input type="password" name="password" placeholder="Pwd" style="width:90px;display:inline-block"/><button class="err" title="Void this POS/charge (requires super password; reverses its effect)">Void</button></form></td></tr>{% endif %}
-  {% else %}<tr><td colspan="7" class="muted">None</td></tr>{% endfor %}</table>
+  {% else %}<tr><td colspan="7" class="muted">None</td></tr>{% endfor %}</table></div>
 
     <details style="margin-top:10px"><summary><strong>Add POS / inventory charge</strong> (to folio, batch-aware)</summary>
       <p class="muted">Traceable charge: select inventory item and optionally a specific batch/lot (shows received/bought time & expiry) or leave on <strong>Auto FEFO</strong>. For barcode/lot lookup use <a href="/pos?scan=" target="_blank">POS scan</a>.</p>
@@ -69,11 +79,12 @@
             {% for it in (inventory or []) %}{% if it.active %}<option value="{{it.id}}" data-price="{{'%.2f'|format(it.selling_price or 0)}}" data-name="{{it.item_name|e}}">{{it.item_name}} ({{it.category}}) — stock {{it.stock_qty}} {{it.unit or ''}} @ {{'%.2f'|format(it.selling_price or 0)}}{% if it.next_expiry %} · next exp {{it.next_expiry}}{% endif %}</option>{% endif %}{% endfor %}
           </select>
         </label>
-        <label>Batch (optional, FEFO/traceable; for tracked/expiring items)
+        <label>Batch selection (specific lot or auto-FEFO)
           <select name="batch_id">
-            <option value="">— Auto FEFO / none —</option>
+            <option value="">— Auto FEFO / none (recommended for tracked items unless a specific lot is required) —</option>
             {% for b in (active_batches or []) %}<option value="{{b.id}}" data-item="{{b.item_id}}" data-lot="{{b.lot_code|e}}" data-name="{{b.item_name|e}}">{{b.item_name}} · lot {{b.lot_code or '—'}} · rem {{b.quantity_remaining}}{% if b.received_at %} · received {{b.received_at}}{% endif %}{% if b.expiry_date %} · exp {{b.expiry_date}}{% endif %}{% if b.expiry_state=='expired' %} [EXPIRED]{% elif b.expiry_state=='expiring' %} [EXPIRING]{% endif %}</option>{% endfor %}
           </select>
+          <div class="choice-hint">Pick a specific batch/lot for traceability, or leave on Auto FEFO. Use <a href="/pos?scan=" target="_blank">POS scan/lookup</a> to resolve barcodes/lots.</div>
         </label>
         <label>Lot code / scan (optional override)<input name="lot_code" placeholder="Scan or type lot code"/></label>
         <p class="muted">Select a specific batch to sell that lot (traceability/receipt), or leave empty for automatic FEFO on batch-tracked items. Lot code can also identify a batch if known.</p>

@@ -69,9 +69,19 @@
         </div>
         <div>
           <h4>POS / Activity ({{ (t.pos_active or [])|length }} active)</h4>
-          <table><tr><th>Item</th><th>Lot</th><th>Qty</th><th>Price</th><th>Tax</th></tr>
-          {% for i in (t.pos_items or []) %}<tr {% if i.voided_at %}class="muted" style="text-decoration:line-through"{% endif %}><td>{{ i.item_description }}</td><td><code>{{ i.lot_code or '—' }}</code></td><td>{{ i.quantity }}</td><td>{{ '%.2f'|format(i.unit_price or 0) }}</td><td>{{ '%.2f'|format(i.tax_amount or 0) }}</td></tr>
-          {% else %}<tr><td colspan="5" class="muted">No POS items</td></tr>{% endfor %}</table>
+          <div class="table-wrap"><table><tr><th>Item</th><th>Batch / Lot trace</th><th>Qty</th><th>Price</th><th>Tax</th></tr>
+          {% for i in (t.pos_items or []) %}<tr {% if i.voided_at %}class="muted" style="text-decoration:line-through"{% endif %}>
+            <td>{{ i.item_description }}</td>
+            <td>
+              <code>{{ i.get('lot_code') or i.get('batch_lot_code') or ('#' ~ i.get('batch_id') if i.get('batch_id') else '—') }}</code>
+              {% if i.get('batch_id') %}<span class="badge muted">batch #{{ i.get('batch_id') }}</span>{% endif %}
+              {% if i.get('received_at') or i.get('batch_received_at') %}<span class="trace-meta">Received: {{ i.get('received_at') or i.get('batch_received_at') }}</span>{% endif %}
+              {% if i.get('expiry_date') or i.get('batch_expiry_date') %}<span class="trace-meta">Expiry: {{ i.get('expiry_date') or i.get('batch_expiry_date') }}
+                {% if (i.get('expiry_state') or i.get('batch_expiry_state')) == 'expired' %}<span class="badge err">EXPIRED</span>{% elif (i.get('expiry_state') or i.get('batch_expiry_state')) == 'expiring' %}<span class="badge warn">EXPIRING</span>{% endif %}
+              </span>{% endif %}
+            </td>
+            <td>{{ i.quantity }}</td><td>{{ '%.2f'|format(i.unit_price or 0) }}</td><td>{{ '%.2f'|format(i.tax_amount or 0) }}</td></tr>
+          {% else %}<tr><td colspan="5" class="muted">No POS items</td></tr>{% endfor %}</table></div>
         </div>
         <div>
           <h4>Payments</h4>
@@ -96,9 +106,19 @@
 <div class="grid grid-2" style="margin-top:12px;">
   <div class="panel">
     <h3>All POS / activity ({{ p.all_pos|length }})</h3>
-    <table><tr><th>When</th><th>Res</th><th>Room</th><th>Item</th><th>Lot</th><th>Qty</th><th>Price</th></tr>
-    {% for i in p.all_pos[:80] %}<tr><td>{{ i.created_at }}</td><td><a href="/reservations/{{ i.reservation_id }}">#{{ i.reservation_id }}</a></td><td>{{ i.room_number or '' }}</td><td>{{ i.item_description }}</td><td><code>{{ i.lot_code or '—' }}</code></td><td>{{ i.quantity }}</td><td>{{ '%.2f'|format(i.unit_price or 0) }}</td></tr>
-    {% else %}<tr><td colspan="7" class="muted">No POS activity</td></tr>{% endfor %}</table>
+    <div class="table-wrap"><table><tr><th>When</th><th>Res</th><th>Room</th><th>Item</th><th>Batch / Lot trace</th><th>Qty</th><th>Price</th></tr>
+    {% for i in p.all_pos[:80] %}<tr>
+      <td>{{ i.created_at }}</td><td><a href="/reservations/{{ i.reservation_id }}">#{{ i.reservation_id }}</a></td><td>{{ i.room_number or '' }}</td><td>{{ i.item_description }}</td>
+      <td>
+        <code>{{ i.get('lot_code') or i.get('batch_lot_code') or ('#' ~ i.get('batch_id') if i.get('batch_id') else '—') }}</code>
+        {% if i.get('batch_id') %}<span class="badge muted">batch #{{ i.get('batch_id') }}</span>{% endif %}
+        {% if i.get('received_at') or i.get('batch_received_at') %}<span class="trace-meta">Received: {{ i.get('received_at') or i.get('batch_received_at') }}</span>{% endif %}
+        {% if i.get('expiry_date') or i.get('batch_expiry_date') %}<span class="trace-meta">Expiry: {{ i.get('expiry_date') or i.get('batch_expiry_date') }}
+          {% if (i.get('expiry_state') or i.get('batch_expiry_state')) == 'expired' %}<span class="badge err">EXPIRED</span>{% elif (i.get('expiry_state') or i.get('batch_expiry_state')) == 'expiring' %}<span class="badge warn">EXPIRING</span>{% endif %}
+        </span>{% endif %}
+      </td>
+      <td>{{ i.quantity }}</td><td>{{ '%.2f'|format(i.unit_price or 0) }}</td></tr>
+    {% else %}<tr><td colspan="7" class="muted">No POS activity</td></tr>{% endfor %}</table></div>
     {% if p.all_pos|length > 80 %}<div class="muted">Showing latest 80 of {{ p.all_pos|length }}.</div>{% endif %}
   </div>
   <div class="panel">

@@ -272,7 +272,8 @@ Tips:
   - LAN/other devices: use -BindHost 0.0.0.0 and a strong `$env:PM_WEB_SECRET_KEY` (ALWAYS keep --workers 1).
   - Runtime data is preserved: DB, exports, invoices, and PM_DATA_DIR are never deleted by setup/update scripts.
   - Updates: in-app Settings → App updates (fast-forward, preserves runtime data) or git pull --ff-only + re-run -Action setup.
-  - Health check: python -m app_core.doctor (add --check-updates for remote update status)
+  - Health/backup: python -m app_core.doctor (add --check-updates); safe backup/verify:
+      python scripts/backup_runtime.py --backup  |  --verify <backup.db>
   - If script execution is blocked: powershell -ExecutionPolicy Bypass -File scripts\setup_windows.ps1
 "@ | Write-Host
 }
@@ -282,11 +283,15 @@ function Run-Deploy {
   $venvPy = Join-Path $InstallDir '.venv\Scripts\python.exe'
   if (-not (Test-Path $venvPy)) { throw "Install not found at $InstallDir. Run with -Action setup first." }
   $env:PYTHONPATH = "$(Join-Path $InstallDir 'src');$InstallDir$([IO.Path]::PathSeparator)$($env:PYTHONPATH)"
+  # basic validation to avoid invalid/unsafe web targets
+  if (-not $BindHost -or ($BindHost -notmatch '^[A-Za-z0-9._:\[\]-]+$')) { throw "Invalid host: $BindHost" }
+  if ($Port -lt 1 -or $Port -gt 65535) { throw "Invalid port: $Port" }
   switch ($Mode) {
     'tui'  { Log "Launching TUI..."; & $venvPy launcher.py --tui; exit $LASTEXITCODE }
     'web'  {
       if ($SkipWeb -eq '1') { throw "Web deps were skipped; cannot start web mode. Re-run with -SkipWeb 0 -Mode web." }
       Log "Launching Web server on ${BindHost}:${Port} (workers=1)..."
+      Log "Runtime data (DB/exports/invoices/PM_DATA_DIR) is preserved. Health: python -m app_core.doctor"
       & $venvPy -m uvicorn ui.web.server:app --host $BindHost --port $Port --workers 1
       exit $LASTEXITCODE
     }

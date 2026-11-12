@@ -35,6 +35,15 @@ html,body{max-width:100%;overflow-x:hidden}
 pre{white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere;overflow-x:hidden}
 img,video{max-width:100%;height:auto}
 input,select,textarea,button{max-width:100%}
+.table-wrap{max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}
+.trace-meta{display:block;font-size:11px;color:#a6adc8;line-height:1.25;margin-top:2px}
+.trace-badges{display:inline-flex;gap:4px;flex-wrap:wrap;margin-left:4px;vertical-align:middle}
+.badge{display:inline-block;padding:1px 6px;border-radius:999px;font-size:11px;font-weight:700;line-height:1.4;border:1px solid var(--muted);background:#11111b;color:var(--text)}
+.badge.warn{color:#11111b;background:var(--warn);border-color:var(--warn)}
+.badge.err{color:#fff;background:#b84c5f;border-color:#b84c5f}
+.badge.ok{color:#11111b;background:var(--ok);border-color:var(--ok)}
+.badge.muted{color:#a6adc8;background:#181825}
+.choice-hint{font-size:12px;color:#a6adc8;margin:2px 0 8px}
 @media (max-width: 900px){
   .layout{grid-template-columns:1fr}
   nav{border-right:0;border-bottom:1px solid var(--muted)}

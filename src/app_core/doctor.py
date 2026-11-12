@@ -10,8 +10,8 @@ import argparse
 import json
 import os
 import shutil
-import socket
 import sqlite3
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -142,19 +142,109 @@ def _backup_restore_guidance() -> dict[str, Any]:
             "stop_app_first": True,
             "copy_db_file": str(db_path),
             "suggested_backup_path": str(data_dir / backup_name),
-            "note": "Also preserve exports/ and invoices/; for WAL mode copy while app is stopped.",
+            "cli_helper": "python3 -m app_core.doctor --backup  (or --backup-to <path>)",
+            "note": "Copy while app is stopped for a consistent snapshot. Also preserve exports/ and invoices/; WAL/SHM sidecars are not required when stopped.",
         },
         "restore": {
             "stop_app_first": True,
             "replace_db_file": str(db_path),
+            "verify_helper": "python3 -m app_core.doctor --verify-backup <path>",
             "steps": [
-                "Stop TUI/Web processes (keep --workers 1 for web).",
-                "Copy backup DB over the target DB path (and keep exports/invoices).",
+                "Stop TUI/Web processes (run web with --workers 1).",
+                "Verify candidate backup: python3 -m app_core.doctor --verify-backup <backup.db>",
+                "Copy verified backup over the target DB path (and keep exports/invoices/data dir).",
                 "Restart app; it will run safe/idempotent migrations if needed.",
                 "Run: python3 -m app_core.doctor --json",
             ],
         },
     }
+
+
+def _ensure_parent_dir(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+
+def verify_backup_file(backup_path: str | Path) -> dict[str, Any]:
+    """Read-only verification of a SQLite backup/candidate DB file."""
+    p = Path(backup_path).expanduser()
+    out: dict[str, Any] = {"ok": False, "path": str(p), "exists": p.exists()}
+    if not p.exists() or not p.is_file():
+        out["error"] = "backup file not found"
+        return out
+    try:
+        out["size_bytes"] = p.stat().st_size
+    except Exception:
+        pass
+    conn = None
+    try:
+        conn = sqlite3.connect(f"file:{p}?mode=ro", uri=True, timeout=5.0)
+        conn.row_factory = sqlite3.Row
+        out["schema"] = {"user_version": conn.execute("PRAGMA user_version").fetchone()[0], "tables": _schema_table_checks(conn)}
+        out["integrity"] = {"sqlite": _db_integrity_summary(conn)}
+        out["consistency"] = {"batch_stock": _batch_stock_consistency(conn)}
+        ok = bool(((out.get("integrity") or {}).get("sqlite") or {}).get("ok")) and bool((((out.get("schema") or {}).get("tables") or {}).get("ok", True)))
+        out["ok"] = ok
+        return out
+    except Exception as e:
+        out["error"] = str(e)
+        return out
+    finally:
+        try:
+            if conn is not None:
+                conn.close()
+        except Exception:
+            pass
+
+
+def create_backup(backup_to: str | Path | None = None) -> dict[str, Any]:
+    """Create a safe SQLite backup copy (no runtime data deletion)."""
+    src = Path(paths.DB_PATH)
+    if not src.exists():
+        return {"ok": False, "error": f"source DB not found: {src}", "source": str(src)}
+    if backup_to:
+        dst = Path(backup_to).expanduser()
+    else:
+        ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+        dst = Path(paths.DATA_DIR) / f"property_manager.backup.{ts}.db"
+    try:
+        dst = dst if dst.is_absolute() else (Path.cwd() / dst)
+        _ensure_parent_dir(dst)
+        if dst.exists() and dst.is_dir():
+            return {"ok": False, "error": f"backup destination is a directory: {dst}", "source": str(src)}
+        # Prefer SQLite online backup API for consistency when possible.
+        src_conn = sqlite3.connect(str(src), timeout=10.0)
+        try:
+            dst_conn = sqlite3.connect(str(dst), timeout=10.0)
+            try:
+                src_conn.backup(dst_conn)
+            finally:
+                dst_conn.close()
+        finally:
+            src_conn.close()
+        verify = verify_backup_file(dst)
+        return {
+            "ok": bool(verify.get("ok", False)),
+            "source": str(src),
+            "backup_path": str(dst),
+            "verified": verify,
+            "note": "Backup created without deleting runtime data. Keep exports/ and invoices/ alongside DB backups.",
+        }
+    except Exception as e:
+        # Fallback to file copy
+        try:
+            _ensure_parent_dir(dst)
+            shutil.copy2(src, dst)
+            verify = verify_backup_file(dst)
+            return {
+                "ok": bool(verify.get("ok", False)),
+                "source": str(src),
+                "backup_path": str(dst),
+                "verified": verify,
+                "fallback": "file_copy",
+                "warning": f"sqlite backup API failed, used file copy: {e}",
+            }
+        except Exception as e2:
+            return {"ok": False, "error": f"backup failed: {e2}", "source": str(src), "backup_path": str(dst)}
 
 
 def _config_issues() -> list[dict[str, str]]:
@@ -283,6 +373,8 @@ def collect_health(check_updates: bool = False) -> dict[str, Any]:
     severe = [i for i in report["config_issues"] if i.get("severity") == "error"]
     if (db_path.exists() and (not sqlite_ok or not schema_ok or not tables_ok)) or severe:
         report["ok"] = False
+    # operator guidance notes
+    report["notes"].append("Web/server ops: always run uvicorn with --workers 1; runtime data (DB/exports/invoices/PM_DATA_DIR) must be preserved across updates/backups/restores.")
     return report
 
 
@@ -367,11 +459,50 @@ def format_health_report(report: dict[str, Any]) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="python -m app_core.doctor", description="Property Manager health/doctor checks")
-    ap.add_argument("--json", action="store_true", help="Output JSON report")
+    ap = argparse.ArgumentParser(prog="python -m app_core.doctor", description="Property Manager health/doctor checks and safe backup helpers")
+    ap.add_argument("--json", action="store_true", help="Output JSON report/result")
     ap.add_argument("--check-updates", action="store_true", help="Also query GitHub for update status (network)")
     ap.add_argument("--strict", action="store_true", help="Exit non-zero on warnings-level risks in batch consistency/printer checks where applicable")
+    ap.add_argument("--backup", action="store_true", help="Create a safe backup copy of the SQLite DB (no runtime data deletion)")
+    ap.add_argument("--backup-to", help="Destination path for --backup/backup creation")
+    ap.add_argument("--verify-backup", help="Verify a SQLite backup/candidate DB file (integrity/schema checks)")
     args = ap.parse_args(argv)
+
+    if args.verify_backup:
+        result = verify_backup_file(args.verify_backup)
+        if args.json:
+            print(json.dumps(result, indent=2, default=str))
+        else:
+            print(f"Backup verify: {'OK' if result.get('ok') else 'ISSUES/ERROR'}")
+            print(f"  - path: {result.get('path')}")
+            if result.get("error"):
+                print(f"  - error: {result.get('error')}")
+            integ = ((result.get("integrity") or {}).get("sqlite") or {})
+            if integ:
+                print(f"  - integrity_check: {integ.get('integrity_check')}")
+                print(f"  - foreign_key_violations: {len(integ.get('foreign_key_violations') or [])}")
+            sch = result.get("schema") or {}
+            if sch:
+                print(f"  - user_version: {sch.get('user_version')}")
+        return 0 if result.get("ok") else 1
+
+    if args.backup or args.backup_to:
+        result = create_backup(args.backup_to)
+        if args.json:
+            print(json.dumps(result, indent=2, default=str))
+        else:
+            print(f"Backup: {'OK' if result.get('ok') else 'FAILED'}")
+            print(f"  - source: {result.get('source')}")
+            print(f"  - backup_path: {result.get('backup_path')}")
+            if result.get("error"):
+                print(f"  - error: {result.get('error')}")
+            if result.get("warning"):
+                print(f"  - warning: {result.get('warning')}")
+            v = result.get("verified") or {}
+            if v:
+                print(f"  - verified_ok: {v.get('ok')}")
+        return 0 if result.get("ok") else 1
+
     report = collect_health(check_updates=bool(args.check_updates))
     if args.json:
         print(json.dumps(report, indent=2, default=str))

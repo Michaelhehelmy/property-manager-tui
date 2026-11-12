@@ -112,6 +112,7 @@ def run_web(host: str = "127.0.0.1", port: int = 8000, open_browser: bool = True
     if host in ("0.0.0.0", "::"):
         print(f"LAN:   http://{_lan_ip_hint()}:{port}  (other devices on same network)")
     print("Runtime data (DB/exports/invoices/data dir) is preserved across updates/restarts.")
+    print("Health check: python3 -m app_core.doctor --json  (add --check-updates as needed)")
     print("Press Ctrl+C to stop the web server and return to launcher.\n")
 
     env = _env()
@@ -171,7 +172,8 @@ def menu_loop(default_host: str = "127.0.0.1", default_port: int = 8000) -> int:
         if last is not None:
             print(f"\n  Last session exited with code: {last}")
         print(f"\n  Web target: http://{host}:{port}  {'(LAN)' if host in ('0.0.0.0','::') else '(local)'}")
-        print("  Tip: exit TUI or stop Web (Ctrl+C) to return here and switch.")
+        print("  Tip: web runs with --workers 1; DB/exports/invoices/PM_DATA_DIR are preserved.")
+        print("  Health: python3 -m app_core.doctor   Tip: exit TUI or stop Web (Ctrl+C) to return here.")
 
         try:
             choice = input("\nChoose 1, 2, s, or q: ").strip().lower()
@@ -186,11 +188,15 @@ def menu_loop(default_host: str = "127.0.0.1", default_port: int = 8000) -> int:
         elif choice in {"s", "settings", "set"}:
             print(f"\nCurrent web host: {host} (use 127.0.0.1 for local, 0.0.0.0 for LAN)")
             h = _prompt(f"Web host [{host}]: ", host)
-            if h:
-                host = h
+            try:
+                host = _validate_host(h)
+            except Exception:
+                print("Invalid host; keeping previous value.")
+                time.sleep(0.8)
+                continue
             p = _prompt(f"Web port [{port}]: ", str(port))
             try:
-                port = int(p)
+                port = _validate_port(int(p))
             except Exception:
                 print("Invalid port; keeping previous value.")
                 time.sleep(0.8)

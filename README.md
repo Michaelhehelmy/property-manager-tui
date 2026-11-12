@@ -300,12 +300,12 @@ git pull --ff-only
   ```bash
   PYTHONPATH=src python -m app_core.doctor
   ```
-  (Supports JSON output and checks such as DB/open/migrations/integrity/writable paths depending on options; run `--help` for flags.)
+  Supports `--json`, `--check-updates`, and `--strict`. It also provides safe backup/verify helpers: `--backup [--backup-to <path>]` to create a verified SQLite backup copy (no runtime data deletion), and `--verify-backup <path>` to read-only integrity/schema-verify a candidate backup. Run `--help` for all flags.
 - **Web runtime probes:** `GET /health` and `GET /healthz` for liveness/readiness of the web server.
 
 ## Backups & restore
 
-- **Create backups:** use **Settings → Backup now** in Web/TUI (when unlocked where required) to create a database backup (stored under the app’s exports/data area). Keep regular backups and take one before upgrades/migrations.
+- **Create backups:** use **Settings → Backup now** in Web/TUI (when unlocked where required) to create a database backup (stored under the app’s exports/data area). You can also create/verify safe SQLite backups via CLI doctor: `PYTHONPATH=src python -m app_core.doctor --backup` (or `--backup-to <path>`) and `--verify-backup <path>`. Keep regular backups and take one before upgrades/migrations.
 - **What to preserve:** runtime data lives in the configured data directory (`PM_DATA_DIR` or the default `data/`/legacy locations), including the database, exports, and invoices. Source/app updates (in-app or `git pull`) do **not** modify this runtime data.
 - **Restore (manual):** stop the app/server, copy the desired backup DB/file back to the active database path for your data directory (and restore related exports/invoices if needed), then start the app. DB migrations run on startup (additive). Verify with a backup/health/integrity check after restore. (There is no destructive one-click in-app restore; perform restores deliberately offline.)
 

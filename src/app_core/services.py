@@ -687,6 +687,10 @@ def set_super_password(password):
 def verify_password(password):
     if not password:
         return False
+    # Web/per-session unlock flows may pass __session__ as a password-proof token.
+    # Treat as valid only when the in-process session is currently unlocked.
+    if password == "__session__":
+        return is_session_unlocked()
     from .db import connect, transaction
     conn = db.connect()
     rows = {r["key"]: r["value"] for r in conn.execute(
@@ -790,7 +794,8 @@ def use_recovery_code(code, new_password, confirm_password):
 
 # In-memory session (per-run)
 def unlock_session(password):
-    if not verify_password(password):
+    # Explicit password unlock must use real credentials (not __session__ proof token).
+    if password == "__session__" or not verify_password(password):
         return False
     _session["unlocked"] = True
     _session["last_activity"] = datetime.now()
@@ -806,7 +811,12 @@ def lock_session():
 def is_session_unlocked():
     if not _session["unlocked"]:
         return False
-    timeout = int(get_setting("session_timeout_minutes", "20"))
+    try:
+        timeout = int(get_setting("session_timeout_minutes", "20") or 20)
+    except Exception:
+        timeout = 20
+    if timeout < 0:
+        timeout = 0
     if _session["last_activity"] and (datetime.now() - _session["last_activity"]).total_seconds() > timeout * 60:
         lock_session()
         return False
@@ -2224,31 +2234,33 @@ def _add_pos_item_tx(conn, reservation_id, desc, qty, price, inv_id=None, activi
             has_batches = conn.execute("SELECT 1 FROM inventory_batches WHERE item_id=? AND status='active' AND quantity_remaining>0 LIMIT 1", (inv_id,)).fetchone() is not None
 
         if recipe:
-            # Meal/menu with recipe: deduct ingredients. If ingredients have batches, allocate FEFO per ingredient.
+            # Meal/menu with recipe: deduct ingredients. Allocate FEFO per ingredient when batches exist.
             missing = []
             ing_plans = []
             total_cost_per_unit = 0.0
             for c in recipe:
-                need = float(c["qty_per_sale"] or 0) * qty
+                need = float(c["qty_per_sale"] or 0) * float(qty)
                 if need <= 0:
                     raise ValueError(f"Invalid recipe quantity for ingredient '{c['item_name']}'.")
                 if not c["active"]:
                     raise ValueError(f"Recipe ingredient '{c['item_name']}' is inactive.")
                 ing_has_batches = conn.execute("SELECT 1 FROM inventory_batches WHERE item_id=? AND status='active' AND quantity_remaining>0 LIMIT 1", (c["ingredient_item_id"],)).fetchone() is not None
-                if ing_has_batches and not allow_neg:
+                if ing_has_batches:
                     try:
                         allocs = _select_batches_for_sale(conn, c["ingredient_item_id"], need, specific_batch_id=None)
-                    except Exception:
+                    except Exception as e:
+                        if allow_neg:
+                            # Cannot allocate more than available batches without creating negative batch state.
+                            raise ValueError(f"Insufficient batch stock for ingredient '{c['item_name']}': {e}")
                         allocs = None
                     if allocs is None:
                         missing.append(f"{c['item_name']} (need {need:g})")
                     else:
                         ing_plans.append((c, need, allocs))
-                        # cost from batch unit costs
                         bcost = sum(float(a[0]["unit_cost"] or 0) * float(a[1]) for a in allocs)
-                        total_cost_per_unit += bcost / max(qty, 1)
+                        total_cost_per_unit += bcost / max(float(qty), 1)
                 else:
-                    if (not allow_neg) and float(c["stock_qty"] or 0) < need:
+                    if (not allow_neg) and float(c["stock_qty"] or 0) < need - 1e-9:
                         missing.append(f"{c['item_name']} (need {need:g}, have {float(c['stock_qty'] or 0):g})")
                     ing_plans.append((c, need, None))
                     total_cost_per_unit += float(c["unit_cost"] or 0) * float(c["qty_per_sale"] or 0)
@@ -2272,64 +2284,64 @@ def _add_pos_item_tx(conn, reservation_id, desc, qty, price, inv_id=None, activi
             for c, need, allocs in ing_plans:
                 if allocs:
                     for b, take in allocs:
+                        take_f = float(take)
                         conn.execute("UPDATE inventory_batches SET quantity_remaining = quantity_remaining - ?, status = CASE WHEN quantity_remaining - ? <= 0 THEN 'depleted' ELSE status END WHERE id=?",
-                                     (take, take, b["id"]))
-                        conn.execute("UPDATE inventory SET stock_qty = stock_qty - ? WHERE id=?", (take, c["ingredient_item_id"]))
+                                     (take_f, take_f, b["id"]))
+                        conn.execute("UPDATE inventory SET stock_qty = stock_qty - ? WHERE id=?", (take_f, c["ingredient_item_id"]))
                         conn.execute("""INSERT INTO inventory_logs (item_id, change_type, quantity, reference, batch_id, unit_cost)
                                        VALUES (?, 'OUT_RECIPE', ?, ?, ?, ?)""",
-                                     (c["ingredient_item_id"], take, f"POS #{pid} recipe: {desc.strip()} x{qty} lot {b['lot_code']}", b["id"], float(b["unit_cost"] or 0)))
+                                     (c["ingredient_item_id"], take_f, f"POS #{pid} recipe: {desc.strip()} x{qty} lot {b['lot_code']}", b["id"], float(b["unit_cost"] or 0)))
                 else:
-                    conn.execute("UPDATE inventory SET stock_qty = stock_qty - ? WHERE id=?", (need, c["ingredient_item_id"]))
+                    need_f = float(need)
+                    conn.execute("UPDATE inventory SET stock_qty = stock_qty - ? WHERE id=?", (need_f, c["ingredient_item_id"]))
                     conn.execute("""INSERT INTO inventory_logs (item_id, change_type, quantity, reference)
                                    VALUES (?, 'OUT_RECIPE', ?, ?)""",
-                                 (c["ingredient_item_id"], need, f"POS #{pid} recipe: {desc.strip()} x{qty}"))
+                                 (c["ingredient_item_id"], need_f, f"POS #{pid} recipe: {desc.strip()} x{qty}"))
             return {"pos_id": pid, "pos_ids": [pid], "gross": round(tax["gross"], 2), "tax": round(tax["service"] + tax["vat"] + tax["city_tax"], 2),
-                    "recipe_deducted": True, "batch_tracked": False}
+                    "recipe_deducted": True, "batch_tracked": bool(any(a[2] for a in ing_plans))}
 
-        if has_batches and not allow_neg:
+        allocs = None
+        if has_batches:
             # FEFO batch allocation (or specific batch). Split into per-batch lines for traceability.
             spec = None
             if batch_id:
-                try: spec = int(batch_id)
-                except Exception: spec = None
-            allocs = _select_batches_for_sale(conn, inv_id, qty, specific_batch_id=spec)
-        elif has_batches and allow_neg:
-            spec = None
-            if batch_id:
-                try: spec = int(batch_id)
-                except Exception: spec = None
+                try:
+                    spec = int(batch_id)
+                except Exception:
+                    spec = None
             try:
                 allocs = _select_batches_for_sale(conn, inv_id, qty, specific_batch_id=spec)
-            except Exception:
-                allocs = None
+            except Exception as e:
+                # Preserve stock-vs-batch consistency: do not fall back to aggregate deduction when batches exist.
+                # (allow_negative_stock cannot create negative batch quantities safely.)
+                raise ValueError(str(e))
         else:
             allocs = None
 
         if allocs:
-            # one line per allocation
+            # one line per allocation (POS quantity schema is integer)
             pos_ids = []
             total_gross = 0.0
             total_tax = 0.0
+            remaining_qty = int(qty)
             for b, take in allocs:
-                take_int = int(take) if abs(take - round(take)) < 1e-9 else take
-                qty_line = int(round(take))
-                if abs(take - qty_line) > 1e-9:
-                    # keep integer POS qty; if fractional, store rounded but deduct exact take
-                    qty_line = int(take) if take >= 1 else 1
-                # for simplicity and schema (quantity INTEGER), require integer allocations
-                take_int_i = int(round(take))
+                if remaining_qty <= 0:
+                    break
+                take_int_i = int(round(float(take)))
                 if take_int_i <= 0:
                     continue
+                take_int_i = min(take_int_i, remaining_qty)
                 net_l = price * take_int_i
                 tax_l = calculate_tax(net_l, 0)
                 bcost = float(b["unit_cost"] or inv["unit_cost"] or 0)
+                lot_code_val = b["lot_code"] if "lot_code" in b.keys() else None
                 desc_l = desc.strip()
-                if len(allocs) > 1 or b["lot_code"]:
-                    desc_l = f"{desc.strip()} [lot {b['lot_code']}]"
+                if len(allocs) > 1 or lot_code_val:
+                    desc_l = f"{desc.strip()} [lot {lot_code_val}]" if lot_code_val else f"{desc.strip()} [batch {b['id']}]"
                 cur.execute("""INSERT INTO pos_tabs
                     (reservation_id, inventory_item_id, item_description, quantity, unit_price, tax_amount, cost_at_sale, activity_id, batch_id, lot_code)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (rid, inv_id, desc_l, take_int_i, price, tax_l["service"] + tax_l["vat"] + tax_l["city_tax"], bcost, act_id, b["id"], b["lot_code"]))
+                    (rid, inv_id, desc_l, take_int_i, price, tax_l["service"] + tax_l["vat"] + tax_l["city_tax"], bcost, act_id, b["id"], lot_code_val))
                 pid = cur.lastrowid
                 pos_ids.append(pid)
                 total_gross += tax_l["gross"]
@@ -2346,7 +2358,10 @@ def _add_pos_item_tx(conn, reservation_id, desc, qty, price, inv_id=None, activi
                 conn.execute("UPDATE inventory SET stock_qty = stock_qty - ? WHERE id=?", (take_int_i, inv_id))
                 conn.execute("""INSERT INTO inventory_logs (item_id, change_type, quantity, reference, batch_id, unit_cost)
                                VALUES (?, 'OUT_SALE', ?, ?, ?, ?)""",
-                             (inv_id, take_int_i, f"POS #{pid} lot {b['lot_code']}", b["id"], bcost))
+                             (inv_id, take_int_i, f"POS #{pid} lot {lot_code_val}", b["id"], bcost))
+                remaining_qty -= take_int_i
+            if remaining_qty != 0:
+                raise ValueError("Batch allocation mismatch for requested quantity.")
             return {"pos_id": pos_ids[0] if pos_ids else None, "pos_ids": pos_ids, "gross": round(total_gross, 2), "tax": round(total_tax, 2),
                     "recipe_deducted": False, "batch_tracked": True}
         else:

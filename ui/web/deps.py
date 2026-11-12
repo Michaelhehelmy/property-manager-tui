@@ -121,6 +121,36 @@ async def require_csrf_form(request: Request):
     return form
 
 
+async def require_unlocked_form(request: Request):
+    """Return cached/parsed form and enforce per-browser unlock for sensitive mutations.
+
+    CSRF for browser form posts is enforced centrally by middleware; this helper
+    normalizes unlock+form access for route handlers.
+    """
+    form = await get_form(request)
+    require_unlock(request)
+    return form
+
+
+def service_password(request: Request, form, *, allow_session_sentinel: bool = False) -> str:
+    """Resolve password/proof for app_core service calls.
+
+    - Prefer an explicit password supplied by the form (never weakened).
+    - When the browser session is unlocked and the target service explicitly
+      supports the "__session__" sentinel, pass "__session__" as a best-effort
+      compatibility proof for single-worker flows (with backend-session sync).
+    - Otherwise return the provided value (possibly empty) so the service enforces
+      its own password requirements.
+    """
+    pw = str(form.get("password") or "")
+    if pw:
+        return pw
+    if allow_session_sentinel and is_unlocked(request):
+        sync_backend_session_if_possible()
+        return "__session__"
+    return pw
+
+
 def _session_timeout_minutes() -> int:
     try:
         timeout = int(services.get_setting("session_timeout_min", "5"))

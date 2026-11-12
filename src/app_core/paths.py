@@ -6,6 +6,7 @@ relocate the live SQLite DB, exports, or invoices.
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 
@@ -65,3 +66,42 @@ def ensure_data_dirs() -> None:
     EXPORT_DIR = DATA_DIR / "exports"
     INVOICE_DIR = DATA_DIR / "invoices"
     BASE_DIR = DATA_DIR
+
+
+def is_path_within(path: str | Path, root: str | Path) -> bool:
+    """Return True if resolved path is inside resolved root (path confinement helper)."""
+    try:
+        p = Path(path).expanduser().resolve()
+        r = Path(root).expanduser().resolve()
+        return p == r or r in p.parents
+    except Exception:
+        return False
+
+
+_SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+def sanitize_filename_component(value: object, default: str = "file", max_len: int = 120) -> str:
+    """Sanitize a value for safe use as a single filename component (no path separators/traversal)."""
+    s = str(value or "").strip().replace("\\", "/")
+    s = s.rsplit("/", 1)[-1]
+    s = s.strip().strip(".")
+    s = _SAFE_NAME_RE.sub("_", s)
+    s = re.sub(r"_+", "_", s).strip("_")
+    if not s or s in {".", ".."}:
+        s = default
+    return s[: max(1, int(max_len or 120))]
+
+
+def safe_child_path(root: str | Path, filename: str, *, must_exist: bool = False) -> Path:
+    """Build a confined child path under root from an untrusted filename component."""
+    base = Path(root).expanduser().resolve()
+    name = sanitize_filename_component(filename, default="file")
+    if name in {"", ".", ".."}:
+        raise ValueError("Unsafe filename")
+    candidate = (base / name).resolve()
+    if not is_path_within(candidate, base):
+        raise ValueError(f"Path escapes allowed root: {base}")
+    if must_exist and not candidate.exists():
+        raise FileNotFoundError(str(candidate))
+    return candidate

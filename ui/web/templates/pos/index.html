@@ -72,12 +72,20 @@
   </div>
 
   <div class="panel"><h3>Walk-in cart ({{ cart|length }} items) — same atomic sale</h3>
-    <table>
-      <tr><th>Item</th><th>Lot/Batch</th><th>Qty</th><th>Unit</th><th>Tax</th><th>Gross</th><th></th></tr>
+    <div class="table-wrap"><table>
+      <tr><th>Item</th><th>Lot/Batch trace</th><th>Qty</th><th>Unit</th><th>Tax</th><th>Gross</th><th></th></tr>
       {% for it in cart %}
       <tr>
         <td>{{it.desc}}{% if it.inv_id %} <span class="muted">[inv {{it.inv_id}}]</span>{% endif %}</td>
-        <td><code>{{ it.lot_code or ('#' ~ it.batch_id if it.batch_id else '—') }}</code></td>
+        <td>
+          <code>{{ it.lot_code or ('#' ~ it.batch_id if it.batch_id else '—') }}</code>
+          {% if it.batch_id %}<span class="badge muted">batch #{{it.batch_id}}</span>{% endif %}
+          {% if it.batch_received_at or it.received_at %}<span class="trace-meta">Received: {{ it.batch_received_at or it.received_at }}</span>{% endif %}
+          {% if it.batch_expiry_date or it.expiry_date %}<span class="trace-meta">Expiry: {{ it.batch_expiry_date or it.expiry_date }}
+            {% if (it.batch_expiry_state or it.expiry_state)=='expired' %}<span class="badge err">EXPIRED</span>{% elif (it.batch_expiry_state or it.expiry_state)=='expiring' %}<span class="badge warn">EXPIRING</span>{% endif %}
+          </span>{% endif %}
+          {% if not (it.lot_code or it.batch_id) %}<span class="trace-meta">No specific batch (manual/auto at sale)</span>{% endif %}
+        </td>
         <td>{{it.qty}}</td><td>{{"%.2f"|format(it.price)}}</td><td>{{"%.2f"|format(it.tax)}}</td><td>{{"%.2f"|format(it.gross)}}</td>
         <td>
           <form method="post" action="/pos/cart/remove" class="inline"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><input type="hidden" name="idx" value="{{it.idx}}"/><button class="err">Remove</button></form>
@@ -87,7 +95,7 @@
       <tr><td colspan="7" class="muted">Cart is empty. Add items below.</td></tr>
       {% endfor %}
       <tr><th colspan="5">TOTAL</th><th colspan="2">{{"%.2f"|format(cart_total)}} EGP</th></tr>
-    </table>
+    </table></div>
     <div class="row" style="margin-top:8px">
       <form method="post" action="/pos/cart/clear" class="inline"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><button class="warn" type="submit">Clear cart</button></form>
     </div>
@@ -222,22 +230,31 @@
 
 <div class="grid grid-2">
   <div class="panel"><h3>Recent walk-in POS lines (no reservation)</h3>
-    <table><tr><th>ID</th><th>At</th><th>Item</th><th>Lot</th><th>Qty</th><th>Gross-ish</th><th>Action</th></tr>
+    <div class="table-wrap"><table><tr><th>ID</th><th>At</th><th>Item</th><th>Batch / Lot trace</th><th>Qty</th><th>Gross-ish</th><th>Action</th></tr>
     {% for p in walkin_pos %}{% if not p['voided_at'] %}
     <tr>
-      <td>{{p['id']}}</td><td class="muted">{{p['created_at']}}</td><td>{{p['item_description']}}</td><td><code>{{ p['lot_code'] or '—' }}</code></td><td>{{p['quantity']}}</td>
+      <td>{{p['id']}}</td><td class="muted">{{p['created_at']}}</td><td>{{p['item_description']}}</td>
+      <td>
+        <code>{{ p.get('lot_code') or p.get('batch_lot_code') or ('#' ~ p.get('batch_id') if p.get('batch_id') else '—') }}</code>
+        {% if p.get('batch_id') %}<span class="badge muted">batch #{{ p.get('batch_id') }}</span>{% endif %}
+        {% if p.get('received_at') or p.get('batch_received_at') %}<span class="trace-meta">Received: {{ p.get('received_at') or p.get('batch_received_at') }}</span>{% endif %}
+        {% if p.get('expiry_date') or p.get('batch_expiry_date') %}<span class="trace-meta">Expiry: {{ p.get('expiry_date') or p.get('batch_expiry_date') }}
+          {% if (p.get('expiry_state') or p.get('batch_expiry_state')) == 'expired' %}<span class="badge err">EXPIRED</span>{% elif (p.get('expiry_state') or p.get('batch_expiry_state')) == 'expiring' %}<span class="badge warn">EXPIRING</span>{% endif %}
+        </span>{% endif %}
+      </td>
+      <td>{{p['quantity']}}</td>
       <td>{{"%.2f"|format((p['quantity']*p['unit_price']) + (p['tax_amount'] or 0))}}</td>
       <td>
         <form method="post" action="/pos/void/{{p['id']}}" class="inline"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><input type="hidden" name="next" value="/pos"/><input type="password" name="password" placeholder="Pwd" style="width:90px;display:inline-block"/><button class="err">Void</button></form>
       </td>
     </tr>
-    {% endif %}{% else %}<tr><td colspan="7" class="muted">None</td></tr>{% endfor %}</table>
+    {% endif %}{% else %}<tr><td colspan="7" class="muted">None</td></tr>{% endfor %}</table></div>
   </div>
   <div class="panel"><h3>Recent walk-in payments</h3>
-    <table><tr><th>ID</th><th>At</th><th>Amount</th><th>Method</th><th>Notes</th></tr>
+    <div class="table-wrap"><table><tr><th>ID</th><th>At</th><th>Amount</th><th>Method</th><th>Notes</th></tr>
     {% for p in walkin_payments %}{% if not p['voided_at'] %}
     <tr><td>{{p['id']}}</td><td class="muted">{{p['at']}}</td><td>{{"%.2f"|format(p['amount'])}}</td><td>{{p['method']}}</td><td>{{p['notes']}}</td></tr>
-    {% endif %}{% else %}<tr><td colspan="5" class="muted">None</td></tr>{% endfor %}</table>
+    {% endif %}{% else %}<tr><td colspan="5" class="muted">None</td></tr>{% endfor %}</table></div>
   </div>
 </div>
 

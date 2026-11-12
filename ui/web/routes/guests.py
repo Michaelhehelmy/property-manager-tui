@@ -28,10 +28,9 @@ def guest_detail(gid: int, request: Request):
 
 @router.post("/guests/{gid}/update")
 async def guest_update(gid: int, request: Request):
-    deps.require_unlock(request)
-    form = await deps.get_form(request)
+    form = await deps.require_unlocked_form(request)
     try:
-        services.update_guest(gid, form.get("name",""), form.get("phone",""), form.get("email",""), form.get("notes",""), form.get("password",""))
+        services.update_guest(gid, form.get("name",""), form.get("phone",""), form.get("email",""), form.get("notes",""), deps.service_password(request, form))
         deps.add_flash(request, "Guest updated", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")

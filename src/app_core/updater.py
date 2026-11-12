@@ -12,6 +12,7 @@ import re
 import subprocess
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import datetime
 from pathlib import Path
@@ -112,7 +113,9 @@ def _github_get(url: str, timeout: int = 12) -> Any:
     token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
     if token:
         req.add_header("Authorization", f"Bearer {token}")
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
+    # Hard timeout to avoid hanging on network issues
+    t = max(1, min(int(timeout or 12), 30))
+    with urllib.request.urlopen(req, timeout=t) as resp:
         data = resp.read().decode("utf-8", errors="replace")
     return json.loads(data)
 
@@ -143,7 +146,8 @@ def check_for_updates(branch: str = DEFAULT_BRANCH, limit: int = 20) -> dict[str
     local_commit = local.get("commit")
     try:
         safe_limit = max(1, min(int(limit or 20), 100))
-        commits = _github_get(f"{API_COMMITS_URL}?sha={branch}&per_page={safe_limit}", timeout=12)
+        q = urllib.parse.urlencode({"sha": branch, "per_page": str(safe_limit)})
+        commits = _github_get(f"{API_COMMITS_URL}?{q}", timeout=12)
     except Exception as e:
         result["ok"] = False
         result["error"] = f"Could not check for updates: {e}"
