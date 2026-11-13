@@ -12,7 +12,8 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -89,14 +90,19 @@ def create_app(*, init_db: bool = True, run_startup: bool = True) -> FastAPI:
         if request.method.upper() in ("POST", "PUT", "PATCH", "DELETE"):
             path = request.url.path
             if path not in ("/health", "/healthz"):
-                ct = (request.headers.get("content-type") or "").lower()
-                token = request.headers.get("x-csrf-token")
-                if "application/json" in ct or token is not None:
-                    deps.verify_csrf(request, token)
-                elif "multipart/form-data" in ct or "application/x-www-form-urlencoded" in ct or ct == "":
-                    form = await request.form()
-                    deps.verify_csrf(request, form.get("csrf"))
-                    request.state.cached_form = form
+                try:
+                    ct = (request.headers.get("content-type") or "").lower()
+                    token = request.headers.get("x-csrf-token")
+                    if "application/json" in ct or token is not None:
+                        deps.verify_csrf(request, token)
+                    elif "multipart/form-data" in ct or "application/x-www-form-urlencoded" in ct or ct == "":
+                        form = await request.form()
+                        deps.verify_csrf(request, form.get("csrf"))
+                        request.state.cached_form = form
+                except HTTPException as e:
+                    resp = JSONResponse({"detail": e.detail}, status_code=e.status_code)
+                    deps.save_session(resp, deps.get_session(request))
+                    return resp
         response = await call_next(request)
         deps.save_session(response, deps.get_session(request))
         return response
