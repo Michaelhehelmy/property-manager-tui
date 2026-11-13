@@ -97,12 +97,14 @@ install_bootstrap_deps() {
 
 print_ops_guidance() {
   log "Ops guidance: SQLite web mode requires --workers 1. Runtime data (DB/exports/invoices/PM_DATA_DIR) is preserved across updates/restarts."
+  log "Pinned/reproducible install: set GIT_REF=<tag|commit|branch> (or TAG/COMMIT). For pinned bootstrap, fetch this script from raw/<ref>/scripts/install.sh."
   if [ "${PM_WEB_SECRET_KEY:-}" = "" ] && [ "${HOST:-127.0.0.1}" != "127.0.0.1" ] && [ "${HOST:-127.0.0.1}" != "localhost" ]; then
     warn "PM_WEB_SECRET_KEY is not set and HOST=$HOST is non-local. Set a strong random secret (e.g. openssl rand -hex 32)."
   fi
   if [ "${HOST:-127.0.0.1}" = "0.0.0.0" ] || [ "${HOST:-127.0.0.1}" = "::" ]; then
     warn "Non-local/LAN bind requested. Use HTTPS via a reverse proxy (Caddy/Nginx) for shared/network deployments."
   fi
+  log "If web dependency builds fail (e.g. pydantic-core/Rust wheels on constrained environments), use TUI-only: SKIP_WEB=1 MODE=tui."
 }
 
 fetch_setup_if_needed() {

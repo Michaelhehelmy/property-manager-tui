@@ -178,7 +178,9 @@ setup_venv_and_deps() {
   elif [ -f requirements-web.txt ]; then
     log "Installing web dependencies..."
     if ! python -m pip install -r requirements-web.txt; then
-      warn "Web dependency installation failed. TUI/core can still be used. Retry with SKIP_WEB=1 MODE=tui."
+      warn "Web dependency installation failed. Core/TUI can still be used."
+      warn "Constrained environments (iSH/Termux/older CPU archs, limited build toolchains): some packages (e.g. pydantic-core) may require Rust/cargo or a prebuilt wheel for your Python version/architecture."
+      warn "Fallback: re-run with SKIP_WEB=1 MODE=tui (or ACTION=setup SKIP_WEB=1). If web is required, install build deps/Rust, use a supported Python version with wheels, or run the web UI on a fuller host."
       SKIP_WEB=1
       [ "$MODE" = "both" ] && MODE="tui"
     fi

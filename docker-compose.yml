@@ -4,23 +4,28 @@ services:
     image: property-manager-tui:local
     container_name: property-manager-web
     restart: unless-stopped
+    # Container runs as non-root (uid:gid 10001:10001). Ensure pm_data volume is writable by that user.
+    # If you have existing host/volume permissions issues: run a one-off chown on the volume or set user mapping appropriately.
     ports:
       - "8000:8000"
     environment:
       # REQUIRED for non-local/shared access: set a strong random secret (32+ bytes).
       # Example: openssl rand -hex 32
-      PM_WEB_SECRET_KEY: "${PM_WEB_SECRET_KEY:-change-me-to-a-long-random-secret}"
+      PM_WEB_SECRET_KEY: "${PM_WEB_SECRET_KEY:?PM_WEB_SECRET_KEY must be set to a strong random secret}"
+      # Enable Secure cookies when served over HTTPS reverse proxy.
+      PM_WEB_COOKIE_SECURE: "${PM_WEB_COOKIE_SECURE:-0}"
       # Persistent runtime data location inside the container/volume
       PM_DATA_DIR: /data
       # Bind inside container; publish via ports above. Reverse proxy should provide HTTPS.
       HOST: 0.0.0.0
       PORT: "8000"
+      TZ: "${TZ:-UTC}"
     volumes:
-      # Persists DB, exports, invoices, and other runtime data across updates/restarts.
+      # Persists DB, exports, invoices, and other runtime data across updates/restarts/backups/restores.
       - pm_data:/data
     command: ["python", "-m", "uvicorn", "ui.web.server:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      test: ["CMD", "python", "-c", "import urllib.request,sys; r=urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3); sys.exit(0 if 200 <= r.status < 300 else 1)"]
       interval: 30s
       timeout: 5s
       retries: 5
@@ -28,3 +33,4 @@ services:
 
 volumes:
   pm_data:
+    # Named volume preserves runtime data (DB/exports/invoices). Back it up before upgrades/restores.

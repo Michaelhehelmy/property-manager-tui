@@ -45,6 +45,33 @@ elif len(SECRET_KEY) < 32:
 
 _serializer = URLSafeSerializer(SECRET_KEY, salt="pm-session")
 
+
+def _env_int(name: str, default: int, *, min_v: int = 1, max_v: int = 100000) -> int:
+    try:
+        v = int(os.environ.get(name, str(default)))
+        return max(min_v, min(max_v, v))
+    except Exception:
+        return default
+
+
+def rate_limit_config(scope: str = "unlock") -> tuple[int, int]:
+    """(limit, window_sec) configurable via env for in-process best-effort throttling."""
+    s = (scope or "unlock").lower()
+    if s == "recovery":
+        return (
+            _env_int("PM_WEB_RECOVERY_RATE_LIMIT", 5, min_v=1, max_v=1000),
+            _env_int("PM_WEB_RECOVERY_RATE_WINDOW_SEC", 900, min_v=10, max_v=86400),
+        )
+    if s == "sensitive":
+        return (
+            _env_int("PM_WEB_SENSITIVE_RATE_LIMIT", 20, min_v=1, max_v=5000),
+            _env_int("PM_WEB_SENSITIVE_RATE_WINDOW_SEC", 300, min_v=10, max_v=86400),
+        )
+    return (
+        _env_int("PM_WEB_UNLOCK_RATE_LIMIT", 8, min_v=1, max_v=1000),
+        _env_int("PM_WEB_UNLOCK_RATE_WINDOW_SEC", 300, min_v=10, max_v=86400),
+    )
+
 _WEB_UNLOCK_LAST = "web_unlock_last"
 _LOGIN_ATTEMPTS: dict[str, list[float]] = {}
 _SENSITIVE_ATTEMPTS: dict[str, list[float]] = {}
@@ -53,6 +80,17 @@ _SENSITIVE_ATTEMPTS: dict[str, list[float]] = {}
 def cookie_secure_enabled() -> bool:
     """PM_WEB_COOKIE_SECURE=1/true/yes/on enables Secure cookie flag (required for HTTPS)."""
     return os.environ.get("PM_WEB_COOKIE_SECURE", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def cookie_samesite() -> str:
+    """PM_WEB_COOKIE_SAMESITE=lax|strict|none (defaults to lax). 'none' requires Secure."""
+    v = os.environ.get("PM_WEB_COOKIE_SAMESITE", "lax").strip().lower()
+    if v not in ("lax", "strict", "none"):
+        v = "lax"
+    if v == "none" and not cookie_secure_enabled():
+        # Avoid invalid/insecure cookie config in browsers; fall back safely.
+        return "lax"
+    return v
 
 
 def _load_session(request: Request) -> dict[str, Any]:
@@ -67,7 +105,7 @@ def _load_session(request: Request) -> dict[str, Any]:
 
 
 def save_session(response, data: dict[str, Any]) -> None:
-    # HttpOnly+SameSite=Lax always; Secure configurable for HTTPS deployments.
+    # HttpOnly always; SameSite/Secure configurable for HTTPS deployments.
     # max_age aligns cookie lifetime with unlock/session timeout window (+grace) while
     # server-side expiry is still enforced on each request from web_unlock_last.
     try:
@@ -78,7 +116,7 @@ def save_session(response, data: dict[str, Any]) -> None:
         SESSION_COOKIE,
         _serializer.dumps(data),
         httponly=True,
-        samesite="lax",
+        samesite=cookie_samesite(),
         secure=cookie_secure_enabled(),
         max_age=max_age,
         path="/",
@@ -246,11 +284,14 @@ def clear_attempts(bucket: dict[str, list[float]], key: str) -> None:
     bucket.pop(key, None)
 
 
-def enforce_auth_rate_limit(request: Request, scope: str = "unlock", *, limit: int = 8, window_sec: int = 300) -> None:
-    """Mitigate brute-force on auth/unlock-sensitive endpoints (best-effort, in-process)."""
+def enforce_auth_rate_limit(request: Request, scope: str = "unlock", *, limit: int | None = None, window_sec: int | None = None) -> None:
+    """Mitigate brute-force on auth/unlock-sensitive endpoints (best-effort, in-process, configurable)."""
+    d_limit, d_window = rate_limit_config(scope)
+    lim = d_limit if limit is None else max(1, int(limit))
+    win = d_window if window_sec is None else max(10, int(window_sec))
     key = f"{scope}:{_client_ip(request)}"
     bucket = _LOGIN_ATTEMPTS if scope in ("unlock", "recovery") else _SENSITIVE_ATTEMPTS
-    ok, retry = check_rate_limit(bucket, key, limit=limit, window_sec=window_sec)
+    ok, retry = check_rate_limit(bucket, key, limit=lim, window_sec=win)
     if not ok:
         raise HTTPException(status_code=429, detail=f"Too many attempts. Try again in about {retry}s.")
 

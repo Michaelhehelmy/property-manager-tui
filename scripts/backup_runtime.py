@@ -9,11 +9,14 @@ Examples:
   python3 scripts/backup_runtime.py --backup
   python3 scripts/backup_runtime.py --backup --to /path/to/backup.db
   python3 scripts/backup_runtime.py --verify /path/to/backup.db
+  python3 scripts/backup_runtime.py --restore-precheck /path/to/backup.db
   python3 scripts/backup_runtime.py --doctor --json
   python3 scripts/backup_runtime.py --doctor --check-updates
   ./scripts/backup_runtime.sh --backup
   scripts\\backup_runtime.cmd --verify backup.db
   powershell -ExecutionPolicy Bypass -File scripts\\backup_runtime.ps1 --backup
+
+Retention guidance hook: set PM_BACKUP_RETENTION_DAYS (operator/scheduler policy hint).
 """
 from __future__ import annotations
 
@@ -36,10 +39,12 @@ def _print_restore_guidance() -> None:
     print("\nRestore guidance (manual, offline - no automatic destructive restore):")
     print("1. Stop the app/server (exit TUI or stop uvicorn; run with --workers 1 only).")
     print("2. Identify the active DB path (PM_DATA_DIR or default data/; see doctor output).")
-    print("3. Back up current DB before replacing (optional but recommended).")
-    print("4. Copy the verified backup over the active DB file (and restore related exports/invoices if needed).")
-    print("5. Start the app - DB migrations run on startup (additive).")
-    print("6. Verify with: python3 -m app_core.doctor --json  (or this script --doctor).")
+    print("3. Back up current DB before replacing (recommended safety copy).")
+    print("4. Run restore precheck: python3 scripts/backup_runtime.py --restore-precheck <backup.db>")
+    print("5. Copy the verified backup over the active DB file (preserve exports/invoices/PM_DATA_DIR).")
+    print("6. Start the app - DB migrations run on startup (additive/idempotent).")
+    print("7. Verify with: python3 -m app_core.doctor --json  (or this script --doctor).")
+    print("Retention: keep multiple verified backups off-host and prune per policy (PM_BACKUP_RETENTION_DAYS is an operator hint).")
     print("Tip: Use --verify <backup> first to confirm integrity/schema before restoring.")
 
 
@@ -57,6 +62,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--to", dest="backup_to", help="Destination backup path (optional)")
     ap.add_argument("--verify", dest="verify_path", help="Verify a backup/candidate DB file (read-only)")
     ap.add_argument("--verify-backup", dest="verify_backup_path", help="Alias for --verify")
+    ap.add_argument("--restore-precheck", dest="restore_precheck_path", help="Read-only restore precheck: verify backup + target data-dir/permission readiness (no writes)")
     ap.add_argument("--doctor", action="store_true", help="Run doctor health checks (read-only)")
     ap.add_argument("--check-updates", action="store_true", help="With --doctor, query remote update status")
     ap.add_argument("--json", action="store_true", help="JSON output")
@@ -70,7 +76,13 @@ def main(argv: list[str] | None = None) -> int:
     verify_path = args.verify_path or args.verify_backup_path
 
     try:
-        if verify_path:
+        if args.restore_precheck_path:
+            paths.ensure_data_dirs()
+            if hasattr(doctor, "restore_precheck"):
+                res = doctor.restore_precheck(args.restore_precheck_path)
+            else:
+                res = {"ok": False, "backup": doctor.verify_backup_file(args.restore_precheck_path), "error": "restore precheck helper unavailable"}
+        elif verify_path:
             res = doctor.verify_backup_file(verify_path)
         elif args.backup or args.backup_to:
             paths.ensure_data_dirs()
@@ -97,12 +109,31 @@ def main(argv: list[str] | None = None) -> int:
                 if isinstance(v, dict) and v:
                     print(f"  - verified_ok: {v.get('ok')}")
                 _print_restore_guidance()
+            elif args.restore_precheck_path:
+                print(f"Restore precheck: {'OK' if res.get('ok') else 'NOT READY'}")
+                b = res.get("backup") or {}
+                print(f"  - backup_ok: {b.get('ok')}")
+                print(f"  - safe_to_restore: {res.get('safe_to_restore')}")
+                tgt = res.get("target") or {}
+                if tgt:
+                    print(f"  - target_db: {tgt.get('db_path')}")
+                    print(f"  - target_writable: {tgt.get('db_target_writable')} data_dir_writable: {tgt.get('data_dir_writable')}")
+                if res.get("error"):
+                    print(f"  - error: {res.get('error')}")
+                _print_restore_guidance()
             elif verify_path:
                 print(f"Verify backup: {'OK' if res.get('ok') else 'ISSUES/ERROR'}")
                 if res.get("path"):
                     print(f"  - path: {res.get('path')}")
                 if res.get("error"):
                     print(f"  - error: {res.get('error')}")
+                integ = ((res.get("integrity") or {}).get("sqlite") or {})
+                if integ:
+                    print(f"  - integrity_check: {integ.get('integrity_check')}")
+                    print(f"  - foreign_key_violations: {len(integ.get('foreign_key_violations') or [])}")
+                sch = res.get("schema") or {}
+                if sch:
+                    print(f"  - user_version: {sch.get('user_version')}")
                 if res.get("ok"):
                     print("  - Backup appears readable/integrity-checked; safe to use for manual restore if needed.")
                 _print_restore_guidance()

@@ -32,7 +32,9 @@ This guide covers practical deployment for the **TUI** and **Web UI** (FastAPI/H
 ### 4.1 One-line bootstrap (recommended)
 Use the OS-appropriate one-liner from `README.md` (Unix `scripts/install.sh`, Windows `scripts/install_windows.ps1`/`.cmd`). Intended for first install and re-runs:
 - **Automated:** prerequisite bootstrap where supported (package manager/winget as available), clone or fast-forward update, venv + dependency refresh, runtime-data preservation, and launch/run per mode.
-- **Operational:** provide correct env vars (`PM_WEB_SECRET_KEY`, `PM_DATA_DIR`, `HOST`, `PORT`, network/firewall/TLS decisions).
+- **Pinned/reproducible installs:** pass `GIT_REF=<tag|commit|branch>` (or `TAG`/`COMMIT`; Windows: `-GitRef` / `$env:GIT_REF`) and, for reproducible installer behavior, fetch the bootstrap script from the same raw ref (e.g. `.../raw/<tag-or-commit>/scripts/install.sh` or `install_windows.ps1`).
+- **Dependency/install robustness:** if web deps fail to build/install on constrained environments (e.g. `pydantic-core`/Rust wheel issues on iSH/Termux/limited toolchains), fallback to TUI-only (`SKIP_WEB=1 MODE=tui` or `-SkipWeb 1 -Mode tui`) or run web on a fuller host.
+- **Operational:** provide correct env vars (`PM_WEB_SECRET_KEY`, `PM_DATA_DIR`, `HOST`, `PORT`, network/firewall/TLS decisions). Keep web on `--workers 1` and use HTTPS reverse proxy/VPN for shared/non-local access. Runtime data (DB/exports/invoices/`PM_DATA_DIR`) is preserved.
 
 ### 4.2 Setup scripts (from checkout)
 - **Unix-like:** `sh scripts/setup.sh` (alias `scripts/setup_ish_alpine.sh`)

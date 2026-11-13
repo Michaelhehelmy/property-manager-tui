@@ -1,4 +1,4 @@
-# Safe backup/verify helper wrapper. Preserves runtime data (DB/exports/invoices/PM_DATA_DIR); never deletes.
+# Safe backup/verify/restore-precheck helper wrapper. Preserves runtime data (DB/exports/invoices/PM_DATA_DIR); never deletes.
 # Usage: powershell -ExecutionPolicy Bypass -File scripts\backup_runtime.ps1 --backup
 $ErrorActionPreference = 'Stop'
 try {

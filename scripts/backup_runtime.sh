@@ -1,6 +1,6 @@
 #!/bin/sh
-# Safe backup/verify helper wrapper. Preserves runtime data (DB/exports/invoices/PM_DATA_DIR); never deletes.
-# Usage: sh scripts/backup_runtime.sh --backup | --verify <backup.db> | [other supported args]
+# Safe backup/verify/restore-precheck helper wrapper. Preserves runtime data (DB/exports/invoices/PM_DATA_DIR); never deletes.
+# Usage: sh scripts/backup_runtime.sh --backup | --verify <backup.db> | --restore-precheck <backup.db> | [other supported args]
 set -eu
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." 2>/dev/null && pwd)"

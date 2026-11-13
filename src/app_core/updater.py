@@ -266,9 +266,10 @@ def apply_update(branch: str = DEFAULT_BRANCH) -> dict[str, Any]:
             "property_manager.db / exports / invoices (ignored runtime data)",
         ],
         "notes": [
-            "Update uses 'git pull --ff-only' and does not modify ignored runtime data (DB, exports, invoices).",
-            "Restart the app after a successful update.",
-            "Run backup/doctor checks before and after updates in production-like environments.",
+            "Safety: create and verify a backup before applying updates (doctor --backup / --verify-backup).",
+            "Update uses 'git pull --ff-only' and does not modify ignored runtime data (DB, exports, invoices, PM_DATA_DIR).",
+            "Stop or schedule a maintenance window if needed; run web with --workers 1 (SQLite).",
+            "Restart the app/service after a successful update and run doctor/health checks.",
         ],
     }
     try:
@@ -277,10 +278,10 @@ def apply_update(branch: str = DEFAULT_BRANCH) -> dict[str, Any]:
         res["error"] = str(e)
         return res
     if not local.get("is_git_repo"):
-        res["error"] = "Not a git installation; cannot auto-update. Reinstall using the latest installer/scripts."
+        res["error"] = "Not a git installation; cannot auto-update. Reinstall/update from a supported release while preserving runtime data (DB/exports/invoices/PM_DATA_DIR)."
         return res
     if local.get("dirty"):
-        res["error"] = "Local source has uncommitted changes. Commit/stash/discard them before updating to avoid conflicts."
+        res["error"] = "Local source has uncommitted changes. Commit/stash/discard them before updating to avoid conflicts or data/source drift."
         return res
     if local.get("branch") and local.get("branch") not in ("HEAD", branch):
         res["notes"].append(f"Current branch is '{local.get('branch')}'; update will fetch/pull origin/{branch} via fast-forward only.")

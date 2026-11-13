@@ -61,24 +61,37 @@ tests/                       # pytest suite
 
 ## One-line install / update (all supported OS families)
 
-These commands are intended for **first-time install and later re-runs** on git-based installs: they bootstrap prerequisites where possible, clone/update (fast-forward), refresh dependencies, preserve runtime data, and launch/run per selected mode. **Always keep web on `--workers 1`**.
+These commands are intended for **first-time install and later re-runs** on git-based installs: they bootstrap prerequisites where possible, clone/update (fast-forward), refresh dependencies, preserve runtime data, and launch/run per selected mode. **Always keep web on `--workers 1`**. For shared/non-local/LAN/remote web access, set a strong `PM_WEB_SECRET_KEY` and use **HTTPS** via reverse proxy/VPN/private networking (do not expose plain HTTP publicly).
 
 | OS / Environment | One-line command | Notes |
 |---|---|---|
 | **Linux / macOS / WSL / generic Unix** (curl) | `curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh \| sh` | Detects environment/package manager, installs/updates, launches launcher (choose TUI or Web). Re-run anytime. |
 | **Linux / macOS / WSL** (wget) | `wget -qO- https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh \| sh` | Fallback if `curl` is unavailable. |
 | **TUI only (minimal / headless / iSH)** | `curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh \| SKIP_WEB=1 MODE=tui sh` | Most reliable for constrained environments. |
-| **Web server for LAN (trusted network)** | `curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh \| MODE=web HOST=0.0.0.0 PORT=8000 sh` | Set strong `PM_WEB_SECRET_KEY`; prefer HTTPS reverse proxy/VPN for shared/remote access. |
-| **Android (Termux)** | `pkg update -y && pkg install -y curl && curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh \| sh` | Launcher (TUI/Web). For LAN web add `MODE=web HOST=0.0.0.0 PORT=8000` and secret key. |
+| **Web server for LAN (trusted network)** | `curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh \| MODE=web HOST=0.0.0.0 PORT=8000 PM_WEB_SECRET_KEY="$(openssl rand -hex 32)" sh` | `--workers 1` required (SQLite). Use HTTPS reverse proxy/VPN for shared/remote access. |
+| **Android (Termux)** | `pkg update -y && pkg install -y curl && curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh \| sh` | Launcher (TUI/Web). For LAN web add `MODE=web HOST=0.0.0.0 PORT=8000 PM_WEB_SECRET_KEY=...`; if web deps fail (e.g. pydantic-core/Rust wheel builds), use `SKIP_WEB=1 MODE=tui`. |
 | **iOS (iSH / Alpine)** | `apk add --no-cache curl && curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh \| SKIP_WEB=1 MODE=tui sh` | Prefer TUI on iSH. |
 | **Windows (PowerShell, bootstrap)** | `irm https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install_windows.ps1 \| iex` | Uses winget when available to install Python/Git if missing, then clones/updates and runs setup/deploy. Customize via `$env:ACTION/$env:MODE/$env:HOST/$env:PORT/$env:PM_WEB_SECRET_KEY`. |
-| **Windows (CMD bootstrap)** | `curl -fsSL -o install_windows.cmd https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install_windows.cmd && install_windows.cmd -Action deploy -Mode auto` | Downloads/runs bootstrap wrapper. |
+| **Windows (CMD bootstrap)** | `curl -fsSL -o install_windows.cmd https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install_windows.cmd && install_windows.cmd -Action deploy -Mode auto` | Downloads/runs bootstrap wrapper (uses PowerShell script). |
 
-**Common env vars / parameters (Unix installer/setup):** `INSTALL_DIR`, `REPO_URL`, `BRANCH`, `MODE` (`auto|tui|web|both`), `ACTION` (`auto|setup|run|deploy`), `SKIP_WEB` (`auto|0|1`), `HOST`, `PORT`, `PYTHON`, `INSTALL_DEV`, `RUN_TESTS`, `PM_DATA_DIR`, `PM_WEB_SECRET_KEY`.
+**Common env vars / parameters (Unix installer/setup):** `INSTALL_DIR`, `REPO_URL`, `BRANCH`, `GIT_REF`/`TAG`/`COMMIT` (pinned ref), `MODE` (`auto|tui|web|both`), `ACTION` (`auto|setup|run|deploy`), `SKIP_WEB` (`auto|0|1`), `HOST`, `PORT`, `PYTHON`, `INSTALL_DEV`, `RUN_TESTS`, `PM_DATA_DIR`, `PM_WEB_SECRET_KEY`. **Windows:** pass `-GitRef`/`-Action`/`-Mode`/`-BindHost`/`-Port` or set corresponding env vars (`GIT_REF`/`TAG`/`COMMIT`, etc.).
 
 - `ACTION=auto` (default): full install+launch if missing, else update deps/code and launch.
 - `ACTION=setup`: install/update/prepare only. `ACTION=run`: run existing install. `ACTION=deploy`: setup + run.
 - Runtime data (DB/exports/invoices/`PM_DATA_DIR`) is preserved by scripts/updates.
+
+### Pinned/reproducible installs
+
+- Install/update to a specific tag/commit/branch: `GIT_REF=<tag-or-commit-or-branch> sh` (Unix) or `-GitRef <...>` / `$env:GIT_REF=<...>` (Windows). Aliases: `TAG`, `COMMIT`.
+- **Pinned bootstrap script URL:** use the raw script at the same ref to ensure installer logic is reproducible, e.g. `https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/<tag-or-commit>/scripts/install.sh` (Unix) or `.../<tag-or-commit>/scripts/install_windows.ps1` (Windows).
+- Existing checkouts: `GIT_REF=<tag> ACTION=setup sh scripts/setup.sh` (or Windows setup script) checks out the requested ref; when on a branch, scripts may fast-forward as applicable. Runtime data is preserved.
+- For immutable production-like deployments, prefer pinning to a release tag/commit and recording the resolved commit (`git -C <install-dir> rev-parse HEAD`) alongside backups/change records.
+
+### Dependency/install robustness (constrained environments)
+
+- **TUI-only fallback:** if web dependency installation/build fails, re-run with `SKIP_WEB=1 MODE=tui` (Unix) or `-SkipWeb 1 -Mode tui` (Windows). Core/TUI remains usable.
+- **`pydantic-core` / Rust wheel issues:** on iSH/Termux/older CPU architectures or limited toolchains, some web deps may require Rust/cargo/build tools or a prebuilt wheel matching your Python version/architecture. If unavailable, use TUI-only, upgrade Python/toolchain, or run the web UI on a fuller host.
+- **SQLite web safety:** always run web with `--workers 1`. Use `PM_WEB_SECRET_KEY` and HTTPS reverse proxy/VPN for non-local/shared access. Runtime data (`PM_DATA_DIR`, DB, exports, invoices) is preserved across setup/update runs.
 
 ## Platform-specific setup
 

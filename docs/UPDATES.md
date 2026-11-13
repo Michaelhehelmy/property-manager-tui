@@ -9,10 +9,11 @@ This guide covers how to update a git-based Property Manager installation safely
   - View **changelog/commit details** before applying
   - **Apply/Update** via **git fast-forward** (ff-only)
 - **Manual mechanism:** `git pull --ff-only` in the install directory, then refresh dependencies/setup if needed.
+- **Pinned/reproducible updates:** to move to a specific tag/commit/branch, use `GIT_REF=<tag|commit|branch>` with setup/install scripts (Unix) or `-GitRef` / `$env:GIT_REF` (Windows), and prefer fetching bootstrap scripts from the same raw ref for reproducibility (e.g. `.../raw/<ref>/scripts/install.sh`).
 - **Runtime data preserved:** DB, exports, invoices, and configured data directory (`PM_DATA_DIR`/defaults) are **not modified** by source updates.
 - **Migrations:** DB migrations run on application startup and are additive where applicable.
 - **Restart required:** after applying an update, **restart the TUI/app/web server** to load the new code.
-- **Web constraint:** always run with **`--workers 1`**.
+- **Web constraint:** always run with **`--workers 1`**. Set `PM_WEB_SECRET_KEY` and use HTTPS reverse proxy/VPN for shared/non-local deployments.
 
 ## 2) Pre-update checklist (operational)
 
@@ -98,7 +99,15 @@ Rollback may involve **code**, **dependencies**, and potentially **data/state** 
 - Diverged git history, local patches, or hotfixes: preserve changes, coordinate with maintainers, and create a controlled recovery plan.
 - If data corruption or security incident is involved: prioritize containment, verified restore, secret rotation, and incident procedures over rapid in-place rollback.
 
-## 8) Automated vs operational/manual
+## 8) Release, version, and changelog conventions (guidance)
 
-- **Automated/tooling:** in-app update check/changelog, ff-only apply, startup migrations, backup/verify helpers, setup scripts for dependency refresh.
-- **Operational/manual:** pre-update backup/verification, maintenance window and restart, resolving local changes or non-ff histories, dependency/system remediation, post-update validation, rollback decisions/execution (including DB restore when required), and release communication/sign-off.
+- **Version source:** package/runtime version is tracked in `pyproject.toml` (`[project].version`). Bump it for releasable changes according to your chosen scheme (e.g. SemVer-like `MAJOR.MINOR.PATCH`) and keep release tags/commits consistent with that version.
+- **Changelog / release notes:** record user/operator-visible changes (features, fixes, migrations, security, operational impacts, required env/dependency changes) in release notes or a changelog artifact maintained with the release/tag. In-app update flow surfaces git changelog/commit details when available; ensure commits/tags are meaningful.
+- **Tagging for reproducibility:** create annotated tags for releases (e.g. `vX.Y.Z`) from a verified commit on the intended branch. Prefer installing/updating production or reproducible environments via pinned `GIT_REF=<tag-or-commit>` and raw bootstrap scripts at the same ref.
+- **Pre-release checklist (recommended):** run tests/checks appropriate to scope, verify `--workers 1` web behavior and migrations on a copy, update docs if operational behavior changes, create/verify backup guidance as needed, bump version, publish tag/release notes, and document any manual upgrade/rollback steps.
+- **Compatibility notes:** call out dependency/toolchain constraints (including constrained-environment web build issues such as `pydantic-core`/Rust wheels), TUI-only fallback guidance, and any schema/startup considerations relevant to rollback.
+
+## 9) Automated vs operational/manual
+
+- **Automated/tooling:** in-app update check/changelog, ff-only apply, startup migrations, backup/verify helpers, setup scripts for dependency refresh and pinned-ref checkout support.
+- **Operational/manual:** pre-update backup/verification, maintenance window and restart, resolving local changes or non-ff histories, dependency/system remediation (including constrained-environment fallbacks), post-update validation, rollback decisions/execution (including DB restore when required), release tagging/version/changelog publication, and release communication/sign-off. Keep `--workers 1`, strong `PM_WEB_SECRET_KEY`, and HTTPS/private networking for shared web access. Runtime data (DB/exports/invoices/`PM_DATA_DIR`) remains preserved.

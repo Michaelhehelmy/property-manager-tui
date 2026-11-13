@@ -79,6 +79,46 @@ def ensure_data_dirs() -> None:
     BASE_DIR = DATA_DIR
 
 
+def check_runtime_permissions() -> dict:
+    """Read-only runtime path/permission checks (no mutation, no sensitive data)."""
+    try:
+        ensure_data_dirs()
+    except Exception:
+        pass
+    checks = {}
+    for key, p in [
+        ("data_dir", DATA_DIR),
+        ("export_dir", EXPORT_DIR),
+        ("invoice_dir", INVOICE_DIR),
+        ("db_path", DB_PATH),
+    ]:
+        try:
+            pp = Path(p)
+            exists = pp.exists()
+            is_dir = pp.is_dir() if exists else False
+            is_file = pp.is_file() if exists else False
+            # For missing DB, writability depends on parent data dir.
+            writable_target = pp if exists else pp.parent
+            checks[key] = {
+                "path": str(pp),
+                "exists": exists,
+                "is_dir": is_dir,
+                "is_file": is_file,
+                "readable": os.access(str(pp), os.R_OK) if exists else os.access(str(writable_target), os.R_OK),
+                "writable": os.access(str(pp), os.W_OK) if exists else os.access(str(writable_target), os.W_OK),
+            }
+        except Exception as e:
+            checks[key] = {"path": str(p), "exists": False, "error": redact_sensitive(e, 300)}
+    # Detect world-writable data dir as a warning signal on POSIX-like systems.
+    try:
+        mode = os.stat(str(DATA_DIR)).st_mode
+        checks["data_dir_mode"] = oct(mode & 0o777)
+        checks["data_dir_world_writable"] = bool(mode & 0o002)
+    except Exception:
+        pass
+    return checks
+
+
 def is_path_within(path: str | Path, root: str | Path) -> bool:
     """Return True if resolved path is inside resolved root (path confinement helper)."""
     try:

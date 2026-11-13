@@ -23,6 +23,8 @@ docker compose up -d --build
 ```
 
 ## Ops helpers
-- Health: `python3 -m app_core.doctor --json` and probes `GET /health`, `GET /healthz`
-- Backup/verify: `python3 scripts/backup_runtime.py --backup` / `--verify <backup.db>`
-- Updates (git installs): in-app Settings → App updates (fast-forward) or `git pull --ff-only` then rerun setup; restart service after updates. Runtime data is preserved.
+- Health/readiness: `python3 -m app_core.doctor --json` and probes `GET /health`, `GET /healthz`, `GET /readyz` (safe, no secrets)
+- Backup/verify/restore-precheck: `python3 scripts/backup_runtime.py --backup` / `--verify <backup.db>` / `--restore-precheck <backup.db>` (read-only precheck; restore is manual/offline)
+- Retention: keep multiple verified backups off-host and prune per policy (operator hook: `PM_BACKUP_RETENTION_DAYS`)
+- Updates (git installs): in-app Settings → App updates (fast-forward) or `git pull --ff-only` then rerun setup; create/verify backup first, restart service after updates, and run doctor/health checks. Runtime data is preserved.
+- Permissions: ensure `PM_DATA_DIR`/DB/exports/invoices are writable by the service/container user (container default non-root uid 10001). Never expose plain HTTP to the internet; set `PM_WEB_COOKIE_SECURE=1` behind HTTPS.

@@ -14,9 +14,12 @@ WorkingDirectory=/opt/property-manager-tui
 Environment=PM_DATA_DIR=/var/lib/property-manager-tui
 # REQUIRED for non-local/shared access: generate a strong random secret (e.g. openssl rand -hex 32)
 Environment=PM_WEB_SECRET_KEY=change-me-to-a-long-random-secret
+# Enable Secure cookies when behind HTTPS reverse proxy.
+Environment=PM_WEB_COOKIE_SECURE=1
 # Bind locally and terminate HTTPS at a reverse proxy (recommended).
 Environment=HOST=127.0.0.1
 Environment=PORT=8000
+# Optional auth/rate-limit tuning (in-process, best-effort, single-worker): PM_WEB_UNLOCK_RATE_LIMIT, PM_WEB_RECOVERY_RATE_LIMIT, etc.
 
 # Ensure app packages are importable from repo checkout layout
 Environment=PYTHONPATH=/opt/property-manager-tui/src:/opt/property-manager-tui

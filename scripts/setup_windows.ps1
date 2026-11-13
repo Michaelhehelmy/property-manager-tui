@@ -238,7 +238,9 @@ function Ensure-Venv-And-Deps([string]$py) {
     Log "Installing web dependencies (requirements-web.txt)..."
     & $venvPy -m pip install -r requirements-web.txt
     if ($LASTEXITCODE -ne 0) {
-      Warn "Web dependency installation failed. TUI/core can still be used. Retry with -SkipWeb 1 -Mode tui"
+      Warn "Web dependency installation failed. Core/TUI can still be used. Retry with -SkipWeb 1 -Mode tui."
+      Warn "On constrained environments/toolchains, some packages (e.g. pydantic-core) may require Rust/build tools or a prebuilt wheel for your Python version/architecture."
+      Warn "Fallback: use TUI-only (-SkipWeb 1 -Mode tui). If web is required, install build prerequisites or run the web UI on a supported host."
       $script:SkipWeb = '1'
       if ($script:Mode -eq 'both') { $script:Mode = 'tui' }
     }
@@ -292,9 +294,11 @@ Run (PowerShell):
 
 Tips / Ops:
   - Same device browser: HOST=127.0.0.1 -> http://127.0.0.1:$Port
-  - LAN/other devices: use -BindHost 0.0.0.0, set a strong `$env:PM_WEB_SECRET_KEY`, and terminate HTTPS via reverse proxy (Caddy/Nginx/Traefik).
+  - LAN/other devices: use -BindHost 0.0.0.0, set a strong `$env:PM_WEB_SECRET_KEY`, and terminate HTTPS via reverse proxy (Caddy/Nginx/Traefik). Keep web on --workers 1 (SQLite).
   - Runtime data is preserved: DB, exports, invoices, and PM_DATA_DIR are never deleted by setup/update scripts.
   - Updates (git): Settings → App updates (fast-forward) or git pull --ff-only + re-run -Action setup; restart after updates.
+  - Pinned/reproducible install: set -GitRef <tag|commit|branch> (or GIT_REF/TAG/COMMIT env). Bootstrap from raw/<ref>/scripts/install_windows.ps1 for a fixed script version.
+  - If web deps fail (e.g. pydantic-core/Rust wheel/build issues), fallback to TUI-only: -SkipWeb 1 -Mode tui.
   - Health: python -m app_core.doctor --json (probes: /health, /healthz)
   - Backup/verify: python scripts/backup_runtime.py --backup  |  --verify <backup.db>
   - Deployment examples: deploy\ (systemd/Caddy/Nginx), Dockerfile, docker-compose.yml

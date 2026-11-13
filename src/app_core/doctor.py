@@ -127,48 +127,8 @@ def _printer_readiness() -> dict[str, Any]:
         else:
             out["checks"].append({"severity": "info", "code": "printer_check_skipped", "message": "Printer settings check skipped (app DB not initialized in this process)"})
     except Exception as e:
-        out["checks"].append({"severity": "warn", "code": "printer_check_error", "message": str(e)})
+        out["checks"].append({"severity": "warn", "code": "printer_check_error", "message": paths.redact_sensitive(e, 300)})
     return out
-
-
-def _backup_restore_guidance() -> dict[str, Any]:
-    db_path = Path(paths.DB_PATH)
-    data_dir = Path(paths.DATA_DIR)
-    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
-    backup_name = f"property_manager.backup.{ts}.db"
-    wal = Path(str(db_path) + "-wal")
-    shm = Path(str(db_path) + "-shm")
-    return {
-        "runtime_data_preserved": ["DB", "exports", "invoices", "configured data dir (PM_DATA_DIR/DATA_DIR)"],
-        "backup": {
-            "stop_app_first": True,
-            "copy_db_file": str(db_path),
-            "suggested_backup_path": str(data_dir / backup_name),
-            "cli_helper": "python3 -m app_core.doctor --backup  (or --backup-to <path>)",
-            "wal_exists": wal.exists(),
-            "shm_exists": shm.exists(),
-            "note": "Prefer backups while app is stopped. CLI --backup uses SQLite backup API when possible; verify the backup after creation. Preserve exports/ and invoices/ alongside DB backups.",
-        },
-        "restore": {
-            "stop_app_first": True,
-            "replace_db_file": str(db_path),
-            "verify_helper": "python3 -m app_core.doctor --verify-backup <path>",
-            "steps": [
-                "Stop TUI/Web processes (run web with --workers 1).",
-                "Create a fresh safety backup of current runtime data if available.",
-                "Verify candidate backup: python3 -m app_core.doctor --verify-backup <backup.db>",
-                "Copy verified backup over the target DB path (and keep exports/invoices/data dir).",
-                "Restart app; it will run safe/idempotent migrations if needed.",
-                "Run: python3 -m app_core.doctor --json",
-            ],
-        },
-        "readiness": {
-            "db_exists": db_path.exists(),
-            "data_dir_exists": data_dir.exists(),
-            "data_dir_writable": os.access(str(data_dir), os.W_OK) if data_dir.exists() else os.access(str(data_dir.parent), os.W_OK),
-            "recommendation": "Verify backups before restore and never delete runtime data during update/backup/restore operations.",
-        },
-    }
 
 
 def _ensure_parent_dir(path: Path) -> None:
@@ -197,7 +157,7 @@ def verify_backup_file(backup_path: str | Path) -> dict[str, Any]:
         out["ok"] = ok
         return out
     except Exception as e:
-        out["error"] = str(e)
+        out["error"] = paths.redact_sensitive(e, 300)
         return out
     finally:
         try:
@@ -205,6 +165,41 @@ def verify_backup_file(backup_path: str | Path) -> dict[str, Any]:
                 conn.close()
         except Exception:
             pass
+
+
+def restore_precheck(backup_path: str | Path) -> dict[str, Any]:
+    """Read-only restore precheck: verify candidate backup and report target readiness (no writes)."""
+    verify = verify_backup_file(backup_path)
+    target_db = Path(paths.DB_PATH)
+    try:
+        perm = paths.check_runtime_permissions() if hasattr(paths, "check_runtime_permissions") else {}
+    except Exception:
+        perm = {}
+    data_writable = bool((perm.get("data_dir") or {}).get("writable", False))
+    db_parent_writable = os.access(str(target_db.parent), os.W_OK) if target_db.parent.exists() else False
+    target_writable = bool((perm.get("db_path") or {}).get("writable", db_parent_writable))
+    guidance = _backup_restore_guidance()
+    ok = bool(verify.get("ok")) and (data_writable or db_parent_writable)
+    return {
+        "ok": ok,
+        "safe_to_restore": bool(verify.get("ok")),
+        "backup": verify,
+        "target": {
+            "db_path": str(target_db),
+            "db_exists": target_db.exists(),
+            "data_dir": str(paths.DATA_DIR),
+            "data_dir_writable": data_writable,
+            "db_target_writable": target_writable,
+            "stop_app_required": True,
+        },
+        "permissions": perm,
+        "notes": [
+            "Restore is manual/offline only; this check does not modify files.",
+            "Create a safety backup of current runtime data before replacing the DB.",
+            "Preserve exports/ and invoices/ alongside DB restore.",
+        ],
+        "restore_steps": ((guidance.get("restore") or {}).get("steps") or []),
+    }
 
 
 def create_backup(backup_to: str | Path | None = None) -> dict[str, Any]:
@@ -238,6 +233,7 @@ def create_backup(backup_to: str | Path | None = None) -> dict[str, Any]:
             "source": str(src),
             "backup_path": str(dst),
             "verified": verify,
+            "retention_guidance": "Retain multiple verified backups off-host and prune per policy (e.g. PM_BACKUP_RETENTION_DAYS).",
             "note": "Backup created without deleting runtime data. Keep exports/ and invoices/ alongside DB backups.",
         }
     except Exception as e:
@@ -252,10 +248,89 @@ def create_backup(backup_to: str | Path | None = None) -> dict[str, Any]:
                 "backup_path": str(dst),
                 "verified": verify,
                 "fallback": "file_copy",
-                "warning": f"sqlite backup API failed, used file copy: {e}",
+                "warning": paths.redact_sensitive(f"sqlite backup API failed, used file copy: {e}", 300),
+                "retention_guidance": "Retain multiple verified backups off-host and prune per policy (e.g. PM_BACKUP_RETENTION_DAYS).",
             }
         except Exception as e2:
             return {"ok": False, "error": f"backup failed: {e2}", "source": str(src), "backup_path": str(dst)}
+
+
+def _detect_backup_files() -> dict[str, Any]:
+    """Best-effort scan for recent backup files in DATA_DIR (read-only, no secrets)."""
+    try:
+        data_dir = Path(paths.DATA_DIR)
+        if not data_dir.exists() or not data_dir.is_dir():
+            return {"found": 0, "recent_backups": []}
+        candidates = []
+        for pat in ("*.db", "*.sqlite", "*.sqlite3", "*.bak", "*.backup", "*.zip"):
+            try:
+                candidates.extend(list(data_dir.glob(pat)))
+            except Exception:
+                pass
+        backups = []
+        for p in candidates:
+            try:
+                name = p.name.lower()
+                if "property_manager" not in name and "backup" not in name and not name.endswith(".bak"):
+                    continue
+                st = p.stat()
+                backups.append({
+                    "name": p.name,
+                    "path": str(p),
+                    "size_bytes": st.st_size,
+                    "modified_at": datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
+                    "age_hours": round(max(0.0, (time.time() - st.st_mtime) / 3600.0), 2),
+                })
+            except Exception:
+                continue
+        backups.sort(key=lambda x: x.get("age_hours", 1e12))
+        return {"found": len(backups), "recent_backups": backups[:5], "latest_age_hours": (backups[0]["age_hours"] if backups else None)}
+    except Exception as e:
+        return {"found": 0, "error": paths.redact_sensitive(e, 200)}
+
+
+def _backup_restore_guidance() -> dict[str, Any]:
+    db_path = Path(paths.DB_PATH)
+    data_dir = Path(paths.DATA_DIR)
+    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+    backup_name = f"property_manager.backup.{ts}.db"
+    wal = Path(str(db_path) + "-wal")
+    shm = Path(str(db_path) + "-shm")
+    return {
+        "runtime_data_preserved": ["DB", "exports", "invoices", "configured data dir (PM_DATA_DIR/DATA_DIR)"],
+        "backup": {
+            "stop_app_first": True,
+            "copy_db_file": str(db_path),
+            "suggested_backup_path": str(data_dir / backup_name),
+            "cli_helper": "python3 -m app_core.doctor --backup  (or --backup-to <path>)",
+            "verify_helper": "python3 -m app_core.doctor --verify-backup <path>",
+            "wal_exists": wal.exists(),
+            "shm_exists": shm.exists(),
+            "note": "Prefer backups while app is stopped. CLI --backup uses SQLite backup API when possible; verify the backup after creation. Preserve exports/ and invoices/ alongside DB backups.",
+            "retention_guidance": "Keep multiple recent backups off-device/off-host (e.g. daily+weekly) and prune old copies according to your policy. Use PM_BACKUP_RETENTION_DAYS as an operator hint where supported by your scheduler.",
+        },
+        "restore": {
+            "stop_app_first": True,
+            "replace_db_file": str(db_path),
+            "verify_helper": "python3 -m app_core.doctor --verify-backup <path>",
+            "precheck_helper": "python3 scripts/backup_runtime.py --restore-precheck <path>",
+            "steps": [
+                "Stop TUI/Web processes (run web with --workers 1).",
+                "Create a fresh safety backup of current runtime data if available.",
+                "Run restore precheck on candidate: python3 scripts/backup_runtime.py --restore-precheck <backup.db>",
+                "Copy verified backup over the target DB path (and keep exports/invoices/data dir).",
+                "Restart app; it will run safe/idempotent migrations if needed.",
+                "Run: python3 -m app_core.doctor --json",
+            ],
+        },
+        "readiness": {
+            "db_exists": db_path.exists(),
+            "data_dir_exists": data_dir.exists(),
+            "data_dir_writable": os.access(str(data_dir), os.W_OK) if data_dir.exists() else os.access(str(data_dir.parent), os.W_OK),
+            "detected_backups": _detect_backup_files(),
+            "recommendation": "Verify backups before restore and never delete runtime data during update/backup/restore operations.",
+        },
+    }
 
 
 def _config_issues() -> list[dict[str, str]]:
@@ -272,13 +347,52 @@ def _config_issues() -> list[dict[str, str]]:
         else:
             issues.append({"severity": "info", "code": "db_not_open", "message": "DB connection not open in this process; config/printer/ledger checks limited."})
     except Exception as e:
-        issues.append({"severity": "warn", "code": "config_check_error", "message": f"Could not evaluate some config checks: {e}"})
+        issues.append({"severity": "warn", "code": "config_check_error", "message": paths.redact_sensitive(f"Could not evaluate some config checks: {e}", 300)})
+    # Path/permission checks
     try:
-        for label, p in [("data_dir", Path(paths.DATA_DIR)), ("export_dir", Path(paths.EXPORT_DIR)), ("invoice_dir", Path(paths.INVOICE_DIR))]:
-            if p.exists() and not os.access(str(p), os.W_OK):
-                issues.append({"severity": "error", "code": "path_not_writable", "message": f"{label} is not writable: {p}"})
+        perm = paths.check_runtime_permissions() if hasattr(paths, "check_runtime_permissions") else {}
+        for label, key in [("data_dir", "data_dir"), ("export_dir", "export_dir"), ("invoice_dir", "invoice_dir")]:
+            info = perm.get(key) or {}
+            if info.get("exists") and not info.get("writable", True):
+                issues.append({"severity": "error", "code": "path_not_writable", "message": f"{label} is not writable: {info.get('path','')}"})
+        if perm.get("data_dir_world_writable"):
+            issues.append({"severity": "warn", "code": "data_dir_world_writable", "message": "Runtime data directory is world-writable; restrict permissions for shared hosts."})
+        dbi = perm.get("db_path") or {}
+        if dbi.get("exists") and not dbi.get("writable", True):
+            issues.append({"severity": "error", "code": "db_not_writable", "message": f"Database file is not writable: {dbi.get('path','')}"})
     except Exception as e:
-        issues.append({"severity": "warn", "code": "path_check_error", "message": f"Path checks failed: {e}"})
+        issues.append({"severity": "warn", "code": "path_check_error", "message": paths.redact_sensitive(f"Path checks failed: {e}", 300)})
+    # Web/runtime secret and cookie warnings (detectable env only; no values exposed)
+    try:
+        secret = os.environ.get("PM_WEB_SECRET_KEY")
+        host_hint = (os.environ.get("HOST") or os.environ.get("PM_WEB_HOST") or "127.0.0.1")
+        non_local = host_hint not in ("127.0.0.1", "localhost", "::1")
+        if not secret:
+            sev = "error" if non_local else "warn"
+            issues.append({"severity": sev, "code": "web_secret_missing", "message": "PM_WEB_SECRET_KEY is not set; set a strong random secret for web deployments (required for non-local)."})
+        elif len(secret) < 32:
+            issues.append({"severity": "warn", "code": "web_secret_weak", "message": "PM_WEB_SECRET_KEY appears short (<32 chars); use a strong random secret."})
+        cookie_secure = os.environ.get("PM_WEB_COOKIE_SECURE", "").strip().lower() in ("1", "true", "yes", "on")
+        if non_local and not cookie_secure:
+            issues.append({"severity": "warn", "code": "cookie_secure_disabled", "message": "PM_WEB_COOKIE_SECURE is not enabled for a non-local host hint; enable Secure cookies behind HTTPS."})
+        if os.environ.get("PM_WEB_ALLOW_INSECURE_DEV") == "1":
+            issues.append({"severity": "warn", "code": "insecure_dev_override", "message": "PM_WEB_ALLOW_INSECURE_DEV=1 is set; do not use in production."})
+    except Exception:
+        pass
+    # Backup recency warning (best-effort)
+    try:
+        detected = _detect_backup_files()
+        latest_age = detected.get("latest_age_hours")
+        if not detected.get("found"):
+            issues.append({"severity": "warn", "code": "backup_missing", "message": "No backup files detected in runtime data dir; create and verify a backup."})
+        elif latest_age is not None:
+            try:
+                if float(latest_age) > 168:  # 7 days
+                    issues.append({"severity": "warn", "code": "backup_stale", "message": f"Latest detected backup is ~{float(latest_age):.1f}h old; verify backup recency/retention."})
+            except Exception:
+                pass
+    except Exception:
+        pass
     return issues
 
 

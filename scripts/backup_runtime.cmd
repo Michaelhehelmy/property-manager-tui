@@ -1,6 +1,6 @@
 @echo off
 setlocal
-REM Safe backup/verify helper wrapper. Preserves runtime data (DB/exports/invoices/PM_DATA_DIR); never deletes.
+REM Safe backup/verify/restore-precheck helper wrapper. Preserves runtime data (DB/exports/invoices/PM_DATA_DIR); never deletes.
 set "SCRIPT_DIR=%~dp0"
 set "ROOT=%SCRIPT_DIR%.."
 if defined PYTHON (set "PY=%PYTHON%") else (set "PY=python")

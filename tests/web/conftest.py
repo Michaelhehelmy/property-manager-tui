@@ -66,6 +66,13 @@ def web_env(tmp_path, monkeypatch):
     except Exception:
         pass
 
+    # Reset in-process web auth rate-limit buckets for deterministic tests.
+    try:
+        deps._LOGIN_ATTEMPTS.clear()
+        deps._SENSITIVE_ATTEMPTS.clear()
+    except Exception:
+        pass
+
     services.init_db()
     services.set_super_password("testpass")
 
@@ -75,6 +82,12 @@ def web_env(tmp_path, monkeypatch):
         "export_dir": export_dir,
         "invoice_dir": invoice_dir,
     }
+
+    try:
+        deps._LOGIN_ATTEMPTS.clear()
+        deps._SENSITIVE_ATTEMPTS.clear()
+    except Exception:
+        pass
 
     try:
         db.close()

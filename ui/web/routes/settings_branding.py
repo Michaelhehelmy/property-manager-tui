@@ -298,9 +298,9 @@ async def updates_check(request: Request):
             deps.add_flash(request, result["error"], "error")
         elif result.get("update_available"):
             n = result.get("commits_behind")
-            deps.add_flash(request, f"Update available ({n} commit(s) behind)." if n is not None else "Update available.", "info")
+            deps.add_flash(request, f"Update available ({n} commit(s) behind). Review changelog, back up/verify runtime data, then apply during a maintenance window." if n is not None else "Update available. Review changelog and back up runtime data before applying.", "info")
         else:
-            deps.add_flash(request, "You are up to date.", "success")
+            deps.add_flash(request, "You are up to date. Runtime data (DB/exports/invoices) remains preserved.", "success")
     except Exception as e:
         deps.get_session(request)["last_update_check"] = {"ok": False, "error": str(e)}
         deps.add_flash(request, f"Update check failed: {e}", "error")
@@ -317,9 +317,9 @@ async def updates_apply(request: Request):
         result = updater.apply_update()
         deps.get_session(request)["last_update_apply"] = result
         if result.get("ok"):
-            deps.add_flash(request, "Update applied (fast-forward). Restart the app to use the new version. Your data (DB/exports/invoices) was preserved.", "success")
+            deps.add_flash(request, "Update applied (git fast-forward). Runtime data (DB/exports/invoices/PM_DATA_DIR) was preserved. Restart the app/service to use the new version and run doctor/health checks after restart.", "success")
         else:
-            deps.add_flash(request, result.get("error") or "Update failed.", "error")
+            deps.add_flash(request, result.get("error") or "Update failed. Runtime data was not deleted; review git status/logs before retrying.", "error")
     except Exception as e:
         deps.get_session(request)["last_update_apply"] = {"ok": False, "error": str(e)}
         deps.add_flash(request, str(e), "error")

@@ -43,10 +43,11 @@ Use this checklist to move Property Manager from setup/testing to production-lik
 
 ## 6) Updates and maintenance
 
-- [ ] **Update procedure agreed (manual + tooling):** in-app **Settings → App updates** (git fast-forward) or `git pull --ff-only`; require clean working tree for auto-apply.
+- [ ] **Update procedure agreed (manual + tooling):** in-app **Settings → App updates** (git fast-forward) or `git pull --ff-only`; require clean working tree for auto-apply. For reproducible/pinned changes, use `GIT_REF=<tag|commit>` (or Windows `-GitRef`) and bootstrap scripts from the matching raw ref as needed.
 - [ ] **Restart procedure documented (manual):** restart required after apply; service restart commands/runbook verified.
-- [ ] **Dependency refresh plan (manual/tooling):** re-run setup (`ACTION=setup` / `-Action setup`) when dependencies change.
-- [ ] **Rollback plan (manual):** known-good commit/tag identified, verified pre-update backup available, and restore path understood (including schema compatibility considerations).
+- [ ] **Dependency refresh plan (manual/tooling):** re-run setup (`ACTION=setup` / `-Action setup`) when dependencies change. If web deps fail on constrained environments (e.g. `pydantic-core`/Rust wheel issues), document TUI-only fallback (`SKIP_WEB=1 MODE=tui` / `-SkipWeb 1 -Mode tui`) or use a supported host for web.
+- [ ] **Release/version tracking (manual):** record deployed tag/commit and app version (`pyproject.toml`/release notes) with change records.
+- [ ] **Rollback plan (manual):** known-good commit/tag identified, verified pre-update backup available, and restore path understood (including schema compatibility considerations). Runtime data (DB/exports/invoices/`PM_DATA_DIR`) is preserved by source updates but backups remain mandatory. Keep web on `--workers 1`, with strong `PM_WEB_SECRET_KEY` and HTTPS/private networking for shared access.
 
 ## 7) Functional pilot / acceptance
 

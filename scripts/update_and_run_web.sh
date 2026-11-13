@@ -96,13 +96,21 @@ fi
 
 if [ "$HOST" = "0.0.0.0" ] || [ "$HOST" = "::" ] || { [ "$HOST" != "127.0.0.1" ] && [ "$HOST" != "localhost" ] && [ "$HOST" != "::1" ]; }; then
   warn "Non-local/shared access: terminate HTTPS at a reverse proxy (Caddy/Nginx/Traefik). Do not expose plain HTTP to the internet."
+  if [ "${PM_WEB_COOKIE_SECURE:-}" = "" ]; then
+    warn "PM_WEB_COOKIE_SECURE is not set; enable it (1) when serving over HTTPS for secure session cookies."
+  fi
+fi
+
+if [ -n "${PM_DATA_DIR:-}" ]; then
+  log "Using PM_DATA_DIR=${PM_DATA_DIR} (ensure it is persistent and writable)."
 fi
 
 # Best-effort dependency check hint (non-fatal)
 if ! "$PYTHON" -c "import fastapi, uvicorn, jinja2" >/dev/null 2>&1; then
   warn "Web dependencies may be missing. Try: pip install -r requirements-web.txt (or pip install .[web])"
+  warn "If builds fail on constrained environments (e.g. pydantic-core/Rust wheels), use TUI mode instead (SKIP_WEB=1, launcher --tui) or install web deps on a supported host."
 fi
 
-log "Runtime data (DB/exports/invoices/PM_DATA_DIR) is preserved. Backup: python3 scripts/backup_runtime.py --backup"
-log "Starting Web UI on http://${HOST}:${PORT} (workers=1). Health: /health /healthz. Press Ctrl+C to stop."
+log "Runtime data (DB/exports/invoices/PM_DATA_DIR) is preserved. Backup/verify: python3 scripts/backup_runtime.py --backup (and --verify/--restore-precheck as needed)."
+log "Starting Web UI on http://${HOST}:${PORT} (workers=1). Health: /health /healthz /readyz. Press Ctrl+C to stop."
 exec "$PYTHON" -m uvicorn ui.web.server:app --host "$HOST" --port "$PORT" --workers 1
