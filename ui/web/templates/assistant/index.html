@@ -1,59 +1,59 @@
 {% extends "base.html" %}
 {% block content %}
-<h2>Manager Assistant</h2>
-<p class="muted" style="margin-top:-4px">English chat grounded in <strong>real backend data</strong> (read-only).</p>
+<div class="page-header">
+  <div>
+    <h2>Manager Assistant</h2>
+    <p class="page-subtitle">Grounded, read-only chat over real backend data — answers stream in with a live typing effect.</p>
+  </div>
+  <div class="status-chip">mode <code>{{ llm.response_mode }}</code> · provider <code>{{ llm.provider }}</code>{% if llm.enabled %} · model <code>{{ llm.model }}</code>{% endif %}</div>
+</div>
 <div class="subtabs" role="tablist"><a href="/assistant" class="active">Chat</a></div>
-<div class="subtab-help">Ask in plain language; answers are routed to real tools and grounded in app data.</div>
-<details class="help-box"><summary>How to use the Manager Assistant</summary>
+<div class="subtab-help">Ask in plain language with context (IDs, names, date ranges). I use real tools/data only — no changes, no guesses.</div>
+<details class="help-box"><summary>Examples & tips</summary>
 <ul>
-  <li><strong>Ask naturally:</strong> include what you want and context (guest/reservation ID, report name, date range like <code>last month</code> or <code>2026-11-01 to 2026-11-30</code>).</li>
-  <li><strong>Guests:</strong> <code>find guest Sara</code>, <code>show guest #3 full portfolio</code> (all stays, POS/orders, payments, invoices), <code>what did guest #3 order most on last visit?</code>, <code>guest #3 last visit spend</code>, <code>what activities did guest #3 book?</code></li>
-  <li><strong>Business/ops/money:</strong> <code>business partner briefing for this month</code>, <code>today's ops</code>, <code>who owes money?</code>, <code>P&amp;L last month</code>, <code>compare this month vs last month</code>, <code>occupancy last month</code>, <code>any low stock items?</code>, <code>top selling items this month</code></li>
-  <li><strong>Reservations & catalog:</strong> <code>reservation #12 summary</code>, <code>reservation #12 balance</code>, <code>list registered activities</code>, <code>activity booking statistics</code>, <code>ledger integrity check</code></li>
-  <li><strong>Clarifications:</strong> if multiple guests match or details are missing, I’ll ask you to specify (reply with the suggested ID).</li>
-  <li><strong>Feedback:</strong> use 👍/👎 or correct the intent so I learn your phrasing over time. I only read real app data (no changes, no guesses).</li>
+  <li><strong>Guests:</strong> <code>find guest Sara</code>, <code>show guest #3 full portfolio</code>, <code>what did guest #3 order most on last visit?</code></li>
+  <li><strong>Business/ops/money:</strong> <code>business partner briefing for this month</code>, <code>today's ops</code>, <code>who owes money?</code>, <code>P&amp;L last month</code>, <code>compare this month vs last month</code></li>
+  <li><strong>Reservations & catalog:</strong> <code>reservation #12 balance</code>, <code>list registered activities</code>, <code>ledger integrity check</code></li>
+  <li>Use 👍/👎 or correct intent to improve routing over time.</li>
 </ul></details>
 
-<div class="assistant-grid" style="display:grid; grid-template-columns: minmax(280px, 1.35fr) minmax(240px, 0.65fr); gap:14px; align-items:start;">
-  <div class="panel" style="min-height:60vh;">
-    <div style="display:flex; justify-content:space-between; gap:10px; align-items:center; margin-bottom:8px;">
-      <strong>Conversation</strong>
-      <span class="muted" style="font-size:12px">mode=<code>{{ llm.response_mode }}</code> · provider=<code>{{ llm.provider }}</code>{% if llm.enabled %} · model <code>{{ llm.model }}</code>{% endif %}</span>
-    </div>
+<div class="assistant-grid" style="display:grid; grid-template-columns: minmax(300px, 1.4fr) minmax(260px, 0.7fr); gap:14px; align-items:start;">
+  <div class="panel chat-shell">
+    <div class="panel-header"><h3>Conversation</h3><span class="muted" style="font-size:12px">Live, grounded responses</span></div>
 
     {% if assistant_locked %}
       <div class="flash error">Assistant is locked because <code>assistant_require_unlock</code> is enabled. <a href="/unlock?next=/assistant">Unlock</a> to use it (sensitive financial/guest data).</div>
     {% else %}
-      <div id="assistant-messages" style="height:48vh; overflow:auto; border:1px solid var(--muted); padding:12px; border-radius:10px; background:#11111b; margin-bottom:10px;">
+      <div id="assistant-messages" class="chat-log">
         {% include "assistant/_messages.html" %}
       </div>
 
-      <form hx-post="/assistant/ask" hx-target="#assistant-messages" hx-swap="innerHTML" hx-on::after-request="if(event.detail.successful){this.reset(); var el=document.getElementById('assistant-messages'); if(el) el.scrollTop=el.scrollHeight;}">
+      <form hx-post="/assistant/ask" hx-target="#assistant-messages" hx-swap="innerHTML" hx-indicator="#top-progress" hx-on::after-request="if(event.detail.successful){this.reset(); var el=document.getElementById('assistant-messages'); if(el) el.scrollTop=el.scrollHeight;}">
         <input type="hidden" name="csrf" value="{{ csrf_token }}"/>
         <label class="muted">Ask the manager assistant
-          <textarea name="message" rows="3" placeholder="e.g. Business partner briefing for this month  |  Who owes money?  |  Show guest #3 full portfolio  |  What did guest #3 order most on last visit?  |  P&L last month  |  Compare this month vs last month  |  reservation #12 balance" title="Ask in plain English — include IDs, names, report types, or date ranges for best results" required></textarea>
+          <textarea name="message" rows="3" placeholder="e.g. Business partner briefing for this month  |  Who owes money?  |  Show guest #3 full portfolio  |  P&L last month" title="Ask in plain English — include IDs, names, report types, or date ranges for best results" required></textarea>
         </label>
         <div class="row">
-          <button type="submit" title="Send your question (answered from real app data)">Send</button>
+          <button type="submit" title="Send your question (answered from real app data)">Send message</button>
         </div>
       </form>
       <form hx-post="/assistant/clear" hx-target="#assistant-messages" hx-swap="innerHTML" style="margin-top:8px">
         <input type="hidden" name="csrf" value="{{ csrf_token }}"/>
-        <button type="submit" class="warn" title="Clear the conversation history in this session">Clear chat</button>
+        <button type="submit" class="warn ghost" title="Clear the conversation history in this session">Clear chat</button>
       </form>
     {% endif %}
   </div>
 
   <aside class="panel" style="position:sticky; top:12px;">
-    <h3 style="margin-top:0">Core / Talking status</h3>
+    <div class="panel-header"><h3 style="margin:0">Assistant status</h3></div>
     <div class="muted" style="font-size:13px; margin-bottom:10px">
-      <div><strong>Core AI (backend):</strong> deterministic routing + real DB/services tools (always grounded, read-only).</div>
-      <div style="margin-top:6px"><strong>Talking AI:</strong> {% if llm.enabled %}configured (<code>{{ llm.model }}</code>) — used for {{ llm.response_mode }} response polishing when available.{% else %}not configured — core answers shown directly. Set <code>assistant_llm_base_url</code> + <code>assistant_llm_model</code> in Settings (unlocked).{% endif %}</div>
+      <div><strong>Core AI:</strong> deterministic routing + real DB/services tools (always grounded, read-only).</div>
+      <div style="margin-top:6px"><strong>Talking mode:</strong> {% if llm.enabled %}configured (<code>{{ llm.model }}</code>) for {{ llm.response_mode }} responses when available.{% else %}core answers shown directly. Configure LLM in Settings (unlocked) if desired.{% endif %}</div>
     </div>
 
     {% if not assistant_locked %}
-    <h4 style="margin-bottom:6px">Quick prompts (real backend)</h4>
-    <div style="display:grid; gap:6px;">
+    <h4 style="margin:0 0 8px">Quick prompts</h4>
+    <div class="quick-prompts">
       {% for prompt in [
         'What can you do?',
         'Business partner briefing for this month',
@@ -70,15 +70,9 @@
       <form hx-post="/assistant/ask" hx-target="#assistant-messages" hx-swap="innerHTML" hx-on::after-request="var el=document.getElementById('assistant-messages'); if(el) el.scrollTop=el.scrollHeight;">
         <input type="hidden" name="csrf" value="{{ csrf_token }}"/>
         <input type="hidden" name="message" value="{{ prompt }}{% if prompt.endswith('#') %}1 full portfolio{% elif prompt.endswith(' ') %}Ahmed{% endif %}"/>
-        <button type="submit" title="Send this example prompt (edit ID/name if needed)" style="width:100%; text-align:left; background:#313244; color:var(--text); font-weight:600; border:1px solid var(--muted);">{{ prompt }}{% if prompt.endswith('#') %}<span class="muted">1 (edit)</span>{% elif prompt.endswith(' ') %}<span class="muted">(edit)</span>{% endif %}</button>
+        <button type="submit" class="ghost" title="Send this example prompt (edit ID/name if needed)">{{ prompt }}{% if prompt.endswith('#') %}<span class="muted">1 (edit)</span>{% elif prompt.endswith(' ') %}<span class="muted">(edit)</span>{% endif %}</button>
       </form>
       {% endfor %}
-    </div>
-
-    <div style="margin-top:12px; padding:10px; border:1px solid var(--muted); border-radius:8px; background:#181825;">
-      <div class="muted" style="font-size:12px"><strong>Guest/order example</strong></div>
-      <code style="font-size:12px; white-space:pre-wrap">What did guest #3 order most on their last visit?</code>
-      <div class="muted" style="font-size:12px; margin-top:6px">Uses real <code>pos_tabs</code>/<code>reservations</code>/<code>guests</code> data (non-voided items, last checked-out visit).</div>
     </div>
     {% endif %}
   </aside>

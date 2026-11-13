@@ -67,7 +67,15 @@ async def assistant_ask(request: Request):
         deps.get_session(request)["assistant_history"] = hist[-40:]
     if request.headers.get("HX-Request"):
         templates = request.app.state.templates
-        ctx = {"request": request, "history": _history(request)[-20:], "csrf_token": deps.csrf_token(request), "intents": assistant.INTENT_LABELS}
+        shown = _history(request)[-20:]
+        animate_index = None
+        if message and shown:
+            # animate the newest assistant reply in this rendered slice
+            for i in range(len(shown) - 1, -1, -1):
+                if shown[i].get("role") == "assistant":
+                    animate_index = i
+                    break
+        ctx = {"request": request, "history": shown, "csrf_token": deps.csrf_token(request), "intents": assistant.INTENT_LABELS, "animate_index": animate_index}
         resp = templates.TemplateResponse(request=request, name="assistant/_messages.html", context=ctx)
         deps.save_session(resp, deps.get_session(request))
         return resp

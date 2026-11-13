@@ -1,7 +1,11 @@
 {% extends "base.html" %}
 {% block content %}
-<h2>Reservations</h2>
-<p class="muted" style="margin-top:-4px">Manage bookings end-to-end.</p>
+<div class="page-header">
+  <div>
+    <h2>Reservations</h2>
+    <p class="page-subtitle">Manage bookings end-to-end: search, create, modify, check-in/out, folio, payments, and invoices.</p>
+  </div>
+</div>
 <div class="subtabs" role="tablist" aria-label="Reservations sections">
   <a href="/reservations?tab=list" class="{% if active_tab == 'list' %}active{% endif %}">List</a>
   <a href="/reservations?tab=create" class="{% if active_tab == 'create' %}active{% endif %}">Create</a>

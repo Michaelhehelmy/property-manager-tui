@@ -177,6 +177,7 @@ class PropertyManagerApp(App[None]):
     #crm_dialog #table, #folio_dialog #table { height: auto; max-height: 12; }
     #wiz_preview { min-height: 3; content-align: center middle; }
     #assistant_log { height: 1fr; min-height: 12; background: #1e1e2e; border: solid #45475a; padding: 0 1; margin: 0 0 1 0; }
+    #assistant_typing { height: auto; min-height: 0; color: #a6e3a1; padding: 0 1; margin: 0 0 1 0; }
     #assistant_split { height: 1fr; }
     #assistant_side { width: 34; min-width: 20; max-width: 40%; height: 100%; border: solid #45475a; background: #24273a; padding: 1; margin: 0 1 0 0; overflow-y: auto; overflow-x: hidden; }
     #assistant_side Button { width: 100%; margin: 0 0 1 0; min-width: 0; }

@@ -3,29 +3,39 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>{{ title or brand_name }} — Web UI</title>
+  <title>{{ title or brand_name }} — {{ brand_name }}</title>
   <link rel="stylesheet" href="/static/app.css"/>
   <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <script src="/static/app.js" defer></script>
 </head>
 <body>
+<div id="top-progress" aria-hidden="true"></div>
 <div class="layout">
-  <nav>
-    <h1>{{ brand_name }}</h1>
+  <nav class="sidebar">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">PM</div>
+      <div>
+        <h1>{{ brand_name }}</h1>
+      </div>
+    </div>
     <div class="gift">★ {{ gift }}</div>
-    <a href="/" title="Overview: occupancy, arrivals, departures, in-house and key ledger stats">Dashboard</a>
-    <a href="/reservations" title="Create and manage reservations: check-in/out, modify, cancel/no-show, folio, payments, invoices, book activities">Reservations</a>
-    <a href="/guests" title="Guest portfolio index and 360° profiles: all stays, POS/orders, payments, invoices, totals">Guests</a>
-    <a href="/pos" title="POS & Inventory: charge items to reservations, walk-in cart, inventory/meals/recipes, register activities/trips">POS / Inventory</a>
-    <a href="/accounting" title="Accounting & expenses: record/void expenses, view ledger-related entries">Accounting</a>
-    <a href="/reports" title="Reports & analytics: P&L, cash flow, VAT, payments, occupancy, daily ops, comparisons">Reports & Analytics</a>
-    <a href="/assistant" title="AI manager assistant: ask questions in plain English, get grounded answers from real app data">Manager Assistant</a>
-    <a href="/settings" title="Settings, branding, seed config export/import, demo data presets, rooms, rate plans, backups and health">Settings / Branding</a>
-    <hr style="border-color:#45475a"/>
-    {% if unlocked %}
-    <form method="post" action="/lock" class="inline" title="Lock protected actions (super-password actions will require unlock again)"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><button class="warn" type="submit" title="Lock protected actions">Lock</button></form>
-    {% else %}
-    <a href="/unlock" title="Unlock to perform protected actions (settings, refunds/voids, seed apply, etc.)">Unlock (protected actions)</a>
-    {% endif %}
+    <div class="nav-section">Workspace</div>
+    <a class="nav-link" href="/" title="Overview: occupancy, arrivals, departures, in-house and key ledger stats"><span class="nav-dot"></span>Dashboard</a>
+    <a class="nav-link" href="/reservations" title="Create and manage reservations: check-in/out, modify, cancel/no-show, folio, payments, invoices, book activities"><span class="nav-dot"></span>Reservations</a>
+    <a class="nav-link" href="/guests" title="Guest portfolio index and 360° profiles: all stays, POS/orders, payments, invoices, totals"><span class="nav-dot"></span>Guests</a>
+    <a class="nav-link" href="/pos" title="POS & Inventory: charge items to reservations, walk-in cart, inventory/meals/recipes, register activities/trips"><span class="nav-dot"></span>POS / Inventory</a>
+    <a class="nav-link" href="/accounting" title="Accounting & expenses: record/void expenses, view ledger-related entries"><span class="nav-dot"></span>Accounting</a>
+    <a class="nav-link" href="/reports" title="Reports & analytics: P&L, cash flow, VAT, payments, occupancy, daily ops, comparisons"><span class="nav-dot"></span>Reports & Analytics</a>
+    <a class="nav-link" href="/assistant" title="AI manager assistant: ask questions in plain English, get grounded answers from real app data"><span class="nav-dot"></span>Manager Assistant</a>
+    <a class="nav-link" href="/settings" title="Settings, branding, seed config export/import, demo data presets, rooms, rate plans, backups and health"><span class="nav-dot"></span>Settings / Branding</a>
+    <div class="nav-divider"></div>
+    <div class="nav-footer">
+      {% if unlocked %}
+      <form method="post" action="/lock" class="inline" title="Lock protected actions (super-password actions will require unlock again)"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><button class="warn" type="submit" title="Lock protected actions">🔒 Lock session</button></form>
+      {% else %}
+      <a class="btn ghost" href="/unlock" title="Unlock to perform protected actions (settings, refunds/voids, seed apply, etc.)">🔓 Unlock protected actions</a>
+      {% endif %}
+    </div>
   </nav>
   <main>
     <input type="hidden" name="csrf" value="{{ csrf_token }}" id="csrf-global"/>

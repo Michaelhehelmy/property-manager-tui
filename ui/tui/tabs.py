@@ -1920,12 +1920,15 @@ class AssistantTab(Vertical):
                 yield Button("Unlock", id="assistant_unlock", variant="warning", tooltip="Unlock to access assistant if unlock is required")
             with Vertical(id="assistant_main"):
                 yield RichLog(id="assistant_log", highlight=False, markup=False, wrap=True)
+                yield Static("", id="assistant_typing", classes="help")
                 yield Input(placeholder="Ask in plain English (e.g. 'guest #3 full portfolio', 'P&L last month', 'who owes money?', 'today's ops')", id="assistant_input")
                 with Horizontal(classes="button_row"):
                     yield Button("Send", id="assistant_send", variant="success", tooltip="Send question (answered from real app data)")
                     yield Button("Clear", id="assistant_clear", variant="error", tooltip="Clear conversation history")
         self._history = []
         self._last_result = None
+        self._typing_timer = None
+        self._typing_state = None
 
     def on_mount(self):
         self._refresh_gate()
@@ -1937,6 +1940,26 @@ class AssistantTab(Vertical):
 
     def _write_system(self, text):
         self._log().write("[system] " + str(text))
+
+    def _stop_typing(self, flush: bool = False):
+        timer = getattr(self, "_typing_timer", None)
+        if timer is not None:
+            try:
+                timer.stop()
+            except Exception:
+                pass
+        self._typing_timer = None
+        state = getattr(self, "_typing_state", None)
+        if state and flush:
+            try:
+                self._log().write(state.get("final_line", ""))
+            except Exception:
+                pass
+        try:
+            self.query_one("#assistant_typing", Static).update("")
+        except Exception:
+            pass
+        self._typing_state = None
 
     def _assistant_unlocked(self):
         try:
@@ -1981,6 +2004,7 @@ class AssistantTab(Vertical):
             if bid == "assistant_unlock":
                 self.app.push_screen(UnlockSettingsModal(), callback=lambda ok: self._after_unlock(ok))
             elif bid == "assistant_clear":
+                self._stop_typing(flush=False)
                 self._history = []
                 self._last_result = None
                 self._log().clear()
@@ -2079,6 +2103,7 @@ class AssistantTab(Vertical):
             self._refresh_gate()
             self.app.notify("Unlock required for Manager Assistant.", severity="warning")
             return
+        self._stop_typing(flush=True)
         self._log().write("\nYou: " + message)
         self._history.append({"role": "user", "content": message})
         self._last_user_message = message
@@ -2104,5 +2129,47 @@ class AssistantTab(Vertical):
         self._history.append({"role": "assistant", "content": answer, "intent": intent, "confidence": conf, "tools_used": result.get("tools_used") or [], "slots": result.get("slots") or {}, "user_message": user_message or getattr(self, "_last_user_message", "")})
         self._last_result = result
         conf_s = f"{conf:.2f}" if isinstance(conf, (int, float)) else "?"
-        self._log().write(f"Assistant [intent={intent} conf={conf_s} source={source}; tools={tools}]:\n{answer}\n")
+        prefix = f"Assistant [intent={intent} conf={conf_s} source={source}; tools={tools}]:\n"
+        final_line = f"{prefix}{answer}\n"
         self._refresh_gate()
+        # Typewriter reveal for a more "real app" feel
+        if not answer or len(answer) <= 8:
+            self._log().write(final_line)
+            return
+        self._stop_typing(flush=False)
+        state = {"prefix": prefix, "answer": answer, "idx": 0, "final_line": final_line}
+        self._typing_state = state
+        try:
+            typing = self.query_one("#assistant_typing", Static)
+        except Exception:
+            self._log().write(final_line)
+            self._typing_state = None
+            return
+        typing.update(prefix + "▋")
+
+        step = 4 if len(answer) > 500 else (2 if len(answer) > 180 else 1)
+        interval = 0.01 if len(answer) > 500 else 0.02
+
+        def _tick():
+            st = getattr(self, "_typing_state", None)
+            if not st or st is not state:
+                return
+            st["idx"] = min(len(st["answer"]), st["idx"] + step)
+            partial = st["answer"][: st["idx"]]
+            cursor = "▋" if st["idx"] < len(st["answer"]) else ""
+            try:
+                typing.update(st["prefix"] + partial + cursor)
+            except Exception:
+                return
+            if st["idx"] >= len(st["answer"]):
+                try:
+                    self._log().write(st["final_line"])
+                except Exception:
+                    pass
+                self._stop_typing(flush=False)
+
+        try:
+            self._typing_timer = self.set_interval(interval, _tick)
+        except Exception:
+            self._log().write(final_line)
+            self._typing_state = None
