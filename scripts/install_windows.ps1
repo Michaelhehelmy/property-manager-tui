@@ -24,7 +24,7 @@ param(
   [string]$InstallDir = $(if ($env:INSTALL_DIR) { $env:INSTALL_DIR } else { (Join-Path $HOME 'property-manager-tui') }),
   [string]$RepoUrl = $(if ($env:REPO_URL) { $env:REPO_URL } else { 'https://github.com/Michaelhehelmy/property-manager-tui.git' }),
   [string]$Branch = $(if ($env:BRANCH) { $env:BRANCH } else { 'main' }),
-  [string]$GitRef = $(if ($env:GIT_REF) { $env:GIT_REF } elseif ($env:TAG) { $env:TAG } elseif ($env:COMMIT) { $env:COMMIT } else { $env:BRANCH ? $env:BRANCH : 'main' }),
+  [string]$GitRef = $(if ($env:GIT_REF) { $env:GIT_REF } elseif ($env:TAG) { $env:TAG } elseif ($env:COMMIT) { $env:COMMIT } elseif ($env:BRANCH) { $env:BRANCH } else { 'main' }),
   [string]$BindHost = $(if ($env:HOST) { $env:HOST } else { '127.0.0.1' }),
   [int]$Port = $(if ($env:PORT) { [int]$env:PORT } else { 8000 })
 )
