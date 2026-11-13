@@ -72,7 +72,20 @@ def _run_git(args: list[str], cwd: Path | None = None, timeout: int = 20) -> tup
         return 1, "", str(e)
 
 
-def get_local_state() -> dict[str, Any]:
+def _redact_remote_url(url: str | None) -> str | None:
+    if not url:
+        return url
+    try:
+        u = str(url)
+        # redact credentials in URLs like https://user:token@host/repo.git
+        u = re.sub(r"(https?://)([^/@\s]+)@", r"\1<redacted>@", u)
+        u = re.sub(r"(ssh://)([^/@\s]+)@", r"\1<redacted>@", u)
+        return u
+    except Exception:
+        return "<redacted>"
+
+
+def get_local_state(redact_remote: bool = True) -> dict[str, Any]:
     root = _project_root()
     state: dict[str, Any] = {
         "app_version": APP_VERSION,
@@ -107,7 +120,7 @@ def get_local_state() -> dict[str, Any]:
         state["dirty"] = bool(out.strip())
     rc, out, _ = _run_git(["remote", "get-url", "origin"])
     if rc == 0:
-        state["remote"] = out or None
+        state["remote"] = _redact_remote_url(out) if redact_remote else (out or None)
     return state
 
 

@@ -1,0 +1,25 @@
+# Example Caddy reverse proxy for Property Manager Web UI (automatic HTTPS/TLS).
+# Assumes the app is bound to 127.0.0.1:8000 with --workers 1 (see systemd/docker examples).
+#
+# 1) Replace pm.example.com with your domain (DNS must point to this host).
+# 2) Ensure ports 80/443 are open and Caddy can obtain certificates.
+# 3) Keep PM_WEB_SECRET_KEY set to a strong random value in the app environment.
+
+pm.example.com {
+    encode zstd gzip
+
+    # Optional basic hardening headers
+    header {
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "SAMEORIGIN"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+
+    reverse_proxy 127.0.0.1:8000
+}
+
+# Local/LAN testing without public DNS (self-signed/internal cert behavior depends on Caddy config):
+# :8443 {
+#     tls internal
+#     reverse_proxy 127.0.0.1:8000
+# }

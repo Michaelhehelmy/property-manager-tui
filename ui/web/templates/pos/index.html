@@ -285,7 +285,7 @@
   <table><tr><th>ID</th><th>Name</th><th>Category</th><th>Price</th><th>Active</th><th>Description</th><th></th></tr>
   {% for a in (activities or []) %}
   <tr><td>{{a.id}}</td><td>{{a.name}}</td><td>{{a.category}}</td><td>{{"%.2f"|format(a.unit_price or 0)}}</td><td>{{'Yes' if a.active else 'No'}}</td><td>{{a.description}}</td>
-    <td><form method="post" action="/activities/{{a.id}}/toggle" class="inline"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><button class="{{'warn' if a.active else 'ok'}}" type="submit">{{'Deactivate' if a.active else 'Activate'}}</button></form></td>
+    <td><form method="post" action="/activities/{{a.id}}/toggle" class="inline"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><input type="password" name="password" placeholder="Pwd (if req)" style="width:110px;display:inline-block"/><button class="{{'warn' if a.active else 'ok'}}" type="submit">{{'Deactivate' if a.active else 'Activate'}}</button></form></td>
   </tr>
   {% else %}<tr><td colspan="7" class="muted">No activities registered yet.</td></tr>{% endfor %}
   </table>

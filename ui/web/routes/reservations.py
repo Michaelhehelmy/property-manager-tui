@@ -131,44 +131,39 @@ async def checkout(rid: int, request: Request):
 
 @router.post("/reservations/{rid}/checkout-override")
 async def checkout_override(rid: int, request: Request):
-    form = await deps.get_form(request)
-    deps.require_unlock(request)
+    form = await deps.require_unlocked_form(request)
     try:
-        services.checkout_reservation(rid, override=True, password=form.get("password",""))
+        services.checkout_reservation(rid, override=True, password=deps.service_password(request, form))
         deps.add_flash(request, "Checked out (override)", "success")
     except Exception as e: deps.add_flash(request,str(e),"error")
     r=deps.redirect(f"/reservations/{rid}"); deps.save_session(r, deps.get_session(request)); return r
 
 @router.post("/reservations/{rid}/cancel")
 async def cancel(rid: int, request: Request):
-    form = await deps.get_form(request)
-    deps.require_unlock(request)
-    try: services.cancel_reservation(rid, form.get("password","")); deps.add_flash(request,"Cancelled","success")
+    form = await deps.require_unlocked_form(request)
+    try: services.cancel_reservation(rid, deps.service_password(request, form)); deps.add_flash(request,"Cancelled","success")
     except Exception as e: deps.add_flash(request,str(e),"error")
     r=deps.redirect(f"/reservations/{rid}"); deps.save_session(r, deps.get_session(request)); return r
 
 @router.post("/reservations/{rid}/noshow")
 async def noshow(rid: int, request: Request):
-    form = await deps.get_form(request)
-    deps.require_unlock(request)
-    try: services.mark_no_show(rid, form.get("password","")); deps.add_flash(request,"Marked no-show","success")
+    form = await deps.require_unlocked_form(request)
+    try: services.mark_no_show(rid, deps.service_password(request, form)); deps.add_flash(request,"Marked no-show","success")
     except Exception as e: deps.add_flash(request,str(e),"error")
     r=deps.redirect(f"/reservations/{rid}"); deps.save_session(r, deps.get_session(request)); return r
 
 @router.post("/reservations/{rid}/delete")
 async def delete(rid: int, request: Request):
-    form = await deps.get_form(request)
-    deps.require_unlock(request)
-    try: services.delete_reservation(rid, form.get("password","")); deps.add_flash(request,"Deleted","success"); dest="/reservations"
+    form = await deps.require_unlocked_form(request)
+    try: services.delete_reservation(rid, deps.service_password(request, form)); deps.add_flash(request,"Deleted","success"); dest="/reservations"
     except Exception as e: deps.add_flash(request,str(e),"error"); dest=f"/reservations/{rid}"
     r=deps.redirect(dest); deps.save_session(r, deps.get_session(request)); return r
 
 @router.post("/reservations/{rid}/modify")
 async def modify(rid: int, request: Request):
-    form = await deps.get_form(request)
-    deps.require_unlock(request)
+    form = await deps.require_unlocked_form(request)
     try:
-        services.modify_reservation(rid, float(form.get("rate") or 0), form.get("check_in",""), form.get("check_out",""), int(form.get("room_id")), form.get("password",""))
+        services.modify_reservation(rid, float(form.get("rate") or 0), form.get("check_in",""), form.get("check_out",""), int(form.get("room_id")), deps.service_password(request, form))
         deps.add_flash(request,"Reservation modified","success")
     except Exception as e: deps.add_flash(request,str(e),"error")
     r=deps.redirect(f"/reservations/{rid}"); deps.save_session(r, deps.get_session(request)); return r
@@ -184,19 +179,19 @@ async def pay(rid: int, request: Request):
 
 @router.post("/reservations/{rid}/refund")
 async def refund(rid: int, request: Request):
-    form = await deps.get_form(request)
-    deps.require_unlock(request)
+    form = await deps.require_unlocked_form(request)
     try:
-        services.record_refund(rid, float(form.get("amount") or 0), form.get("method","Cash"), form.get("notes",""), form.get("password",""))
+        services.record_refund(rid, float(form.get("amount") or 0), form.get("method","Cash"), form.get("notes",""), deps.service_password(request, form))
         deps.add_flash(request,"Refund recorded","success")
     except Exception as e: deps.add_flash(request,str(e),"error")
     r=deps.redirect(f"/reservations/{rid}"); deps.save_session(r, deps.get_session(request)); return r
 
 @router.post("/reservations/{rid}/invoice")
 async def invoice(rid: int, request: Request):
-    form = await deps.get_form(request)
-    deps.require_unlock(request)
+    form = await deps.require_unlocked_form(request)
     try:
+        # Explicit proof accepted if provided; service currently does not require password.
+        _ = deps.service_password(request, form)
         text = services.generate_invoice_text(rid, form.get("currency","EGP"))
         path = services.save_invoice_file(text, rid, form.get("currency","EGP"))
         deps.add_flash(request, f"Invoice saved: {Path(path).name}", "success")
@@ -208,9 +203,10 @@ async def invoice(rid: int, request: Request):
 
 @router.post("/reservations/{rid}/book-activity")
 async def book_activity(rid: int, request: Request):
-    form = await deps.get_form(request)
-    deps.require_unlock(request)
+    form = await deps.require_unlocked_form(request)
     try:
+        # Explicit proof accepted if provided; backend enforces any required checks.
+        _ = deps.service_password(request, form)
         act_id = int(form.get("activity_id"))
         qty = int(form.get("qty") or 1)
         scheduled_at = (form.get("scheduled_at") or "").strip() or None

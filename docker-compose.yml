@@ -1,0 +1,30 @@
+services:
+  property-manager-web:
+    build: .
+    image: property-manager-tui:local
+    container_name: property-manager-web
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      # REQUIRED for non-local/shared access: set a strong random secret (32+ bytes).
+      # Example: openssl rand -hex 32
+      PM_WEB_SECRET_KEY: "${PM_WEB_SECRET_KEY:-change-me-to-a-long-random-secret}"
+      # Persistent runtime data location inside the container/volume
+      PM_DATA_DIR: /data
+      # Bind inside container; publish via ports above. Reverse proxy should provide HTTPS.
+      HOST: 0.0.0.0
+      PORT: "8000"
+    volumes:
+      # Persists DB, exports, invoices, and other runtime data across updates/restarts.
+      - pm_data:/data
+    command: ["python", "-m", "uvicorn", "ui.web.server:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  pm_data:

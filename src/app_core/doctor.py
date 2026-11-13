@@ -469,6 +469,12 @@ def format_health_report(report: dict[str, Any]) -> str:
         lines.append("\nUpdate status (local):")
         for k in ("app_version", "branch", "commit_short", "dirty", "is_git_repo"):
             if k in local: lines.append(f"  - {k}: {local.get(k)}")
+        if local.get("remote"):
+            try:
+                from . import paths as _paths
+                lines.append(f"  - remote: {_paths.redact_sensitive(local.get('remote'), 200)}")
+            except Exception:
+                pass
     remote = upd.get("remote")
     if isinstance(remote, dict):
         lines.append("  - remote_update_available: " + str(remote.get("update_available")))

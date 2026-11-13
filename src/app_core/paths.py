@@ -89,6 +89,35 @@ def is_path_within(path: str | Path, root: str | Path) -> bool:
         return False
 
 
+# Sensitive-data / log-hygiene helpers (do not log passwords, recovery codes, secrets)
+_REDACT_PATTERNS = [
+    (re.compile(r'(?i)\b(password|passwd|super[_-]?password|secret|api[_-]?key|token|recovery[_-]?code)\b\s*[:=]\s*([^\s,;]+)'), r'\1=<redacted>'),
+    (re.compile(r'(?i)"(password|passwd|super_password|secret|api_key|token|recovery_code)"\s*:\s*"[^"]*"'), r'"\1":"<redacted>"'),
+    (re.compile(r'(?i)\b(rcv_[A-Za-z0-9_-]+)\b'), '<redacted-recovery-code>'),
+]
+
+
+def redact_sensitive(text: object, max_len: int = 4000) -> str:
+    """Best-effort redaction of secrets/passwords/recovery codes for diagnostics/log text."""
+    try:
+        s = str(text if text is not None else "")
+    except Exception:
+        s = "<unprintable>"
+    s = s.replace("\x00", "")
+    for pat, repl in _REDACT_PATTERNS:
+        try:
+            s = pat.sub(repl, s)
+        except Exception:
+            pass
+    try:
+        ml = max(1, int(max_len or 4000))
+    except Exception:
+        ml = 4000
+    if len(s) > ml:
+        s = s[:ml] + "…"
+    return s
+
+
 _SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
 
 

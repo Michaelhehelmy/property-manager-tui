@@ -1,0 +1,28 @@
+# Deployment examples (Property Manager)
+
+These examples are minimal starting points for running the **Web UI** safely.
+
+## Critical runtime rules
+- **SQLite:** always run with `--workers 1` (Uvicorn). Do not scale workers/processes against the same SQLite DB.
+- **Secrets:** set `PM_WEB_SECRET_KEY` to a long random value for any non-local/shared deployment (e.g. `openssl rand -hex 32`).
+- **HTTPS:** terminate TLS at a reverse proxy (Caddy/Nginx/Traefik) when accessed beyond localhost.
+- **Data persistence:** runtime data (DB, exports, invoices, and `PM_DATA_DIR`) must be preserved across updates/restarts. Back up before upgrades.
+
+## Files
+- `property-manager-web.service.example` — systemd service template (venv/checkout, persistent `PM_DATA_DIR`, local bind + reverse proxy).
+- `Caddyfile.example` — Caddy reverse proxy with automatic HTTPS.
+- `nginx.conf.example` — Nginx HTTPS reverse-proxy snippet.
+- `../Dockerfile`, `../docker-compose.yml` — containerized web deployment with persistent volume.
+
+## Quick Docker usage
+```bash
+# From repo root
+export PM_WEB_SECRET_KEY="$(openssl rand -hex 32)"  # required for shared/non-local use
+docker compose up -d --build
+# App: http://127.0.0.1:8000 (put HTTPS reverse proxy in front for production)
+```
+
+## Ops helpers
+- Health: `python3 -m app_core.doctor --json` and probes `GET /health`, `GET /healthz`
+- Backup/verify: `python3 scripts/backup_runtime.py --backup` / `--verify <backup.db>`
+- Updates (git installs): in-app Settings → App updates (fast-forward) or `git pull --ff-only` then rerun setup; restart service after updates. Runtime data is preserved.

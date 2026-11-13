@@ -157,15 +157,22 @@ def run_web(host: str = "127.0.0.1", port: int = 8000, open_browser: bool = True
 
     url_host = "127.0.0.1" if host in ("0.0.0.0", "::") else host
     url = f"http://{url_host}:{port}"
+    is_non_local = host not in ("127.0.0.1", "localhost", "::1")
+    secret_set = bool((os.environ.get("PM_WEB_SECRET_KEY") or "").strip())
     print(f"\nStarting Web UI at http://{host}:{port} (workers=1)...")
     print(f"Local: {url}")
     if host in ("0.0.0.0", "::"):
         print(f"LAN:   http://{_lan_ip_hint()}:{port}  (other devices on same network)")
     print("Runtime data (DB/exports/invoices/data dir/PM_DATA_DIR) is preserved across updates/restarts.")
     print("Health:  python3 -m app_core.doctor --json   |   Probes: GET /health, GET /healthz")
-    print("Backup:  python3 scripts/backup_runtime.py --backup   (or Settings → Backup now)")
-    print("Updates: Settings → App updates (git fast-forward). Restart after applying updates.")
-    print("Note:    Always run with --workers 1 (SQLite). Set PM_WEB_SECRET_KEY for non-local/shared deployments.")
+    print("Backup:  python3 scripts/backup_runtime.py --backup   |   Verify: --verify <backup.db>")
+    print("Updates: Settings → App updates (git fast-forward) or git pull --ff-only + rerun setup; restart after updates.")
+    print("Note:    SQLite-safe web mode requires --workers 1. Do not increase worker count.")
+    if is_non_local and not secret_set:
+        print("WARNING: PM_WEB_SECRET_KEY is not set for non-local access. Set a strong random secret (e.g. openssl rand -hex 32).")
+    if is_non_local:
+        print("Security: use HTTPS via a reverse proxy (Caddy/Nginx/Traefik) for shared/network deployments; do not expose plain HTTP.")
+    print("Deploy:  see deploy/ examples and Dockerfile/docker-compose.yml for service/reverse-proxy setups.")
     print("Press Ctrl+C to stop the web server and return to launcher.\n")
 
     env = _env()
@@ -231,6 +238,8 @@ def menu_loop(default_host: str = "127.0.0.1", default_port: int = 8000) -> int:
     last = None
     while True:
         _clear()
+        is_non_local = host not in ("127.0.0.1", "localhost", "::1")
+        secret_set = bool((os.environ.get("PM_WEB_SECRET_KEY") or "").strip())
         print("=" * 56)
         print("  Property Manager — Launcher")
         print("=" * 56)
@@ -240,10 +249,15 @@ def menu_loop(default_host: str = "127.0.0.1", default_port: int = 8000) -> int:
         print("  [q] Quit")
         if last is not None:
             print(f"\n  Last session exited with code: {last}")
-        print(f"\n  Web target: http://{host}:{port}  {'(LAN)' if host in ('0.0.0.0','::') else '(local)'}")
-        print("  Tip: Web runs with --workers 1 (SQLite). Runtime data preserved.")
-        print("  Health/backup: python3 -m app_core.doctor | python3 scripts/backup_runtime.py --backup")
-        print("  Updates: Settings → App updates (git ff-only). Restart after apply. Data preserved.")
+        print(f"\n  Web target: http://{host}:{port}  {'(LAN/shared)' if is_non_local else '(local)'}")
+        print("  SQLite: always --workers 1. Runtime data (DB/exports/invoices/PM_DATA_DIR) preserved.")
+        print("  Health:  python3 -m app_core.doctor --json   |   /health, /healthz")
+        print("  Backup:  python3 scripts/backup_runtime.py --backup | --verify <backup.db>")
+        print("  Updates: Settings → App updates (git ff-only) or git pull --ff-only + rerun setup; restart after apply.")
+        if is_non_local and not secret_set:
+            print("  WARNING: set PM_WEB_SECRET_KEY (strong random) for non-local/shared access.")
+        if is_non_local:
+            print("  Security: use HTTPS reverse proxy (Caddy/Nginx/Traefik). See deploy/ examples.")
         print("  Exit: stop TUI or press Ctrl+C in web mode to return here.")
 
         try:

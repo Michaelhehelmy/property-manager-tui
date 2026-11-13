@@ -179,12 +179,12 @@ def pos(request: Request, q: str = "", scan: str = "", batch_item: str = ""):
 @router.post("/pos/add")
 async def pos_add(request: Request):
     """Add a single POS item directly to an existing reservation (real backend)."""
-    form = await deps.get_form(request)
-    deps.require_unlock(request)
+    form = await deps.require_unlocked_form(request)
     next_url = (form.get("next") or "/pos").strip() or "/pos"
     if not next_url.startswith("/") or next_url.startswith("//"):
         next_url = "/pos"
     try:
+        _ = deps.service_password(request, form)
         rid = form.get("reservation_id"); rid = int(rid) if rid else None
         inv_id = form.get("inv_id"); inv_id = int(inv_id) if inv_id else None
         batch_id = form.get("batch_id"); batch_id = int(batch_id) if batch_id not in (None, "", "None") else None
@@ -280,10 +280,9 @@ async def walkin(request: Request):
 
 @router.post("/pos/void/{pos_id}")
 async def pos_void(pos_id: int, request: Request):
-    form = await deps.get_form(request)
-    deps.require_unlock(request)
+    form = await deps.require_unlocked_form(request)
     try:
-        services.void_pos_item(pos_id, form.get("password", ""))
+        services.void_pos_item(pos_id, deps.service_password(request, form))
         deps.add_flash(request, "POS voided", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
@@ -309,12 +308,11 @@ async def restock(request: Request):
 
 @router.post("/inventory/add")
 async def inv_add(request: Request):
-    form = await deps.get_form(request)
-    deps.require_unlock(request)
+    form = await deps.require_unlocked_form(request)
     try:
         services.add_inventory_item(
             form.get("name", ""), form.get("category", ""), form.get("unit", ""), float(form.get("stock") or 0),
-            float(form.get("unit_cost") or 0), float(form.get("selling_price") or 0), float(form.get("low") or 0), float(form.get("over") or 0), form.get("password", ""),
+            float(form.get("unit_cost") or 0), float(form.get("selling_price") or 0), float(form.get("low") or 0), float(form.get("over") or 0), deps.service_password(request, form),
             sku=form.get("sku",""), barcode=form.get("barcode",""), barcode_type=form.get("barcode_type","code128"),
             track_batches=form.get("track_batches","0"), shelf_life_days=form.get("shelf_life_days") or None, default_supplier=form.get("default_supplier","")
         )
@@ -339,12 +337,11 @@ def _parse_recipe_components(text: str):
 
 @router.post("/recipes/set")
 async def recipe_set(request: Request):
-    form = await deps.get_form(request)
-    deps.require_unlock(request)
+    form = await deps.require_unlocked_form(request)
     try:
         menu_id = int(form.get("menu_item_id") or form.get("item_id") or 0)
         comps = _parse_recipe_components(form.get("components") or "")
-        services.set_recipe_components(menu_id, comps, form.get("password", ""))
+        services.set_recipe_components(menu_id, comps, deps.service_password(request, form))
         deps.add_flash(request, f"Recipe saved ({len(comps)} ingredients). Selling this meal auto-deducts ingredients.", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
@@ -353,11 +350,10 @@ async def recipe_set(request: Request):
 
 @router.post("/recipes/clear")
 async def recipe_clear(request: Request):
-    form = await deps.get_form(request)
-    deps.require_unlock(request)
+    form = await deps.require_unlocked_form(request)
     try:
         menu_id = int(form.get("menu_item_id") or form.get("item_id") or 0)
-        services.clear_recipe_components(menu_id, form.get("password", ""))
+        services.clear_recipe_components(menu_id, deps.service_password(request, form))
         deps.add_flash(request, "Recipe cleared. Item uses normal stock deduction when sold.", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
@@ -379,8 +375,7 @@ def _parse_meal_ingredients(text: str):
 
 @router.post("/meals/save")
 async def meal_save(request: Request):
-    form = await deps.get_form(request)
-    deps.require_unlock(request)
+    form = await deps.require_unlocked_form(request)
     try:
         meal_id = (form.get("meal_id") or "").strip()
         name = form.get("name", "")
@@ -388,7 +383,7 @@ async def meal_save(request: Request):
         prep = form.get("preparation", "")
         price = form.get("selling_price") or 0
         category = form.get("category") or "Meals"
-        pw = form.get("password", "")
+        pw = deps.service_password(request, form)
         ings = _parse_meal_ingredients(form.get("ingredients") or "")
         if meal_id:
             services.update_meal(int(meal_id), name, desc, prep, price, ings, pw, category=category, active=1)
@@ -403,10 +398,9 @@ async def meal_save(request: Request):
 
 @router.post("/meals/delete")
 async def meal_delete(request: Request):
-    form = await deps.get_form(request)
-    deps.require_unlock(request)
+    form = await deps.require_unlocked_form(request)
     try:
-        services.delete_meal(int(form.get("meal_id") or 0), form.get("password", ""))
+        services.delete_meal(int(form.get("meal_id") or 0), deps.service_password(request, form))
         deps.add_flash(request, "Meal deleted.", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
@@ -414,9 +408,9 @@ async def meal_delete(request: Request):
 
 @router.post("/activities/create")
 async def activity_create(request: Request):
-    form = await deps.get_form(request)
-    deps.require_unlock(request)
+    form = await deps.require_unlocked_form(request)
     try:
+        _ = deps.service_password(request, form)
         services.create_activity(form.get("name",""), form.get("description",""), form.get("category","Trip"), float(form.get("unit_price") or 0), 1)
         deps.add_flash(request, "Activity/trip registered", "success")
     except Exception as e:
@@ -425,9 +419,9 @@ async def activity_create(request: Request):
 
 @router.post("/activities/{aid}/toggle")
 async def activity_toggle(aid: int, request: Request):
-    form = await deps.get_form(request)
-    deps.require_unlock(request)
+    form = await deps.require_unlocked_form(request)
     try:
+        _ = deps.service_password(request, form)
         act = services.get_activity(aid)
         if not act: raise ValueError("Activity not found")
         services.set_activity_active(aid, 0 if act.get("active") else 1)
@@ -457,9 +451,9 @@ async def batch_receive(request: Request):
 
 @router.post("/inventory/label/item/{item_id}")
 async def label_item(item_id: int, request: Request):
-    form = await deps.get_form(request)
-    deps.require_unlock(request)
+    form = await deps.require_unlocked_form(request)
     try:
+        _ = deps.service_password(request, form)
         ok, msg, p = services.print_item_label(item_id)
         deps.add_flash(request, f"Item label: {msg} ({p})", "success" if ok else "warning")
     except Exception as e:
@@ -469,9 +463,9 @@ async def label_item(item_id: int, request: Request):
 
 @router.post("/inventory/label/batch/{batch_id}")
 async def label_batch(batch_id: int, request: Request):
-    form = await deps.get_form(request)
-    deps.require_unlock(request)
+    form = await deps.require_unlocked_form(request)
     try:
+        _ = deps.service_password(request, form)
         ok, msg, p = services.print_batch_label(batch_id)
         deps.add_flash(request, f"Batch label: {msg} ({p})", "success" if ok else "warning")
     except Exception as e:

@@ -1,25 +1,28 @@
 #!/bin/sh
-# Dynamic setup/deploy script for property-manager-tui.
+# Dynamic setup/deploy script for property-manager-tui (portable POSIX sh).
 # Detects environment (iSH/Alpine, Termux, Debian/Ubuntu, macOS, generic Linux)
 # and installs dependencies + prepares/runs the app (TUI or Web).
 #
+# Idempotent and data-preserving: never deletes DB/exports/invoices/PM_DATA_DIR.
+# Web mode is SQLite-safe only with --workers 1.
+#
 # Usage:
 #   sh scripts/setup_ish_alpine.sh
-#   MODE=tui|web|both|auto ACTION=setup|run|deploy sh scripts/setup_ish_alpine.sh
-#   REPO_URL=... INSTALL_DIR=... BRANCH=main HOST=0.0.0.0 PORT=8000 sh scripts/setup_ish_alpine.sh
+#   MODE=tui|web|both|auto ACTION=setup|run|deploy|auto sh scripts/setup_ish_alpine.sh
+#   REPO_URL=... INSTALL_DIR=... BRANCH=main GIT_REF=<branch|tag|commit> HOST=0.0.0.0 PORT=8000 sh scripts/setup_ish_alpine.sh
 #
-# Common examples:
+# Examples:
 #   SKIP_WEB=1 MODE=tui sh scripts/setup_ish_alpine.sh          # iSH TUI (recommended)
-#   MODE=web HOST=0.0.0.0 ACTION=deploy sh scripts/setup_ish_alpine.sh  # setup + run web server
-#   ACTION=run MODE=tui sh scripts/setup_ish_alpine.sh          # run TUI from existing install
-
+#   MODE=web HOST=0.0.0.0 PM_WEB_SECRET_KEY='...' ACTION=deploy sh scripts/setup_ish_alpine.sh
+#   ACTION=run MODE=tui sh scripts/setup_ish_alpine.sh
 set -eu
 
 REPO_URL="${REPO_URL:-https://github.com/Michaelhehelmy/property-manager-tui.git}"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/property-manager-tui}"
 BRANCH="${BRANCH:-main}"
+GIT_REF="${GIT_REF:-${TAG:-${COMMIT:-$BRANCH}}}"
 MODE="${MODE:-auto}"                # auto|tui|web|both
-ACTION="${ACTION:-setup}"           # setup|run|deploy (deploy = setup + run)
+ACTION="${ACTION:-setup}"           # auto|setup|run|deploy
 SKIP_WEB="${SKIP_WEB:-auto}"        # auto|0|1
 INSTALL_DEV="${INSTALL_DEV:-0}"
 RUN_TESTS="${RUN_TESTS:-0}"
@@ -27,8 +30,11 @@ HOST="${HOST:-127.0.0.1}"
 PORT="${PORT:-8000}"
 PYTHON="${PYTHON:-python3}"
 
+log() { printf '%s\n' "==> $*"; }
+warn() { printf '%s\n' "WARNING: $*" >&2; }
+err() { printf '%s\n' "ERROR: $*" >&2; }
+
 validate_web_target() {
-  # basic validation to avoid shell/arg injection or invalid targets
   case "$HOST" in
     ""|*[!A-Za-z0-9._:-\[\]]*) warn "Invalid HOST='$HOST'; falling back to 127.0.0.1"; HOST="127.0.0.1" ;;
   esac
@@ -38,8 +44,14 @@ validate_web_target() {
   esac
 }
 
-log() { printf '%s\n' "==> $*"; }
-warn() { printf '%s\n' "WARNING: $*" >&2; }
+print_security_guidance() {
+  if [ "$HOST" = "0.0.0.0" ] || [ "$HOST" = "::" ]; then
+    warn "Web host is non-local ($HOST). Use a reverse proxy with HTTPS (Caddy/Nginx/Traefik) for shared/network deployments."
+  fi
+  if [ "$HOST" != "127.0.0.1" ] && [ "$HOST" != "localhost" ] && [ "$HOST" != "::1" ] && [ -z "${PM_WEB_SECRET_KEY:-}" ]; then
+    warn "PM_WEB_SECRET_KEY is not set for non-local host '$HOST'. Set a strong random secret (e.g. openssl rand -hex 32)."
+  fi
+}
 
 detect_env() {
   OS="$(uname -s 2>/dev/null || echo unknown)"
@@ -60,42 +72,39 @@ detect_env() {
   if command -v pkg >/dev/null 2>&1 && [ $IS_TERMUX -eq 1 ]; then PMGR="pkg"; fi
   if command -v brew >/dev/null 2>&1 && [ "$PMGR" = "" ]; then PMGR="brew"; fi
 
-  # Dynamic defaults
   if [ "$SKIP_WEB" = "auto" ]; then
     if [ $IS_ISH -eq 1 ]; then SKIP_WEB=1; else SKIP_WEB=0; fi
   fi
   if [ "$MODE" = "auto" ]; then
     if [ $IS_ISH -eq 1 ] && [ "$SKIP_WEB" = "1" ]; then MODE="tui"; else MODE="both"; fi
   fi
-  # If user wants client/server access from other devices, they should set HOST=0.0.0.0
   log "Environment: OS=$OS ARCH=$ARCH pkg=$PMGR ish=$IS_ISH alpine=$IS_ALPINE termux=$IS_TERMUX debian=$IS_DEBIAN mac=$IS_MAC"
-  log "Selected: MODE=$MODE ACTION=$ACTION SKIP_WEB=$SKIP_WEB HOST=$HOST PORT=$PORT"
+  log "Selected: MODE=$MODE ACTION=$ACTION SKIP_WEB=$SKIP_WEB HOST=$HOST PORT=$PORT ref=$GIT_REF"
 }
 
 install_system_packages() {
-  log "Installing system packages (best-effort)..."
+  log "Installing system packages (best-effort, idempotent)..."
   case "$PMGR" in
     apk)
-      apk update || true
+      apk update || warn "apk update failed; continuing..."
       apk add --no-cache \
-        bash git ca-certificates python3 py3-pip py3-virtualenv sqlite tzdata \
+        bash git ca-certificates curl wget python3 py3-pip py3-virtualenv sqlite tzdata \
         build-base python3-dev libffi-dev openssl-dev \
         || warn "Some apk packages failed; continuing..."
-      # Rust/cargo only if web deps needed (can be heavy on iSH)
       if [ "$SKIP_WEB" != "1" ]; then
         apk add --no-cache cargo rust || warn "cargo/rust not installed (web deps may fail to build)"
       fi
       ;;
     apt)
       if command -v sudo >/dev/null 2>&1 && [ "$(id -u 2>/dev/null || echo 1)" != "0" ]; then SUDO=sudo; else SUDO=""; fi
-      $SUDO apt-get update || true
+      $SUDO apt-get update || warn "apt-get update failed; continuing..."
       $SUDO apt-get install -y \
-        bash git ca-certificates python3 python3-pip python3-venv sqlite3 \
+        bash git ca-certificates curl wget python3 python3-pip python3-venv sqlite3 \
         build-essential python3-dev libffi-dev libssl-dev \
         || warn "Some apt packages failed; continuing..."
       ;;
     pkg)
-      pkg update -y || true
+      pkg update -y || warn "pkg update failed; continuing..."
       pkg install -y git python sqlite build-essential libffi openssl rust binutils || \
         pkg install -y git python sqlite clang libffi openssl || \
         warn "Some pkg packages failed; continuing..."
@@ -111,14 +120,31 @@ install_system_packages() {
 
 clone_or_update() {
   if [ -d "$INSTALL_DIR/.git" ]; then
-    log "Updating existing repo in $INSTALL_DIR"
-    git -C "$INSTALL_DIR" fetch --all --prune || true
-    git -C "$INSTALL_DIR" checkout "$BRANCH" || true
-    git -C "$INSTALL_DIR" pull --ff-only origin "$BRANCH" || git -C "$INSTALL_DIR" pull || true
+    log "Updating existing repo in $INSTALL_DIR (data-preserving)"
+    git -C "$INSTALL_DIR" fetch --all --tags --prune || warn "git fetch failed; continuing with existing checkout."
+    if [ -n "$GIT_REF" ]; then
+      log "Checking out requested ref: $GIT_REF"
+      if git -C "$INSTALL_DIR" rev-parse --verify --quiet "refs/remotes/origin/$GIT_REF" >/dev/null; then
+        git -C "$INSTALL_DIR" checkout -B "$GIT_REF" "origin/$GIT_REF" || git -C "$INSTALL_DIR" checkout "$GIT_REF" || warn "Failed to checkout ref '$GIT_REF'"
+      else
+        git -C "$INSTALL_DIR" checkout "$GIT_REF" || warn "Failed to checkout ref '$GIT_REF'"
+      fi
+      if git -C "$INSTALL_DIR" symbolic-ref -q HEAD >/dev/null 2>&1; then
+        git -C "$INSTALL_DIR" pull --ff-only origin "$GIT_REF" 2>/dev/null || git -C "$INSTALL_DIR" pull --ff-only 2>/dev/null || true
+      fi
+    else
+      git -C "$INSTALL_DIR" checkout "$BRANCH" 2>/dev/null || true
+      git -C "$INSTALL_DIR" pull --ff-only origin "$BRANCH" 2>/dev/null || git -C "$INSTALL_DIR" pull --ff-only 2>/dev/null || git -C "$INSTALL_DIR" pull 2>/dev/null || warn "git pull failed; continuing."
+    fi
   else
     log "Cloning repo into $INSTALL_DIR"
     mkdir -p "$(dirname "$INSTALL_DIR")"
-    git clone --branch "$BRANCH" "$REPO_URL" "$INSTALL_DIR"
+    if ! git clone --branch "$BRANCH" "$REPO_URL" "$INSTALL_DIR" 2>/dev/null; then
+      git clone "$REPO_URL" "$INSTALL_DIR"
+    fi
+    if [ -n "$GIT_REF" ]; then
+      git -C "$INSTALL_DIR" checkout "$GIT_REF" || warn "Failed to checkout requested ref '$GIT_REF'"
+    fi
   fi
   cd "$INSTALL_DIR"
 }
@@ -135,7 +161,7 @@ setup_venv_and_deps() {
   fi
   # shellcheck disable=SC1091
   . .venv/bin/activate
-  python -m pip install --upgrade pip setuptools wheel || true
+  python -m pip install --upgrade pip setuptools wheel || warn "pip bootstrap upgrade failed; continuing..."
 
   log "Installing runtime dependencies..."
   if [ -f requirements.txt ]; then
@@ -159,13 +185,12 @@ setup_venv_and_deps() {
   if [ "$INSTALL_DEV" = "1" ]; then
     log "Installing dev/test dependencies..."
     if [ -f requirements-dev.txt ]; then
-      python -m pip install -r requirements-dev.txt || true
+      python -m pip install -r requirements-dev.txt || warn "Dev dependency install had issues."
     else
-      python -m pip install "pytest>=7.0" "httpx>=0.24" || true
+      python -m pip install "pytest>=7.0" "httpx>=0.24" || warn "Dev dependency install had issues."
     fi
   fi
 
-  # Preserve runtime data across setup/updates (never delete DB/exports/invoices/data dir).
   mkdir -p data exports invoices 2>/dev/null || true
   if [ -n "${PM_DATA_DIR:-}" ]; then
     mkdir -p "$PM_DATA_DIR" "$PM_DATA_DIR/exports" "$PM_DATA_DIR/invoices" 2>/dev/null || true
@@ -179,39 +204,43 @@ setup_venv_and_deps() {
 }
 
 print_hints() {
+  validate_web_target
+  print_security_guidance
   echo ""
-  log "Ready. (dir: $INSTALL_DIR, mode: $MODE, web_skipped: $SKIP_WEB)"
+  log "Ready. (dir: $INSTALL_DIR, mode: $MODE, web_skipped: $SKIP_WEB, ref: $GIT_REF)"
   cat <<EOF
 
 Run (activate venv first):
   cd "$INSTALL_DIR"
   . .venv/bin/activate
 
-  # TUI (local terminal - best for iSH / constrained iOS terminals)
+  # TUI (local terminal)
   python3 launcher.py --tui
 
-  # Web server (client/server - access from Safari/browser on this or other devices)
-  export PM_WEB_SECRET_KEY='change-this-to-a-long-random-secret'
+  # Web server (client/server; SQLite-safe: ALWAYS --workers 1)
+  export PM_WEB_SECRET_KEY='replace-with-a-long-random-secret'
   python3 -m uvicorn ui.web.server:app --host ${HOST} --port ${PORT} --workers 1
 
-Client/server tips:
+Client/server & ops:
   - Same device browser: HOST=127.0.0.1 -> http://127.0.0.1:${PORT}
-  - Other devices on LAN (iPhone/iPad Safari): HOST=0.0.0.0 -> http://<device-ip>:${PORT}
-    (Add to Home Screen for app-like use; ALWAYS use --workers 1; set a strong PM_WEB_SECRET_KEY)
+  - LAN/other devices: HOST=0.0.0.0 -> http://<device-ip>:${PORT} (set strong PM_WEB_SECRET_KEY and use HTTPS reverse proxy)
+  - HTTPS: use Caddy/Nginx/Traefik in front of uvicorn for any shared/non-local deployment.
   - Runtime data is preserved: DB, exports, invoices, and PM_DATA_DIR are never deleted by setup/update scripts.
-  - Updates: in-app Settings → App updates or git pull --ff-only + re-run ACTION=setup.
-  - Health/backup: python3 -m app_core.doctor (add --check-updates); safe backup/verify:
-      python3 scripts/backup_runtime.py --backup  |  --verify <backup.db>
+  - Updates (git): Settings → App updates (fast-forward) or git pull --ff-only + re-run ACTION=setup; restart after updates.
+  - Health: python3 -m app_core.doctor --json (probes: /health, /healthz)
+  - Backup/verify: python3 scripts/backup_runtime.py --backup | --verify <backup.db>
+  - Deployment examples: deploy/ (systemd, Caddyfile, nginx) and Dockerfile/docker-compose.yml
 EOF
   if [ $IS_ISH -eq 1 ]; then
     echo "  - iSH: TUI is most reliable; web deps/builds may be slow or unavailable (use SKIP_WEB=1)."
   fi
   if [ $IS_TERMUX -eq 1 ]; then
-    echo "  - Termux: both TUI and web are supported; bind 0.0.0.0 for LAN access from iOS/other devices."
+    echo "  - Termux: both TUI and web are supported; bind 0.0.0.0 for LAN access from other devices."
   fi
 }
 
 run_deploy() {
+  [ -d "$INSTALL_DIR/.venv" ] || { err "Install not found at $INSTALL_DIR. Run ACTION=setup or ACTION=auto first."; exit 1; }
   cd "$INSTALL_DIR"
   # shellcheck disable=SC1091
   . .venv/bin/activate
@@ -224,9 +253,10 @@ run_deploy() {
       ;;
     web)
       if [ "$SKIP_WEB" = "1" ]; then
-        warn "Web deps were skipped; cannot start web mode. Re-run with SKIP_WEB=0 MODE=web."
+        err "Web deps were skipped; cannot start web mode. Re-run with SKIP_WEB=0 MODE=web."
         exit 1
       fi
+      print_security_guidance
       log "Launching Web server on ${HOST}:${PORT} (workers=1)..."
       log "Runtime data (DB/exports/invoices/PM_DATA_DIR) is preserved. Health: python3 -m app_core.doctor"
       exec python3 -m uvicorn ui.web.server:app --host "$HOST" --port "$PORT" --workers 1
@@ -236,7 +266,7 @@ run_deploy() {
       exec python3 launcher.py
       ;;
     *)
-      warn "Unknown MODE=$MODE (use auto|tui|web|both)"
+      err "Unknown MODE=$MODE (use auto|tui|web|both)"
       exit 1
       ;;
   esac
@@ -245,6 +275,21 @@ run_deploy() {
 main() {
   detect_env
   case "$ACTION" in
+    auto)
+      if [ -d "$INSTALL_DIR/.git" ] && [ -d "$INSTALL_DIR/.venv" ]; then
+        log "Existing install detected: checking for updates and launching..."
+        clone_or_update
+        setup_venv_and_deps
+        run_deploy
+      else
+        log "No existing install detected: running full setup and launch..."
+        install_system_packages
+        clone_or_update
+        setup_venv_and_deps
+        print_hints
+        run_deploy
+      fi
+      ;;
     setup)
       install_system_packages
       clone_or_update
@@ -252,7 +297,7 @@ main() {
       print_hints
       ;;
     run)
-      [ -d "$INSTALL_DIR/.venv" ] || { warn "Install not found at $INSTALL_DIR. Run ACTION=setup first."; exit 1; }
+      [ -d "$INSTALL_DIR/.venv" ] || { err "Install not found at $INSTALL_DIR. Run ACTION=setup or ACTION=auto first."; exit 1; }
       run_deploy
       ;;
     deploy)
@@ -263,7 +308,7 @@ main() {
       run_deploy
       ;;
     *)
-      warn "Unknown ACTION=$ACTION (use setup|run|deploy)"
+      err "Unknown ACTION=$ACTION (use auto|setup|run|deploy)"
       exit 1
       ;;
   esac

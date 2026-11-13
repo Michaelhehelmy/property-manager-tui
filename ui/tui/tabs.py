@@ -672,17 +672,23 @@ class NewOrderTab(VerticalScroll):
         cart.add_columns("ID", t("Item"), "Lot/Batch", "Exp/Recv", t("Qty"), t("Price"), "Tax", "Gross")
         if self._is_walkin():
             total = 0.0
-            from app_core.db import connect
+            try:
+                from app_core.db import connect
+            except Exception:
+                connect = None
             for i, it in enumerate(self._walkin_cart, start=1):
                 try:
-                    tax = services.calculate_tax(it.get("price", 0) * it.get("qty", 0), 0)
+                    qty = float(it.get("qty") or 0)
+                    price = float(it.get("price") or 0)
+                    tax = services.calculate_tax(price * qty, 0)
                 except Exception:
+                    qty, price = (it.get("qty") or 0), (it.get("price") or 0)
                     tax = {"service": 0, "vat": 0, "city_tax": 0, "gross": 0}
-                lot = it.get("lot_code") or ""
+                lot = (it.get("lot_code") or "").strip()
                 batch_id = it.get("batch_id")
                 batch_mode = it.get("batch_mode")
                 extra = "-"
-                if batch_id:
+                if batch_id and connect is not None:
                     try:
                         b = connect().execute("SELECT expiry_date, received_at FROM inventory_batches WHERE id=?", (batch_id,)).fetchone()
                         if b:
@@ -690,7 +696,7 @@ class NewOrderTab(VerticalScroll):
                             recv = b["received_at"] or "-"
                             extra = f"exp:{exp}/recv:{recv}"
                     except Exception:
-                        pass
+                        extra = "-"
                 elif batch_mode == "auto":
                     extra = "FEFO(auto)"
                 if lot and batch_id:
@@ -702,28 +708,39 @@ class NewOrderTab(VerticalScroll):
                 elif batch_mode == "auto":
                     lot_disp = "AUTO-FEFO"
                 else:
-                    lot_disp = ""
-                cart.add_row(f"W{i}", str(it.get("desc", "")), lot_disp or "-", extra, str(it.get("qty", "")),
-                             f"{float(it.get('price') or 0):.2f}", f"{tax.get('service',0)+tax.get('vat',0)+tax.get('city_tax',0):.2f}",
-                             f"{tax.get('gross',0):.2f}")
-                total += tax.get("gross", 0)
+                    lot_disp = "-"
+                try:
+                    tax_amt = float(tax.get("service", 0) + tax.get("vat", 0) + tax.get("city_tax", 0))
+                    gross = float(tax.get("gross", 0))
+                except Exception:
+                    tax_amt, gross = 0.0, 0.0
+                cart.add_row(f"W{i}", str(it.get("desc") or "-"), lot_disp, extra, str(it.get("qty", 0)),
+                             f"{float(price or 0):.2f}", f"{tax_amt:.2f}", f"{gross:.2f}")
+                total += gross
             if self._walkin_cart:
                 cart.add_row("", "TOTAL", "-", "-", "", "", "", f"{total:.2f}")
         elif self._res_id:
             total = 0.0
-            from app_core.db import connect
+            try:
+                from app_core.db import connect
+            except Exception:
+                connect = None
             try:
                 items = services.get_pos_items(self._res_id) or []
-            except Exception:
+            except Exception as exc:
+                self.app.notify(str(exc), severity="error")
                 items = []
             for p in items:
                 try:
-                    gross = float(p["quantity"] or 0) * float(p["unit_price"] or 0) + float(p["tax_amount"] or 0)
+                    qty = float(p["quantity"] or 0)
+                    price = float(p["unit_price"] or 0)
+                    tax_amt = float(p["tax_amount"] or 0)
+                    gross = qty * price + tax_amt
                 except Exception:
-                    gross = 0.0
+                    qty, price, tax_amt, gross = 0.0, 0.0, 0.0, 0.0
                 try:
-                    lot = p["lot_code"] or ""
-                    bid = p["batch_id"]
+                    lot = (p["lot_code"] or "").strip() if "lot_code" in p.keys() else ""
+                    bid = p["batch_id"] if "batch_id" in p.keys() else None
                     if lot and bid:
                         lot_disp = f"{lot}#{bid}"
                     elif lot:
@@ -733,7 +750,7 @@ class NewOrderTab(VerticalScroll):
                     else:
                         lot_disp = "-"
                     extra = "-"
-                    if bid:
+                    if bid and connect is not None:
                         try:
                             b = connect().execute("SELECT expiry_date, received_at FROM inventory_batches WHERE id=?", (bid,)).fetchone()
                             if b:
@@ -741,17 +758,17 @@ class NewOrderTab(VerticalScroll):
                                 recv = b["received_at"] or "-"
                                 extra = f"exp:{exp}/recv:{recv}"
                         except Exception:
-                            pass
+                            extra = "-"
                 except Exception:
                     lot_disp = "-"
                     extra = "-"
                 try:
                     cart.add_row(str(p["id"]), str(p["item_description"] or "-"), lot_disp, extra, str(p["quantity"]),
-                                 f"{float(p['unit_price'] or 0):.2f}", f"{float(p['tax_amount'] or 0):.2f}", f"{gross:.2f}")
+                                 f"{price:.2f}", f"{tax_amt:.2f}", f"{gross:.2f}")
                 except Exception:
                     continue
                 total += gross
-            if total > 0:
+            if items:
                 cart.add_row("", "TOTAL", "-", "-", "", "", "", f"{total:.2f}")
 
     def on_input_changed(self, e):
@@ -941,14 +958,18 @@ class NewOrderTab(VerticalScroll):
             return show_error(self.app, "Select a payment method.")
         items_copy = list(self._walkin_cart)
         try:
-            result = services.complete_walkin_sale(items_copy, method, "", "Payment")
+            result = services.complete_walkin_sale(items_copy, method, "", "Payment") or {}
             self._walkin_cart = []
             self._refresh_cart()
             self.app.refresh_all_tables()
+            receipt_items = result.get("receipt_items") or items_copy
             self.app.push_screen(
                 WalkInReceiptScreen(
-                    result["receipt_items"], result["total_gross"], result["method"],
-                    receipt_text=result.get("receipt_text"), receipt_path=result.get("receipt_path"),
+                    receipt_items,
+                    result.get("total_gross", 0),
+                    result.get("method", method),
+                    receipt_text=result.get("receipt_text"),
+                    receipt_path=result.get("receipt_path"),
                     payment_id=result.get("payment_id"),
                 )
             )

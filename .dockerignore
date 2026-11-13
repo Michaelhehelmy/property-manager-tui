@@ -1,0 +1,41 @@
+# VCS / editor
+.git
+.gitignore
+.vscode
+.idea
+*.swp
+*.swo
+
+# Python caches/build artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# Local environments and runtime data (mount/persist separately)
+.venv/
+venv/
+data/
+exports/
+invoices/
+*.sqlite
+*.sqlite3
+*.db
+*.db-*
+*.log
+
+# Local models and test artifacts (not needed for base web image)
+models/
+tests/
+docs/
+
+# OS cruft
+.DS_Store
+Thumbs.db

@@ -116,13 +116,17 @@ def _traceability_text(lot_code=None, batch_id=None, expiry_date=None, received_
 def _allowed_print_roots():
     roots = [EXPORT_DIR, INVOICE_DIR, DATA_DIR]
     try:
-        roots.append(paths.DATA_DIR)
+        roots.extend([paths.DATA_DIR, paths.EXPORT_DIR, paths.INVOICE_DIR])
     except Exception:
         pass
     out = []
     for r in roots:
         try:
-            out.append(Path(r).resolve())
+            rr = Path(r).resolve()
+            # never allow filesystem root as an approved print root
+            if rr == rr.parent:
+                continue
+            out.append(rr)
         except Exception:
             pass
     # de-dup while preserving order
@@ -3681,19 +3685,21 @@ def list_printers():
 
 
 def _print_raw_socket(host, port, filepath):
-    p = Path(filepath).expanduser()
-    try:
-        p = p.resolve()
-    except Exception:
-        p = Path(os.path.abspath(str(p)))
-    if not p.exists() or not p.is_file():
-        raise FileNotFoundError(f"File not found: {p}")
+    p = _validate_print_filepath(filepath)
+    size = p.stat().st_size
+    # defense-in-depth (validate_print_filepath already caps, but keep local guard)
+    if size > 5 * 1024 * 1024:
+        raise ValueError("Refusing to send oversized print payload (>5MB).")
     with open(p, "rb") as f:
         data = f.read()
-    data = data.replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
+    if not data:
+        return
+    # normalize line endings for raw text printers; keep payload as-is otherwise
+    if b"\x1b" not in data and b"\x1d" not in data and b"^XA" not in data:
+        data = data.replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.settimeout(10)
-        s.connect((host, int(port)))
+        s.connect((str(host), int(port)))
         s.sendall(data)
 
 
@@ -3719,8 +3725,9 @@ def _validate_print_target(target: str):
         if ":" not in spec:
             raise ValueError("Raw printer target must be raw:host:port")
         host, port_s = spec.rsplit(":", 1)
-        host = host.strip()
-        if not host or len(host) > 253 or not re.fullmatch(r"[A-Za-z0-9.\-:\[\]]+", host):
+        host = host.strip().strip("[]")
+        # conservative hostname/IP charset; block whitespace/control and obvious injection chars
+        if not host or len(host) > 253 or not re.fullmatch(r"[A-Za-z0-9.\-:]+", host):
             raise ValueError("Invalid raw printer host.")
         try:
             port = int(port_s)
@@ -3759,31 +3766,36 @@ def print_to_printer(filepath, printer=None):
         path_s = _sanitize_command_arg(str(p), "print file path")
         if kind == "":
             if platform.system() == "Windows":
+                # Uses OS-registered handler; path is confined and sanitized above.
                 os.startfile(path_s, "print")
             else:
                 r = subprocess.run(["lp", path_s], capture_output=True, text=True, timeout=15, check=False)
                 if r.returncode != 0:
-                    return False, f"Print failed: {(r.stderr or '').strip()}"
-            return True, f"Sent to default printer: {p}"
+                    err = ((r.stderr or r.stdout or "").strip()) or "unknown printer error"
+                    return False, f"Print failed: {paths.redact_sensitive(err, 300)}"
+            return True, f"Sent to default printer: {p.name}"
         if kind == "cups":
             r = subprocess.run(["lp", "-d", value, path_s], capture_output=True, text=True, timeout=15, check=False)
-            return (True, f"Sent to {value}") if r.returncode == 0 else (False, f"CUPS error: {(r.stderr or '').strip()}")
+            if r.returncode == 0:
+                return True, f"Sent to CUPS printer {value}"
+            err = ((r.stderr or r.stdout or "").strip()) or "CUPS error"
+            return False, f"CUPS error: {paths.redact_sensitive(err, 300)}"
         if kind == "win":
             os.startfile(path_s, "printto", value)
-            return True, f"Sent to {value}"
+            return True, f"Sent to Windows printer {value}"
         if kind == "raw":
             host, port = value
             _print_raw_socket(host, port, str(p))
-            return True, f"Raw {host}:{port}"
-        return False, f"Unsupported target: {target}"
+            return True, f"Sent to raw printer {host}:{port}"
+        return False, f"Unsupported target: {paths.redact_sensitive(target, 120)}"
     except subprocess.TimeoutExpired:
-        return False, f"Print timed out. Saved: {filepath}"
-    except (ValueError, FileNotFoundError) as e:
-        return False, str(e)
-    except FileNotFoundError as e:  # pragma: no cover
-        return False, f"No printer command or file missing. {e}"
+        return False, "Print timed out. File was saved to approved exports/invoices directory."
+    except FileNotFoundError as e:
+        return False, paths.redact_sensitive(str(e), 300)
+    except ValueError as e:
+        return False, paths.redact_sensitive(str(e), 300)
     except Exception as e:  # pragma: no cover — network/OS
-        return False, f"Print error: {e}. Saved: {filepath}"
+        return False, f"Print error: {paths.redact_sensitive(e, 300)}"
 
 
 def test_print(printer=None):
@@ -4493,13 +4505,23 @@ def _dataset_by_name(name, start, end):
     return None
 
 
-def _write_json(path, payload):
-    Path(path).write_text(json.dumps(payload, indent=2, ensure_ascii=False, default=str), encoding="utf-8")
+def _confined_export_path(path, root=None):
+    root = Path(root or ANALYTICS_EXPORT_DIR).resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    p = Path(path).resolve()
+    if root != p and root not in p.parents:
+        raise ValueError("Refusing to write export outside approved analytics export directory.")
+    return p
 
 
-def _write_csv(path, rows):
+def _write_json(path, payload, root=None):
+    p = _confined_export_path(path, root=root or ANALYTICS_EXPORT_DIR)
+    p.write_text(json.dumps(payload, indent=2, ensure_ascii=False, default=str), encoding="utf-8")
+
+
+def _write_csv(path, rows, root=None):
     rows = list(rows or [])
-    p = Path(path)
+    p = _confined_export_path(path, root=root or ANALYTICS_EXPORT_DIR)
     if not rows:
         p.write_text("", encoding="utf-8")
         return
@@ -4550,7 +4572,7 @@ def export_analytics_preset(preset, start, end, formats=None):
     if "txt" in formats:
         tp = str(base) + ".txt"
         header = [f"UNIFIED ANALYTICS REPORT — {preset}", json.dumps(metadata, ensure_ascii=False), "=" * 72, ""]
-        Path(tp).write_text("\n".join(header + text_sections), encoding="utf-8")
+        _confined_export_path(tp).write_text("\n".join(header + text_sections), encoding="utf-8")
         outputs["txt"] = tp
     if "csv" in formats:
         # write primary tabular dataset(s)
@@ -4805,7 +4827,8 @@ SEED_CONFIG_VERSION = 2  # v2 adds inventory barcode/batch fields and activities
 
 def export_seed_config():
     """Export editable master/seed data (rooms, rate plans, inventory, expense categories, meals, activities) to JSON."""
-    EXPORT_DIR.mkdir(exist_ok=True)
+    paths.ensure_data_dirs()
+    EXPORT_DIR.mkdir(parents=True, exist_ok=True)
     conn = db.connect()
     rooms = [dict(r) for r in conn.execute(
         "SELECT room_number, room_type, base_price, housekeeping_status FROM rooms ORDER BY room_number").fetchall()]
@@ -4848,7 +4871,9 @@ def export_seed_config():
         "meals": meals,
         "activities": activities,
     }
-    path = EXPORT_DIR / f"seed_config_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    path = (EXPORT_DIR / f"seed_config_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json").resolve()
+    if EXPORT_DIR.resolve() not in path.parents:
+        raise ValueError("Refusing to write seed config outside export directory.")
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
     _audit("seed_config_export", "db", "", str(path))
     return str(path)

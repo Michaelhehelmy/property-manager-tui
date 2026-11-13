@@ -19,6 +19,7 @@ SESSION_COOKIE = "pm_session"
 # Secret/cookie hardening
 _SECRET_ENV = "PM_WEB_SECRET_KEY"
 _ALLOW_INSECURE_ENV = "PM_WEB_ALLOW_INSECURE_DEV"
+_DEFAULT_INSECURE_SECRET = "pm-web-local-dev-secret-change-me"
 SECRET_KEY = os.environ.get(_SECRET_ENV)
 _insecure_dev = False
 if not SECRET_KEY:
@@ -29,18 +30,29 @@ if not SECRET_KEY:
             f"{_SECRET_ENV} must be set for non-local web deployment (HOST={host_hint}). "
             f"Set {_ALLOW_INSECURE_ENV}=1 only for explicit local/dev override."
         )
-    SECRET_KEY = "pm-web-local-dev-secret-change-me"
+    SECRET_KEY = _DEFAULT_INSECURE_SECRET
     _insecure_dev = True
     print(
         f"[pm-web] WARNING: {_SECRET_ENV} not set; using insecure development secret. "
-        "Set PM_WEB_SECRET_KEY for any non-local/shared deployment.",
+        "Set PM_WEB_SECRET_KEY to a strong random value for any non-local/shared deployment.",
+        file=sys.stderr,
+    )
+elif len(SECRET_KEY) < 32:
+    print(
+        f"[pm-web] WARNING: {_SECRET_ENV} is short (<32 chars); use a strong random secret in production.",
         file=sys.stderr,
     )
 
-_COOKIE_SECURE = os.environ.get("PM_WEB_COOKIE_SECURE", "").strip().lower() in ("1", "true", "yes", "on")
 _serializer = URLSafeSerializer(SECRET_KEY, salt="pm-session")
 
 _WEB_UNLOCK_LAST = "web_unlock_last"
+_LOGIN_ATTEMPTS: dict[str, list[float]] = {}
+_SENSITIVE_ATTEMPTS: dict[str, list[float]] = {}
+
+
+def cookie_secure_enabled() -> bool:
+    """PM_WEB_COOKIE_SECURE=1/true/yes/on enables Secure cookie flag (required for HTTPS)."""
+    return os.environ.get("PM_WEB_COOKIE_SECURE", "").strip().lower() in ("1", "true", "yes", "on")
 
 
 def _load_session(request: Request) -> dict[str, Any]:
@@ -55,13 +67,21 @@ def _load_session(request: Request) -> dict[str, Any]:
 
 
 def save_session(response, data: dict[str, Any]) -> None:
-    secure = _COOKIE_SECURE
+    # HttpOnly+SameSite=Lax always; Secure configurable for HTTPS deployments.
+    # max_age aligns cookie lifetime with unlock/session timeout window (+grace) while
+    # server-side expiry is still enforced on each request from web_unlock_last.
+    try:
+        max_age = max(300, _session_timeout_minutes() * 60 + 300)
+    except Exception:
+        max_age = 3600
     response.set_cookie(
         SESSION_COOKIE,
         _serializer.dumps(data),
         httponly=True,
         samesite="lax",
-        secure=secure,
+        secure=cookie_secure_enabled(),
+        max_age=max_age,
+        path="/",
     )
 
 
@@ -191,6 +211,62 @@ def is_unlocked(request: Request) -> bool:
     return True
 
 
+def _client_ip(request: Request) -> str:
+    try:
+        if request.client and request.client.host:
+            return str(request.client.host)
+    except Exception:
+        pass
+    return "unknown"
+
+
+def _prune_attempts(bucket: dict[str, list[float]], key: str, window_sec: int) -> list[float]:
+    now = time.time()
+    arr = [t for t in bucket.get(key, []) if now - t <= window_sec]
+    bucket[key] = arr
+    return arr
+
+
+def check_rate_limit(bucket: dict[str, list[float]], key: str, *, limit: int, window_sec: int) -> tuple[bool, int]:
+    """Return (allowed, retry_after_seconds). Lightweight in-process limiter (--workers 1)."""
+    arr = _prune_attempts(bucket, key, window_sec)
+    if len(arr) >= limit:
+        retry = max(1, int(window_sec - (time.time() - arr[0])) + 1)
+        return False, retry
+    return True, 0
+
+
+def record_attempt(bucket: dict[str, list[float]], key: str, window_sec: int) -> None:
+    arr = _prune_attempts(bucket, key, window_sec)
+    arr.append(time.time())
+    bucket[key] = arr
+
+
+def clear_attempts(bucket: dict[str, list[float]], key: str) -> None:
+    bucket.pop(key, None)
+
+
+def enforce_auth_rate_limit(request: Request, scope: str = "unlock", *, limit: int = 8, window_sec: int = 300) -> None:
+    """Mitigate brute-force on auth/unlock-sensitive endpoints (best-effort, in-process)."""
+    key = f"{scope}:{_client_ip(request)}"
+    bucket = _LOGIN_ATTEMPTS if scope in ("unlock", "recovery") else _SENSITIVE_ATTEMPTS
+    ok, retry = check_rate_limit(bucket, key, limit=limit, window_sec=window_sec)
+    if not ok:
+        raise HTTPException(status_code=429, detail=f"Too many attempts. Try again in about {retry}s.")
+
+
+def record_auth_failure(request: Request, scope: str = "unlock", *, window_sec: int = 300) -> None:
+    key = f"{scope}:{_client_ip(request)}"
+    bucket = _LOGIN_ATTEMPTS if scope in ("unlock", "recovery") else _SENSITIVE_ATTEMPTS
+    record_attempt(bucket, key, window_sec)
+
+
+def clear_auth_failures(request: Request, scope: str = "unlock") -> None:
+    key = f"{scope}:{_client_ip(request)}"
+    bucket = _LOGIN_ATTEMPTS if scope in ("unlock", "recovery") else _SENSITIVE_ATTEMPTS
+    clear_attempts(bucket, key)
+
+
 def require_unlock(request: Request) -> None:
     if not is_unlocked(request):
         nxt = quote(str(request.url.path) or "/")
@@ -211,6 +287,7 @@ def unlock(request: Request, password: str) -> bool:
         sess = get_session(request)
         sess[_WEB_UNLOCK_LAST] = int(time.time())
         sess.pop("unlocked", None)
+        clear_auth_failures(request, "unlock")
         # Best-effort in-process alignment for legacy service internals (single-worker MVP).
         try:
             if not services.unlock_session(password):
@@ -218,6 +295,7 @@ def unlock(request: Request, password: str) -> bool:
         except Exception:
             pass
         return True
+    record_auth_failure(request, "unlock")
     return False
 
 
@@ -232,11 +310,15 @@ def lock(request: Request) -> None:
 
 
 def safe_download_path(kind: str, name: str) -> Path:
-    if not name or "/" in name or "\\" in name or ".." in name:
+    # Confine downloads to approved directories and prevent traversal/symlink escape.
+    if not name or "/" in name or "\\" in name or ".." in name or "\x00" in name:
+        raise HTTPException(status_code=400, detail="Invalid file")
+    if kind not in ("export", "invoice"):
         raise HTTPException(status_code=400, detail="Invalid file")
     base = paths.EXPORT_DIR if kind == "export" else paths.INVOICE_DIR
     p = (base / name).resolve()
-    if base.resolve() not in p.parents and p != base.resolve():
+    base_r = base.resolve()
+    if base_r != p and base_r not in p.parents:
         raise HTTPException(status_code=400, detail="Invalid file")
     if not p.exists() or not p.is_file():
         raise HTTPException(status_code=404, detail="File not found")

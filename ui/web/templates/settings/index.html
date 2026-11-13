@@ -48,6 +48,7 @@
             <p class="muted">Runs a safe <code>git pull --ff-only</code> from origin (requires unlock). Source code is updated; your data (DB, exports, invoices, data dir) is preserved. Restart the app after updating. If local source changes exist, stash/commit/discard them first.</p>
             <form method="post" action="/settings/updates/apply"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
               <input name="confirm" placeholder="UPDATE APP"/>
+              <input type="password" name="password" placeholder="Super password (if required)"/>
               <button class="warn" type="submit">Update app</button>
             </form>
           </div>
@@ -78,7 +79,7 @@
 <div class="grid grid-2">
   <div class="panel"><h3>Barcode / Label devices</h3>
     <p class="muted">Configure scanner & label printer in the settings catalog below (barcode_*, label_printer, label_format, expiry policy). Keyboard-wedge scanners need no driver (scan into fields). Test label printing uses the configured label/default printer or saves to export.</p>
-    <form method="post" action="/settings/test-label"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><button type="submit">Test label print</button></form>
+    <form method="post" action="/settings/test-label"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><input type="password" name="password" placeholder="Super password (if required)" style="width:220px;display:inline-block"/><button type="submit">Test label print</button></form>
   </div>
 
   <div class="panel"><h3>Branding & animation (wizard fields)</h3>
@@ -89,9 +90,10 @@
       <label>Loading animation<select name="animation">
         {% for v in ['reveal','typewriter','wave','pulse','none'] %}<option value="{{v}}" {% if brand.animation==v %}selected{% endif %}>{{v}}</option>{% endfor %}
       </select></label>
+      <label>Super password (if required)<input type="password" name="password" placeholder="Super password"/></label>
       <button type="submit">Apply branding</button>
     </form>
-    <form method="post" action="/settings/backup" style="margin-top:10px"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><button>Backup now</button></form>
+    <form method="post" action="/settings/backup" style="margin-top:10px"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><input type="password" name="password" placeholder="Super password (if required)" style="width:220px;display:inline-block"/><button>Backup now</button></form>
   </div>
   <div class="panel"><h3>First-time seed / master data (export → edit → upload)</h3>
     <p class="muted">Export editable JSON for rooms, rate plans, inventory (incl. SKU/barcode, batch/expiry tracking fields), expense categories, meals, and activities. Edit it to match your business, then upload to apply as your first seed. Requires unlock + super password + confirmation text <code>APPLY SEED CONFIG</code>. Allowed only when there is no operational data (reservations/payments/POS/expenses).</p>
@@ -143,12 +145,13 @@
       <label>Base price<input name="base_price" type="number" step="0.01" min="0" value="0"/></label>
       <label>Housekeeping<select name="housekeeping_status"><option>Clean</option><option>Dirty</option><option>Inspected</option><option>Out of Order</option></select></label>
     </div>
+    <label>Super password (if required)<input type="password" name="password" placeholder="Super password"/></label>
     <button type="submit">Add room</button>
   </form>
   <table><tr><th>ID</th><th>Number</th><th>Type</th><th>Base price</th><th>HK</th><th>Action</th></tr>
   {% for r in rooms %}
     <tr><td>{{r.id}}</td><td>{{r.room_number}}</td><td>{{r.room_type}}</td><td>{{"%.2f"|format(r.base_price or 0)}}</td><td>{{r.housekeeping_status}}</td>
-    <td><form method="post" action="/settings/rooms/{{r.id}}/delete" onsubmit="return confirm('Delete room {{r.room_number}}? This fails if referenced by reservations.');"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><button class="danger" type="submit">Delete</button></form></td></tr>
+    <td><form method="post" action="/settings/rooms/{{r.id}}/delete" onsubmit="return confirm('Delete room {{r.room_number}}? This fails if referenced by reservations.');"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><input type="password" name="password" placeholder="Pwd (if required)" style="width:140px;display:inline-block"/><button class="danger" type="submit">Delete</button></form></td></tr>
   {% else %}
     <tr><td colspan="6" class="muted">No rooms.</td></tr>
   {% endfor %}</table>

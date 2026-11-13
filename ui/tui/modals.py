@@ -1089,10 +1089,10 @@ class InvoiceScreen(ModalScreen):
     def _show(self, currency):
         if currency not in self.texts:
             try:
-                text = services.generate_invoice_text(self.reservation_id, currency)
-            except Exception:
-                text = ""
-            # Augment with batch/lot/expiry/received where available
+                text = services.generate_invoice_text(self.reservation_id, currency) or ""
+            except Exception as exc:
+                text = f"Invoice unavailable: {exc}"
+            # Augment with batch/lot/expiry/received where available (defensive; service already includes traceability when present)
             try:
                 from app_core.db import connect
                 conn = connect()
@@ -1102,37 +1102,41 @@ class InvoiceScreen(ModalScreen):
                 """, (self.reservation_id,)).fetchall()
                 trace = []
                 for p in pos_items:
-                    lot = p["lot_code"] or ""
-                    bid = p["batch_id"]
-                    if not lot and not bid:
+                    try:
+                        lot = p["lot_code"] or ""
+                        bid = p["batch_id"]
+                        if not lot and not bid:
+                            continue
+                        lot_disp = f"{lot}#{bid}" if lot and bid else (lot or f"#{bid}")
+                        exp = recv = None
+                        if bid:
+                            try:
+                                b = conn.execute("SELECT expiry_date, received_at FROM inventory_batches WHERE id=?", (bid,)).fetchone()
+                                if b:
+                                    exp = b["expiry_date"]
+                                    recv = b["received_at"]
+                            except Exception:
+                                pass
+                        desc = p["item_description"] or "Item"
+                        qty = p["quantity"] if "quantity" in p.keys() else "?"
+                        trace.append(f"  - {desc} x{qty}: lot {lot_disp} | exp {exp or '-'} | recv {recv or '-'}")
+                    except Exception:
                         continue
-                    lot_disp = f"{lot}#{bid}" if lot and bid else (lot or f"#{bid}")
-                    exp = recv = None
-                    if bid:
-                        try:
-                            b = conn.execute("SELECT expiry_date, received_at FROM inventory_batches WHERE id=?", (bid,)).fetchone()
-                            if b:
-                                exp = b["expiry_date"]
-                                recv = b["received_at"]
-                        except Exception:
-                            pass
-                    trace.append(f"  - {p['item_description']} x{p['quantity']}: lot {lot_disp} | exp {exp or '-'} | recv {recv or '-'}")
-                if trace and "Batch traceability:" not in text:
-                    text = text.rstrip() + "\n\nBATCH TRACEABILITY\n" + "\n".join(trace) + "\n" + "=" * 60
+                if trace and "batch traceability" not in (text or "").lower():
+                    text = (text or "").rstrip() + "\n\nBATCH TRACEABILITY\n" + "\n".join(trace) + "\n" + "=" * 60
             except Exception:
                 pass
             self.texts[currency] = text
             if self.save:
                 try:
-                    self.paths[currency] = services.save_invoice_file(
-                        self.texts[currency], self.reservation_id, currency)
-                except Exception:
-                    self.paths[currency] = "(not saved)"
+                    self.paths[currency] = services.save_invoice_file(self.texts[currency], self.reservation_id, currency)
+                except Exception as exc:
+                    self.paths[currency] = f"(not saved: {exc})"
         self.currency = currency
-        log = self.query_one("#invoice_body", RichLog)
-        log.clear()
         try:
-            for ln in self.texts.get(currency, "").split("\n"):
+            log = self.query_one("#invoice_body", RichLog)
+            log.clear()
+            for ln in (self.texts.get(currency) or "(no invoice text)").split("\n"):
                 log.write(ln)
         except Exception:
             pass
@@ -1168,7 +1172,7 @@ class WalkInReceiptScreen(ModalScreen):
     BINDINGS = [("escape", "close", "Close")]
     def __init__(self, items, total, method, receipt_text=None, receipt_path=None, payment_id=None):
         super().__init__()
-        self.items = items
+        self.items = items or []
         self.total = total
         self.method = method
         self._provided_text = receipt_text
@@ -1177,34 +1181,48 @@ class WalkInReceiptScreen(ModalScreen):
     def compose(self):
         with Vertical(id="invoice_dialog"):
             yield Static(t("Receipt"), classes="title")
+            yield Static("Traceability (lot/batch, expiry, received) shown per line when available.", classes="help")
             yield RichLog(id="body", highlight=False, markup=False)
             with Horizontal(classes="modal_buttons"):
                 yield Button("🖨 " + t("Print"), id="btn_print", variant="success")
                 yield Button(t("Close"), id="btn_close", variant="error")
     def on_mount(self):
-        if self._provided_text:
-            text = self._provided_text
-            self._path = self._provided_path or ""
-        else:
+        text = self._provided_text or ""
+        self._path = self._provided_path or ""
+        if not text:
             try:
                 text = services.generate_walkin_receipt_text(self.items, self.total, self.method, payment_id=self.payment_id)
                 self._path = services.save_walkin_receipt_file(text, self.payment_id or 0)
             except Exception:
-                W = 48
-                display_name = services.get_app_display_name().upper()
+                try:
+                    W = 48
+                    display_name = (services.get_app_display_name() or "Property Manager").upper()
+                except Exception:
+                    W, display_name = 48, "WALK-IN"
                 lines = ["=" * W, f"{display_name} — WALK-IN".center(W), "=" * W,
-                         datetime.now().strftime("%Y-%m-%d %H:%M"),
-                         "-" * W]
+                         datetime.now().strftime("%Y-%m-%d %H:%M"), "-" * W]
                 for it in self.items:
-                    lines.append(f"  {it['desc']}  x{it['qty']}  @ {it['price']:.2f}  = {it['gross']:.2f}")
-                lines += ["-" * W, f"  TOTAL: {self.total:.2f} EGP",
-                          f"  Paid by: {self.method}", "=" * W,
-                          "", "Thank you!", "=" * W]
+                    try:
+                        desc = it.get("desc") or it.get("item_description") or "Item"
+                        qty = it.get("qty", it.get("quantity", 0))
+                        price = float(it.get("price", it.get("unit_price", 0)) or 0)
+                        gross = float(it.get("gross") or (float(qty or 0) * price))
+                        lines.append(f"  {desc}  x{qty}  @ {price:.2f}  = {gross:.2f}")
+                    except Exception:
+                        lines.append("  (item unavailable)")
+                try:
+                    total = float(self.total or 0)
+                except Exception:
+                    total = 0.0
+                lines += ["-" * W, f"  TOTAL: {total:.2f} EGP", f"  Paid by: {self.method or '-'}", "=" * W, "", "Thank you!", "=" * W]
                 text = "\n".join(lines)
                 try:
-                    self._path = services.save_walkin_receipt_file(text, 0)
+                    self._path = services.save_walkin_receipt_file(text, self.payment_id or 0)
                 except Exception:
-                    self._path = services.save_invoice_file(text, 0, "EGP")
+                    try:
+                        self._path = services.save_invoice_file(text, 0, "EGP")
+                    except Exception:
+                        self._path = ""
         # UI-only traceability augmentation for display (services text may omit batch details)
         try:
             trace_lines = []
@@ -1212,31 +1230,38 @@ class WalkInReceiptScreen(ModalScreen):
             for it in (self.items or []):
                 bid = (it or {}).get("batch_id")
                 lot = (it or {}).get("lot_code") or ""
-                if not bid and not lot:
+                exp = (it or {}).get("expiry_date") or (it or {}).get("batch_expiry_date")
+                recv = (it or {}).get("received_at") or (it or {}).get("batch_received_at")
+                if not (bid or lot or exp or recv):
                     continue
-                lot_disp = f"{lot}#{bid}" if lot and bid else (lot or f"#{bid}")
-                exp = recv = None
-                if bid:
+                lot_disp = f"{lot}#{bid}" if lot and bid else (lot or (f"#{bid}" if bid else "-"))
+                if bid and (not exp or not recv):
                     try:
                         b = connect().execute("SELECT expiry_date, received_at FROM inventory_batches WHERE id=?", (bid,)).fetchone()
                         if b:
-                            exp = b["expiry_date"]
-                            recv = b["received_at"]
+                            exp = exp or b["expiry_date"]
+                            recv = recv or b["received_at"]
                     except Exception:
                         pass
-                desc = (it or {}).get("desc") or (it or {}).get("item_description") or "item"
+                desc = (it or {}).get("desc") or (it or {}).get("item_description") or "Item"
                 trace_lines.append(f"  - {desc}: lot {lot_disp} | exp {exp or '-'} | recv {recv or '-'}")
-            if trace_lines and "Batch traceability:" not in text:
-                text = text.rstrip() + "\n\nBatch traceability:\n" + "\n".join(trace_lines)
+            if trace_lines and "batch traceability:" not in (text or "").lower():
+                text = (text or "").rstrip() + "\n\nBatch traceability:\n" + "\n".join(trace_lines)
         except Exception:
             pass
-        log = self.query_one("#body", RichLog)
-        log.clear()
-        for ln in text.split("\n"):
-            log.write(ln)
+        try:
+            log = self.query_one("#body", RichLog)
+            log.clear()
+            for ln in (text or "(no receipt text)").split("\n"):
+                log.write(ln)
+        except Exception as exc:
+            self.notify(str(exc), severity="error")
     def on_button_pressed(self, e):
         if e.button.id == "btn_print":
             try:
+                if not getattr(self, "_path", ""):
+                    self.notify("No printable receipt file available.", severity="warning")
+                    return
                 ok, msg = services.print_to_printer(self._path)
                 self.notify(msg, severity="information" if ok else "error")
             except Exception as exc:
@@ -1374,6 +1399,7 @@ class ViewFolioScreen(ModalScreen):
     def compose(self):
         with Vertical(id="folio_dialog"):
             yield Static(f"{t('View Folio')} — #{self.rid}", classes="title")
+            yield Static("Traceability: lot/batch and expiry/received shown when available (FEFO allocations appear as specific batch lines).", classes="help")
             yield DataTable(id="table")
             with Horizontal(classes="modal_buttons"):
                 yield Button(t("Void"), id="btn_void", variant="error")
@@ -1383,37 +1409,67 @@ class ViewFolioScreen(ModalScreen):
     def _load(self):
         table = self.query_one("#table", DataTable)
         table.clear(columns=True)
+        table.cursor_type = "row"
         table.add_columns("ID", t("Item"), "Lot/Batch", "Exp/Recv", t("Qty"), t("Price"), "Tax", "Gross")
-        from app_core.db import connect
-        for p in services.get_pos_items(self.rid):
-            gross = p["quantity"] * p["unit_price"] + p["tax_amount"]
+        try:
+            from app_core.db import connect
+        except Exception:
+            connect = None
+        try:
+            items = services.get_pos_items(self.rid) or []
+        except Exception as exc:
+            self.notify(str(exc), severity="error")
+            items = []
+        total = 0.0
+        for p in items:
             try:
-                lot = p["lot_code"] or ""
-                bid = p["batch_id"]
-                lot_disp = f"{lot}#{bid}" if lot and bid else (lot or (f"#{bid}" if bid else ""))
-                extra = "-"
-                if bid:
-                    try:
-                        b = connect().execute("SELECT expiry_date, received_at FROM inventory_batches WHERE id=?", (bid,)).fetchone()
-                        if b:
-                            exp = b["expiry_date"] or "-"
-                            recv = b["received_at"] or "-"
-                            extra = f"exp:{exp}/recv:{recv}"
-                    except Exception:
-                        pass
+                qty = float(p["quantity"] or 0)
+                price = float(p["unit_price"] or 0)
+                tax = float(p["tax_amount"] or 0)
+                gross = qty * price + tax
             except Exception:
-                lot_disp = ""
-                extra = "-"
-            table.add_row(str(p["id"]), p["item_description"], lot_disp, extra, str(p["quantity"]),
-                          f"{p['unit_price']:.2f}", f"{p['tax_amount']:.2f}", f"{gross:.2f}")
+                qty, price, tax, gross = 0.0, 0.0, 0.0, 0.0
+            try:
+                lot = (p["lot_code"] or "").strip() if "lot_code" in p.keys() else ""
+            except Exception:
+                lot = ""
+            try:
+                bid = p["batch_id"] if "batch_id" in p.keys() else None
+            except Exception:
+                bid = None
+            lot_disp = f"{lot}#{bid}" if lot and bid else (lot or (f"#{bid}" if bid else "-"))
+            extra = "-"
+            if bid and connect is not None:
+                try:
+                    b = connect().execute("SELECT expiry_date, received_at FROM inventory_batches WHERE id=?", (bid,)).fetchone()
+                    if b:
+                        exp = b["expiry_date"] or "-"
+                        recv = b["received_at"] or "-"
+                        extra = f"exp:{exp}/recv:{recv}"
+                except Exception:
+                    extra = "-"
+            try:
+                desc = str(p["item_description"] or "-")
+            except Exception:
+                desc = "-"
+            table.add_row(str(p["id"]), desc, lot_disp or "-", extra, f"{qty:g}", f"{price:.2f}", f"{tax:.2f}", f"{gross:.2f}")
+            total += gross
+        if items:
+            table.add_row("", "TOTAL", "-", "-", "", "", "", f"{total:.2f}")
     def on_button_pressed(self, e):
         if e.button.id == "btn_void":
-            pos_id = selected_id(self.query_one("#table", DataTable))
+            try:
+                pos_id = selected_id(self.query_one("#table", DataTable))
+            except Exception:
+                pos_id = None
             if pos_id:
                 def cb(ok):
-                    if ok:
-                        self._load()
-                        self.app.refresh_all_tables()
+                    try:
+                        if ok:
+                            self._load()
+                            self.app.refresh_all_tables()
+                    except Exception as exc:
+                        self.notify(str(exc), severity="error")
                 self.app.push_screen(VoidItemScreen(pos_id), callback=cb)
         elif e.button.id == "btn_close":
             self.dismiss()

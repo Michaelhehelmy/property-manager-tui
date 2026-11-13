@@ -1,0 +1,42 @@
+[Unit]
+Description=Property Manager Web UI (FastAPI/HTMX, SQLite-safe)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Create a dedicated user, e.g.: sudo useradd --system --create-home --home-dir /opt/property-manager-tui pmgr
+User=pmgr
+Group=pmgr
+WorkingDirectory=/opt/property-manager-tui
+
+# Persistent runtime data (DB/exports/invoices). Back this up regularly.
+Environment=PM_DATA_DIR=/var/lib/property-manager-tui
+# REQUIRED for non-local/shared access: generate a strong random secret (e.g. openssl rand -hex 32)
+Environment=PM_WEB_SECRET_KEY=change-me-to-a-long-random-secret
+# Bind locally and terminate HTTPS at a reverse proxy (recommended).
+Environment=HOST=127.0.0.1
+Environment=PORT=8000
+
+# Ensure app packages are importable from repo checkout layout
+Environment=PYTHONPATH=/opt/property-manager-tui/src:/opt/property-manager-tui
+
+# If using a venv, point ExecStart to /opt/property-manager-tui/.venv/bin/python
+ExecStart=/opt/property-manager-tui/.venv/bin/python -m uvicorn ui.web.server:app --host 127.0.0.1 --port 8000 --workers 1
+
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+# Prevent accidental writes outside allowed paths (relax if your deployment needs differ)
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+
+# Usage notes:
+# 1) Copy to /etc/systemd/system/property-manager-web.service and edit paths/user/secrets.
+# 2) sudo mkdir -p /var/lib/property-manager-tui && sudo chown -R pmgr:pmgr /var/lib/property-manager-tui
+# 3) sudo systemctl daemon-reload && sudo systemctl enable --now property-manager-web
+# 4) Put Caddy/Nginx in front for HTTPS. Do NOT expose HTTP directly to the internet.
+# 5) SQLite safety: keep --workers 1. Runtime data (DB/exports/invoices/PM_DATA_DIR) is preserved across restarts/updates.

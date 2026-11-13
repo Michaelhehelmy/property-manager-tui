@@ -128,12 +128,12 @@ class PropertyManagerApp(App[None]):
     .button_row Button, .form_row Button { min-width: 0; width: 100%; }
     #assistant_split { overflow-x: hidden; }
     #assistant_main { overflow-x: hidden; min-width: 0; }
-    DataTable { height: auto; max-height: 14; border: solid #45475a; margin: 0 0 1 0; background: #1e1e2e; }
-    Button { margin: 0 1 1 0; padding: 0 2; min-width: 12; background: #89b4fa; color: #1e1e2e; text-style: bold; border: none; }
+    DataTable { height: auto; max-height: 14; border: solid #45475a; margin: 0 0 1 0; background: #1e1e2e; min-width: 0; }
+    Button { margin: 0 1 1 0; padding: 0 2; min-width: 8; background: #89b4fa; color: #1e1e2e; text-style: bold; border: none; }
     Button:hover { background: #b4befe; }
-    Input { margin: 0 0 1 0; border: solid #45475a; padding: 0 1; }
-    Select { margin: 0 0 1 0; }
-    RadioSet { height: auto; margin: 0 0 1 0; }
+    Input { margin: 0 0 1 0; border: solid #45475a; padding: 0 1; width: 100%; max-width: 100%; }
+    Select { margin: 0 0 1 0; width: 100%; max-width: 100%; }
+    RadioSet { height: auto; margin: 0 0 1 0; width: 100%; }
     Checkbox { margin: 0 0 1 0; }
     .box { border: solid #585b70; padding: 1 2; margin: 0 1 1 0; background: #24273a; width: 1fr; }
     .title { text-style: bold; color: #f9e2af; margin: 0 0 1 0; padding: 0 1; }
@@ -154,23 +154,23 @@ class PropertyManagerApp(App[None]):
     EditRoomFieldScreen, RatePlanEditScreen, RatePlanDeleteScreen, GuestEditScreen,
     GuestMergeModal, GuestCRMModal, GuestHistoryModal, InvoiceScreen, WalkInReceiptScreen,
     ReportScreen, ChartScreen, ViewFolioScreen, ReviewChangesModal, ImportSettingsModal,
-    AuditLogScreen, LanguageScreen, ApplyDemoDataModal, BrandingWizardScreen
+    AuditLogScreen, LanguageScreen, ApplyDemoDataModal, BrandingWizardScreen, ImportSeedConfigModal,
+    AddRoomModal, BatchSelectScreen, RecoveryResetModal, AssistantCorrectionModal
     { align: center middle; }
 
     #protected_modal, #pw_dialog, #folio_dialog, #lang_dialog, #inv_edit_dialog,
     #report_dialog, #chart_dialog, #crm_dialog, #invoice_dialog {
-        width: 90%; max-width: 88; min-width: 40; height: auto; max-height: 92%;
+        width: 92%; max-width: 90; min-width: 32; height: auto; max-height: 92%;
         border: thick #89b4fa; background: #24273a; padding: 1 2;
         overflow-x: hidden; overflow-y: auto;
     }
     VerticalScroll { overflow-x: hidden; }
-    .modal_buttons Horizontal, .modal_buttons { width: 100%; height: auto; }
-    .modal_buttons Button { min-width: 8; }
-    DataTable { min-width: 0; }
-    Static { text-wrap: wrap; }
-    Input, Select { max-width: 100%; }
+    .modal_buttons Horizontal, .modal_buttons { width: 100%; height: auto; layout: grid; grid-size: 3; grid-gutter: 0 1; }
+    .modal_buttons Button { min-width: 6; width: 100%; }
+    Static { text-wrap: wrap; width: 100%; }
+    RichLog { text-wrap: wrap; }
     #invoice_body, #report_body, #review_body, #chart_body, #body {
-        height: 1fr; min-height: 12;
+        height: 1fr; min-height: 10;
         background: #1e1e2e; border: solid #45475a; padding: 0 1;
     }
     #path_info { color: #a6adc8; margin: 1 0; }
@@ -178,7 +178,7 @@ class PropertyManagerApp(App[None]):
     #wiz_preview { min-height: 3; content-align: center middle; }
     #assistant_log { height: 1fr; min-height: 12; background: #1e1e2e; border: solid #45475a; padding: 0 1; margin: 0 0 1 0; }
     #assistant_split { height: 1fr; }
-    #assistant_side { width: 34; min-width: 24; max-width: 40%; height: 100%; border: solid #45475a; background: #24273a; padding: 1; margin: 0 1 0 0; overflow-y: auto; overflow-x: hidden; }
+    #assistant_side { width: 34; min-width: 20; max-width: 40%; height: 100%; border: solid #45475a; background: #24273a; padding: 1; margin: 0 1 0 0; overflow-y: auto; overflow-x: hidden; }
     #assistant_side Button { width: 100%; margin: 0 0 1 0; min-width: 0; }
     #assistant_main { width: 1fr; height: 100%; }
     #assistant_input { margin: 0 0 1 0; }

@@ -1,0 +1,41 @@
+# Example Nginx reverse-proxy snippet for Property Manager Web UI (HTTPS/TLS termination).
+# Assumes the app runs locally on 127.0.0.1:8000 with uvicorn --workers 1 (SQLite-safe).
+#
+# Prerequisites:
+# - Obtain TLS cert/key (e.g. Let's Encrypt via certbot) and update paths below.
+# - Set PM_WEB_SECRET_KEY to a strong random value in the app environment.
+# - Keep runtime data persisted (PM_DATA_DIR / DB / exports / invoices).
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name pm.example.com;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name pm.example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/pm.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/pm.example.com/privkey.pem;
+    ssl_session_timeout 1d;
+    ssl_session_cache shared:SSL:10m;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    # Adjust if you upload large files; default is often small.
+    client_max_body_size 25m;
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 300;
+    }
+}

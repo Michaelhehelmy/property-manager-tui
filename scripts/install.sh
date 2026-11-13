@@ -1,28 +1,31 @@
 #!/bin/sh
 # One-line bootstrap installer for property-manager-tui (Unix-like OSes).
-# Detects package manager best-effort, ensures git/curl/wget/ca-certificates,
-# clones/updates the repo, and runs scripts/setup.sh.
+# - Idempotent clone/update (git) with optional pinned ref (branch/tag/commit)
+# - Preserves runtime data (DB/exports/invoices/PM_DATA_DIR) across updates/runs
+# - Safe defaults: Web runs with --workers 1 (SQLite); strong secret + HTTPS for non-local use
 #
-# Usage (one-liner):
+# Usage:
 #   curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh | sh
 #   wget -qO-  https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh | sh
 #
-# With options (env vars):
-#   curl -fsSL .../install.sh | sh                                 # install/update + launch launcher
-#   curl -fsSL .../install.sh | MODE=tui sh                        # prefer TUI
-#   curl -fsSL .../install.sh | MODE=web HOST=0.0.0.0 PORT=8000 sh
-#   curl -fsSL .../install.sh | SKIP_WEB=1 MODE=tui sh             # iSH/low-resource
+# Examples:
+#   curl -fsSL .../install.sh | MODE=tui sh
+#   curl -fsSL .../install.sh | MODE=web HOST=0.0.0.0 PORT=8000 PM_WEB_SECRET_KEY="$(openssl rand -hex 32)" sh
+#   curl -fsSL .../install.sh | ACTION=setup sh
+#   curl -fsSL .../install.sh | GIT_REF=v1.2.3 sh        # pinned tag/branch/commit
+#   curl -fsSL .../install.sh | TAG=v1.2.3 sh            # alias for pinned ref
+#   curl -fsSL .../install.sh | COMMIT=<sha> sh          # alias for pinned ref
 #
-# Env vars: REPO_URL, INSTALL_DIR, BRANCH, MODE, ACTION, SKIP_WEB, HOST, PORT,
-#           INSTALL_DEV, RUN_TESTS, PYTHON, PM_DATA_DIR, PM_WEB_SECRET_KEY
-# Default ACTION=auto: first run installs everything and launches launcher;
-# re-run checks for updates (git fast-forward), refreshes deps, and launches.
-# Use ACTION=setup to install/update only, or ACTION=run to run without updating.
+# Env vars: REPO_URL, INSTALL_DIR, BRANCH, GIT_REF, TAG, COMMIT, MODE, ACTION, SKIP_WEB,
+#           HOST, PORT, INSTALL_DEV, RUN_TESTS, PYTHON, PM_DATA_DIR, PM_WEB_SECRET_KEY
+# ACTION: auto|setup|run|deploy (default: auto). MODE: auto|tui|web|both.
 set -eu
 
 REPO_URL="${REPO_URL:-https://github.com/Michaelhehelmy/property-manager-tui.git}"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/property-manager-tui}"
 BRANCH="${BRANCH:-main}"
+# Pinned ref support: GIT_REF wins, then TAG, then COMMIT, else BRANCH.
+GIT_REF="${GIT_REF:-${TAG:-${COMMIT:-$BRANCH}}}"
 MODE="${MODE:-auto}"
 ACTION="${ACTION:-auto}"
 SKIP_WEB="${SKIP_WEB:-auto}"
@@ -31,7 +34,7 @@ PORT="${PORT:-8000}"
 
 log() { printf '%s\n' "==> $*"; }
 warn() { printf '%s\n' "WARNING: $*" >&2; }
-
+err() { printf '%s\n' "ERROR: $*" >&2; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
 detect_pm() {
@@ -50,12 +53,12 @@ detect_pm() {
 }
 
 install_bootstrap_deps() {
-  # Ensure git and CA certs (and curl/wget if missing) so we can fetch/clone.
+  # Best-effort: ensure git and CA/fetch tools so we can clone/update.
   if have git; then
     return 0
   fi
   PM="$(detect_pm)"
-  log "git not found; attempting to install bootstrap prerequisites (pm=$PM)..."
+  log "git not found; attempting to install bootstrap prerequisites (pm=${PM:-unknown})..."
   case "$PM" in
     apk)
       (apk update && apk add --no-cache git ca-certificates curl wget bash) || warn "apk bootstrap install had issues"
@@ -92,14 +95,26 @@ install_bootstrap_deps() {
   esac
 }
 
+print_ops_guidance() {
+  log "Ops guidance: SQLite web mode requires --workers 1. Runtime data (DB/exports/invoices/PM_DATA_DIR) is preserved across updates/restarts."
+  if [ "${PM_WEB_SECRET_KEY:-}" = "" ] && [ "${HOST:-127.0.0.1}" != "127.0.0.1" ] && [ "${HOST:-127.0.0.1}" != "localhost" ]; then
+    warn "PM_WEB_SECRET_KEY is not set and HOST=$HOST is non-local. Set a strong random secret (e.g. openssl rand -hex 32)."
+  fi
+  if [ "${HOST:-127.0.0.1}" = "0.0.0.0" ] || [ "${HOST:-127.0.0.1}" = "::" ]; then
+    warn "Non-local/LAN bind requested. Use HTTPS via a reverse proxy (Caddy/Nginx) for shared/network deployments."
+  fi
+}
+
 fetch_setup_if_needed() {
   # If running inside an existing checkout with setup.sh, use it.
   if [ -f "$INSTALL_DIR/scripts/setup.sh" ]; then
     return 0
   fi
-  # If we don't have a local setup.sh (e.g. piped and clone failed), try to fetch it.
+  # If local setup.sh missing (e.g. piped and clone failed), try to fetch from pinned ref/branch.
   TMP_SETUP="${TMPDIR:-/tmp}/property-manager-tui-setup.sh.$$"
-  SETUP_URL="https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/${BRANCH}/scripts/setup.sh"
+  FETCH_REF="$GIT_REF"
+  [ -n "$FETCH_REF" ] || FETCH_REF="$BRANCH"
+  SETUP_URL="https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/${FETCH_REF}/scripts/setup.sh"
   if have curl; then
     curl -fsSL "$SETUP_URL" -o "$TMP_SETUP" || return 1
   elif have wget; then
@@ -114,24 +129,45 @@ fetch_setup_if_needed() {
 
 main() {
   log "property-manager-tui bootstrap installer"
-  log "repo=$REPO_URL dir=$INSTALL_DIR branch=$BRANCH mode=$MODE action=$ACTION skip_web=$SKIP_WEB host=$HOST port=$PORT"
+  log "repo=$REPO_URL dir=$INSTALL_DIR ref=$GIT_REF mode=$MODE action=$ACTION skip_web=$SKIP_WEB host=$HOST port=$PORT"
 
   install_bootstrap_deps
   if ! have git; then
-    warn "git is required but was not found/installed. Install git and re-run."
+    err "git is required but was not found/installed. Install git and re-run."
     exit 1
   fi
 
-  # Clone or update
+  # Idempotent clone or update (never delete runtime data dirs/files).
   if [ -d "$INSTALL_DIR/.git" ]; then
     log "Updating existing checkout in $INSTALL_DIR"
-    git -C "$INSTALL_DIR" fetch --all --prune || true
-    git -C "$INSTALL_DIR" checkout "$BRANCH" || true
-    git -C "$INSTALL_DIR" pull --ff-only origin "$BRANCH" || git -C "$INSTALL_DIR" pull --ff-only || git -C "$INSTALL_DIR" pull || true
+    if ! git -C "$INSTALL_DIR" fetch --all --tags --prune; then
+      warn "git fetch failed; continuing with existing local checkout."
+    fi
+    # Best-effort: only fast-forward when on a local branch (avoid breaking detached pinned refs).
+    if git -C "$INSTALL_DIR" symbolic-ref -q HEAD >/dev/null 2>&1; then
+      git -C "$INSTALL_DIR" pull --ff-only || warn "git pull --ff-only skipped/failed (continuing)."
+    fi
   else
     log "Cloning into $INSTALL_DIR"
     mkdir -p "$(dirname "$INSTALL_DIR")"
-    git clone --branch "$BRANCH" "$REPO_URL" "$INSTALL_DIR"
+    # Try a direct branch clone first for speed; fall back to full clone for tags/commits.
+    if ! git clone --branch "$BRANCH" "$REPO_URL" "$INSTALL_DIR" 2>/dev/null; then
+      git clone "$REPO_URL" "$INSTALL_DIR"
+    fi
+  fi
+
+  # Checkout pinned ref (branch/tag/commit) safely and idempotently.
+  if [ -n "$GIT_REF" ] && [ -d "$INSTALL_DIR/.git" ]; then
+    log "Checking out requested ref: $GIT_REF"
+    git -C "$INSTALL_DIR" fetch --all --tags --prune >/dev/null 2>&1 || true
+    if git -C "$INSTALL_DIR" rev-parse --verify --quiet "refs/remotes/origin/$GIT_REF" >/dev/null; then
+      git -C "$INSTALL_DIR" checkout -B "$GIT_REF" "origin/$GIT_REF" || git -C "$INSTALL_DIR" checkout "$GIT_REF"
+    else
+      git -C "$INSTALL_DIR" checkout "$GIT_REF" || {
+        err "Failed to checkout ref '$GIT_REF'. Verify branch/tag/commit exists."
+        exit 1
+      }
+    fi
   fi
 
   SETUP="$INSTALL_DIR/scripts/setup.sh"
@@ -141,13 +177,15 @@ main() {
     if fetch_setup_if_needed && [ -n "${FETCHED_SETUP:-}" ] && [ -f "$FETCHED_SETUP" ]; then
       SETUP="$FETCHED_SETUP"
     else
-      warn "Could not locate scripts/setup.sh. Check repo/branch and network access."
+      err "Could not locate scripts/setup.sh. Check repo/ref and network access."
       exit 1
     fi
   fi
 
-  # Run setup script with exported config (preserve runtime data on updates).
-  export REPO_URL INSTALL_DIR BRANCH MODE ACTION SKIP_WEB HOST PORT
+  print_ops_guidance
+
+  # Export config for setup script (preserve runtime data on updates).
+  export REPO_URL INSTALL_DIR BRANCH GIT_REF TAG COMMIT MODE ACTION SKIP_WEB HOST PORT
   [ -n "${INSTALL_DEV:-}" ] && export INSTALL_DEV
   [ -n "${RUN_TESTS:-}" ] && export RUN_TESTS
   [ -n "${PYTHON:-}" ] && export PYTHON
@@ -155,7 +193,6 @@ main() {
   [ -n "${PM_WEB_SECRET_KEY:-}" ] && export PM_WEB_SECRET_KEY
 
   log "Running setup script..."
-  # Use sh for portability; setup.sh is POSIX-sh compatible.
   exec sh "$SETUP"
 }
 

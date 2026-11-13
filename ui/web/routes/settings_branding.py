@@ -13,12 +13,23 @@ def unlock_page(request: Request, next: str = "/"):
 @router.post("/unlock")
 async def unlock_post(request: Request):
     form = await deps.get_form(request)
+    nxt = str(form.get("next") or "/")
+    if not nxt.startswith("/") or nxt.startswith("//"):
+        nxt = "/"
+    try:
+        deps.enforce_auth_rate_limit(request, "unlock", limit=8, window_sec=300)
+    except Exception as e:
+        deps.add_flash(request, str(getattr(e, "detail", e)), "error")
+        from urllib.parse import quote
+        r = deps.redirect("/unlock?next=" + quote(nxt, safe="/"))
+        deps.save_session(r, deps.get_session(request)); return r
     if deps.unlock(request, form.get("password","")):
         deps.add_flash(request, "Unlocked", "success")
-        r=deps.redirect(form.get("next") or "/")
+        r=deps.redirect(nxt)
     else:
         deps.add_flash(request, "Invalid super password", "error")
-        r=deps.redirect("/unlock")
+        from urllib.parse import quote
+        r=deps.redirect("/unlock?next=" + quote(nxt, safe="/"))
     deps.save_session(r, deps.get_session(request)); return r
 
 
@@ -34,14 +45,20 @@ async def unlock_recovery_post(request: Request):
     if not nxt.startswith("/") or nxt.startswith("//"):
         nxt = "/"
     try:
+        deps.enforce_auth_rate_limit(request, "recovery", limit=5, window_sec=900)
         services.use_recovery_code(form.get("code", ""), form.get("new_password", ""), form.get("confirm_password", ""))
+        deps.clear_auth_failures(request, "recovery")
         # Use new password to establish per-browser unlock (also best-effort backend compat).
         if not deps.unlock(request, form.get("new_password", "")):
             raise RuntimeError("Failed to establish unlocked session after recovery.")
         deps.add_flash(request, "Password reset with recovery code. Unlocked.", "success")
         r = deps.redirect(nxt)
     except Exception as e:
-        deps.add_flash(request, str(e), "error")
+        msg = str(getattr(e, "detail", e))
+        # Count likely credential/recovery failures as attempts (not validation-only 429).
+        if "Too many attempts" not in msg:
+            deps.record_auth_failure(request, "recovery", window_sec=900)
+        deps.add_flash(request, msg, "error")
         from urllib.parse import quote
         r = deps.redirect("/unlock/recovery?next=" + quote(nxt, safe="/"))
     deps.save_session(r, deps.get_session(request)); return r
@@ -75,9 +92,9 @@ def settings(request: Request):
 
 @router.post("/settings/branding")
 async def branding(request: Request):
-    deps.require_unlock(request)
-    form = await deps.get_form(request)
+    form = await deps.require_unlocked_form(request)
     try:
+        _ = deps.service_password(request, form)
         services.apply_branding_settings(form.get("display_name",""), form.get("tagline",""), form.get("animation","reveal"))
         deps.add_flash(request, "Branding updated", "success")
     except Exception as e: deps.add_flash(request, str(e), "error")
@@ -85,14 +102,13 @@ async def branding(request: Request):
 
 @router.post("/settings/save")
 async def save_settings(request: Request):
-    deps.require_unlock(request)
-    form = await deps.get_form(request)
+    form = await deps.require_unlocked_form(request)
     changes = {}
     for k in services.SETTINGS_CATALOG.keys():
         if k in form and k != "schema_version":
             changes[k] = form.get(k)
     try:
-        count, errs = services.save_settings(changes, form.get("password",""))
+        count, errs = services.save_settings(changes, deps.service_password(request, form))
         if errs: deps.add_flash(request, "; ".join(errs), "error")
         else: deps.add_flash(request, f"Saved {count} settings", "success")
     except Exception as e: deps.add_flash(request, str(e), "error")
@@ -100,19 +116,18 @@ async def save_settings(request: Request):
 
 @router.post("/settings/backup")
 async def backup(request: Request):
-    deps.require_unlock(request)
-    form = await deps.get_form(request)
+    form = await deps.require_unlocked_form(request)
     try:
+        _ = deps.service_password(request, form)
         path = services.backup_now(); deps.add_flash(request, f"Backup: {Path(path).name}", "success")
     except Exception as e: deps.add_flash(request, str(e), "error")
     r=deps.redirect("/settings"); deps.save_session(r, deps.get_session(request)); return r
 
 @router.post("/settings/demo-preset")
 async def demo_preset(request: Request):
-    deps.require_unlock(request)
-    form = await deps.get_form(request)
+    form = await deps.require_unlocked_form(request)
     try:
-        res = services.apply_demo_data_preset(form.get("preset","analysis_small"), form.get("password",""), form.get("confirm",""), allow_existing=False)
+        res = services.apply_demo_data_preset(form.get("preset","analysis_small"), deps.service_password(request, form), form.get("confirm",""), allow_existing=False)
         deps.add_flash(request, f"Demo preset applied: {res['created']}", "success")
     except Exception as e: deps.add_flash(request, str(e), "error")
     r=deps.redirect("/settings"); deps.save_session(r, deps.get_session(request)); return r
@@ -120,12 +135,11 @@ async def demo_preset(request: Request):
 
 @router.post("/settings/reset")
 async def reset_settings(request: Request):
-    deps.require_unlock(request)
-    form = await deps.get_form(request)
+    form = await deps.require_unlocked_form(request)
     try:
         if str(form.get("confirm", "")).strip().upper() != "RESET DEFAULTS":
             raise ValueError("Confirmation text must be exactly: RESET DEFAULTS")
-        services.reset_to_defaults(form.get("password", ""))
+        services.reset_to_defaults(deps.service_password(request, form))
         deps.add_flash(request, "Settings reset to defaults (schema/language preserved).", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
@@ -146,10 +160,9 @@ def rate_plans(request: Request):
 
 @router.post("/settings/rate-plans/add")
 async def rate_plan_add(request: Request):
-    deps.require_unlock(request)
-    form = await deps.get_form(request)
+    form = await deps.require_unlocked_form(request)
     try:
-        services.add_rate_plan(form.get("name", ""), float(form.get("modifier") or 0), form.get("password", ""))
+        services.add_rate_plan(form.get("name", ""), float(form.get("modifier") or 0), deps.service_password(request, form))
         deps.add_flash(request, "Rate plan added.", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
@@ -158,10 +171,9 @@ async def rate_plan_add(request: Request):
 
 @router.post("/settings/rate-plans/{plan_id}/edit")
 async def rate_plan_edit(request: Request, plan_id: int):
-    deps.require_unlock(request)
-    form = await deps.get_form(request)
+    form = await deps.require_unlocked_form(request)
     try:
-        services.update_rate_plan(plan_id, form.get("name", ""), float(form.get("modifier") or 0), form.get("password", ""))
+        services.update_rate_plan(plan_id, form.get("name", ""), float(form.get("modifier") or 0), deps.service_password(request, form))
         deps.add_flash(request, "Rate plan updated.", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
@@ -170,10 +182,9 @@ async def rate_plan_edit(request: Request, plan_id: int):
 
 @router.post("/settings/rate-plans/{plan_id}/delete")
 async def rate_plan_delete(request: Request, plan_id: int):
-    deps.require_unlock(request)
-    form = await deps.get_form(request)
+    form = await deps.require_unlocked_form(request)
     try:
-        services.delete_rate_plan(plan_id, form.get("password", ""))
+        services.delete_rate_plan(plan_id, deps.service_password(request, form))
         deps.add_flash(request, "Rate plan deleted.", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
@@ -211,14 +222,24 @@ async def seed_import(request: Request):
     try:
         if upload is None or not getattr(upload, "filename", ""):
             raise ValueError("Select a seed config JSON file to upload.")
-        import tempfile, shutil
-        suffix = Path(getattr(upload, "filename", "seed.json")).suffix or ".json"
+        fname = Path(str(getattr(upload, "filename", "seed.json"))).name
+        if not fname.lower().endswith(".json"):
+            raise ValueError("Seed config must be a .json file.")
+        ctype = (getattr(upload, "content_type", "") or "").lower()
+        if ctype and ctype not in ("application/json", "text/json", "text/plain", "application/octet-stream"):
+            raise ValueError("Invalid upload content type for seed config.")
+        import tempfile
+        suffix = ".json"
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
             data = await upload.read()
+            if data is None:
+                data = b""
+            if len(data) > 5 * 1024 * 1024:
+                raise ValueError("Seed config file is too large (max 5 MB).")
             tmp.write(data)
             tmp_path = tmp.name
         try:
-            res = services.import_seed_config(tmp_path, form.get("password", ""), form.get("confirm", ""))
+            res = services.import_seed_config(tmp_path, deps.service_password(request, form), form.get("confirm", ""))
             deps.add_flash(request, f"Seed config applied (first-time setup): {res.get('summary', {})}", "success")
         finally:
             try:
@@ -232,9 +253,9 @@ async def seed_import(request: Request):
 
 @router.post("/settings/rooms/add")
 async def room_add(request: Request):
-    deps.require_unlock(request)
-    form = await deps.get_form(request)
+    form = await deps.require_unlocked_form(request)
     try:
+        _ = deps.service_password(request, form)
         rid = services.add_room(form.get("room_number", ""), form.get("room_type", ""), form.get("base_price", 0), form.get("housekeeping_status", "Clean"))
         deps.add_flash(request, f"Room added (#{rid}).", "success")
     except Exception as e:
@@ -244,9 +265,9 @@ async def room_add(request: Request):
 
 @router.post("/settings/rooms/{room_id}/delete")
 async def room_delete(request: Request, room_id: int):
-    deps.require_unlock(request)
-    form = await deps.get_form(request)
+    form = await deps.require_unlocked_form(request)
     try:
+        _ = deps.service_password(request, form)
         services.delete_room(room_id)
         deps.add_flash(request, "Room deleted.", "success")
     except Exception as e:
@@ -257,9 +278,9 @@ async def room_delete(request: Request, room_id: int):
 
 @router.post("/settings/test-label")
 async def test_label(request: Request):
-    deps.require_unlock(request)
-    form = await deps.get_form(request)
+    form = await deps.require_unlocked_form(request)
     try:
+        _ = deps.service_password(request, form)
         ok, msg, p = services.test_label_print()
         deps.add_flash(request, f"Test label: {msg} ({p})", "success" if ok else "warning")
     except Exception as e:
@@ -288,9 +309,9 @@ async def updates_check(request: Request):
 
 @router.post("/settings/updates/apply")
 async def updates_apply(request: Request):
-    deps.require_unlock(request)
-    form = await deps.get_form(request)
+    form = await deps.require_unlocked_form(request)
     try:
+        _ = deps.service_password(request, form)
         if str(form.get("confirm", "")).strip().upper() != "UPDATE APP":
             raise ValueError("Confirmation text must be exactly: UPDATE APP")
         result = updater.apply_update()
