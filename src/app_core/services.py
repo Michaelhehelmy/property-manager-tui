@@ -2238,10 +2238,15 @@ def test_label_print(printer=None):
     return _print_text_label(text, "label_test", printer=printer, fmt=fmt)
 
 
-def _select_batches_for_sale(conn, item_id, qty_needed, specific_batch_id=None):
-    """Return list of (batch_row, take_qty) allocations (FEFO)."""
+def _select_batches_for_sale(conn, item_id, qty_needed, specific_batch_id=None, allow_negative=False):
+    """Return (allocs, overflow_qty) for FEFO sale allocation.
+
+    allocs: list of (batch_row, take_qty) for available batch stock.
+    overflow_qty: positive remainder when allow_negative permits selling beyond batch availability.
+    """
     warn_days = int(get_setting("expiry_warn_days", "7") or 7)
     block_expired = get_setting("block_sell_expired", "false") == "true"
+    qty_needed_f = float(qty_needed)
     if specific_batch_id is not None:
         b = conn.execute("SELECT * FROM inventory_batches WHERE id=? AND item_id=?", (specific_batch_id, item_id)).fetchone()
         if not b:
@@ -2249,15 +2254,21 @@ def _select_batches_for_sale(conn, item_id, qty_needed, specific_batch_id=None):
         state, _ = barcodes.expiry_status(b["expiry_date"], warn_days)
         if state == "expired" and block_expired:
             raise ValueError(f"Batch {b['lot_code']} is expired and cannot be sold.")
-        if float(b["quantity_remaining"] or 0) < qty_needed - 1e-9:
+        avail = float(b["quantity_remaining"] or 0)
+        if avail + 1e-9 < qty_needed_f and not allow_negative:
             raise ValueError(f"Insufficient quantity in batch {b['lot_code']}.")
-        return [(b, float(qty_needed))]
+        take = min(avail, qty_needed_f) if avail > 0 else 0.0
+        allocs = [(b, take)] if take > 1e-9 else []
+        overflow = max(0.0, qty_needed_f - take)
+        if overflow > 1e-9 and not allow_negative:
+            raise ValueError(f"Insufficient quantity in batch {b['lot_code']}.")
+        return allocs, overflow
     rows = conn.execute("""SELECT * FROM inventory_batches
         WHERE item_id=? AND status='active' AND quantity_remaining > 0
         ORDER BY CASE WHEN expiry_date IS NULL OR expiry_date='' THEN 1 ELSE 0 END,
                  date(expiry_date) ASC, datetime(received_at) ASC, id ASC""", (item_id,)).fetchall()
     allocs = []
-    remaining = float(qty_needed)
+    remaining = qty_needed_f
     for b in rows:
         state, _ = barcodes.expiry_status(b["expiry_date"], warn_days)
         if state == "expired" and block_expired:
@@ -2270,12 +2281,13 @@ def _select_batches_for_sale(conn, item_id, qty_needed, specific_batch_id=None):
         remaining -= take
         if remaining <= 1e-9:
             break
-    if remaining > 1e-9:
+    overflow = max(0.0, remaining)
+    if overflow > 1e-9 and not allow_negative:
         # include blocked expired info in message if relevant
         if block_expired:
             raise ValueError("Insufficient non-expired batch stock available for the requested quantity.")
         raise ValueError("Insufficient batch stock available for the requested quantity.")
-    return allocs
+    return allocs, overflow
 
 
 
@@ -2379,12 +2391,12 @@ def _add_pos_item_tx(conn, reservation_id, desc, qty, price, inv_id=None, activi
                 ing_has_batches = conn.execute("SELECT 1 FROM inventory_batches WHERE item_id=? AND status='active' AND quantity_remaining>0 LIMIT 1", (c["ingredient_item_id"],)).fetchone() is not None
                 if ing_has_batches:
                     try:
-                        allocs = _select_batches_for_sale(conn, c["ingredient_item_id"], need, specific_batch_id=None)
+                        allocs, overflow = _select_batches_for_sale(conn, c["ingredient_item_id"], need, specific_batch_id=None, allow_negative=allow_neg)
                     except Exception as e:
-                        if allow_neg:
-                            # Cannot allocate more than available batches without creating negative batch state.
-                            raise ValueError(f"Insufficient batch stock for ingredient '{c['item_name']}': {e}")
-                        allocs = None
+                        raise ValueError(f"Insufficient batch stock for ingredient '{c['item_name']}': {e}")
+                    if overflow > 1e-9:
+                        # For recipe ingredients, avoid unsafe negative batch state; require sufficient tracked stock.
+                        raise ValueError(f"Insufficient batch stock for ingredient '{c['item_name']}': need {need:g}, overflow {overflow:g}")
                     if allocs is None:
                         missing.append(f"{c['item_name']} (need {need:g})")
                     else:
@@ -2433,6 +2445,7 @@ def _add_pos_item_tx(conn, reservation_id, desc, qty, price, inv_id=None, activi
                     "recipe_deducted": True, "batch_tracked": bool(any(a[2] for a in ing_plans))}
 
         allocs = None
+        overflow = 0.0
         if has_batches:
             # FEFO batch allocation (or specific batch). Split into per-batch lines for traceability.
             spec = None
@@ -2442,13 +2455,16 @@ def _add_pos_item_tx(conn, reservation_id, desc, qty, price, inv_id=None, activi
                 except Exception:
                     spec = None
             try:
-                allocs = _select_batches_for_sale(conn, inv_id, qty, specific_batch_id=spec)
+                allocs, overflow = _select_batches_for_sale(conn, inv_id, qty, specific_batch_id=spec, allow_negative=allow_neg)
             except Exception as e:
-                # Preserve stock-vs-batch consistency: do not fall back to aggregate deduction when batches exist.
-                # (allow_negative_stock cannot create negative batch quantities safely.)
+                # Preserve stock-vs-batch consistency when negative not allowed.
                 raise ValueError(str(e))
+            # If overflow remains, allow negative by handling remainder as aggregate (unbatched trace) when permitted.
+            if overflow > 1e-9 and not allow_neg:
+                raise ValueError("Insufficient batch stock available for the requested quantity.")
         else:
             allocs = None
+            overflow = 0.0
 
         if allocs:
             # one line per allocation (POS quantity schema is integer)
@@ -2468,7 +2484,7 @@ def _add_pos_item_tx(conn, reservation_id, desc, qty, price, inv_id=None, activi
                 bcost = float(b["unit_cost"] or inv["unit_cost"] or 0)
                 lot_code_val = b["lot_code"] if "lot_code" in b.keys() else None
                 desc_l = desc.strip()
-                if len(allocs) > 1 or lot_code_val:
+                if len(allocs) > 1 or lot_code_val or overflow > 1e-9:
                     desc_l = f"{desc.strip()} [lot {lot_code_val}]" if lot_code_val else f"{desc.strip()} [batch {b['id']}]"
                 cur.execute("""INSERT INTO pos_tabs
                     (reservation_id, inventory_item_id, item_description, quantity, unit_price, tax_amount, cost_at_sale, activity_id, batch_id, lot_code)
@@ -2492,10 +2508,65 @@ def _add_pos_item_tx(conn, reservation_id, desc, qty, price, inv_id=None, activi
                                VALUES (?, 'OUT_SALE', ?, ?, ?, ?)""",
                              (inv_id, take_int_i, f"POS #{pid} lot {lot_code_val}", b["id"], bcost))
                 remaining_qty -= take_int_i
-            if remaining_qty != 0:
-                raise ValueError("Batch allocation mismatch for requested quantity.")
+            # Handle overflow remainder when negative stock is allowed (aggregate/unbatched trace for remainder).
+            overflow_qty = int(round(float(overflow))) if overflow > 1e-9 else 0
+            if overflow_qty > 0 and allow_neg:
+                overflow_qty = min(overflow_qty, remaining_qty) if remaining_qty > 0 else overflow_qty
+            if remaining_qty > 0:
+                if allow_neg and overflow_qty > 0:
+                    take_int_i = overflow_qty
+                    net_l = price * take_int_i
+                    tax_l = calculate_tax(net_l, 0)
+                    bcost = float(inv["unit_cost"] or 0)
+                    desc_l = f"{desc.strip()} [unbatched]"
+                    cur.execute("""INSERT INTO pos_tabs
+                        (reservation_id, inventory_item_id, item_description, quantity, unit_price, tax_amount, cost_at_sale, activity_id, batch_id, lot_code)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (rid, inv_id, desc_l, take_int_i, price, tax_l["service"] + tax_l["vat"] + tax_l["city_tax"], bcost, act_id, None, None))
+                    pid = cur.lastrowid
+                    pos_ids.append(pid)
+                    total_gross += tax_l["gross"]
+                    total_tax += (tax_l["service"] + tax_l["vat"] + tax_l["city_tax"])
+                    _post(cur, "POS", pid, "CHARGE", "F&B",
+                          tax_l["net"], tax_l["service"], tax_l["vat"], tax_l["city_tax"], "",
+                          f"POS: {desc_l} x{take_int_i}")
+                    cogs = round(bcost * take_int_i, 2)
+                    if cogs > 0:
+                        _post(cur, "POS", pid, "COGS", "COGS", cogs, 0, 0, 0, "",
+                              f"COGS POS #{pid}: {desc_l} x{take_int_i}")
+                    conn.execute("UPDATE inventory SET stock_qty = stock_qty - ? WHERE id=?", (take_int_i, inv_id))
+                    conn.execute("""INSERT INTO inventory_logs (item_id, change_type, quantity, reference, batch_id, unit_cost)
+                                   VALUES (?, 'OUT_SALE', ?, ?, ?, ?)""",
+                                 (inv_id, take_int_i, f"POS #{pid} unbatched", None, bcost))
+                    remaining_qty -= take_int_i
+                if remaining_qty != 0:
+                    raise ValueError("Batch allocation mismatch for requested quantity.")
             return {"pos_id": pos_ids[0] if pos_ids else None, "pos_ids": pos_ids, "gross": round(total_gross, 2), "tax": round(total_tax, 2),
                     "recipe_deducted": False, "batch_tracked": True}
+        elif overflow > 1e-9 and allow_neg:
+            # No batch rows available, but negative stock allowed: aggregate fallback
+            if not allow_neg and float(inv["stock_qty"] or 0) < qty:
+                raise ValueError(f"Insufficient stock: {inv['stock_qty']} available, {qty} requested.")
+            cost_at_sale = float(inv["unit_cost"] or 0)
+            net = price * qty
+            tax = calculate_tax(net, 0)
+            cur.execute("""INSERT INTO pos_tabs
+                (reservation_id, inventory_item_id, item_description, quantity, unit_price, tax_amount, cost_at_sale, activity_id, batch_id, lot_code)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (rid, inv_id, desc.strip(), qty, price, tax["service"] + tax["vat"] + tax["city_tax"], cost_at_sale, act_id, None, None))
+            pid = cur.lastrowid
+            _post(cur, "POS", pid, "CHARGE", "F&B",
+                  tax["net"], tax["service"], tax["vat"], tax["city_tax"], "",
+                  f"POS: {desc.strip()} x{qty}")
+            if cost_at_sale > 0:
+                cogs = round(cost_at_sale * qty, 2)
+                _post(cur, "POS", pid, "COGS", "COGS", cogs, 0, 0, 0, "",
+                      f"COGS POS #{pid}: {desc.strip()} x{qty}")
+            conn.execute("UPDATE inventory SET stock_qty = stock_qty - ? WHERE id=?", (qty, inv_id))
+            conn.execute("""INSERT INTO inventory_logs (item_id, change_type, quantity, reference)
+                           VALUES (?, 'OUT', ?, ?)""", (inv_id, qty, f"POS #{pid}"))
+            return {"pos_id": pid, "pos_ids": [pid], "gross": round(tax["gross"], 2), "tax": round(tax["service"] + tax["vat"] + tax["city_tax"], 2),
+                    "recipe_deducted": False, "batch_tracked": False}
         else:
             # non-batched (or allowed negative with no batches): aggregate behavior
             if not allow_neg and float(inv["stock_qty"] or 0) < qty:

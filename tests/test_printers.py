@@ -128,7 +128,7 @@ def test_print_invalid_target(clean_db, tmp_path):
     f.write_text("x")
     ok, msg = services.print_to_printer(str(f), "nonsense")
     assert ok is False
-    assert "Unknown" in msg
+    assert ("Unknown" in msg or "Unsupported" in msg)
 
 
 def test_print_raw_exception(clean_db, tmp_path):

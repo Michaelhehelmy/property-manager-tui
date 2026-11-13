@@ -194,7 +194,7 @@ def extract_slots(text: str, history=None) -> dict:
     rk = None
     if any(k in tl for k in ["p&l", "pnl", "profit and loss", "profit-wise", "bottom line", "net profit", "income versus outgoings", "earnings and costs", "revenue beat expenses", "financial performance", "sales in, costs out"]): rk = "pl"
     elif any(k in tl for k in ["cash flow", "cashflow", "cash in", "cash out", "money movement", "cash-positive", "liquidity", "ins and outs of cash"]): rk = "cash_flow"
-    elif any(k in tl for k in ["vat", "value-added tax", "tax report", "output", "input tax"]): rk = "vat"
+    elif any(k in tl for k in ["value-added tax", "tax report", "output", "input tax"]) or re.search(r"(?<![a-z0-9])vat(?![a-z0-9])", tl): rk = "vat"
     elif any(k in tl for k in ["payment method", "payments by method", "paid us", "by cash, card", "split by cash", "payment channels", "settlement methods", "how did guests pay", "collections by method", "mix of settlement", "bank transfers or cash"]): rk = "payment_methods"
     elif any(k in tl for k in ["daily ops", "arrivals", "departures", "in-house", "in house", "check-ins", "checkouts", "check outs", "handover", "front-desk style ops", "stayovers", "ops picture", "ops summary", "operational view"]): rk = "daily_ops"
     elif any(k in tl for k in ["occupancy", "adr", "revpar", "room-nights", "fill rate", "how full", "how busy", "utilized", "how occupied"]): rk = "occupancy"
@@ -1801,7 +1801,18 @@ def _predict_intent_ml(text: str):
 
 # ── Weighted rule NLU (no deps) ──────────────────────────────────────────────
 
-def _has_any(tl, keys): return any(k in tl for k in keys)
+def _has_any(tl, keys):
+    for k in keys:
+        c = (k or "").lower()
+        if not c:
+            continue
+        # avoid substring false positives for short tokens (hi in this, vat in reservation, etc.)
+        if re.fullmatch(r"[a-z0-9&/\-']{1,4}", c) or c in ("hi","hey","pl","vat","adr","kpi","occ","pnl","ops","pos"):
+            if re.search(r"(?<![a-z0-9])" + re.escape(c) + r"(?![a-z0-9])", tl):
+                return True
+        elif c in tl:
+            return True
+    return False
 
 _INTENT_CUES = {
   "greeting_smalltalk": (1.1, ["hi","hello","hey","good morning","good afternoon","good evening","thanks","thank you","thx","how are you","who are you","what's up","whats up"]),
@@ -1854,12 +1865,19 @@ def rule_classify(text: str, slots: dict | None = None) -> dict:
     if _has_any(tl, ["go ahead and delete","delete reservation","delete room","and refund","refund the guest","check the guest in","check in the guest","change room price","change price to","reset the super password","reset password for me","email the guest","send invoice","sync bookings","add a new room","import 500","override checkout","hack into","ignore the rules","hidden admin"]):
         return {"intent":"unsupported_or_unsafe","confidence":0.97,"slots":slots,"router":"rules"}
 
+    def _cue_match(cue, tl):
+        c = cue.lower()
+        # word-boundary match for short tokens and common acronym/word cues to avoid substring false positives
+        if re.fullmatch(r"[a-z0-9&/\-']{1,5}", c) or c in ("hi","hey","pl","vat","adr","kpi","occ","pnl"):
+            return re.search(r"(?<![a-z0-9])" + re.escape(c) + r"(?![a-z0-9])", tl) is not None
+        return c in tl
+
     scores = defaultdict(float)
     for intent,(w,cues) in _INTENT_CUES.items():
         for c in cues:
-            if c in tl: scores[intent] += w
+            if _cue_match(c, tl): scores[intent] += w
         for c in cues[:6]:
-            if len(c)>=6 and c not in tl:
+            if len(c)>=6 and not _cue_match(c, tl):
                 cs=set(c.split()); ts=_token_set(tl)
                 if cs and len(cs & ts)/len(cs) >= 0.8: scores[intent] += w*0.6
     # structural boosts

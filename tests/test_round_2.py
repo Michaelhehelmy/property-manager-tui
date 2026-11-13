@@ -215,13 +215,13 @@ def test_pos_negative_stock_blocked(clean_db):
     services.set_setting("allow_negative_stock", "false")
     rid = make_reservation()
     with pytest.raises(ValueError, match="Insufficient"):
-        services.add_pos_item(rid, "Propane", 100, 250, 4)
+        services.add_pos_item(rid, "Milk (1L)", 100, 35, 4)
 
 
 def test_pos_negative_stock_allowed(clean_db):
-    """Default setting allows negative stock."""
+    """Default setting allows negative stock (including batch-tracked overflow)."""
     rid = make_reservation()
-    services.add_pos_item(rid, "Propane", 100, 250, 4)
+    services.add_pos_item(rid, "Milk (1L)", 100, 35, 4)
     stock = connect().execute("SELECT stock_qty FROM inventory WHERE id=4").fetchone()["stock_qty"]
     assert stock < 0
 

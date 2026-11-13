@@ -4,6 +4,7 @@ from urllib.parse import quote
 
 from app_core import services
 from tests.web.conftest import get_csrf, set_session
+from ui.web import deps
 
 
 def test_unlock_lock_recovery(client, monkeypatch):
@@ -29,16 +30,17 @@ def test_unlock_lock_recovery(client, monkeypatch):
     assert r.status_code == 200
 
     import ui.web.routes.settings_branding as sbr
-    # recovery success, unlock_session returns False -> touch_session
+    # recovery success
     monkeypatch.setattr(sbr.services, "use_recovery_code", lambda c,n,cf: None)
-    monkeypatch.setattr(sbr.services, "unlock_session", lambda p: False)
+    monkeypatch.setattr(deps, "unlock", lambda request, password: True)
+    monkeypatch.setattr(sbr.services, "unlock_session", lambda p: True)
     monkeypatch.setattr(sbr.services, "touch_session", lambda: None)
     page = client.get("/unlock/recovery"); csrf = get_csrf(page.text)
     r = client.post("/unlock/recovery", data={"csrf": csrf, "code": "c", "new_password": "np", "confirm_password": "np", "next": "/settings"})
     assert r.status_code == 303 and r.headers["location"] == "/settings"
 
-    # unlock_session returns True, next sanitization
-    monkeypatch.setattr(sbr.services, "unlock_session", lambda p: True)
+    # next sanitization
+    monkeypatch.setattr(deps, "unlock", lambda request, password: True)
     page = client.get("/unlock/recovery"); csrf = get_csrf(page.text)
     r = client.post("/unlock/recovery", data={"csrf": csrf, "code": "c", "new_password": "np", "confirm_password": "np", "next": "//evil"})
     assert r.status_code == 303 and r.headers["location"] == "/"
@@ -69,8 +71,8 @@ def test_settings_pages_and_actions(client, monkeypatch):
     assert r.status_code == 200
 
     # save settings requires unlock
-    set_session(client, unlocked=False)
-    r = client.post("/settings/save", data={"csrf": csrf, "password": "testpass"})
+    token_locked = set_session(client, unlocked=False)
+    r = client.post("/settings/save", data={"csrf": token_locked, "password": "testpass"})
     assert r.status_code == 303
 
     token = set_session(client, unlocked=True)
@@ -96,8 +98,8 @@ def test_settings_pages_and_actions(client, monkeypatch):
     assert r.status_code == 200
 
     # demo preset requires unlock
-    set_session(client, unlocked=False)
-    r = client.post("/settings/demo-preset", data={"csrf": token, "preset": "analysis_small", "password": "testpass", "confirm": "x"})
+    token_locked = set_session(client, unlocked=False)
+    r = client.post("/settings/demo-preset", data={"csrf": token_locked, "preset": "analysis_small", "password": "testpass", "confirm": "x"})
     assert r.status_code == 303
     token = set_session(client, unlocked=True)
     monkeypatch.setattr(sbr.services, "apply_demo_data_preset", lambda *a, **k: {"created": 5})
@@ -108,8 +110,8 @@ def test_settings_pages_and_actions(client, monkeypatch):
     assert r.status_code == 200
 
     # reset requires unlock and confirm
-    set_session(client, unlocked=False)
-    r = client.post("/settings/reset", data={"csrf": token, "password": "testpass", "confirm": "RESET DEFAULTS"})
+    token_locked = set_session(client, unlocked=False)
+    r = client.post("/settings/reset", data={"csrf": token_locked, "password": "testpass", "confirm": "RESET DEFAULTS"})
     assert r.status_code == 303
     token = set_session(client, unlocked=True)
     r = client.post("/settings/reset", data={"csrf": token, "password": "testpass", "confirm": "nope"}, follow_redirects=True)

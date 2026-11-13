@@ -104,7 +104,13 @@ def create_app(*, init_db: bool = True, run_startup: bool = True) -> FastAPI:
                     deps.save_session(resp, deps.get_session(request))
                     return resp
         response = await call_next(request)
-        deps.save_session(response, deps.get_session(request))
+        # Avoid duplicating session cookie if endpoint/earlier handler already set it.
+        has_session_cookie = any(
+            k.lower() == b"set-cookie" and v.startswith((deps.SESSION_COOKIE + "=").encode())
+            for k, v in response.headers.raw
+        )
+        if not has_session_cookie:
+            deps.save_session(response, deps.get_session(request))
         return response
 
     from ui.web.routes import accounting, assistant, dashboard, files, guests, pos_inventory, reports_analytics, reservations, settings_branding

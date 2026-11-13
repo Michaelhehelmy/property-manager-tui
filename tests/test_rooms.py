@@ -10,7 +10,7 @@ from app_core.db import connect
 
 def test_get_all_rooms(clean_db):
     rooms = services.get_all_rooms()
-    assert len(rooms) == 4
+    assert len(rooms) == 10
     assert rooms[0]["room_number"] == "101"
 
 
@@ -80,7 +80,7 @@ def test_update_room_type_wrong_password(clean_db):
 
 def test_get_all_rate_plans(clean_db):
     plans = services.get_all_rate_plans()
-    assert len(plans) == 3
+    assert len(plans) == 5
     assert plans[0]["name"] == "Room Only"
 
 

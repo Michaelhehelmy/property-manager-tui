@@ -15,8 +15,8 @@ def test_init_db_idempotent(clean_db):
     """Calling init_db twice is a no-op (already initialized)."""
     services.init_db()
     services.init_db()
-    # Rooms still 4
-    assert len(services.get_all_rooms()) == 4
+    # Rooms still match seed
+    assert len(services.get_all_rooms()) == 10
 
 
 def test_ensure_metadata_recreates(clean_db):
@@ -210,6 +210,7 @@ def test_pos_cogs_written_when_unit_cost_positive(clean_db):
 def test_pos_no_cogs_when_unit_cost_zero(clean_db):
     with transaction() as c:
         c.execute("UPDATE inventory SET unit_cost=0 WHERE id=1")
+        c.execute("UPDATE inventory_batches SET unit_cost=0 WHERE item_id=1")
     rid = make_reservation()
     services.add_pos_item(rid, "Water", 1, 20, 1)
     cogs = connect().execute(

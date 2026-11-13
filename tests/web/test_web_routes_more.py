@@ -105,6 +105,7 @@ def test_reports_routes(client, web_env, monkeypatch):
     assert r.status_code == 200
 
     page = client.get("/reports"); csrf = get_csrf(page.text)
+    token = set_session(client, unlocked=True, csrf=csrf)
     import ui.web.routes.reports_analytics as rr
     monkeypatch.setattr(rr.services, "report_pl_statement", lambda s,e: "PL")
     monkeypatch.setattr(rr.services, "report_cash_flow", lambda s,e: "CF")
@@ -112,16 +113,16 @@ def test_reports_routes(client, web_env, monkeypatch):
     monkeypatch.setattr(rr.services, "report_payment_methods", lambda s,e: "PM")
     monkeypatch.setattr(rr.services, "report_occupancy", lambda s,e: "OCC")
     for kind in ["pl","cash","vat","payments","occupancy","unknown"]:
-        r = client.post("/reports/run", data={"csrf": csrf, "kind": kind, "start": "2026-01-01", "end": "2026-01-31"})
+        r = client.post("/reports/run", data={"csrf": token, "kind": kind, "start": "2026-01-01", "end": "2026-01-31"})
         assert r.status_code == 200 and ("Report" in r.text or "PL" in r.text or "CF" in r.text or "VAT" in r.text or "PM" in r.text or "OCC" in r.text)
 
     monkeypatch.setattr(rr.services, "report_pl_statement", lambda s,e: (_ for _ in ()).throw(ValueError("boom")))
-    r = client.post("/reports/run", data={"csrf": csrf, "kind": "pl", "start": "x", "end": "y"})
+    r = client.post("/reports/run", data={"csrf": token, "kind": "pl", "start": "x", "end": "y"})
     assert r.status_code == 303
 
     monkeypatch.setattr(rr.services, "generate_unified_report", lambda p,s,e: {"outputs": {"a": "b"}})
-    r = client.post("/reports/analytics-export", data={"csrf": csrf, "preset": "management_pack", "start": "2026-01-01", "end": "2026-01-31"}, follow_redirects=True)
+    r = client.post("/reports/analytics-export", data={"csrf": token, "preset": "management_pack", "start": "2026-01-01", "end": "2026-01-31"}, follow_redirects=True)
     assert r.status_code == 200
     monkeypatch.setattr(rr.services, "generate_unified_report", lambda p,s,e: (_ for _ in ()).throw(ValueError("x")))
-    r = client.post("/reports/analytics-export", data={"csrf": csrf, "preset": "x"}, follow_redirects=True)
+    r = client.post("/reports/analytics-export", data={"csrf": token, "preset": "x"}, follow_redirects=True)
     assert r.status_code == 200

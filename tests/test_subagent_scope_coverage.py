@@ -210,10 +210,12 @@ def test_batch_stock_quantity_invariant_and_fefo_expiry_edges(fresh):
     assert abs(stock - batch_sum) < 1e-6 and stock == 15.0
 
     # FEFO/expiry selection via batch allocator (edge cases): expired blocked, earliest expiry first, splits across batches
-    allocs = services._select_batches_for_sale(conn, item_id, 3)
+    allocs, overflow = services._select_batches_for_sale(conn, item_id, 3)
+    assert overflow == 0
     assert [a[0]["id"] for a in allocs] == [b_soon["id"]]
     assert float(allocs[0][1]) == 3.0
-    allocs2 = services._select_batches_for_sale(conn, item_id, 8)
+    allocs2, overflow2 = services._select_batches_for_sale(conn, item_id, 8)
+    assert overflow2 == 0
     assert [a[0]["id"] for a in allocs2] == [b_soon["id"], b_later["id"]]
     assert [float(a[1]) for a in allocs2] == [5.0, 3.0]
 

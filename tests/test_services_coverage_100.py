@@ -227,8 +227,8 @@ def test_complete_walkin_sale_and_receipts(clean_db, fixed_now, monkeypatch, tmp
         services.complete_walkin_sale([{"desc": "A", "qty": 1, "price": 10}], "  ")
 
     orig_add = services._add_pos_item_tx
-    def zero_gross(conn, reservation_id, desc, qty, price, inv_id=None):
-        r = orig_add(conn, reservation_id, desc, qty, price, inv_id)
+    def zero_gross(conn, reservation_id, desc, qty, price, inv_id=None, *a, **k):
+        r = orig_add(conn, reservation_id, desc, qty, price, inv_id, *a, **k)
         r["gross"] = 0.0
         return r
     monkeypatch.setattr(services, "_add_pos_item_tx", zero_gross)
@@ -399,15 +399,17 @@ def test_analytics_datasets_and_dispatch(clean_db, fixed_now):
 
 def test_write_csv_and_export_branches(clean_db, fixed_now, tmp_path, monkeypatch):
     # monkeypatch analytics export dir to tmp
-    monkeypatch.setattr(services, "ANALYTICS_EXPORT_DIR", tmp_path / "analytics")
-    p = tmp_path / "empty.csv"
+    analytics_dir = tmp_path / "analytics"
+    analytics_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(services, "ANALYTICS_EXPORT_DIR", analytics_dir)
+    p = analytics_dir / "empty.csv"
     services._write_csv(p, [])
     assert p.read_text() == ""
-    p2 = tmp_path / "rows.csv"
+    p2 = analytics_dir / "rows.csv"
     services._write_csv(p2, [{"a": 1, "b": 2}, {"b": 3}])
     txt = p2.read_text()
     assert "a" in txt and "b" in txt
-    p3 = tmp_path / "other.csv"
+    p3 = analytics_dir / "other.csv"
     services._write_csv(p3, [1, 2, 3])
     assert "1" in p3.read_text()
 
@@ -469,18 +471,9 @@ def test_demo_preset_guards_and_flow(clean_db, fixed_now, monkeypatch):
     _raw_exec("DELETE FROM operational_expenses", fk_off=True)
     _raw_exec("DELETE FROM general_ledger", fk_off=True)
 
-    # allow_existing redundant re-verify branch: first verify True (passes 2941), second False (hits 2950)
-    calls = {"n": 0}
-    real_verify = services.verify_password
-    def flaky_verify(pw):
-        calls["n"] += 1
-        if calls["n"] == 1:
-            return True
-        return False
-    monkeypatch.setattr(services, "verify_password", flaky_verify)
+    # allow_existing path: wrong password still rejected (single verification point)
     with pytest.raises(PermissionError):
-        services.apply_demo_data_preset("analysis_small", "testpass", "APPLY DEMO DATA", allow_existing=True)
-    monkeypatch.setattr(services, "verify_password", real_verify)
+        services.apply_demo_data_preset("analysis_small", "wrong", "APPLY DEMO DATA", allow_existing=True)
 
     # no rooms branch
     _raw_exec("DELETE FROM reservations", fk_off=True)

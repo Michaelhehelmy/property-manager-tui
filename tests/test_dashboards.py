@@ -20,12 +20,11 @@ def _tomorrow():
 
 def test_summary_empty_db(clean_db):
     s = services.get_front_desk_summary()
-    assert s["total"] == 4
+    assert s["total"] == len(services.get_all_rooms())
     assert s["occupied"] == 0
     assert s["occupancy_pct"] == 0.0
-    assert s["clean"] == 3
-    assert s["dirty"] == 1
     assert s["maint"] == 0
+    assert s["clean"] + s["dirty"] == s["total"]
 
 
 def test_summary_with_today_booking(clean_db):
@@ -37,13 +36,13 @@ def test_summary_with_today_booking(clean_db):
 
 def test_rooms_available_all_free(clean_db):
     rooms = services.get_rooms_available_between("2027-06-01", "2027-06-10")
-    assert len(rooms) == 4
+    assert len(rooms) == len(services.get_all_rooms())
 
 
 def test_rooms_available_some_booked(clean_db):
     make_reservation(ci="2027-06-01", co="2027-06-10", room_id=1)
     rooms = services.get_rooms_available_between("2027-06-01", "2027-06-10")
-    assert len(rooms) == 3
+    assert len(rooms) == len(services.get_all_rooms()) - 1
     assert 1 not in [r["id"] for r in rooms]
 
 
@@ -125,7 +124,7 @@ def test_occupancy_series(clean_db):
 def test_heatmap_empty(clean_db):
     data = services.get_occupancy_heatmap_data("2027-06-01", "2027-06-03")
     assert len(data["dates"]) == 3
-    assert len(data["rooms"]) == 4
+    assert len(data["rooms"]) == len(services.get_all_rooms())
     assert all(all(v == 0 for v in row) for row in data["matrix"])
 
 

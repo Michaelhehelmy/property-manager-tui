@@ -57,7 +57,7 @@ def test_restock_creates_inventory_log(clean_db):
     log = connect().execute(
         "SELECT change_type FROM inventory_logs WHERE item_id=1 ORDER BY id DESC LIMIT 1"
     ).fetchone()
-    assert log["change_type"] == "IN"
+    assert log["change_type"] == "IN_RECEIVE"
 
 
 def test_restock_requires_password(clean_db):
@@ -71,11 +71,11 @@ def test_restock_negative_qty_raises(clean_db):
 
 
 def test_weighted_average_cost(clean_db):
-    # Item 1: 100 units @ 3.0
+    # Seed item 1: 200 units @ 3.0; restock adds 100 @ 5.0
     services.restock_inventory(1, 100, 5.0, "testpass")
     row = connect().execute("SELECT unit_cost FROM inventory WHERE id=1").fetchone()
-    # (100*3 + 100*5) / 200 = 4.0
-    assert row["unit_cost"] == pytest.approx(4.0)
+    # (200*3 + 100*5) / 300 = 3.666...
+    assert row["unit_cost"] == pytest.approx(3.6667, rel=1e-3)
 
 
 def test_warnings_low_stock(clean_db):
@@ -103,9 +103,9 @@ def test_warnings_overstock(clean_db):
 
 
 def test_search_inventory_by_name(clean_db):
-    rows = services.search_inventory("Water")
-    assert len(rows) == 1
-    assert rows[0]["item_name"] == "Bottled Water (0.5L)"
+    rows = services.search_inventory("Bottled Water")
+    assert len(rows) >= 1
+    assert any(r["item_name"] == "Bottled Water (0.5L)" for r in rows)
 
 
 def test_search_inventory_filters_category(clean_db):

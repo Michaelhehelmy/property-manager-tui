@@ -68,18 +68,17 @@ def test_add_pos_creates_cogs(clean_db):
 def test_insufficient_stock_raises(clean_db):
     services.set_setting("allow_negative_stock", "false")
     rid = make_reservation()
-    # Item 4 (Propane) has stock 3
+    # Item 4 (Milk 1L, batch-tracked) has 24 units in seed
     with pytest.raises(ValueError):
-        services.add_pos_item(rid, "Propane", 10, 250, 4)
+        services.add_pos_item(rid, "Milk (1L)", 30, 35, 4)
 
 
 def test_negative_stock_allowed_by_default(clean_db):
     rid = make_reservation()
-    # Default allow_negative_stock=true
-    services.add_pos_item(rid, "Propane", 10, 250, 4)
-    # Stock should be -7
+    # Default allow_negative_stock=true; item 4 has 24 units in seed
+    services.add_pos_item(rid, "Milk (1L)", 30, 35, 4)
     after = connect().execute("SELECT stock_qty FROM inventory WHERE id=4").fetchone()["stock_qty"]
-    assert after == -7
+    assert after == -6
 
 
 def test_walkin_creates_payment(clean_db):
