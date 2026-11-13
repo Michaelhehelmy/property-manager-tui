@@ -19,10 +19,10 @@ This guide covers how to update a git-based Property Manager installation safely
 
 - [ ] Confirm installation is a **git checkout** on the intended branch/remote.
 - [ ] Ensure working tree is clean (no local source changes) if using in-app apply.
-- [ ] Create and **verify** a backup (`Settings → Backup now` or `scripts/backup_runtime.py --backup` / `--verify`).
+- [ ] Create and **verify** a backup before the update/migration (`Settings → Backup now` or `scripts/backup_runtime.py --backup` / `--verify`).
 - [ ] Review changelog/commit details and assess impact (schema/startup behavior, config/env, operational procedures).
-- [ ] Plan a maintenance window/restart and user notification if needed.
-- [ ] Ensure you can roll back (known prior commit/tag and verified backup).
+- [ ] Plan a maintenance window, user notification if needed, and **restart after apply** (required to load new code).
+- [ ] Ensure you can roll back (known prior commit/tag and verified backup) and that manual offline restore procedures/drills are understood. Keep web on `--workers 1`, set strong `PM_WEB_SECRET_KEY`, and use HTTPS reverse proxy/private networking for shared/non-local access.
 
 ## 3) In-app updates (automated for clean ff-only cases)
 

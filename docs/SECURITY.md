@@ -53,8 +53,8 @@ This document provides practical security guidance for operating Property Manage
 ## 4) Authorization model (Web): CSRF & unlock
 
 ### 4.1 CSRF (implemented)
-- All state-changing methods (**POST/PUT/PATCH/DELETE**) are CSRF-protected (except health endpoints as documented).
-- Form submissions include/verify CSRF tokens; JSON/header requests are enforced by middleware/handlers as applicable.
+- **Active enforcement is centralized in server middleware** (`ui/web/server.py`) for all state-changing methods (**POST/PUT/PATCH/DELETE**) except health endpoints as documented.
+- Form submissions include/verify CSRF tokens; JSON/header requests are verified via header tokens as applicable. Template/helper utilities support token rendering and cached-form access but do not replace middleware enforcement.
 - Mutating HTML forms must include CSRF tokens. Do not bypass CSRF checks.
 
 ### 4.2 Super-password unlock (implemented, policy-based)

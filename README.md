@@ -15,7 +15,7 @@ Local-first property management system with a shared backend and two frontends:
 - **Activities/trips:** register/book activities/excursions, track bookings/stats, and post charges to folios/invoices.
 - **Accounting, reports & analytics:** ledger, operational/financial reports and analytics/exports (as available in the app).
 - **Grounded assistant (read-only):** Web & TUI assistant answers from real app data/tools (ops, reports, guests/portfolios, reservations/balances, inventory including expiring batches, batch lists, barcode/lot trace, activities/bookings, integrity/health, and app version/update status). Assistant follows configured unlock/allowlist policy and remains read-only.
-- **Integrity & health:** read-only ledger/data integrity checks in-app, CLI **doctor** (`python -m app_core.doctor`), safe backup/verify helpers, and web liveness/readiness probes `GET /health`, `GET /healthz`.
+- **Integrity & health:** read-only ledger/data integrity checks in-app, CLI **doctor** (`python -m app_core.doctor`), safe backup/verify helpers, and web liveness/readiness probes `GET /health`, `GET /healthz`, `GET /readyz`.
 - **In-app updates (git installs, Web & TUI):** **Settings → App updates** supports **Check for updates**, changelog/commit details, and **Apply/Update** via **git fast-forward**. Local source changes must be committed/stashed/discarded before apply.
 - **Backups & data safety:** create verified DB backups from Settings (**Backup now**, subject to unlock/CSRF as applicable) or CLI/scripts. Runtime data is preserved across source updates; **restore is manual and offline**.
 
@@ -153,11 +153,13 @@ PYTHONPATH=src python -m uvicorn ui.web.server:app --host 127.0.0.1 --port 8000 
 
 - **Workers:** `--workers 1` only (SQLite/shared state). Never increase workers.
 - **Bind:** `127.0.0.1` local-only; `0.0.0.0` reachable on interfaces (LAN). Manage firewall exposure explicitly.
-- **Secret:** set `PM_WEB_SECRET_KEY` for non-local/shared deployments.
-- **TLS/remote access:** use reverse proxy with HTTPS or private network (VPN/Tailscale). Do not expose plain HTTP publicly.
-- **Health probes:** `GET /health`, `GET /healthz`.
+- **Secret:** set `PM_WEB_SECRET_KEY` to a strong random value for any non-local/shared deployment (required for non-loopback use unless an explicit local/dev insecure override is set).
+- **TLS/remote access:** use reverse proxy with HTTPS or a private network (VPN/Tailscale/SSH tunnel). Do not expose plain HTTP publicly.
+- **Data directory & permissions:** set `PM_DATA_DIR` if needed; ensure the service user can read/write the data directory and run with a single writer.
+- **Health probes:** `GET /health` and `GET /healthz` (liveness/basic health with readiness summary), `GET /readyz` (readiness/runtime checks including data-dir writability). Keep probes and app on `--workers 1`.
 - **Service/autostart:** use systemd/launchd/NSSM/Task Scheduler/supervisor/Docker restart policy to run venv Python/uvicorn with `--workers 1`.
 - **Reverse proxy:** proxy to `127.0.0.1:8000`, terminate TLS, and forward standard proxy headers as needed.
+- **Backups, restore, updates:** take and verify backups before upgrades/migrations; restore is manual/offline (with restore drill validation recommended); restart the app/server after applying updates.
 - See `docs/DEPLOYMENT.md` and `docs/SECURITY.md` for examples and hardening.
 
 ## Security model (Web) — summary
@@ -185,7 +187,7 @@ See `docs/UPDATES.md` for release/update/rollback guidance.
 
 - **In-app (read-only):** ledger/data integrity checks available in Web/TUI and via grounded assistant queries.
 - **CLI doctor:** `PYTHONPATH=src python -m app_core.doctor` (or `scripts/backup_runtime.* --doctor`) for operational health checks. Supports `--json`, `--check-updates`, `--strict`, and safe backup/verify helpers: `--backup [--backup-to <path>]`, `--verify-backup <path>` / `--verify`.
-- **Web probes:** `GET /health`, `GET /healthz` for liveness/readiness.
+- **Web probes:** `GET /health`, `GET /healthz`, `GET /readyz` for liveness/readiness (and detailed readiness checks).
 
 ## Backups & restore
 
@@ -226,6 +228,7 @@ See `docs/TROUBLESHOOTING.md`.
 ## More documentation
 
 - `assistant.md` — assistant capabilities, grounded/read-only behavior, evolution and plan.
+- `docs/PRODUCTION_ROADMAP.md` — phased P0–P3 production hardening/operations roadmap and checklist.
 - `docs/DEPLOYMENT.md` — local/LAN/remote deployment, reverse proxy + HTTPS, systemd/Docker guidance.
 - `docs/SECURITY.md` — hardening checklist, secrets/cookies, authz/unlock/CSRF, printer/file/data handling.
 - `docs/BACKUP_RESTORE.md` — backup, verify, restore, DR, data preservation.

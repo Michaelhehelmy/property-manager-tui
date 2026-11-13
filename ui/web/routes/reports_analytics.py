@@ -8,7 +8,7 @@ from ui.web.rendering import render
 router = APIRouter()
 
 @router.get("/reports")
-def reports(request: Request):
+def reports(request: Request, tab: str = "generate"):
     today = datetime.now().strftime("%Y-%m-%d")
     month_start = datetime.now().replace(day=1).strftime("%Y-%m-%d")
     exports = []
@@ -20,8 +20,10 @@ def reports(request: Request):
     if paths.INVOICE_DIR.exists():
         for p in sorted(paths.INVOICE_DIR.glob("*.txt"), reverse=True)[:100]:
             invoices.append({"name": p.name, "kind":"invoice"})
+    tab = (tab or "generate").strip().lower()
+    if tab not in {"generate","downloads"}: tab = "generate"
     return render(request, "reports/index.html", {"title":"Reports & Analytics","start":month_start,"end":today,
-                  "presets": services.list_analytics_presets(),"exports":exports[:100],"invoices":invoices})
+                  "presets": services.list_analytics_presets(),"exports":exports[:100],"invoices":invoices,"active_tab":tab})
 
 @router.post("/reports/run")
 async def run_report(request: Request):
@@ -36,7 +38,7 @@ async def run_report(request: Request):
         deps.add_flash(request, "Report generated", "success")
         return render(request, "reports/view.html", {"title":f"Report: {kind}", "text":text, "kind":kind})
     except Exception as e:
-        deps.add_flash(request, str(e), "error"); r=deps.redirect("/reports"); deps.save_session(r, deps.get_session(request)); return r
+        deps.add_flash(request, str(e), "error"); r=deps.redirect("/reports?tab=generate"); deps.save_session(r, deps.get_session(request)); return r
 
 @router.post("/reports/analytics-export")
 async def analytics_export(request: Request):
@@ -47,4 +49,4 @@ async def analytics_export(request: Request):
         deps.add_flash(request, f"Analytics export created: {', '.join(res.get('outputs',{}).keys())}", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
-    r=deps.redirect("/reports"); deps.save_session(r, deps.get_session(request)); return r
+    r=deps.redirect("/reports?tab=downloads"); deps.save_session(r, deps.get_session(request)); return r

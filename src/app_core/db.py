@@ -71,6 +71,11 @@ def close():
                 _conn = None
 
 
+def is_initialized() -> bool:
+    """Public readiness helper: whether a shared DB connection is currently open."""
+    return _conn is not None
+
+
 @contextmanager
 def transaction():
     """Serialized write transaction (BEGIN IMMEDIATE) on the shared connection.

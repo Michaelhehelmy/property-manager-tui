@@ -1,9 +1,13 @@
 {% extends "base.html" %}
 {% block content %}
 <h2>Guests</h2>
-<p class="muted">Guest portfolio index: search, review stays/value/outstanding, and open full 360° guest profile (trips, POS activity, payments, invoices). <span title="Hover for tips">ⓘ</span></p>
-<details class="help-box"><summary>How to use Guests</summary><ul><li><strong>Search:</strong> type a name, phone, or email fragment and click Search.</li><li><strong>Open portfolio:</strong> view 360° guest history — all stays/reservations, folio charges/balances, POS orders & booked activities, payments, and saved invoices.</li><li><strong>Edit:</strong> inside a portfolio you can update guest contact/notes (requires unlock + super password).</li><li><strong>Tip:</strong> you can also ask the Manager Assistant, e.g. <code>show guest #3 full portfolio</code> or <code>what did guest Ahmed order most on last visit?</code></li></ul></details>
-<div class="panel"><form method="get" class="row"><input name="q" value="{{q}}" placeholder="Search name/phone/email" title="Search by guest name, phone, or email"/><div style="flex:0"><button type="submit" title="Search guests by the text entered">Search</button></div></form></div>
+<p class="muted" style="margin-top:-4px">Guest directory and 360° portfolios.</p>
+<div class="subtabs" role="tablist" aria-label="Guests sections">
+  <a href="/guests?tab=directory" class="{% if active_tab == 'directory' %}active{% endif %}">Directory</a>
+</div>
+<div class="subtab-help">Search guests and open full 360° profiles (stays, POS/orders, payments, invoices, totals).</div>
+<details class="help-box"><summary>How to use Guests</summary><ul><li><strong>Search:</strong> type a name, phone, or email fragment and click Search.</li><li><strong>Open portfolio:</strong> view complete guest history and manage profile details (edit requires unlock + super password).</li><li><strong>Tip:</strong> ask Manager Assistant, e.g. <code>show guest #3 full portfolio</code>.</li></ul></details>
+<div class="panel"><form method="get" class="row"><input type="hidden" name="tab" value="directory"/><input name="q" value="{{q}}" placeholder="Search name/phone/email" title="Search by guest name, phone, or email"/><div style="flex:0"><button type="submit">Search</button></div></form></div>
 <div class="panel"><table>
   <tr><th>ID</th><th>Name</th><th>Phone</th><th>Email</th><th>Stays</th><th>Last Stay</th><th>Total (est.)</th><th>Outstanding</th><th></th></tr>
 {% for r in rows %}<tr>
@@ -15,8 +19,7 @@
   <td>{{r['last_stay'] or '—'}}</td>
   <td>{{"%.2f"|format(r['total'] or 0)}}</td>
   <td style="color:{% if (r['outstanding'] or 0) > 0 %}var(--warn){% else %}inherit{% endif %}; font-weight:{% if (r['outstanding'] or 0) > 0 %}700{% else %}400{% endif %}">{{"%.2f"|format(r['outstanding'] or 0)}}</td>
-  <td><a class="btn" href="/guests/{{r['id']}}" title="Open 360° guest portfolio: stays, POS/orders, payments, invoices, totals">Open portfolio</a></td>
-</tr>
-{% else %}<tr><td colspan="9" class="muted">No guests</td></tr>{% endfor %}
+  <td><a class="btn" href="/guests/{{r['id']}}" title="Open 360° guest portfolio">Open portfolio</a></td>
+</tr>{% else %}<tr><td colspan="9" class="muted">No guests found</td></tr>{% endfor %}
 </table></div>
 {% endblock %}

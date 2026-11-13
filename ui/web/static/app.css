@@ -52,3 +52,12 @@ input,select,textarea,button{max-width:100%}
 
 .assistant-grid{max-width:100%}
 @media (max-width: 800px){.assistant-grid{grid-template-columns:1fr !important}}
+
+
+/* Sub-tabs (simple, works without JS) */
+.subtabs{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 14px;padding:0;border-bottom:1px solid var(--muted)}
+.subtabs a{display:inline-block;padding:8px 12px;border:1px solid transparent;border-bottom:0;border-radius:8px 8px 0 0;text-decoration:none;color:#a6adc8;background:transparent;margin-bottom:-1px;font-weight:600}
+.subtabs a:hover{color:var(--text);background:#1a1b26}
+.subtabs a.active{color:var(--accent);background:var(--panel);border-color:var(--muted);border-bottom-color:var(--panel)}
+.subtab-help{margin:-6px 0 12px;color:#a6adc8;font-size:13px}
+@media (max-width:700px){.subtabs a{flex:1 1 auto;text-align:center;padding:8px 10px}}

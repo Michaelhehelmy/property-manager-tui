@@ -1,7 +1,9 @@
 {% extends "base.html" %}
 {% block content %}
 <h2>Dashboard</h2>
-<p class="muted">Today’s operational overview and key figures from real data. <span title="Hover labels and buttons for tips. Click reservation IDs to open details.">ⓘ Hover/tap labels for tips.</span></p>
+<p class="muted" style="margin-top:-4px">Today’s operational overview and key figures from real data.</p>
+<div class="subtabs" role="tablist"><a href="/" class="active">Overview</a></div>
+<div class="subtab-help">Key metrics, arrivals, and in-house guests (real data).</div>
 <div class="grid grid-4">
   <div class="panel" title="Current occupancy: occupied rooms out of total rooms"><div class="muted">Occupancy</div><div class="stat">{{ front.occupancy_pct }}%</div><div class="muted">{{ front.occupied }}/{{ front.total }} rooms</div></div>
   <div class="panel" title="Reservations expected to arrive today"><div class="muted">Arrivals today</div><div class="stat">{{ front.arrivals_today }}</div></div>

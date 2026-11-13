@@ -32,7 +32,7 @@ def assistant_page(request: Request):
         "title": "Manager Assistant",
         "history": _history(request)[-20:],
         "assistant_locked": not _assistant_allowed(request),
-        "llm": assistant._llm_config(),
+        "llm": assistant.get_llm_config(),
         "intents": assistant.INTENT_LABELS,
     }
     return render(request, "assistant/index.html", ctx)

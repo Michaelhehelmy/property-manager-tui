@@ -41,7 +41,7 @@ def test_guests_list_detail_update(client):
 
     r = client.get("/guests/999999")
     assert r.status_code == 303
-    assert r.headers["location"] == "/guests"
+    assert r.headers["location"] == "/guests?tab=directory"
 
     # update requires unlock
     set_session(client, unlocked=False)

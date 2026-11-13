@@ -52,3 +52,17 @@ def test_seeded_inventory_has_consistent_batches(temp_db):
         assert batches["c"] >= 1, f"item {it['id']} {it['item_name']} has stock but no batches"
         # allow small float tolerance
         assert abs(float(batches["rem"]) - float(it["stock_qty"])) < 0.01
+
+
+def test_db_is_initialized_reflects_connection_state(temp_db):
+    try:
+        db.close()
+    except Exception:
+        pass
+    db._conn = None
+    assert db.is_initialized() is False
+    conn = db.connect()
+    assert conn is not None
+    assert db.is_initialized() is True
+    db.close()
+    assert db.is_initialized() is False

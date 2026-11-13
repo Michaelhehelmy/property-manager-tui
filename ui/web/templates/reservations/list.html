@@ -1,26 +1,46 @@
 {% extends "base.html" %}
 {% block content %}
 <h2>Reservations</h2>
-<p class="muted">Manage bookings end-to-end. <span title="Hover buttons/fields for tips">ⓘ</span></p>
-<details class="help-box"><summary>How to use Reservations</summary>
+<p class="muted" style="margin-top:-4px">Manage bookings end-to-end.</p>
+<div class="subtabs" role="tablist" aria-label="Reservations sections">
+  <a href="/reservations?tab=list" class="{% if active_tab == 'list' %}active{% endif %}">List</a>
+  <a href="/reservations?tab=create" class="{% if active_tab == 'create' %}active{% endif %}">Create</a>
+</div>
+
+{% if active_tab == 'create' %}
+<div class="subtab-help">Create a new reservation from real rooms, rates, and availability rules.</div>
+<details class="help-box" open><summary>How to create a reservation</summary>
 <ul>
-  <li><strong>Create:</strong> fill guest, dates, room, rate and submit “Create reservation”. Availability and pricing come from real data.</li>
-  <li><strong>Open a reservation:</strong> click its ID to view folio, add payments/POS, book activities/trips (added to folio & invoice), check-in/out, modify, cancel/no-show, or generate invoice.</li>
-  <li><strong>Search/filter:</strong> use the search box to find by guest, room, or status.</li>
-  <li><strong>Protected actions:</strong> some actions (refunds/voids, paid cancel/no-show, checkout override) may require unlock/super password as configured.</li>
+  <li>Fill guest, dates, room, rate and submit “Create reservation”. Availability and pricing come from real data.</li>
+  <li>After creation, open the reservation to manage check-in/out, folio, payments, POS, activities, and invoices.</li>
+  <li>Some later actions may require unlock/super password per policy.</li>
 </ul></details>
-<div class="panel"><form method="get" class="row"><input name="q" value="{{q}}" title="Search by guest name, room, status, or ID" placeholder="Search guest / id / room"/><div style="flex:0"><button type="submit">Search</button></div></form></div>
-<details class="panel"><summary><strong>Create reservation</strong></summary>
+<div class="panel"><h3>Create reservation</h3>
   <form method="post" action="/reservations/create"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
     <div class="row"><label>Guest<input name="guest_name" required/></label><label>Source<input name="source" value="Direct"/></label></div>
     <div class="row"><label>Room<select name="room_id">{% for r in rooms %}<option value="{{r['id']}}">{{r['room_number']}} — {{r['room_type']}} ({{r['base_price']}})</option>{% endfor %}</select></label>
     <label>Rate plan<select name="rate_plan_id"><option value="">(none)</option>{% for p in plans %}<option value="{{p['id']}}">{{p['name']}}</option>{% endfor %}</select></label></div>
-    <div class="row"><label>Check-in<input type="date" name="check_in" value="{{today}}" required/></label><label>Check-out<input type="date" name="check_out" value="{{tomorrow}}" required/></label>
-    <label>Nightly rate<input name="rate" type="number" step="0.01" required/></label><label>Deposit<input name="deposit" type="number" step="0.01" value="0"/></label></div>
-    <button type="submit">Create</button>
+    <div class="row"><label>Check-in<input type="date" name="check_in" value="{{today}}" required/></label><label>Check-out<input type="date" name="check_out" value="{{tomorrow}}" required/></label><label>Nightly rate<input name="rate" type="number" step="0.01" required/></label></div>
+    <label>Deposit<input name="deposit" type="number" step="0.01" value="0"/></label>
+    <button class="ok">Create reservation</button>
   </form>
-</details>
-<div class="panel"><table><tr><th>ID</th><th>Guest</th><th>Room</th><th>Dates</th><th>Status</th><th>Rate</th><th></th></tr>
-{% for r in rows %}<tr><td>#{{r['id']}}</td><td>{{r['guest_name']}}</td><td>{{r['room_number'] or r.room_id}}</td><td>{{r['check_in_date']}} → {{r['check_out_date']}}</td><td>{{r['status']}}</td><td>{{r['agreed_nightly_rate']}}</td><td><a class="btn" href="/reservations/{{r['id']}}">Open</a></td></tr>
-{% else %}<tr><td colspan="7" class="muted">No reservations</td></tr>{% endfor %}</table></div>
+</div>
+
+{% else %}
+<div class="subtab-help">Search and open reservations. Use Create tab to add a new booking.</div>
+<details class="help-box"><summary>How to use Reservations</summary>
+<ul>
+  <li><strong>Search/filter:</strong> find by guest, room, or status.</li>
+  <li><strong>Open a reservation:</strong> click its ID to view folio, add payments/POS, book activities, check-in/out, modify, cancel/no-show, or generate invoice.</li>
+  <li><strong>Protected actions:</strong> refunds/voids, paid cancel/no-show, checkout override may require unlock/super password.</li>
+</ul></details>
+<div class="panel"><form method="get" class="row"><input type="hidden" name="tab" value="list"/><input name="q" value="{{q}}" title="Search by guest name, room, status, or ID" placeholder="Search guest / id / room"/><div style="flex:0"><button type="submit">Search</button></div></form></div>
+<div class="panel"><table>
+  <tr><th>ID</th><th>Guest</th><th>Room</th><th>Dates</th><th>Status</th><th>Source</th><th>Plan</th></tr>
+{% for r in rows %}<tr>
+  <td><a href="/reservations/{{r['id']}}">#{{r['id']}}</a></td><td>{{r['guest_name']}}</td><td>{{r['room_number'] or r['room_id']}}</td>
+  <td>{{r['check_in_date']}} → {{r['check_out_date']}}</td><td>{{r['status']}}</td><td>{{r['source']}}</td><td>{{r['rate_plan_name'] or ''}}</td>
+</tr>{% else %}<tr><td colspan="7" class="muted">No reservations</td></tr>{% endfor %}
+</table></div>
+{% endif %}
 {% endblock %}

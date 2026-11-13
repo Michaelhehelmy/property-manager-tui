@@ -15,6 +15,7 @@ pm.example.com {
         Referrer-Policy "strict-origin-when-cross-origin"
     }
 
+    # Probes: /health or /healthz (liveness/basic), /readyz (readiness/runtime checks)
     reverse_proxy 127.0.0.1:8000
 }
 

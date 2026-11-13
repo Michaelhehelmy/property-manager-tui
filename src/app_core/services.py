@@ -2282,11 +2282,13 @@ def _select_batches_for_sale(conn, item_id, qty_needed, specific_batch_id=None, 
         if remaining <= 1e-9:
             break
     overflow = max(0.0, remaining)
-    if overflow > 1e-9 and not allow_negative:
+    if overflow > 1e-9:
         # include blocked expired info in message if relevant
         if block_expired:
+            # Expiry block is a safety policy: do not satisfy shortfall via aggregate/negative overflow.
             raise ValueError("Insufficient non-expired batch stock available for the requested quantity.")
-        raise ValueError("Insufficient batch stock available for the requested quantity.")
+        if not allow_negative:
+            raise ValueError("Insufficient batch stock available for the requested quantity.")
     return allocs, overflow
 
 
@@ -3882,7 +3884,6 @@ def test_print(printer=None):
 # ═══════════════════════════════════════════════════════════════════════════
 
 def get_front_desk_summary():
-    from .db import connect
     today = datetime.now().strftime(DATE_FMT)
     conn = db.connect()
     total = conn.execute("SELECT COUNT(*) FROM rooms").fetchone()[0]
@@ -3900,6 +3901,24 @@ def get_front_desk_summary():
     return {"occupancy_pct": round((occ / total * 100) if total else 0, 1), "occupied": occ, "total": total,
             "clean": clean, "dirty": dirty, "maint": maint,
             "arrivals_today": arr, "departures_today": dep, "in_house": in_house}
+
+
+def get_dashboard_day_snapshot(today=None):
+    """Return dashboard day lists (arrivals, departures, in-house) using app DATE_FMT/today semantics."""
+    day = str(today or datetime.now().strftime(DATE_FMT))
+    conn = db.connect()
+    arr = conn.execute(
+        "SELECT id, guest_name, room_id, check_in_date, check_out_date, status FROM reservations WHERE check_in_date=? AND status IN ('Reserved','Checked In') ORDER BY id DESC",
+        (day,),
+    ).fetchall()
+    dep = conn.execute(
+        "SELECT id, guest_name, room_id, check_in_date, check_out_date, status FROM reservations WHERE check_out_date=? AND status IN ('Reserved','Checked In','Checked Out') ORDER BY id DESC",
+        (day,),
+    ).fetchall()
+    inh = conn.execute(
+        "SELECT id, guest_name, room_id, check_in_date, check_out_date, status FROM reservations WHERE status='Checked In' ORDER BY id DESC"
+    ).fetchall()
+    return {"date": day, "arrivals": arr, "departures": dep, "in_house": inh}
 
 
 def get_rooms_available_between(ci, co):

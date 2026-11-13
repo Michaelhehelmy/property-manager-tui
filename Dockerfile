@@ -34,8 +34,9 @@ RUN groupadd --gid 10001 pmapp \
 USER 10001:10001
 EXPOSE 8000
 
+# Liveness probe (basic). Readiness checks are available at /readyz.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=5 \
-  CMD ["python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).status==200 else 1)"]
+  CMD ["python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3).status==200 else 1)"]
 
 # IMPORTANT:
 # - Set PM_WEB_SECRET_KEY to a long random value for any non-local/shared deployment.

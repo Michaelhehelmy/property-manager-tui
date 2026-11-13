@@ -74,13 +74,13 @@ def test_confirm_modal(clean_db, monkeypatch):
         async with app_for_modals()().run_test(size=(120, 40)) as pilot:
             await pause(pilot, 4)
             pilot.app.push_screen(modals.ConfirmModal("sure?"), callback=lambda v: res.setdefault("a", v))
-            await pause(pilot, 3)
-            await pilot.click("#btn_do")
-            await pause(pilot, 3)
+            await pause(pilot, 4)
+            pilot.app.screen.query_one("#btn_do", Button).press()
+            await pause(pilot, 4)
             pilot.app.push_screen(modals.ConfirmModal("sure?"), callback=lambda v: res.setdefault("b", v))
-            await pause(pilot, 3)
-            await pilot.click("#btn_cancel")
-            await pause(pilot, 3)
+            await pause(pilot, 4)
+            pilot.app.screen.query_one("#btn_cancel", Button).press()
+            await pause(pilot, 4)
             pilot.app.push_screen(modals.ConfirmModal("sure?"), callback=lambda v: res.setdefault("c", v))
             await pause(pilot, 2)
             await pilot.press("escape")
@@ -113,27 +113,27 @@ def test_protected_modal_paths(clean_db, monkeypatch):
             await pause(pilot, 4)
             m = PM()
             pilot.app.push_screen(m)
-            await pause(pilot, 3)
+            await pause(pilot, 4)
             pilot.app.screen.query_one("#pw_field", Input).value = "ok"
-            await pilot.click("#btn_do")
-            await pause(pilot, 3)
+            pilot.app.screen.query_one("#btn_do", Button).press()
+            await pause(pilot, 4)
             assert getattr(m, "did", None) == "ok"
 
             pilot.app.push_screen(PM())
-            await pause(pilot, 3)
+            await pause(pilot, 4)
             pilot.app.screen.query_one("#pw_field", Input).value = "badperm"
-            await pilot.click("#btn_do")
-            await pause(pilot, 3)
+            pilot.app.screen.query_one("#btn_do", Button).press()
+            await pause(pilot, 4)
             await pilot.press("escape")
             await pause(pilot, 2)
 
             pilot.app.push_screen(PM())
-            await pause(pilot, 3)
+            await pause(pilot, 4)
             pilot.app.screen.query_one("#pw_field", Input).value = "boom"
-            await pilot.click("#btn_do")
+            pilot.app.screen.query_one("#btn_do", Button).press()
+            await pause(pilot, 4)
+            pilot.app.screen.query_one("#btn_cancel", Button).press()
             await pause(pilot, 3)
-            await pilot.click("#btn_cancel")
-            await pause(pilot, 2)
 
     run_async(_())
 
@@ -185,29 +185,29 @@ def test_recovery_reset_modal(clean_db, monkeypatch):
             monkeypatch.setattr(services, "unlock_session", lambda p: False)
             monkeypatch.setattr(services, "_session", {"unlocked": False, "last_activity": None})
             pilot.app.push_screen(modals.RecoveryResetModal(), lambda v: res.setdefault("a", v))
-            await pause(pilot, 2)
+            await pause(pilot, 3)
             pilot.app.screen.query_one("#code", Input).value = "c"
             pilot.app.screen.query_one("#pw_new", Input).value = "newpass"
             pilot.app.screen.query_one("#pw_cf", Input).value = "newpass"
-            await pilot.click("#btn_do")
-            await pause(pilot, 3)
+            pilot.app.screen.query_one("#btn_do", Button).press()
+            await pause(pilot, 4)
 
             monkeypatch.setattr(services, "unlock_session", lambda p: True)
             pilot.app.push_screen(modals.RecoveryResetModal(), lambda v: res.setdefault("b", v))
-            await pause(pilot, 2)
+            await pause(pilot, 3)
             pilot.app.screen.query_one("#code", Input).value = "c"
             pilot.app.screen.query_one("#pw_new", Input).value = "newpass"
             pilot.app.screen.query_one("#pw_cf", Input).value = "newpass"
-            await pilot.click("#btn_do")
-            await pause(pilot, 3)
+            pilot.app.screen.query_one("#btn_do", Button).press()
+            await pause(pilot, 4)
 
             monkeypatch.setattr(services, "use_recovery_code", lambda *a: (_ for _ in ()).throw(ValueError("bad")))
             pilot.app.push_screen(modals.RecoveryResetModal(), lambda v: res.setdefault("c", v))
-            await pause(pilot, 2)
-            await pilot.click("#btn_do")
-            await pause(pilot, 2)
-            await pilot.click("#btn_cancel")
-            await pause(pilot, 2)
+            await pause(pilot, 3)
+            pilot.app.screen.query_one("#btn_do", Button).press()
+            await pause(pilot, 3)
+            pilot.app.screen.query_one("#btn_cancel", Button).press()
+            await pause(pilot, 3)
         assert res.get("a") is True and res.get("b") is True and res.get("c") is False
 
     run_async(_())
@@ -223,22 +223,22 @@ def test_set_super_password_and_recovery_codes(clean_db, monkeypatch):
             monkeypatch.setattr(services, "set_super_password", lambda p: None)
             monkeypatch.setattr(services, "generate_recovery_codes", lambda p: ["A", "B"])
             pilot.app.push_screen(modals.SetSuperPasswordScreen(), lambda v: res.setdefault("a", v))
-            await pause(pilot, 2)
+            await pause(pilot, 3)
             pilot.app.screen.query_one("#pw_new", Input).value = "abc123"
             pilot.app.screen.query_one("#pw_confirm", Input).value = "nope"
-            await pilot.click("#btn_set")
-            await pause(pilot, 2)
+            pilot.app.screen.query_one("#btn_set", Button).press()
+            await pause(pilot, 3)
             pilot.app.screen.query_one("#pw_confirm", Input).value = "abc123"
-            await pilot.click("#btn_set")
-            await pause(pilot, 4)
+            pilot.app.screen.query_one("#btn_set", Button).press()
+            await pause(pilot, 5)
             # recovery codes screen should be on top
             try:
-                await pilot.click("#btn_copy")
+                pilot.app.screen.query_one("#btn_copy", Button).press()
                 await pause(pilot, 2)
             except Exception:
                 pass
             try:
-                await pilot.click("#btn_close")
+                pilot.app.screen.query_one("#btn_close", Button).press()
                 await pause(pilot, 3)
             except Exception:
                 try:
@@ -249,13 +249,13 @@ def test_set_super_password_and_recovery_codes(clean_db, monkeypatch):
 
             monkeypatch.setattr(services, "set_super_password", lambda p: (_ for _ in ()).throw(ValueError("x")))
             pilot.app.push_screen(modals.SetSuperPasswordScreen(), lambda v: res.setdefault("b", v))
-            await pause(pilot, 2)
+            await pause(pilot, 3)
             pilot.app.screen.query_one("#pw_new", Input).value = "abc123"
             pilot.app.screen.query_one("#pw_confirm", Input).value = "abc123"
-            await pilot.click("#btn_set")
-            await pause(pilot, 2)
-            await pilot.click("#btn_quit")
-            await pause(pilot, 2)
+            pilot.app.screen.query_one("#btn_set", Button).press()
+            await pause(pilot, 3)
+            pilot.app.screen.query_one("#btn_quit", Button).press()
+            await pause(pilot, 3)
         assert res.get("b") is False
 
     run_async(_())
@@ -288,22 +288,22 @@ def test_change_password_and_reset_defaults(clean_db, monkeypatch):
         async with app_for_modals()().run_test(size=(120, 40)) as pilot:
             await pause(pilot, 4)
             pilot.app.push_screen(modals.ChangePasswordModal(), lambda v: res.setdefault("a", v))
-            await pause(pilot, 2)
-            await pilot.click("#btn_do")
-            await pause(pilot, 2)
+            await pause(pilot, 3)
+            pilot.app.screen.query_one("#btn_do", Button).press()
+            await pause(pilot, 3)
             monkeypatch.setattr(services, "change_password", lambda *a: (_ for _ in ()).throw(ValueError("x")))
             pilot.app.push_screen(modals.ChangePasswordModal(), lambda v: res.setdefault("b", v))
-            await pause(pilot, 2)
-            await pilot.click("#btn_do")
-            await pause(pilot, 2)
-            await pilot.click("#btn_cancel")
-            await pause(pilot, 2)
+            await pause(pilot, 3)
+            pilot.app.screen.query_one("#btn_do", Button).press()
+            await pause(pilot, 3)
+            pilot.app.screen.query_one("#btn_cancel", Button).press()
+            await pause(pilot, 3)
 
             pilot.app.push_screen(modals.ResetDefaultsModal(), lambda v: res.setdefault("c", v))
-            await pause(pilot, 2)
-            pilot.app.screen.query_one("#pw_field", Input).value = "testpass"
-            await pilot.click("#btn_do")
             await pause(pilot, 3)
+            pilot.app.screen.query_one("#pw_field", Input).value = "testpass"
+            pilot.app.screen.query_one("#btn_do", Button).press()
+            await pause(pilot, 4)
         assert res.get("a") is True and res.get("b") is False and res.get("c") is True
 
     run_async(_())

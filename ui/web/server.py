@@ -17,10 +17,15 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from app_core import paths, services
+from app_core import db, paths, services
 from ui.web import deps
 
 logger = logging.getLogger(__name__)
+
+
+def _safe_detail(detail: object) -> str:
+    text = str(detail or "")
+    return text if len(text) <= 240 else (text[:237] + "...")
 
 
 def _runtime_readiness(include_checks: bool = False) -> dict:
@@ -28,7 +33,8 @@ def _runtime_readiness(include_checks: bool = False) -> dict:
     checks = {}
     try:
         checks = paths.check_runtime_permissions() if hasattr(paths, "check_runtime_permissions") else {}
-    except Exception:
+    except Exception as exc:
+        logger.warning("web_readiness_permission_check_failed error=%s", _safe_detail(exc))
         checks = {}
     data_dir = checks.get("data_dir") or {}
     db_info = checks.get("db_path") or {}
@@ -37,9 +43,14 @@ def _runtime_readiness(include_checks: bool = False) -> dict:
     data_writable = bool(data_dir.get("writable"))
     db_writable = bool(db_info.get("writable", data_writable))
     ready = bool(data_writable and db_writable and export_dir.get("writable", False) and invoice_dir.get("writable", False))
+    try:
+        db_initialized = bool(db.is_initialized())
+    except Exception as exc:
+        logger.warning("web_readiness_db_check_failed error=%s", _safe_detail(exc))
+        db_initialized = False
     out = {
         "ready": ready,
-        "db_initialized": bool(getattr(services, "db", None) and getattr(services.db, "_conn", None)),
+        "db_initialized": db_initialized,
         "data_dir_writable": data_writable,
         "db_writable": db_writable,
     }
@@ -57,15 +68,23 @@ def create_app(*, init_db: bool = True, run_startup: bool = True) -> FastAPI:
         paths.ensure_data_dirs()
         # Best-effort startup hygiene warnings (no secrets logged)
         try:
-            if not os.environ.get("PM_WEB_SECRET_KEY"):
-                host_hint = (os.environ.get("HOST") or os.environ.get("PM_WEB_HOST") or "127.0.0.1")
-                if host_hint not in ("127.0.0.1", "localhost", "::1"):
-                    logger.warning("PM_WEB_SECRET_KEY is not set for non-local host hint; set a strong random secret.")
+            secret_set = bool(os.environ.get("PM_WEB_SECRET_KEY"))
+            host_hint = (os.environ.get("HOST") or os.environ.get("PM_WEB_HOST") or "127.0.0.1")
+            if not secret_set and host_hint not in ("127.0.0.1", "localhost", "::1"):
+                logger.warning(
+                    "web_startup_config_warning code=missing_pm_web_secret_key host_hint=%s",
+                    host_hint,
+                )
             perm = paths.check_runtime_permissions() if hasattr(paths, "check_runtime_permissions") else {}
             if perm and not ((perm.get("data_dir") or {}).get("writable")):
-                logger.warning("Runtime data directory is not writable; web operations may fail.")
-        except Exception:
-            pass
+                logger.warning("web_startup_permission_warning code=data_dir_not_writable")
+            logger.info(
+                "web_startup event=init_complete db_initialized=%s secret_key_env_set=%s",
+                bool(db.is_initialized()) if hasattr(db, "is_initialized") else False,
+                secret_set,
+            )
+        except Exception as exc:
+            logger.exception("web_startup_warning_failed error=%s", _safe_detail(exc))
         services.init_db()
         services.set_language(services.get_setting("language", "en"))
 
@@ -79,6 +98,7 @@ def create_app(*, init_db: bool = True, run_startup: bool = True) -> FastAPI:
 
     @app.middleware("http")
     async def session_middleware(request: Request, call_next):
+        start = time.monotonic()
         deps.get_session(request)
         deps.csrf_token(request)
         # Evaluate per-browser unlock expiry and slide activity for unlocked sessions.
@@ -100,10 +120,36 @@ def create_app(*, init_db: bool = True, run_startup: bool = True) -> FastAPI:
                         deps.verify_csrf(request, form.get("csrf"))
                         request.state.cached_form = form
                 except HTTPException as e:
+                    logger.warning(
+                        "web_csrf_reject method=%s path=%s status=%s detail=%s",
+                        request.method,
+                        request.url.path,
+                        e.status_code,
+                        _safe_detail(getattr(e, "detail", "invalid")),
+                    )
                     resp = JSONResponse({"detail": e.detail}, status_code=e.status_code)
                     deps.save_session(resp, deps.get_session(request))
                     return resp
-        response = await call_next(request)
+        try:
+            response = await call_next(request)
+        except HTTPException as e:
+            logger.info(
+                "web_http_exception method=%s path=%s status=%s detail=%s",
+                request.method,
+                request.url.path,
+                e.status_code,
+                _safe_detail(getattr(e, "detail", "")),
+            )
+            raise
+        except Exception:
+            logger.exception(
+                "web_unhandled_exception method=%s path=%s",
+                request.method,
+                request.url.path,
+            )
+            resp = JSONResponse({"detail": "Internal Server Error"}, status_code=500)
+            deps.save_session(resp, deps.get_session(request))
+            return resp
         # Avoid duplicating session cookie if endpoint/earlier handler already set it.
         has_session_cookie = any(
             k.lower() == b"set-cookie" and v.startswith((deps.SESSION_COOKIE + "=").encode())
@@ -111,6 +157,19 @@ def create_app(*, init_db: bool = True, run_startup: bool = True) -> FastAPI:
         )
         if not has_session_cookie:
             deps.save_session(response, deps.get_session(request))
+        try:
+            dur_ms = int((time.monotonic() - start) * 1000)
+            if request.url.path not in ("/health", "/healthz"):
+                logger.info(
+                    "web_request method=%s path=%s status=%s dur_ms=%s unlocked=%s",
+                    request.method,
+                    request.url.path,
+                    getattr(response, "status_code", 0),
+                    dur_ms,
+                    bool(deps.is_unlocked(request)),
+                )
+        except Exception:
+            logger.debug("web_request_log_failed", exc_info=True)
         return response
 
     from ui.web.routes import accounting, assistant, dashboard, files, guests, pos_inventory, reports_analytics, reservations, settings_branding

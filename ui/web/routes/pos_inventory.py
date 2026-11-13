@@ -120,7 +120,7 @@ def _cart_view(cart):
 
 
 @router.get("/pos")
-def pos(request: Request, q: str = "", scan: str = "", batch_item: str = ""):
+def pos(request: Request, q: str = "", scan: str = "", batch_item: str = "", tab: str = "sell"):
     cart = _get_cart(request)
     reservations = connect().execute("""
         SELECT r.id, r.guest_name, r.status, rm.room_number
@@ -167,8 +167,17 @@ def pos(request: Request, q: str = "", scan: str = "", batch_item: str = ""):
     except Exception:
         batches = []
     cart_lines, cart_total = _cart_view(cart)
+    allowed_tabs = {"sell", "inventory", "batches", "meals", "activities", "history"}
+    tab = (tab or "sell").strip().lower()
+    if tab not in allowed_tabs:
+        tab = "sell"
+    # keep user in relevant context
+    if scan or scan_result:
+        tab = "sell"
+    if batch_item and tab == "sell":
+        tab = "batches"
     return render(request, "pos/index.html", {
-        "title":"POS / Inventory",
+        "title":"POS / Inventory", "active_tab": tab,
         "cart": cart_lines, "cart_lines": cart_lines, "cart_total": cart_total,
         "reservations": reservations, "inv": inv, "activities": activities, "activity_stats": activity_stats,
         "q": q, "meals": meals, "walkin_pos": walkin_pos, "walkin_payments": walkin_payments,
@@ -180,11 +189,10 @@ def pos(request: Request, q: str = "", scan: str = "", batch_item: str = ""):
 async def pos_add(request: Request):
     """Add a single POS item directly to an existing reservation (real backend)."""
     form = await deps.require_unlocked_form(request)
-    next_url = (form.get("next") or "/pos").strip() or "/pos"
+    next_url = (form.get("next") or "/pos?tab=sell").strip() or "/pos?tab=sell"
     if not next_url.startswith("/") or next_url.startswith("//"):
-        next_url = "/pos"
+        next_url = "/pos?tab=sell"
     try:
-        _ = deps.service_password(request, form)
         rid = form.get("reservation_id"); rid = int(rid) if rid else None
         inv_id = form.get("inv_id"); inv_id = int(inv_id) if inv_id else None
         batch_id = form.get("batch_id"); batch_id = int(batch_id) if batch_id not in (None, "", "None") else None
@@ -221,7 +229,7 @@ async def cart_add(request: Request):
         deps.add_flash(request, f"Added to walk-in cart: {desc} x{qty}", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
-    r = deps.redirect("/pos"); deps.save_session(r, deps.get_session(request)); return r
+    r = deps.redirect("/pos?tab=sell"); deps.save_session(r, deps.get_session(request)); return r
 
 
 @router.post("/pos/cart/remove")
@@ -238,7 +246,7 @@ async def cart_remove(request: Request):
             deps.add_flash(request, "Cart item not found.", "error")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
-    r = deps.redirect("/pos"); deps.save_session(r, deps.get_session(request)); return r
+    r = deps.redirect("/pos?tab=sell"); deps.save_session(r, deps.get_session(request)); return r
 
 
 @router.post("/pos/cart/clear")
@@ -246,7 +254,7 @@ async def cart_clear(request: Request):
     form = await deps.get_form(request)
     deps.get_session(request)["walkin_cart"] = []
     deps.add_flash(request, "Walk-in cart cleared.", "info")
-    r = deps.redirect("/pos"); deps.save_session(r, deps.get_session(request)); return r
+    r = deps.redirect("/pos?tab=sell"); deps.save_session(r, deps.get_session(request)); return r
 
 
 @router.post("/pos/walkin")
@@ -271,10 +279,10 @@ async def walkin(request: Request):
             r = deps.redirect(f"/files/invoice/{name}")
         else:
             deps.add_flash(request, f"Walk-in sale completed: {services.fmt(res['total_gross'])}", "success")
-            r = deps.redirect("/pos")
+            r = deps.redirect("/pos?tab=sell")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
-        r = deps.redirect("/pos")
+        r = deps.redirect("/pos?tab=sell")
     deps.save_session(r, deps.get_session(request)); return r
 
 
@@ -286,7 +294,9 @@ async def pos_void(pos_id: int, request: Request):
         deps.add_flash(request, "POS voided", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
-    ref = form.get("next") or "/pos"
+    ref = (form.get("next") or "/pos?tab=history").strip() or "/pos?tab=history"
+    if not ref.startswith("/") or ref.startswith("//"):
+        ref = "/pos?tab=history"
     r = deps.redirect(ref); deps.save_session(r, deps.get_session(request)); return r
 
 
@@ -303,7 +313,7 @@ async def restock(request: Request):
         deps.add_flash(request, "Inventory restocked (batch recorded with received time)", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
-    r = deps.redirect("/pos"); deps.save_session(r, deps.get_session(request)); return r
+    r = deps.redirect("/pos?tab=inventory"); deps.save_session(r, deps.get_session(request)); return r
 
 
 @router.post("/inventory/add")
@@ -319,7 +329,7 @@ async def inv_add(request: Request):
         deps.add_flash(request, "Inventory item added", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
-    r = deps.redirect("/pos"); deps.save_session(r, deps.get_session(request)); return r
+    r = deps.redirect("/pos?tab=inventory"); deps.save_session(r, deps.get_session(request)); return r
 
 
 def _parse_recipe_components(text: str):
@@ -345,7 +355,7 @@ async def recipe_set(request: Request):
         deps.add_flash(request, f"Recipe saved ({len(comps)} ingredients). Selling this meal auto-deducts ingredients.", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
-    r = deps.redirect("/pos"); deps.save_session(r, deps.get_session(request)); return r
+    r = deps.redirect("/pos?tab=meals"); deps.save_session(r, deps.get_session(request)); return r
 
 
 @router.post("/recipes/clear")
@@ -357,7 +367,7 @@ async def recipe_clear(request: Request):
         deps.add_flash(request, "Recipe cleared. Item uses normal stock deduction when sold.", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
-    r = deps.redirect("/pos"); deps.save_session(r, deps.get_session(request)); return r
+    r = deps.redirect("/pos?tab=meals"); deps.save_session(r, deps.get_session(request)); return r
 
 
 def _parse_meal_ingredients(text: str):
@@ -393,7 +403,7 @@ async def meal_save(request: Request):
             deps.add_flash(request, f"Meal registered (POS inventory #{res.get('linked_inventory_id')}). Ingredients auto-deduct on order.", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
-    r = deps.redirect("/pos"); deps.save_session(r, deps.get_session(request)); return r
+    r = deps.redirect("/pos?tab=meals"); deps.save_session(r, deps.get_session(request)); return r
 
 
 @router.post("/meals/delete")
@@ -404,7 +414,7 @@ async def meal_delete(request: Request):
         deps.add_flash(request, "Meal deleted.", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
-    r = deps.redirect("/pos"); deps.save_session(r, deps.get_session(request)); return r
+    r = deps.redirect("/pos?tab=meals"); deps.save_session(r, deps.get_session(request)); return r
 
 @router.post("/activities/create")
 async def activity_create(request: Request):
@@ -415,20 +425,19 @@ async def activity_create(request: Request):
         deps.add_flash(request, "Activity/trip registered", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
-    r = deps.redirect("/pos"); deps.save_session(r, deps.get_session(request)); return r
+    r = deps.redirect("/pos?tab=activities"); deps.save_session(r, deps.get_session(request)); return r
 
 @router.post("/activities/{aid}/toggle")
 async def activity_toggle(aid: int, request: Request):
     form = await deps.require_unlocked_form(request)
     try:
-        _ = deps.service_password(request, form)
         act = services.get_activity(aid)
         if not act: raise ValueError("Activity not found")
         services.set_activity_active(aid, 0 if act.get("active") else 1)
         deps.add_flash(request, "Activity updated", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
-    r = deps.redirect("/pos"); deps.save_session(r, deps.get_session(request)); return r
+    r = deps.redirect("/pos?tab=activities"); deps.save_session(r, deps.get_session(request)); return r
 
 
 @router.post("/inventory/batch/receive")
@@ -446,7 +455,7 @@ async def batch_receive(request: Request):
         deps.add_flash(request, f"Batch received: lot {batch.get('lot_code')} (received {batch.get('received_at')}, expiry {batch.get('expiry_date') or 'n/a'})", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
-    r = deps.redirect("/pos"); deps.save_session(r, deps.get_session(request)); return r
+    r = deps.redirect("/pos?tab=batches"); deps.save_session(r, deps.get_session(request)); return r
 
 
 @router.post("/inventory/label/item/{item_id}")
@@ -458,7 +467,10 @@ async def label_item(item_id: int, request: Request):
         deps.add_flash(request, f"Item label: {msg} ({p})", "success" if ok else "warning")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
-    r = deps.redirect("/pos"); deps.save_session(r, deps.get_session(request)); return r
+    nxt = (form.get("next") or "/pos?tab=batches").strip()
+    if not nxt.startswith("/") or nxt.startswith("//"):
+        nxt = "/pos?tab=batches"
+    r = deps.redirect(nxt); deps.save_session(r, deps.get_session(request)); return r
 
 
 @router.post("/inventory/label/batch/{batch_id}")
@@ -470,7 +482,10 @@ async def label_batch(batch_id: int, request: Request):
         deps.add_flash(request, f"Batch label: {msg} ({p})", "success" if ok else "warning")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
-    r = deps.redirect("/pos"); deps.save_session(r, deps.get_session(request)); return r
+    nxt = (form.get("next") or "/pos?tab=batches").strip()
+    if not nxt.startswith("/") or nxt.startswith("//"):
+        nxt = "/pos?tab=batches"
+    r = deps.redirect(nxt); deps.save_session(r, deps.get_session(request)); return r
 
 
 @router.get("/inventory/scan")

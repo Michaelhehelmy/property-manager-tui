@@ -9,7 +9,7 @@ from tests.web.conftest import get_csrf, set_session
 
 def test_assistant_page_and_flows(client, monkeypatch):
     import ui.web.routes.assistant as ar
-    monkeypatch.setattr(ar.assistant, "_llm_config", lambda: {"configured": False})
+    monkeypatch.setattr(ar.assistant, "get_llm_config", lambda: {"provider": "auto", "response_mode": "talking", "local_available": False, "enabled": False, "external": False})
     monkeypatch.setattr(ar.services, "get_setting", lambda k, d=None: "true")
     monkeypatch.setattr(ar.assistant, "chat", lambda msg, history=None: {"answer": f"echo:{msg}", "source": "mock", "tools_used": ["t1"]})
 

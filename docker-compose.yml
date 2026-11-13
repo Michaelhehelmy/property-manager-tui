@@ -24,8 +24,9 @@ services:
       # Persists DB, exports, invoices, and other runtime data across updates/restarts/backups/restores.
       - pm_data:/data
     command: ["python", "-m", "uvicorn", "ui.web.server:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+    # Liveness probe via /healthz (basic). Readiness is exposed at /readyz for orchestrator/proxy checks.
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request,sys; r=urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3); sys.exit(0 if 200 <= r.status < 300 else 1)"]
+      test: ["CMD", "python", "-c", "import urllib.request,sys; r=urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3); sys.exit(0 if 200 <= r.status < 300 else 1)"]
       interval: 30s
       timeout: 5s
       retries: 5

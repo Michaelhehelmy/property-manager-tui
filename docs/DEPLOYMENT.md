@@ -64,15 +64,16 @@ Helper: `scripts/update_and_run_web.sh` (git fast-forward if repo, activates ven
 ## 5) Web deployment details
 
 ### 5.1 Required/strongly recommended settings
-- **`--workers 1`** (mandatory).
-- **`PM_WEB_SECRET_KEY`**: strong random secret for any non-local/shared use (sessions/signing; never reuse weak defaults).
+- **`--workers 1`** (mandatory for SQLite/shared state; never increase workers).
+- **`PM_WEB_SECRET_KEY`**: strong random secret for any non-local/shared use (sessions/signing; required for non-loopback deployment unless an explicit local/dev insecure override is set). Never reuse weak defaults.
 - **`PM_DATA_DIR`** (optional): explicit data directory for DB/exports/invoices isolation and backup targeting.
 - **`HOST`/`PORT`**: choose bind interface and port deliberately.
+- **Data directory & permissions:** ensure the service user can read/write the configured/default data directory and runtime locations (single writer). Readiness checks include data-dir writability.
 
 ### 5.2 Health checks / probes
-- `GET /health`
-- `GET /healthz`
-Use for liveness/readiness in process managers, reverse proxies, or external monitors.
+- `GET /health` / `GET /healthz`: liveness/basic health endpoints returning health/readiness summary (status may be degraded if readiness checks fail).
+- `GET /readyz`: readiness endpoint with runtime checks (including data-dir writability and related checks) for service/proxy/monitor readiness gating.
+Use for liveness/readiness in process managers, reverse proxies, or external monitors. Keep web on `--workers 1`.
 
 ### 5.3 Reverse proxy + HTTPS (recommended for LAN/remote)
 
@@ -107,6 +108,7 @@ server {
     }
 
     location = /healthz { proxy_pass http://127.0.0.1:8000/healthz; }
+    location = /readyz { proxy_pass http://127.0.0.1:8000/readyz; }
 }
 ```
 
@@ -181,7 +183,7 @@ Run: `docker run -d --restart unless-stopped -p 127.0.0.1:8000:8000 -v pmdata:/d
 
 ## 9) Post-deploy verification (automated checks available)
 
-- Web responds: `curl -fsS http://127.0.0.1:8000/health` and `/healthz`
+- Web responds: `curl -fsS http://127.0.0.1:8000/health`, `/healthz`, and `/readyz`
 - Doctor/integrity: `PYTHONPATH=src python -m app_core.doctor --json`
 - Backup sanity: `python3 scripts/backup_runtime.py --backup` (safe, non-destructive) and verify result
 - Confirm `PM_WEB_SECRET_KEY` set, `--workers 1`, correct `PM_DATA_DIR`, and TLS/proxy behavior if applicable

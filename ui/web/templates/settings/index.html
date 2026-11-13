@@ -1,13 +1,21 @@
 {% extends "base.html" %}
 {% block content %}
 <h2>Settings / Branding</h2>
-<p class="muted">Configure property, branding, master data, and maintenance. Protected actions require unlock/super password.</p>
-<details class="help-box"><summary>How to use Settings</summary><ul><li><strong>Branding & general:</strong> update property name/tagline and app settings (some changes may require unlock).</li><li><strong>Seed config (first-time / master data):</strong> <em>Export</em> current config to JSON, edit, then <em>Import/Apply</em> (requires unlock + super password + confirmation, and is only allowed when no operational data exists) — use this to seed rooms, rate plans, inventory (incl. SKU/barcodes & batch/expiry fields), expense categories, meals, and activities.</li><li><strong>Demo data presets:</strong> load synthetic operational/business demo data (reservations, POS, booked activities, payments, expenses) on a DB with no operational data to explore the app quickly.</li><li><strong>Rooms:</strong> add/remove rooms (removal blocked if referenced by reservations).</li><li><strong>Rate plans / backups / health:</strong> manage pricing plans, backups, and run health/integrity checks.</li></ul></details>
-<p><a href="/settings/rate-plans">Manage Rate Plans</a> (add/edit/delete with real backend validation) · <a href="/settings/health">Ledger/Data Health Check</a> (read-only, unlock required)</p>
+<p class="muted" style="margin-top:-4px">Configure property, branding, master data, maintenance, and updates. Protected actions require unlock/super password.</p>
+<div class="subtabs" role="tablist" aria-label="Settings sections">
+  <a href="/settings?tab=general" class="{% if active_tab == 'general' %}active{% endif %}">General</a>
+  <a href="/settings?tab=data" class="{% if active_tab == 'data' %}active{% endif %}">Seed &amp; Data</a>
+  <a href="/settings?tab=rooms" class="{% if active_tab == 'rooms' %}active{% endif %}">Rooms &amp; Plans</a>
+  <a href="/settings?tab=updates" class="{% if active_tab == 'updates' %}active{% endif %}">Updates &amp; Health</a>
+</div>
+
+{% if active_tab == 'updates' %}
+<div class="subtab-help">Check/apply app updates (data preserved), run backups, and access health/rate plans tools.</div>
+<p><a href="/settings/rate-plans">Manage Rate Plans</a> · <a href="/settings/health">Ledger/Data Health Check</a> (read-only, unlock required)</p>
 
 <div class="panel" style="margin:14px 0">
   <h3>App updates (preserves your data)</h3>
-  <p class="muted">Checks GitHub for newer versions of this app and can fast-forward update the installed source code. Your runtime data is preserved (database, exports, invoices, and configured data directory are not modified by updates).</p>
+  <p class="muted">Checks GitHub for newer versions and can fast-forward update installed source code. Runtime data is preserved (database, exports, invoices, configured data directory).</p>
   <table>
     <tr><th>App version</th><td>{{ (update_local.app_version or '—') }}</td></tr>
     <tr><th>Installed commit</th><td><code>{{ (update_local.commit_short or '—') }}</code> {% if update_local.commit_subject %}— {{ update_local.commit_subject }}{% endif %} {% if update_local.commit_date %}<span class="muted">({{ update_local.commit_date }})</span>{% endif %}</td></tr>
@@ -45,10 +53,9 @@
         {% if update_check.update_available %}
           <div class="panel" style="margin-top:10px;border:1px solid #f59e0b;background:#fffbeb">
             <strong>Update now</strong>
-            <p class="muted">Runs a safe <code>git pull --ff-only</code> from origin (requires unlock). Source code is updated; your data (DB, exports, invoices, data dir) is preserved. Restart the app after updating. If local source changes exist, stash/commit/discard them first.</p>
+            <p class="muted">Runs a safe <code>git pull --ff-only</code> (requires unlock). Restart the app after updating. If local source changes exist, stash/commit/discard them first.</p>
             <form method="post" action="/settings/updates/apply"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
               <input name="confirm" placeholder="UPDATE APP"/>
-              <input type="password" name="password" placeholder="Super password (if required)"/>
               <button class="warn" type="submit">Update app</button>
             </form>
           </div>
@@ -76,27 +83,12 @@
   {% endif %}
 </div>
 
+{% elif active_tab == 'data' %}
+<div class="subtab-help">First-time seed/master data, guarded demo presets, and settings reset (protected operations).</div>
+<details class="help-box"><summary>How to use Seed &amp; Data</summary><ul><li><strong>Seed config:</strong> Export JSON, edit, then Import/Apply (unlock + super password + <code>APPLY SEED CONFIG</code>, only when no operational data exists).</li><li><strong>Demo presets:</strong> load synthetic operational data on an empty DB (confirmation <code>APPLY DEMO DATA</code>).</li><li><strong>Reset:</strong> resets settings to defaults (confirmation <code>RESET DEFAULTS</code>, preserves schema/language).</li></ul></details>
 <div class="grid grid-2">
-  <div class="panel"><h3>Barcode / Label devices</h3>
-    <p class="muted">Configure scanner & label printer in the settings catalog below (barcode_*, label_printer, label_format, expiry policy). Keyboard-wedge scanners need no driver (scan into fields). Test label printing uses the configured label/default printer or saves to export.</p>
-    <form method="post" action="/settings/test-label"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><input type="password" name="password" placeholder="Super password (if required)" style="width:220px;display:inline-block"/><button type="submit">Test label print</button></form>
-  </div>
-
-  <div class="panel"><h3>Branding & animation (wizard fields)</h3>
-    <p class="muted">Gift: {{ brand.gift }}</p>
-    <form method="post" action="/settings/branding"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
-      <label>Display name<input name="display_name" value="{{brand.name}}" required/></label>
-      <label>Tagline<input name="tagline" value="{{brand.tagline}}"/></label>
-      <label>Loading animation<select name="animation">
-        {% for v in ['reveal','typewriter','wave','pulse','none'] %}<option value="{{v}}" {% if brand.animation==v %}selected{% endif %}>{{v}}</option>{% endfor %}
-      </select></label>
-      <label>Super password (if required)<input type="password" name="password" placeholder="Super password"/></label>
-      <button type="submit">Apply branding</button>
-    </form>
-    <form method="post" action="/settings/backup" style="margin-top:10px"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><input type="password" name="password" placeholder="Super password (if required)" style="width:220px;display:inline-block"/><button>Backup now</button></form>
-  </div>
-  <div class="panel"><h3>First-time seed / master data (export → edit → upload)</h3>
-    <p class="muted">Export editable JSON for rooms, rate plans, inventory (incl. SKU/barcode, batch/expiry tracking fields), expense categories, meals, and activities. Edit it to match your business, then upload to apply as your first seed. Requires unlock + super password + confirmation text <code>APPLY SEED CONFIG</code>. Allowed only when there is no operational data (reservations/payments/POS/expenses).</p>
+  <div class="panel"><h3>First-time seed / master data</h3>
+    <p class="muted">Export editable JSON for rooms, rate plans, inventory (SKU/barcode, batch/expiry fields), expense categories, meals, and activities. Edit and upload as first seed.</p>
     <form method="post" action="/settings/seed/export" style="margin-bottom:10px"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
       <button type="submit">Export seed config JSON (download)</button>
     </form>
@@ -104,11 +96,11 @@
       <label>Seed config file<input type="file" name="seed_file" accept=".json,application/json" required/></label>
       <input name="confirm" placeholder="APPLY SEED CONFIG"/>
       <input type="password" name="password" placeholder="Super password"/>
-      <button class="warn" type="submit">Upload & apply seed config</button>
+      <button class="warn" type="submit">Upload &amp; apply seed config</button>
     </form>
-    <hr style="margin:14px 0;border:none;border-top:1px solid #e2e8f0"/>
-    <h3>Guarded demo data preset (load business demo data)</h3>
-    <p class="muted">Loads synthetic but realistic operational data (guests, reservations across past/current/future with statuses, POS items, booked activities/trips, payments/deposits, and expenses) so you can explore reports and workflows quickly. Requires unlock + super password + confirmation text <code>APPLY DEMO DATA</code>. Refused when operational data already exists.</p>
+  </div>
+  <div class="panel"><h3>Guarded demo data preset</h3>
+    <p class="muted">Loads synthetic but realistic operational data to explore workflows/reports quickly. Refused when operational data already exists.</p>
     <form method="post" action="/settings/demo-preset"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
       <label>Preset<select name="preset">
         {% for p in (demo_presets or []) %}
@@ -127,7 +119,7 @@
     </form>
     <hr style="margin:14px 0;border:none;border-top:1px solid #e2e8f0"/>
     <h3>Reset settings to defaults</h3>
-    <p class="muted">Requires unlock + super password + confirmation text <code>RESET DEFAULTS</code>. Preserves schema/language.</p>
+    <p class="muted">Requires unlock + super password + confirmation <code>RESET DEFAULTS</code>. Preserves schema/language.</p>
     <form method="post" action="/settings/reset"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
       <input name="confirm" placeholder="RESET DEFAULTS"/>
       <input type="password" name="password" placeholder="Super password"/>
@@ -136,8 +128,11 @@
   </div>
 </div>
 
-<div class="panel" style="margin-top:14px"><h3>Rooms (modify later: add / remove)</h3>
-  <p class="muted">Add rooms anytime. Deleting a room is blocked if it is referenced by reservations; change type/price from existing flows or database-safe operations as needed.</p>
+{% elif active_tab == 'rooms' %}
+<div class="subtab-help">Manage rooms and access rate plans / health tools.</div>
+<p><a href="/settings/rate-plans">Manage Rate Plans</a> (add/edit/delete) · <a href="/settings/health">Ledger/Data Health Check</a></p>
+<div class="panel"><h3>Rooms (add / remove)</h3>
+  <p class="muted">Add rooms anytime. Deleting a room is blocked if referenced by reservations.</p>
   <form method="post" action="/settings/rooms/add" style="margin-bottom:12px"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
     <div class="grid grid-4">
       <label>Room number<input name="room_number" required/></label>
@@ -145,19 +140,41 @@
       <label>Base price<input name="base_price" type="number" step="0.01" min="0" value="0"/></label>
       <label>Housekeeping<select name="housekeeping_status"><option>Clean</option><option>Dirty</option><option>Inspected</option><option>Out of Order</option></select></label>
     </div>
-    <label>Super password (if required)<input type="password" name="password" placeholder="Super password"/></label>
     <button type="submit">Add room</button>
   </form>
   <table><tr><th>ID</th><th>Number</th><th>Type</th><th>Base price</th><th>HK</th><th>Action</th></tr>
   {% for r in rooms %}
     <tr><td>{{r.id}}</td><td>{{r.room_number}}</td><td>{{r.room_type}}</td><td>{{"%.2f"|format(r.base_price or 0)}}</td><td>{{r.housekeeping_status}}</td>
-    <td><form method="post" action="/settings/rooms/{{r.id}}/delete" onsubmit="return confirm('Delete room {{r.room_number}}? This fails if referenced by reservations.');"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><input type="password" name="password" placeholder="Pwd (if required)" style="width:140px;display:inline-block"/><button class="danger" type="submit">Delete</button></form></td></tr>
+    <td><form method="post" action="/settings/rooms/{{r.id}}/delete" onsubmit="return confirm('Delete room {{r.room_number}}? This fails if referenced by reservations.');"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><button class="danger" type="submit">Delete</button></form></td></tr>
   {% else %}
     <tr><td colspan="6" class="muted">No rooms.</td></tr>
   {% endfor %}</table>
 </div>
 
-<div class="panel"><h3>Settings catalog (unlock + password to save)</h3>
+{% else %}{# general #}
+<div class="subtab-help">Branding, barcode/label configuration, backups, and the settings catalog.</div>
+<details class="help-box"><summary>How to use General settings</summary><ul><li><strong>Branding:</strong> property name/tagline and loading animation.</li><li><strong>Barcode/label:</strong> configure in settings catalog below; test label printing if needed.</li><li><strong>Backup:</strong> create a backup now (preserves runtime data).</li><li><strong>Settings catalog:</strong> edit supported values (save requires unlock + super password).</li></ul></details>
+<div class="grid grid-2">
+  <div class="panel"><h3>Branding &amp; animation</h3>
+    <p class="muted">Gift: {{ brand.gift }}</p>
+    <form method="post" action="/settings/branding"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+      <label>Display name<input name="display_name" value="{{brand.name}}" required/></label>
+      <label>Tagline<input name="tagline" value="{{brand.tagline}}"/></label>
+      <label>Loading animation<select name="animation">
+        {% for v in ['reveal','typewriter','wave','pulse','none'] %}<option value="{{v}}" {% if brand.animation==v %}selected{% endif %}>{{v}}</option>{% endfor %}
+      </select></label>
+      <button type="submit">Apply branding</button>
+    </form>
+  </div>
+  <div class="panel"><h3>Maintenance &amp; devices</h3>
+    <p class="muted">Create backups and test label printing (configured label/default printer or saved export).</p>
+    <form method="post" action="/settings/backup" style="margin-bottom:10px"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><button>Backup now</button></form>
+    <form method="post" action="/settings/test-label"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><button type="submit">Test label print</button></form>
+    <p class="muted" style="margin-top:8px">Barcode/label device settings (barcode_*, label_printer, label_format, expiry policy) are in the catalog below.</p>
+  </div>
+</div>
+
+<div class="panel" style="margin-top:14px"><h3>Settings catalog (unlock + password to save)</h3>
   <p class="muted">Edit values supported by <code>services.save_settings</code>. Sensitive save requires super password.</p>
   <form method="post" action="/settings/save"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
     <table><tr><th>Key</th><th>Label</th><th>Value</th></tr>
@@ -174,4 +191,5 @@
     <button type="submit">Save settings</button>
   </form>
 </div>
+{% endif %}
 {% endblock %}

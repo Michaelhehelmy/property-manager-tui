@@ -1,7 +1,9 @@
 {% extends "base.html" %}
 {% block content %}
 <h2>Manager Assistant</h2>
-<p class="muted">English chat grounded in <strong>real backend data</strong> (read-only). Ask in plain language — I’ll route to the right tools and answer with facts. Replies are polished locally (no external LLM).</p>
+<p class="muted" style="margin-top:-4px">English chat grounded in <strong>real backend data</strong> (read-only).</p>
+<div class="subtabs" role="tablist"><a href="/assistant" class="active">Chat</a></div>
+<div class="subtab-help">Ask in plain language; answers are routed to real tools and grounded in app data.</div>
 <details class="help-box"><summary>How to use the Manager Assistant</summary>
 <ul>
   <li><strong>Ask naturally:</strong> include what you want and context (guest/reservation ID, report name, date range like <code>last month</code> or <code>2026-11-01 to 2026-11-30</code>).</li>

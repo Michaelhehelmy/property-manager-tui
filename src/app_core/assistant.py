@@ -2262,6 +2262,11 @@ def _llm_config():
     return {"provider":provider,"response_mode":response_mode,"model_path":model_path,"n_ctx":n_ctx,
             "local_available": local_available, "enabled": enabled, "external": False}
 
+
+def get_llm_config() -> dict:
+    """Public assistant LLM/runtime configuration/status (no external endpoints)."""
+    return _llm_config()
+
 def _get_local_llm():
     global _LOCAL_LLM_CACHE
     cfg = _llm_config()

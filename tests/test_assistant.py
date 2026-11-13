@@ -412,10 +412,12 @@ def test_deterministic_route_guest_keyword_but_no_resolution_and_search_regex(mo
 # ── Local-only LLM config / rephrase / routing ────────────────────────────────
 
 def test_llm_config(monkeypatch):
-    # Default/local-only config has no external endpoints and is not enabled without a local GGUF model.
-    c = assistant._llm_config()
+    # Public API: local-only config has no external endpoints and returns expected keys.
+    c = assistant.get_llm_config()
+    assert set(c.keys()) >= {"provider", "response_mode", "local_available", "enabled", "external"}
     assert c.get("external") is False
-    assert "enabled" in c and "local_available" in c
+    assert isinstance(c.get("local_available"), bool)
+    assert isinstance(c.get("enabled"), bool)
     assert c.get("provider") in ("auto", "deterministic_only", "local", "local_gguf") or isinstance(c.get("provider"), str)
     assert c.get("response_mode") in ("talking", "core", "full_llm", "auto", "local") or isinstance(c.get("response_mode"), str)
 

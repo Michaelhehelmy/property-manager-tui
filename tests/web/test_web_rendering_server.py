@@ -99,6 +99,22 @@ def test_health_probes(web_env):
             assert data.get("ok") is True
             assert data.get("status") == "healthy"
 
+
+def test_readyz_probe(web_env):
+    app = create_app(init_db=False, run_startup=False)
+    with TestClient(app) as c:
+        r = c.get("/readyz")
+        assert r.status_code == 200
+        data = r.json()
+        assert "ok" in data
+        assert data.get("service") == "property-manager-web"
+        assert data.get("status") in ("ready", "not_ready")
+        readiness = data.get("readiness") or {}
+        assert "db_initialized" in readiness
+        assert "ready" in readiness
+        assert "checks" in readiness
+        assert set((readiness.get("checks") or {}).keys()) >= {"data_dir_exists", "export_dir_writable", "invoice_dir_writable"}
+
 import importlib
 import sys
 

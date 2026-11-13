@@ -49,7 +49,7 @@ def _rooms(): return connect().execute("SELECT id, room_number, room_type, base_
 def _plans(): return connect().execute("SELECT id, name, price_modifier FROM rate_plans ORDER BY name").fetchall()
 
 @router.get("/reservations")
-def list_res(request: Request, q: str = ""):
+def list_res(request: Request, q: str = "", tab: str = "list"):
     ql = f"%{q}%" if q else "%"
     rows = connect().execute("""
         SELECT r.*, rm.room_number, rp.name as rate_plan_name
@@ -58,8 +58,12 @@ def list_res(request: Request, q: str = ""):
         WHERE r.status NOT IN ('Deleted') AND (r.guest_name LIKE ? OR r.id LIKE ? OR rm.room_number LIKE ?)
         ORDER BY r.id DESC LIMIT 200""", (ql, ql, ql)).fetchall()
     now = datetime.now()
+    allowed = {"list","create"}
+    tab = (tab or "list").strip().lower()
+    if tab not in allowed: tab = "list"
+    if q: tab = "list"
     return render(request, "reservations/list.html", {"title":"Reservations","rows":rows,"q":q,"rooms":_rooms(),"plans":_plans(),
-                  "today":now.strftime("%Y-%m-%d"), "tomorrow":(now+timedelta(days=1)).strftime("%Y-%m-%d")})
+                  "today":now.strftime("%Y-%m-%d"), "tomorrow":(now+timedelta(days=1)).strftime("%Y-%m-%d"), "active_tab":tab})
 
 @router.post("/reservations/create")
 async def create(request: Request):
@@ -69,14 +73,16 @@ async def create(request: Request):
               int(form["rate_plan_id"]) if form.get("rate_plan_id") else None, float(form.get("rate") or 0),
               form.get("check_in",""), form.get("check_out",""), float(form.get("deposit") or 0))
         deps.add_flash(request, f"Reservation #{rid} created", "success")
+        dest = "/reservations?tab=list"
     except Exception as e:
         deps.add_flash(request, str(e), "error")
-    r=deps.redirect("/reservations"); deps.save_session(r, deps.get_session(request)); return r
+        dest = "/reservations?tab=create"
+    r=deps.redirect(dest); deps.save_session(r, deps.get_session(request)); return r
 
 @router.get("/reservations/{rid}")
 def detail(rid: int, request: Request):
     res = services.get_reservation(rid)
-    if not res: deps.add_flash(request,"Not found","error"); return deps.redirect("/reservations")
+    if not res: deps.add_flash(request,"Not found","error"); return deps.redirect("/reservations?tab=list")
     folio = services.get_balance_breakdown(rid) or {}
     pos = connect().execute(
         """SELECT p.*, i.item_name AS inventory_item_name, i.track_batches, a.name AS activity_name
@@ -155,7 +161,7 @@ async def noshow(rid: int, request: Request):
 @router.post("/reservations/{rid}/delete")
 async def delete(rid: int, request: Request):
     form = await deps.require_unlocked_form(request)
-    try: services.delete_reservation(rid, deps.service_password(request, form)); deps.add_flash(request,"Deleted","success"); dest="/reservations"
+    try: services.delete_reservation(rid, deps.service_password(request, form)); deps.add_flash(request,"Deleted","success"); dest="/reservations?tab=list"
     except Exception as e: deps.add_flash(request,str(e),"error"); dest=f"/reservations/{rid}"
     r=deps.redirect(dest); deps.save_session(r, deps.get_session(request)); return r
 
@@ -190,8 +196,6 @@ async def refund(rid: int, request: Request):
 async def invoice(rid: int, request: Request):
     form = await deps.require_unlocked_form(request)
     try:
-        # Explicit proof accepted if provided; service currently does not require password.
-        _ = deps.service_password(request, form)
         text = services.generate_invoice_text(rid, form.get("currency","EGP"))
         path = services.save_invoice_file(text, rid, form.get("currency","EGP"))
         deps.add_flash(request, f"Invoice saved: {Path(path).name}", "success")
@@ -205,8 +209,6 @@ async def invoice(rid: int, request: Request):
 async def book_activity(rid: int, request: Request):
     form = await deps.require_unlocked_form(request)
     try:
-        # Explicit proof accepted if provided; backend enforces any required checks.
-        _ = deps.service_password(request, form)
         act_id = int(form.get("activity_id"))
         qty = int(form.get("qty") or 1)
         scheduled_at = (form.get("scheduled_at") or "").strip() or None

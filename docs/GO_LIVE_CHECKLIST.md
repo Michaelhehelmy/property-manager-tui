@@ -13,10 +13,10 @@ Use this checklist to move Property Manager from setup/testing to production-lik
 
 - [ ] **Install/verify runtime (automated/manual):** use supported install/setup scripts or manual venv; confirm Python 3.10+ and required deps.
 - [ ] **Select mode (manual):** TUI and/or Web per environment capability (TUI preferred on constrained systems like iSH).
-- [ ] **Web runtime config (manual):** `--workers 1` enforced, correct `HOST`/`PORT`, `PYTHONPATH`/working directory set.
-- [ ] **Set secrets/env (manual, required):** strong `PM_WEB_SECRET_KEY` for any non-local/shared deployment; set `PM_DATA_DIR` if using non-default location.
+- [ ] **Web runtime config (manual):** `--workers 1` enforced (mandatory for SQLite; never increase), correct `HOST`/`PORT`, `PYTHONPATH`/working directory set.
+- [ ] **Set secrets/env (manual, required):** strong `PM_WEB_SECRET_KEY` for any non-local/shared deployment (required for non-loopback unless explicit local/dev insecure override); set `PM_DATA_DIR` if using non-default location.
 - [ ] **Service/autostart (manual):** systemd/launchd/NSSM/Task Scheduler/supervisor/Docker configured with restart policy and correct env vars.
-- [ ] **Permissions (manual):** service user has least-privilege read/write access to data dir; install/source protected from unauthorized modification.
+- [ ] **Data directory & permissions (manual):** service user has least-privilege read/write access to data dir/runtime locations (single writer); install/source protected from unauthorized modification.
 
 ## 3) Security and access control
 
@@ -30,24 +30,26 @@ Use this checklist to move Property Manager from setup/testing to production-lik
 ## 4) Data, backups, and disaster recovery
 
 - [ ] **Initial verified backup (automated/tooling):** create and verify backup before go-live (`Settings → Backup now` or `scripts/backup_runtime.py --backup` + `--verify`, or doctor equivalents).
+- [ ] **Backup before risky operations (manual + tooling):** take and verify backups before upgrades/migrations, restores, bulk changes, or other risky operations.
 - [ ] **Backup schedule & retention (manual):** define frequency (RPO), retention, and offsite/off-host encrypted copies.
-- [ ] **Restore runbook validated (manual + tooling):** perform or tabletop a **manual offline restore** drill in non-production copy; verify with doctor/integrity checks and smoke tests.
+- [ ] **Restore runbook validated (manual + tooling):** perform or tabletop a **manual offline restore** drill in a non-production copy (stop app, verify backup, restore files, start, verify integrity/smoke tests).
 - [ ] **Data preservation confirmed (automated behavior):** understand updates preserve DB/exports/invoices/data dir; backups still mandatory.
 
 ## 5) Integrity, health, and monitoring
 
 - [ ] **Baseline health/integrity (automated/tooling):** `PYTHONPATH=src python -m app_core.doctor --json` passes (review warnings); in-app integrity checks reviewed.
-- [ ] **Web probes configured (automated endpoints, manual wiring):** monitor `GET /health` and/or `GET /healthz` via proxy/service monitor/uptime checks.
+- [ ] **Web probes configured (automated endpoints, manual wiring):** monitor `GET /health` and/or `GET /healthz` for liveness/basic health and `GET /readyz` for runtime readiness (including data-dir writability checks) via proxy/service monitor/uptime checks.
 - [ ] **Operational monitoring (manual):** alerts for downtime, 5xx/error spikes, disk space, CPU/memory (as relevant), certificate expiry, and backup job success/failure.
 - [ ] **Log access/review (manual):** identify app/proxy/system log locations and review process; protect logs and avoid secret leakage.
 
 ## 6) Updates and maintenance
 
+- [ ] **Pre-update backup (manual + tooling):** take and verify a backup before any update/migration.
 - [ ] **Update procedure agreed (manual + tooling):** in-app **Settings → App updates** (git fast-forward) or `git pull --ff-only`; require clean working tree for auto-apply. For reproducible/pinned changes, use `GIT_REF=<tag|commit>` (or Windows `-GitRef`) and bootstrap scripts from the matching raw ref as needed.
 - [ ] **Restart procedure documented (manual):** restart required after apply; service restart commands/runbook verified.
 - [ ] **Dependency refresh plan (manual/tooling):** re-run setup (`ACTION=setup` / `-Action setup`) when dependencies change. If web deps fail on constrained environments (e.g. `pydantic-core`/Rust wheel issues), document TUI-only fallback (`SKIP_WEB=1 MODE=tui` / `-SkipWeb 1 -Mode tui`) or use a supported host for web.
 - [ ] **Release/version tracking (manual):** record deployed tag/commit and app version (`pyproject.toml`/release notes) with change records.
-- [ ] **Rollback plan (manual):** known-good commit/tag identified, verified pre-update backup available, and restore path understood (including schema compatibility considerations). Runtime data (DB/exports/invoices/`PM_DATA_DIR`) is preserved by source updates but backups remain mandatory. Keep web on `--workers 1`, with strong `PM_WEB_SECRET_KEY` and HTTPS/private networking for shared access.
+- [ ] **Rollback plan (manual):** known-good commit/tag identified, verified pre-update backup available, and restore path understood (including schema compatibility considerations). Restore is manual/offline and should be validated by restore drills. Runtime data (DB/exports/invoices/`PM_DATA_DIR`) is preserved by source updates but backups remain mandatory. Keep web on `--workers 1`, with strong `PM_WEB_SECRET_KEY` and HTTPS/reverse-proxy or private networking for shared access.
 
 ## 7) Functional pilot / acceptance
 

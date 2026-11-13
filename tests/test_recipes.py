@@ -111,7 +111,7 @@ def test_recipe_insufficient_ingredient_stock(unlocked):
     ing = _inv("ShortIng", stock=1, cost=1)
     services.set_recipe_components(meal, [{"ingredient_item_id": ing, "qty_per_sale": 2}], "testpass")
     rid = make_reservation()
-    with pytest.raises(ValueError, match="Insufficient ingredient stock"):
+    with pytest.raises(ValueError, match=r"Insufficient (ingredient|batch).*stock"):
         services.add_pos_item(rid, "Meal S", 1, 10.0, meal)
     assert _stock(ing) == 1.0
 

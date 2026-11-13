@@ -13,6 +13,7 @@ python3 scripts/backup_runtime.py --doctor --json
 # Web liveness/readiness (if server running)
 curl -fsS http://127.0.0.1:8000/health
 curl -fsS http://127.0.0.1:8000/healthz
+curl -fsS http://127.0.0.1:8000/readyz
 
 # Git/install state (if git-based)
 git -C <install-dir> status --porcelain --branch
@@ -49,17 +50,19 @@ Collect: OS/platform, install method, command used, full error output, whether T
 - **Port in use:** change `PORT`/`--port` or stop conflicting process.
 - **`uvicorn`/module import errors:** install web deps, activate correct venv, set `PYTHONPATH=src:<repo>` if needed.
 - **Invalid host/port:** use valid bind address and port range (1-65535).
+- **Missing/weak secret in non-local use:** set strong `PM_WEB_SECRET_KEY` for non-local/shared deployments (required for non-loopback unless explicit local/dev insecure override).
 
 ### Cannot access from browser/other devices
 - **Local only works:** `127.0.0.1` is loopback-only; bind `0.0.0.0` for LAN (trusted networks only) and use host LAN IP.
 - **Firewall/NAT:** allow inbound port on host firewall/router as appropriate.
-- **Reverse proxy:** verify proxy target `127.0.0.1:8000`, headers, TLS certs, and health endpoints.
+- **Reverse proxy/HTTPS:** for LAN/remote access use HTTPS reverse proxy or private network (VPN/Tailscale/SSH tunnel). Verify proxy target `127.0.0.1:8000`, forwarded headers, TLS certs, and health endpoints.
 - **HTTPS/session issues behind proxy:** ensure correct scheme/forwarding and access via HTTPS in production contexts.
 
 ### Web behavior/auth issues
-- **403/CSRF/unlock related failures:** state-changing actions require CSRF; sensitive/admin actions require super-password unlock. Ensure forms/clients include required tokens/proofs and session is unlocked where required. See `docs/web_authz_matrix.md` and `docs/SECURITY.md`.
+- **403/CSRF/unlock related failures:** state-changing actions require CSRF (centrally enforced in server middleware); sensitive/admin actions require super-password unlock. Ensure forms/clients include required tokens/proofs and session is unlocked where required. See `docs/web_authz_matrix.md` and `docs/SECURITY.md`.
 - **Session/secret issues:** set stable strong `PM_WEB_SECRET_KEY` for shared deployments (changing it invalidates signed sessions/cookies).
 - **`--workers` misconfiguration:** must be **`--workers 1`** for SQLite; multiple workers can cause locking/corruption/data issues.
+- **Health probe interpretation:** `GET /health` and `/healthz` report liveness/basic health (with readiness summary); `GET /readyz` reports runtime readiness (including data-dir writability). Probe failures/degraded state warrant checking logs, data-dir permissions, and config.
 
 ## 5) Data, permissions, and integrity
 

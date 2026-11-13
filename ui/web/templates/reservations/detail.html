@@ -44,7 +44,7 @@
         <input name="notes" placeholder="Notes"/><input type="password" name="password" placeholder="Super password"/><button class="err" title="Record a refund (requires unlock + super password)">Refund</button>
       </form>
     </details>
-    <form method="post" action="/reservations/{{r['id']}}/invoice" class="inline" style="margin-top:8px"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><input type="hidden" name="currency" value="EGP"/><input type="password" name="password" placeholder="Super password (if required)" style="width:180px;display:inline-block"/><button title="Generate/save an invoice for this reservation (includes accommodation, POS/activities, payments)">Generate invoice</button></form>
+    <form method="post" action="/reservations/{{r['id']}}/invoice" class="inline" style="margin-top:8px"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><input type="hidden" name="currency" value="EGP"/><button title="Generate/save an invoice for this reservation (includes accommodation, POS/activities, payments)">Generate invoice</button></form>
   </div>
 </div>
 <div class="grid grid-2">
@@ -88,7 +88,6 @@
           <div class="choice-hint">Pick a specific batch/lot for traceability, or leave on Auto FEFO. Use <a href="/pos?scan=" target="_blank">POS scan/lookup</a> to resolve barcodes/lots.</div>
         </label>
         <label>Lot code / scan (optional override)<input name="lot_code" placeholder="Scan or type lot code"/></label>
-        <label>Super password (if required)<input type="password" name="password" placeholder="Super password"/></label>
         <p class="muted">Select a specific batch to sell that lot (traceability/receipt), or leave empty for automatic FEFO on batch-tracked items. Lot code can also identify a batch if known.</p>
         <button class="ok" type="submit" title="Add POS/inventory charge to this reservation folio">Add POS charge</button>
       </form>
@@ -102,7 +101,6 @@
         </select></label>
         <div class="row"><label>Qty<input name="qty" type="number" min="1" value="1"/></label><label>Scheduled (opt)<input name="scheduled_at" placeholder="e.g. 2026-11-12 09:00"/></label></div>
         <label>Notes (opt)<input name="notes" placeholder="optional"/></label>
-        <label>Super password (if required)<input type="password" name="password" placeholder="Super password"/></label>
         <button class="ok" type="submit" title="Book this registered activity/trip for the reservation — added to folio & invoice like POS">Book / order activity</button>
       </form>
       {% if not activities %}<p class="muted">No active registered activities. Register activities/trips in <a href="/pos">POS / Inventory</a>.</p>{% endif %}

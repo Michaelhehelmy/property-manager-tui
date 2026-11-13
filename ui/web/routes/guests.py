@@ -71,16 +71,18 @@ def _enrich_portfolio(portfolio):
     return portfolio
 
 @router.get("/guests")
-def guests(request: Request, q: str = ""):
+def guests(request: Request, q: str = "", tab: str = "directory"):
     rows = services.get_all_guests(q)
-    return render(request, "guests/list.html", {"title": "Guests", "q": q, "rows": rows})
+    tab = (tab or "directory").strip().lower()
+    if tab not in {"directory"}: tab = "directory"
+    return render(request, "guests/list.html", {"title": "Guests", "q": q, "rows": rows, "active_tab": tab})
 
 @router.get("/guests/{gid}")
 def guest_detail(gid: int, request: Request):
     portfolio = services.get_guest_portfolio(gid)
     if not portfolio:
         deps.add_flash(request, "Guest not found", "error")
-        return deps.redirect("/guests")
+        return deps.redirect("/guests?tab=directory")
     portfolio = _enrich_portfolio(portfolio)
     g = portfolio.get("guest") or {}
     if isinstance(g, dict) and "canonical_name" not in g and "name" in g:

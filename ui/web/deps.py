@@ -1,6 +1,7 @@
 """Web dependencies: sessions, CSRF, auth, flash messages, safe file paths."""
 from __future__ import annotations
 
+import logging
 import os
 import secrets
 import sys
@@ -16,6 +17,7 @@ from itsdangerous import BadSignature, URLSafeSerializer
 from app_core import paths, services
 
 SESSION_COOKIE = "pm_session"
+logger = logging.getLogger(__name__)
 # Secret/cookie hardening
 _SECRET_ENV = "PM_WEB_SECRET_KEY"
 _ALLOW_INSECURE_ENV = "PM_WEB_ALLOW_INSECURE_DEV"
@@ -32,16 +34,20 @@ if not SECRET_KEY:
         )
     SECRET_KEY = _DEFAULT_INSECURE_SECRET
     _insecure_dev = True
-    print(
+    msg = (
         f"[pm-web] WARNING: {_SECRET_ENV} not set; using insecure development secret. "
-        "Set PM_WEB_SECRET_KEY to a strong random value for any non-local/shared deployment.",
-        file=sys.stderr,
+        "Set PM_WEB_SECRET_KEY to a strong random value for any non-local/shared deployment."
+    )
+    print(msg, file=sys.stderr)
+    logger.warning(
+        "web_secret_config_warning code=insecure_dev_secret host_hint=%s non_local=%s",
+        host_hint,
+        bool(non_local),
     )
 elif len(SECRET_KEY) < 32:
-    print(
-        f"[pm-web] WARNING: {_SECRET_ENV} is short (<32 chars); use a strong random secret in production.",
-        file=sys.stderr,
-    )
+    msg = f"[pm-web] WARNING: {_SECRET_ENV} is short (<32 chars); use a strong random secret in production."
+    print(msg, file=sys.stderr)
+    logger.warning("web_secret_config_warning code=short_secret_key min_recommended=32")
 
 _serializer = URLSafeSerializer(SECRET_KEY, salt="pm-session")
 
@@ -293,6 +299,12 @@ def enforce_auth_rate_limit(request: Request, scope: str = "unlock", *, limit: i
     bucket = _LOGIN_ATTEMPTS if scope in ("unlock", "recovery") else _SENSITIVE_ATTEMPTS
     ok, retry = check_rate_limit(bucket, key, limit=lim, window_sec=win)
     if not ok:
+        logger.warning(
+            "web_rate_limit_block scope=%s path=%s retry_after_s=%s",
+            scope,
+            getattr(getattr(request, "url", None), "path", ""),
+            retry,
+        )
         raise HTTPException(status_code=429, detail=f"Too many attempts. Try again in about {retry}s.")
 
 
@@ -335,8 +347,10 @@ def unlock(request: Request, password: str) -> bool:
                 services.touch_session()
         except Exception:
             pass
+        logger.info("web_auth_event event=unlock_success scope=unlock")
         return True
     record_auth_failure(request, "unlock")
+    logger.warning("web_auth_event event=unlock_failure scope=unlock")
     return False
 
 
@@ -348,6 +362,7 @@ def lock(request: Request) -> None:
         services.lock_session()
     except Exception:
         pass
+    logger.info("web_auth_event event=lock")
 
 
 def safe_download_path(kind: str, name: str) -> Path:
@@ -364,33 +379,6 @@ def safe_download_path(kind: str, name: str) -> Path:
     if not p.exists() or not p.is_file():
         raise HTTPException(status_code=404, detail="File not found")
     return p
-
-
-
-
-def enforce_csrf_for_unsafe(request: Request) -> None:
-    """Call from middleware/dependency for state-changing methods."""
-    if request.method.upper() in ("POST", "PUT", "PATCH", "DELETE"):
-        # form token or header
-        token = request.headers.get("x-csrf-token")
-        if token is None:
-            # try cached form? cannot read body here safely; routes should verify.
-            return
-        verify_csrf(request, token)
-
-
-async def csrf_middleware(request: Request, call_next):
-    # Best-effort: enforce header token for unsafe API-style requests; form posts
-    # are validated in route handlers via verify_csrf(request, csrf_token_form).
-    if request.method.upper() in ("POST", "PUT", "PATCH", "DELETE"):
-        ct = (request.headers.get("content-type") or "").lower()
-        if "application/json" in ct or request.headers.get("x-csrf-token"):
-            token = request.headers.get("x-csrf-token")
-            if token is None:
-                # JSON unsafe requests must provide header
-                raise HTTPException(status_code=400, detail="Invalid CSRF token")
-            verify_csrf(request, token)
-    return await call_next(request)
 
 
 def redirect(url: str, status: int = 303) -> RedirectResponse:

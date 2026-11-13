@@ -81,7 +81,7 @@ def test_reservation_actions(client, monkeypatch):
     # delete success -> /reservations, error -> /reservations/{rid}
     monkeypatch.setattr(rr.services, "delete_reservation", lambda *a, **k: None)
     r = client.post("/reservations/1/delete", data={"csrf": token, "password": "testpass"})
-    assert r.status_code == 303 and r.headers["location"] == "/reservations"
+    assert r.status_code == 303 and r.headers["location"] == "/reservations?tab=list"
     monkeypatch.setattr(rr.services, "delete_reservation", lambda *a, **k: (_ for _ in ()).throw(ValueError("x")))
     r = client.post("/reservations/1/delete", data={"csrf": token, "password": "x"})
     assert r.status_code == 303 and r.headers["location"] == "/reservations/1"

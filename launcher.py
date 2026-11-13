@@ -46,18 +46,7 @@ def _clear():
         pass
 
 
-def _run_cmd(cmd: list[str], cwd: str | None = None, env: dict[str, str] | None = None) -> int:
-    try:
-        return subprocess.call(cmd, cwd=cwd or str(ROOT), env=env or _env())
-    except FileNotFoundError as e:
-        print(f"\nCommand not found: {e}")
-        return 127
-    except KeyboardInterrupt:
-        print("\nInterrupted.")
-        return 130
-    except Exception as e:
-        print(f"\nFailed to launch: {e}")
-        return 1
+# (reserved for future shared command-launch helpers)
 
 
 def run_tui() -> int:
@@ -164,7 +153,7 @@ def run_web(host: str = "127.0.0.1", port: int = 8000, open_browser: bool = True
     if host in ("0.0.0.0", "::"):
         print(f"LAN:   http://{_lan_ip_hint()}:{port}  (other devices on same network)")
     print("Runtime data (DB/exports/invoices/data dir/PM_DATA_DIR) is preserved across updates/restarts.")
-    print("Health:  python3 -m app_core.doctor --json   |   Probes: GET /health, GET /healthz")
+    print("Health:  python3 -m app_core.doctor --json   |   Probes: GET /health, GET /healthz, GET /readyz")
     print("Backup:  python3 scripts/backup_runtime.py --backup   |   Verify: --verify <backup.db>")
     print("Updates: Settings → App updates (git fast-forward) or git pull --ff-only + rerun setup; restart after updates.")
     print("Note:    SQLite-safe web mode requires --workers 1. Do not increase worker count.")
@@ -251,7 +240,7 @@ def menu_loop(default_host: str = "127.0.0.1", default_port: int = 8000) -> int:
             print(f"\n  Last session exited with code: {last}")
         print(f"\n  Web target: http://{host}:{port}  {'(LAN/shared)' if is_non_local else '(local)'}")
         print("  SQLite: always --workers 1. Runtime data (DB/exports/invoices/PM_DATA_DIR) preserved.")
-        print("  Health:  python3 -m app_core.doctor --json   |   /health, /healthz")
+        print("  Health:  python3 -m app_core.doctor --json   |   /health, /healthz, /readyz")
         print("  Backup:  python3 scripts/backup_runtime.py --backup | --verify <backup.db>")
         print("  Updates: Settings → App updates (git ff-only) or git pull --ff-only + rerun setup; restart after apply.")
         if is_non_local and not secret_set:

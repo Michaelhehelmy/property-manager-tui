@@ -16,10 +16,10 @@ Runtime data is preserved across source/app updates and must be included in back
 ## 2) Backup strategy (recommended)
 
 - **Frequency:** at least daily; increase for high-transaction environments (e.g. periodic during day) based on RPO.
-- **Before risky operations:** always take and verify a backup before upgrades/migrations, bulk imports/seed applies, restores, or maintenance.
+- **Before risky operations:** always take and verify a backup before upgrades/migrations, updates/applies that include migrations risk, bulk imports/seed applies, restores, or maintenance.
 - **Retention:** keep multiple restore points (e.g. daily + weekly + monthly) per policy.
 - **Offsite/off-host:** copy verified backups to separate storage (different disk/host/location) with encryption and access controls.
-- **Integrity:** verify every backup artifact (automated helper available) and periodically perform restore drills to a non-production environment.
+- **Integrity:** verify every backup artifact (automated helper available) and periodically perform **restore drills** (manual offline restore in a non-production/staging copy) to validate procedures.
 
 ## 3) Create backups (automated/helpers)
 
