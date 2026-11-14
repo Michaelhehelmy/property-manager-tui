@@ -132,7 +132,7 @@ class BrandingWizardScreen(ModalScreen):
             yield Static("", id="wiz_preview", classes="box")
             yield Static("Attribution: Gifted with love from Michael Helmy to <name>", id="wiz_attr", classes="help")
             with Horizontal(classes="modal_buttons"):
-                yield Button("Save Setup", id="btn_save", variant="success")
+                yield Button("Next → Save & Continue", id="btn_save", variant="success")
                 if self.allow_cancel:
                     yield Button(t("Cancel"), id="btn_cancel", variant="error")
 

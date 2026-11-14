@@ -91,6 +91,38 @@ def settings(request: Request, tab: str = "general"):
                   "animation": services.get_loading_animation(), "configured": services.is_branding_configured(),
                   "gift": services.get_gift_attribution()}})
 
+
+@router.get("/setup")
+def setup_wizard(request: Request):
+    # First-run branding wizard (web). Accessible without unlock.
+    if services.is_branding_configured():
+        return flash_redirect(request, "/", "Setup already completed.", "info")
+    brand = {
+        "name": services.get_app_display_name(),
+        "tagline": services.get_app_tagline(),
+        "animation": services.get_loading_animation(),
+        "configured": services.is_branding_configured(),
+        "gift": services.get_gift_attribution(),
+    }
+    return render(request, "setup_wizard.html", {"title": "Setup Wizard", "brand": brand, "allow_skip": False})
+
+
+@router.post("/setup")
+async def setup_wizard_post(request: Request):
+    form = await deps.get_form(request)
+    try:
+        name = (form.get("display_name", "") or "").strip()
+        if not name:
+            raise ValueError("Display name is required.")
+        services.apply_branding_settings(name, form.get("tagline", ""), form.get("animation", "reveal"), sync_property_name=True)
+        deps.add_flash(request, "Setup saved. Welcome!", "success")
+        r = deps.redirect("/")
+    except Exception as e:
+        deps.add_flash(request, str(e), "error")
+        r = deps.redirect("/setup")
+    deps.save_session(r, deps.get_session(request))
+    return r
+
 @router.post("/settings/branding")
 async def branding(request: Request):
     form = await deps.require_unlocked_form(request)

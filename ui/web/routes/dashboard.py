@@ -10,6 +10,9 @@ router = APIRouter()
 
 @router.get("/")
 def dashboard(request: Request):
+    if not services.is_branding_configured():
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse(url="/setup", status_code=303)
     day = services.get_dashboard_day_snapshot()
     ctx = {
         "title": "Dashboard",

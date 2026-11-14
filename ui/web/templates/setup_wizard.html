@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block content %}
+{{ page_header('Welcome — Setup Wizard', 'Configure your property display name and branding to get started. You can change these later in Settings / Branding.') }}
+<div class="panel" style="max-width:720px">
+  <h3>First-time setup</h3>
+  <p class="muted">Choose the display name used in the app, loading animation, invoices, and attribution.</p>
+  <form method="post" action="/setup">
+    <input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+    <label>Display name (required)
+      <input name="display_name" value="{{ brand.name if brand and brand.name not in ['Sukoon Camp','My Property'] else '' }}" placeholder="e.g. My Hotel / Camp" required/>
+    </label>
+    <label>Tagline (optional)
+      <input name="tagline" value="{{ brand.tagline or '' }}" placeholder="Optional subtitle/tagline"/>
+    </label>
+    <label>Loading animation
+      <select name="animation">
+        {% for val,label in [('reveal','Reveal letters'),('typewriter','Typewriter'),('wave','Wave'),('pulse','Pulse'),('none','No animation')] %}
+          <option value="{{ val }}" {% if (brand.animation or 'reveal')==val %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <div class="help-box" style="margin:10px 0">Attribution: Gifted with love from Michael Helmy to <strong><span id="setup_attr_name">{{ (brand.name if brand and brand.name not in ['Sukoon Camp','My Property'] else 'your property name') }}</span></strong></div>
+    <div style="margin-top:12px">
+      <button type="submit" class="primary">Next → Save &amp; Continue</button>
+      {% if allow_skip %}
+        <a class="button" href="/" style="margin-left:8px">Skip for now</a>
+      {% endif %}
+    </div>
+  </form>
+</div>
+<script>
+(function(){
+  var n=document.querySelector('input[name="display_name"]');
+  var t=document.getElementById('setup_attr_name');
+  if(!n||!t) return;
+  function u(){ var v=(n.value||'').trim(); t.textContent=v||'your property name'; }
+  n.addEventListener('input',u); u();
+})();
+</script>
+{% endblock %}
