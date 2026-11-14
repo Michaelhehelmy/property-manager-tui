@@ -18,6 +18,18 @@ from pathlib import Path
 from .. import db, paths
 from .. import barcodes
 
+import sys as _sys
+
+def _svc_attr(name, default=None):
+    try:
+        svc = _sys.modules.get("app_core.services")
+        if svc is not None and hasattr(svc, name):
+            return getattr(svc, name)
+    except Exception:
+        pass
+    return globals().get(name, default)
+
+
 BASE_DIR = paths.BASE_DIR
 DATA_DIR = paths.DATA_DIR
 EXPORT_DIR = paths.EXPORT_DIR
