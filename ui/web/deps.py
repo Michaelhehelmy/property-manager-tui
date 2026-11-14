@@ -21,7 +21,6 @@ logger = logging.getLogger(__name__)
 # Secret/cookie hardening
 _SECRET_ENV = "PM_WEB_SECRET_KEY"
 _ALLOW_INSECURE_ENV = "PM_WEB_ALLOW_INSECURE_DEV"
-_DEFAULT_INSECURE_SECRET = "pm-web-local-dev-secret-change-me"
 SECRET_KEY = os.environ.get(_SECRET_ENV)
 _insecure_dev = False
 if not SECRET_KEY:
@@ -32,17 +31,27 @@ if not SECRET_KEY:
             f"{_SECRET_ENV} must be set for non-local web deployment (HOST={host_hint}). "
             f"Set {_ALLOW_INSECURE_ENV}=1 only for explicit local/dev override."
         )
-    SECRET_KEY = _DEFAULT_INSECURE_SECRET
+    # Never use a hardcoded fallback secret. Generate an ephemeral per-process
+    # secret (sessions invalidate on restart) for local/dev and explicit override cases.
+    SECRET_KEY = secrets.token_urlsafe(48)
+    if os.environ.get(_ALLOW_INSECURE_ENV) == "1":
+        msg = (
+            f"[pm-web] WARNING: {_SECRET_ENV} not set and {_ALLOW_INSECURE_ENV}=1; "
+            "using an insecure ephemeral development secret. Use only for explicit local/dev scenarios."
+        )
+    else:
+        msg = (
+            f"[pm-web] WARNING: {_SECRET_ENV} not set; using an ephemeral per-process development secret. "
+            "Web sessions will not survive restart. Set PM_WEB_SECRET_KEY to a strong random value for any non-local/shared deployment."
+        )
     _insecure_dev = True
-    msg = (
-        f"[pm-web] WARNING: {_SECRET_ENV} not set; using insecure development secret. "
-        "Set PM_WEB_SECRET_KEY to a strong random value for any non-local/shared deployment."
-    )
     print(msg, file=sys.stderr)
     logger.warning(
-        "web_secret_config_warning code=insecure_dev_secret host_hint=%s non_local=%s",
+        "web_secret_config_warning code=insecure_dev_secret host_hint=%s non_local=%s explicit_insecure_override=%s ephemeral=%s",
         host_hint,
         bool(non_local),
+        os.environ.get(_ALLOW_INSECURE_ENV) == "1",
+        True,
     )
 elif len(SECRET_KEY) < 32:
     msg = f"[pm-web] WARNING: {_SECRET_ENV} is short (<32 chars); use a strong random secret in production."

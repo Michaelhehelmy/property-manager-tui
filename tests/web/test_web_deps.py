@@ -181,7 +181,8 @@ def test_deps_import_warning_when_env_missing(monkeypatch):
         _sys.stderr = err
         importlib.reload(deps)
         assert "WARNING" in err.getvalue()
-        assert deps.SECRET_KEY == "pm-web-local-dev-secret-change-me"
+        assert deps.SECRET_KEY and len(deps.SECRET_KEY) >= 32
+        assert deps.SECRET_KEY != "pm-web-local-dev-secret-change-me"
     finally:
         _sys.stderr = old_stderr
         if old is None:

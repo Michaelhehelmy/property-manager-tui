@@ -12,38 +12,38 @@ router = APIRouter()
 
 @router.get("/unlock")
 def unlock_page(request: Request, next: str = "/"):
-    return render(request, "unlock.html", {"title":"Unlock", "next": next})
+    from ui.web.route_utils import safe_local_path
+    return render(request, "unlock.html", {"title": "Unlock", "next": safe_local_path(next, "/")})
 
 @router.post("/unlock")
 async def unlock_post(request: Request):
+    from urllib.parse import quote
+    from ui.web.route_utils import safe_local_path
     form = await deps.get_form(request)
-    nxt = str(form.get("next") or "/")
-    if not nxt.startswith("/") or nxt.startswith("//"):
-        nxt = "/"
+    nxt = safe_local_path(form.get("next"), "/")
     try:
         deps.enforce_auth_rate_limit(request, "unlock", limit=8, window_sec=300)
     except Exception as e:
         logger.warning("web_auth_route_event event=unlock_rate_limited")
-        from urllib.parse import quote
         return flash_redirect(request, "/unlock?next=" + quote(nxt, safe="/"), str(getattr(e, "detail", e)), "error")
-    if deps.unlock(request, form.get("password","")):
+    if deps.unlock(request, form.get("password", "")):
         return flash_redirect(request, nxt, "Unlocked", "success")
     else:
-        from urllib.parse import quote
         return flash_redirect(request, "/unlock?next=" + quote(nxt, safe="/"), "Invalid super password", "error")
 
 
 @router.get("/unlock/recovery")
 def unlock_recovery_page(request: Request, next: str = "/"):
-    return render(request, "unlock_recovery.html", {"title": "Recover Access", "next": next})
+    from ui.web.route_utils import safe_local_path
+    return render(request, "unlock_recovery.html", {"title": "Recover Access", "next": safe_local_path(next, "/")})
 
 
 @router.post("/unlock/recovery")
 async def unlock_recovery_post(request: Request):
+    from urllib.parse import quote
+    from ui.web.route_utils import safe_local_path
     form = await deps.get_form(request)
-    nxt = str(form.get("next") or "/")
-    if not nxt.startswith("/") or nxt.startswith("//"):
-        nxt = "/"
+    nxt = safe_local_path(form.get("next"), "/")
     try:
         deps.enforce_auth_rate_limit(request, "recovery", limit=5, window_sec=900)
         services.use_recovery_code(form.get("code", ""), form.get("new_password", ""), form.get("confirm_password", ""))
@@ -57,7 +57,6 @@ async def unlock_recovery_post(request: Request):
         # Count likely credential/recovery failures as attempts (not validation-only 429).
         if "Too many attempts" not in msg:
             deps.record_auth_failure(request, "recovery", window_sec=900)
-        from urllib.parse import quote
         return flash_redirect(request, "/unlock/recovery?next=" + quote(nxt, safe="/"), msg, "error")
 
 @router.post("/lock")

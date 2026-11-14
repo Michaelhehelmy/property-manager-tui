@@ -6,19 +6,19 @@
 {% macro subtabs(items, active, aria_label='Sections') -%}
 <div class="subtabs" role="tablist" aria-label="{{ aria_label }}">
   {%- for it in items %}
-  <a href="{{ it.href }}" class="{% if it.key == active %}active{% endif %}"{% if it.title %} title="{{ it.title }}"{% endif %}>{{ it.label|safe }}</a>
+  <a href="{{ it.href }}" class="{% if it.key == active %}active{% endif %}"{% if it.title %} title="{{ it.title }}"{% endif %}>{{ it.label }}</a>
   {%- endfor %}
 </div>
 {%- endmacro %}
 
 {% macro subtab_help(text) -%}
-<div class="subtab-help">{{ text|safe }}</div>
+<div class="subtab-help">{{ text }}</div>
 {%- endmacro %}
 
 {% macro stat_card(label, value, sub='') -%}
 <div class="panel">
   <div class="muted">{{ label }}</div>
   <div class="stat">{{ value }}</div>
-  {% if sub %}<div class="muted">{{ sub|safe }}</div>{% endif %}
+  {% if sub %}<div class="muted">{{ sub }}</div>{% endif %}
 </div>
 {%- endmacro %}

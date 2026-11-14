@@ -192,9 +192,7 @@ def pos(request: Request, q: str = "", scan: str = "", batch_item: str = "", tab
 async def pos_add(request: Request):
     """Add a single POS item directly to an existing reservation (real backend)."""
     form = await deps.require_unlocked_form(request)
-    next_url = (form.get("next") or "/pos?tab=sell").strip() or "/pos?tab=sell"
-    if not next_url.startswith("/") or next_url.startswith("//"):
-        next_url = "/pos?tab=sell"
+    next_url = safe_local_path(form.get("next"), "/pos?tab=sell")
     try:
         rid = form.get("reservation_id"); rid = int(rid) if rid else None
         inv_id = form.get("inv_id"); inv_id = int(inv_id) if inv_id else None

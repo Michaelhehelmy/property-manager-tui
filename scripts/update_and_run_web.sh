@@ -85,13 +85,13 @@ export PYTHONPATH="$INSTALL_DIR/src:$INSTALL_DIR${PYTHONPATH:+:$PYTHONPATH}"
 # Secret key guidance (required for secure sessions in shared/non-local use).
 if [ -z "${PM_WEB_SECRET_KEY:-}" ]; then
   if [ "$HOST" = "127.0.0.1" ] || [ "$HOST" = "localhost" ] || [ "$HOST" = "::1" ]; then
-    warn "PM_WEB_SECRET_KEY not set; using a temporary local-only default. Set a strong secret for shared/LAN use."
-    export PM_WEB_SECRET_KEY="dev-local-$(hostname 2>/dev/null || echo local)-$$"
+    warn "PM_WEB_SECRET_KEY not set; generating an ephemeral local secret for this run. Set a strong secret for shared/LAN use."
   else
     warn "PM_WEB_SECRET_KEY is not set for non-local host '$HOST'. Set a strong random secret (e.g. openssl rand -hex 32)."
-    warn "Using a temporary fallback secret for this run only; do not use this for production/shared deployments."
-    export PM_WEB_SECRET_KEY="temp-change-me-$(hostname 2>/dev/null || echo local)-$$"
+    warn "Generating an ephemeral fallback secret for this run only; do not use this for production/shared deployments."
   fi
+  PM_WEB_SECRET_KEY="$(${PYTHON:-python3} -c 'import secrets; print(secrets.token_urlsafe(48))' 2>/dev/null || printf 'temp-insecure-%s-%s' "$(hostname 2>/dev/null || echo local)" "$$")"
+  export PM_WEB_SECRET_KEY
 fi
 
 if [ "$HOST" = "0.0.0.0" ] || [ "$HOST" = "::" ] || { [ "$HOST" != "127.0.0.1" ] && [ "$HOST" != "localhost" ] && [ "$HOST" != "::1" ]; }; then
