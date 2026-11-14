@@ -5,6 +5,7 @@ from fastapi import APIRouter, Request
 from app_core import services, updater
 from ui.web import deps
 from ui.web.rendering import render
+from ui.web.route_utils import flash_redirect
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -23,18 +24,13 @@ async def unlock_post(request: Request):
         deps.enforce_auth_rate_limit(request, "unlock", limit=8, window_sec=300)
     except Exception as e:
         logger.warning("web_auth_route_event event=unlock_rate_limited")
-        deps.add_flash(request, str(getattr(e, "detail", e)), "error")
         from urllib.parse import quote
-        r = deps.redirect("/unlock?next=" + quote(nxt, safe="/"))
-        deps.save_session(r, deps.get_session(request)); return r
+        return flash_redirect(request, "/unlock?next=" + quote(nxt, safe="/"), str(getattr(e, "detail", e)), "error")
     if deps.unlock(request, form.get("password","")):
-        deps.add_flash(request, "Unlocked", "success")
-        r=deps.redirect(nxt)
+        return flash_redirect(request, nxt, "Unlocked", "success")
     else:
-        deps.add_flash(request, "Invalid super password", "error")
         from urllib.parse import quote
-        r=deps.redirect("/unlock?next=" + quote(nxt, safe="/"))
-    deps.save_session(r, deps.get_session(request)); return r
+        return flash_redirect(request, "/unlock?next=" + quote(nxt, safe="/"), "Invalid super password", "error")
 
 
 @router.get("/unlock/recovery")
@@ -55,23 +51,20 @@ async def unlock_recovery_post(request: Request):
         # Use new password to establish per-browser unlock (also best-effort backend compat).
         if not deps.unlock(request, form.get("new_password", "")):
             raise RuntimeError("Failed to establish unlocked session after recovery.")
-        deps.add_flash(request, "Password reset with recovery code. Unlocked.", "success")
-        r = deps.redirect(nxt)
+        return flash_redirect(request, nxt, "Password reset with recovery code. Unlocked.", "success")
     except Exception as e:
         msg = str(getattr(e, "detail", e))
         # Count likely credential/recovery failures as attempts (not validation-only 429).
         if "Too many attempts" not in msg:
             deps.record_auth_failure(request, "recovery", window_sec=900)
-        deps.add_flash(request, msg, "error")
         from urllib.parse import quote
-        r = deps.redirect("/unlock/recovery?next=" + quote(nxt, safe="/"))
-    deps.save_session(r, deps.get_session(request)); return r
+        return flash_redirect(request, "/unlock/recovery?next=" + quote(nxt, safe="/"), msg, "error")
 
 @router.post("/lock")
 async def lock_post(request: Request):
     form = await deps.get_form(request)
-    deps.lock(request); deps.add_flash(request, "Locked", "info")
-    r=deps.redirect("/"); deps.save_session(r, deps.get_session(request)); return r
+    deps.lock(request)
+    return flash_redirect(request, "/", "Locked", "info")
 
 @router.get("/settings")
 def settings(request: Request, tab: str = "general"):
@@ -83,6 +76,7 @@ def settings(request: Request, tab: str = "general"):
     try:
         update_local = updater.get_local_state()
     except Exception:
+        logger.warning("web.settings: failed to get local update state", exc_info=True)
         update_local = {}
     update_check = deps.get_session(request).pop("last_update_check", None)
     update_apply = deps.get_session(request).pop("last_update_apply", None)

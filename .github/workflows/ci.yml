@@ -40,6 +40,12 @@ jobs:
           python -m py_compile launcher.py main.py
           PYTHONPATH=src python -m compileall -q src ui tests
 
+      - name: Lint / dead-code quality gates (ruff)
+        run: |
+          echo "::group::Ruff lint checks"
+          bash scripts/lint.sh
+          echo "::endgroup::"
+
       - name: Run authz/invariant go-live checks (explicit)
         env:
           PM_WEB_SECRET_KEY: test-secret

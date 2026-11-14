@@ -6,6 +6,7 @@ from app_core import barcodes, services
 from app_core.db import connect
 from ui.web import deps
 from ui.web.rendering import render
+from ui.web.route_utils import flash_redirect
 router = APIRouter()
 
 
@@ -72,12 +73,9 @@ async def create(request: Request):
         rid = services.create_reservation(form.get("guest_name",""), form.get("source","Direct"), int(form.get("room_id")),
               int(form["rate_plan_id"]) if form.get("rate_plan_id") else None, float(form.get("rate") or 0),
               form.get("check_in",""), form.get("check_out",""), float(form.get("deposit") or 0))
-        deps.add_flash(request, f"Reservation #{rid} created", "success")
-        dest = "/reservations?tab=list"
+        return flash_redirect(request, "/reservations?tab=list", f"Reservation #{rid} created", "success")
     except Exception as e:
-        deps.add_flash(request, str(e), "error")
-        dest = "/reservations?tab=create"
-    r=deps.redirect(dest); deps.save_session(r, deps.get_session(request)); return r
+        return flash_redirect(request, "/reservations?tab=create", str(e), "error")
 
 @router.get("/reservations/{rid}")
 def detail(rid: int, request: Request):
@@ -96,6 +94,7 @@ def detail(rid: int, request: Request):
     try:
         activities = services.list_activities(active_only=True)
     except Exception:
+        logger.exception("web.reservations: failed to load active activities")
         activities = []
     try:
         inventory = services.get_inventory_items("")
@@ -114,10 +113,10 @@ def detail(rid: int, request: Request):
 async def _act(request, rid, fn, ok):
     form = await deps.get_form(request)
     try:
-        fn(form); deps.add_flash(request, ok, "success")
+        fn(form)
+        return flash_redirect(request, f"/reservations/{rid}", ok, "success")
     except Exception as e:
-        deps.add_flash(request, str(e), "error")
-    r=deps.redirect(f"/reservations/{rid}"); deps.save_session(r, deps.get_session(request)); return r
+        return flash_redirect(request, f"/reservations/{rid}", str(e), "error")
 
 @router.post("/reservations/{rid}/checkin")
 async def checkin(rid: int, request: Request):

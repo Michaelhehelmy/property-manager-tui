@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import difflib
 import json
+import logging
 import os
 import re
 import unicodedata
@@ -18,6 +19,8 @@ from collections import Counter, defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from . import services
 
@@ -57,7 +60,7 @@ def _safe_int(v):
         s = str(v).strip()
         if s == "": return None
         return int(re.sub(r"[^\d-]", "", s)) if isinstance(s, str) else int(s)
-    except Exception:
+    except (TypeError, ValueError):
         return None
 
 def _norm_text(s: str) -> str:
@@ -76,12 +79,16 @@ def _sim(a: str, b: str) -> float:
     return difflib.SequenceMatcher(None, a, b).ratio()
 
 def _fmt_money(x):
-    try: return f"{float(x):,.2f}"
-    except Exception: return str(x)
+    try:
+        return f"{float(x):,.2f}"
+    except (TypeError, ValueError):
+        return str(x)
 
 def _parse_iso(s):
-    try: return datetime.strptime(s, DATE_FMT).date()
-    except Exception: return None
+    try:
+        return datetime.strptime(s, DATE_FMT).date()
+    except (TypeError, ValueError, AttributeError):
+        return None
 
 def _yn(v):
     return "yes" if v else "no"
@@ -159,7 +166,8 @@ def _prev_period(start, end):
         p2 = d1 - timedelta(days=1)
         p1 = p2 - timedelta(days=days - 1)
         return _iso(p1), _iso(p2)
-    except Exception:
+    except (TypeError, ValueError, AttributeError):
+        logger.debug("assistant._prev_period: failed to compute previous period start=%r end=%r", start, end, exc_info=True)
         return start, end
 
 # ── Slot extraction & context carryover ──────────────────────────────────────
@@ -373,8 +381,11 @@ def tool_list_rate_plans(args=None):
         plans = []
         for p in services.get_all_rate_plans():
             d = {k: p[k] for k in p.keys()}
-            try: d["reservations_using_plan"] = services.count_reservations_using_plan(p["id"])
-            except Exception: d["reservations_using_plan"] = None
+            try:
+                d["reservations_using_plan"] = services.count_reservations_using_plan(p["id"])
+            except Exception:
+                logger.debug("assistant.tool_list_rate_plans: failed to count reservations for plan_id=%s", p["id"], exc_info=True)
+                d["reservations_using_plan"] = None
             plans.append(d)
         return {"rate_plans": plans}
     except Exception as e:
@@ -415,8 +426,11 @@ def tool_get_today_ops(args=None):
         today = _iso(_today())
         ops = services.report_daily_ops(today)
         fd = None
-        try: fd = services.get_front_desk_summary()
-        except Exception: fd = None
+        try:
+            fd = services.get_front_desk_summary()
+        except Exception:
+            logger.debug("assistant.tool_get_today_ops: front desk summary unavailable", exc_info=True)
+            fd = None
         hk = tool_get_housekeeping_summary({}).get("summary")
         return {"date": today, "daily_ops": ops, "front_desk": fd, "housekeeping": hk}
     except Exception as e:
@@ -458,8 +472,11 @@ def tool_get_outstanding_balances(args=None):
         outstanding = []
         total_due = 0.0
         for r in rows:
-            try: bal = services.calculate_guest_balance(r["id"])
-            except Exception: bal = 0.0
+            try:
+                bal = services.calculate_guest_balance(r["id"])
+            except Exception:
+                logger.debug("assistant.tool_get_outstanding_balances: failed to calculate balance for reservation_id=%s", r["id"], exc_info=True)
+                bal = 0.0
             if bal and bal > 0.009:
                 outstanding.append({"reservation_id": r["id"], "guest_name": r["guest_name"], "room": r["room_number"],
                                     "status": r["status"], "check_in": r["check_in_date"], "check_out": r["check_out_date"],
@@ -602,13 +619,15 @@ def tool_business_partner_briefing(args=None):
         ps = tool_get_property_stats({}).get("stats") or {}
         data["sections"]["property_stats"] = ps
         insights["snapshot"].append(f"Guests {ps.get('guests_total',0)}, rooms {ps.get('rooms_total',0)}, reservations {ps.get('reservations_total',0)}, in-house {ps.get('in_house',0)}.")
-    except Exception: pass
+    except Exception:
+        logger.debug("assistant.business_partner_briefing: property stats unavailable", exc_info=True)
     try:
         fd = services.get_front_desk_summary(); data["sections"]["front_desk"] = fd
         insights["snapshot"].append(f"Today: arrivals {fd.get('arrivals_today',0)}, departures {fd.get('departures_today',0)}, occupancy {fd.get('occupancy_pct',0)}% (clean {fd.get('clean',0)}, dirty {fd.get('dirty',0)}, maint {fd.get('maint',0)}).")
         if fd.get('dirty',0) > 0: insights["watchouts"].append(f"{fd['dirty']} room(s) marked Dirty — prioritize housekeeping for readiness.")
         if fd.get('maint',0) > 0: insights["watchouts"].append(f"{fd['maint']} room(s) in Maintenance — impacts sellable inventory.")
-    except Exception: pass
+    except Exception:
+        logger.debug("assistant.business_partner_briefing: front desk summary unavailable", exc_info=True)
     try:
         pl = services.report_pl_statement(start,end); data["sections"]["pl"] = pl
         if isinstance(pl, dict):
@@ -621,39 +640,45 @@ def tool_business_partner_briefing(args=None):
             if exp > rev and rev > 0: insights["watchouts"].append("Expenses exceed revenue in the period.")
         elif isinstance(pl, str):
             insights["snapshot"].append(f"P&L ({start}→{end}) available (text report).")
-    except Exception: pass
+    except Exception:
+        logger.debug("assistant.business_partner_briefing: P&L unavailable for %s..%s", start, end, exc_info=True)
     try:
         occ = services.get_occupancy_for_window(start,end); data["sections"]["occupancy"] = occ
         pct = float(occ.get("pct", occ.get("occupancy_pct", 0)) or 0)
         insights["snapshot"].append(f"Occupancy {pct}% (range), ADR {_fmt_money(occ.get('adr',0))}, RevPAR {_fmt_money(occ.get('revpar',0))}.")
         if pct >= 80: insights["good"].append("Strong occupancy — consider upsell, protect rate, and optimize channel mix.")
         elif pct <= 35: insights["watchouts"].append("Low occupancy — consider promotions, packages, or distribution/channel actions.")
-    except Exception: pass
+    except Exception:
+        logger.debug("assistant.business_partner_briefing: occupancy unavailable for %s..%s", start, end, exc_info=True)
     try:
         ar = tool_get_outstanding_balances({}); data["sections"]["outstanding"] = ar
         if ar.get("count",0) > 0:
             insights["watchouts"].append(f"Outstanding balances: {ar['count']} reservation(s), total due {_fmt_money(ar.get('total_due',0))} — prioritize collections/follow-up.")
         else:
             insights["good"].append("No outstanding guest balances detected on active/checked-out reservations.")
-    except Exception: pass
+    except Exception:
+        logger.debug("assistant.business_partner_briefing: outstanding balances unavailable", exc_info=True)
     try:
         inv = tool_get_inventory_alerts({})["alerts"]; data["sections"]["inventory_alerts"] = inv
         lowc = len(inv.get("low",[]))+len(inv.get("negative",[])); overc = len(inv.get("overstock",[]))
         if lowc: insights["watchouts"].append(f"Inventory: {lowc} low/negative item(s) — restock to avoid stockouts/service issues.")
         if overc: insights["watchouts"].append(f"Inventory: {overc} overstock item(s) — consider slowing purchases/promoting usage.")
         if not lowc and not overc: insights["good"].append("Inventory levels within thresholds (no low/negative/overstock alerts).")
-    except Exception: pass
+    except Exception:
+        logger.debug("assistant.business_partner_briefing: inventory alerts unavailable", exc_info=True)
     try:
         top = tool_get_top_selling_items({"start":start,"end":end,"limit":5}); data["sections"]["top_selling_items"] = top
         if top.get("top_items"):
             names = ", ".join([f"{i['item']} (x{i['qty_sold']})" for i in top["top_items"][:3]])
             insights["good"].append(f"Top sellers ({start}→{end}): {names} — keep stocked/feature.")
-    except Exception: pass
+    except Exception:
+        logger.debug("assistant.business_partner_briefing: top sellers unavailable for %s..%s", start, end, exc_info=True)
     try:
         integ = services.verify_ledger_integrity(); data["sections"]["integrity"] = integ
         if integ.get("ok"): insights["good"].append("Ledger/data integrity check: OK.")
         else: insights["watchouts"].append("Ledger/data integrity reported issues — review health check before relying on reports.")
-    except Exception: pass
+    except Exception:
+        logger.debug("assistant.business_partner_briefing: ledger integrity check unavailable", exc_info=True)
     for w in insights["watchouts"][:5]:
         if "Outstanding balances" in w: insights["actions"].append("Follow up on unpaid balances (review reservation balances and collect).")
         elif "low/negative" in w: insights["actions"].append("Restock low/negative inventory items and verify recipes/ingredient usage.")
@@ -709,7 +734,8 @@ def tool_get_expiring_batches(args=None):
         days = args.get("within_days") or args.get("days")
         try:
             days = int(days) if days not in (None, "") else None
-        except Exception:
+        except (TypeError, ValueError):
+            logger.debug("assistant.tool_get_expiring_batches: invalid days=%r", days, exc_info=True)
             days = None
         include_expired = bool(args.get("include_expired", True))
         rows = services.get_expiring_batches(days, include_expired=include_expired)
@@ -724,13 +750,15 @@ def tool_list_inventory_batches(args=None):
         item_id = args.get("item_id")
         try:
             item_id = int(item_id) if item_id not in (None, "") else None
-        except Exception:
+        except (TypeError, ValueError):
+            logger.debug("assistant.tool_list_inventory_batches: invalid item_id=%r", item_id, exc_info=True)
             item_id = None
         status = args.get("status") or None
         expiring_within_days = args.get("expiring_within_days") or args.get("within_days")
         try:
             expiring_within_days = int(expiring_within_days) if expiring_within_days not in (None, "") else None
-        except Exception:
+        except (TypeError, ValueError):
+            logger.debug("assistant.tool_list_inventory_batches: invalid expiring_within_days=%r", expiring_within_days, exc_info=True)
             expiring_within_days = None
         include_depleted = bool(args.get("include_depleted", False))
         rows = services.list_inventory_batches(item_id=item_id, status=status, expiring_within_days=expiring_within_days, include_depleted=include_depleted)
@@ -756,7 +784,7 @@ def tool_trace_barcode(args=None):
                         (bid,)).fetchall()
                     res["batch_movements"] = [dict(r) for r in logs]
             except Exception:
-                pass
+                logger.debug("assistant.tool_trace_barcode: failed to load batch movements for code=%r", code, exc_info=True)
         return res
     except Exception as e:
         return {"error": str(e)}
@@ -1479,7 +1507,7 @@ def _proactive_suggestions(intent: str, data: dict, answer_text: str = "") -> li
         elif intent == "capabilities_help":
             sug.append("Ask me anything above — I’ll answer from real app data.")
     except Exception:
-        pass
+        logger.debug("assistant._proactive_suggestions: failed building primary suggestions intent=%r", intent, exc_info=True)
     # batch/expiry/trace, integrity/health, updates
     try:
         if intent in ("expiring_batches", "get_expiring_batches"):
@@ -1498,7 +1526,7 @@ def _proactive_suggestions(intent: str, data: dict, answer_text: str = "") -> li
         elif intent in ("app_update_status", "get_app_update_status", "app_version"):
             sug.append("For git-based installs you can check/apply updates in Settings → App updates (changelog shown; data preserved; restart after apply).")
     except Exception:
-        pass
+        logger.debug("assistant._proactive_suggestions: failed building secondary suggestions intent=%r", intent, exc_info=True)
     # dedupe, keep max 2
     out=[]; seen=set()
     for s in sug:
@@ -1629,7 +1657,7 @@ def _format_for_intent(intent: str, data: dict, fallback_title: str = "Result") 
         if intent == "guest_top_items_last_visit": return _fmt_guest_top_items(data)
         if intent == "guest_last_visit_spend": return _fmt_guest_last_visit_spend(data)
     except Exception:
-        pass
+        logger.warning("assistant._format_for_intent: formatter failed intent=%r; falling back to raw data", intent, exc_info=True)
     return _format_data(fallback_title, data)
 
 # Deterministic local "talking" rephraser (no model, no external calls)
@@ -1655,8 +1683,10 @@ def _local_talking_rephrase(message: str, core_result: dict) -> str:
 
 # ── Feedback & exemplar memory ───────────────────────────────────────────────
 def _ensure_nlu_dirs():
-    try: INTENT_DATA_DIR.mkdir(parents=True, exist_ok=True)
-    except Exception: pass
+    try:
+        INTENT_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        logger.warning("assistant._ensure_nlu_dirs: failed to create %s", INTENT_DATA_DIR, exc_info=True)
 
 def record_feedback(message: str, predicted_intent: str = "", corrected_intent: str = "", rating: int = 0,
                     confidence: float | None = None, slots: dict | None = None, corrected_slots: dict | None = None,
@@ -1682,7 +1712,8 @@ def record_feedback(message: str, predicted_intent: str = "", corrected_intent: 
     try:
         with FEEDBACK_JSONL.open("a", encoding="utf-8") as f:
             f.write(json.dumps({"id": fid, **payload}, ensure_ascii=False, default=str) + "\n")
-    except Exception: pass
+    except OSError:
+        logger.warning("assistant.record_feedback: failed to append feedback JSONL %s", FEEDBACK_JSONL, exc_info=True)
     global _EXEMPLAR_CACHE; _EXEMPLAR_CACHE = None
     return fid
 
@@ -1696,11 +1727,15 @@ def list_feedback(limit: int = 100, status: str | None = None):
         for r in rows:
             d={k:r[k] for k in r.keys()}
             for j in ("slots_json","corrected_slots_json","tools_used_json"):
-                try: d[j.replace("_json","")] = json.loads(d.get(j) or ("{}" if "slots" in j else "[]"))
-                except Exception: d[j.replace("_json","")] = {}
+                try:
+                    d[j.replace("_json","")] = json.loads(d.get(j) or ("{}" if "slots" in j else "[]"))
+                except (json.JSONDecodeError, TypeError, ValueError):
+                    logger.debug("assistant.list_feedback: failed to decode %s for feedback id=%s", j, d.get("id"), exc_info=True)
+                    d[j.replace("_json","")] = {}
             out.append(d)
         return out
     except Exception:
+        logger.warning("assistant.list_feedback: failed to read assistant feedback", exc_info=True)
         return []
 
 def get_correction_exemplars(limit: int = 800):
@@ -1714,10 +1749,14 @@ def get_correction_exemplars(limit: int = 800):
         for r in rows:
             intent = r["corrected_intent"] or r["predicted_intent"] or ""
             if not intent: continue
-            try: slots = json.loads(r["corrected_slots_json"] or r["slots_json"] or "{}")
-            except Exception: slots = {}
+            try:
+                slots = json.loads(r["corrected_slots_json"] or r["slots_json"] or "{}")
+            except (json.JSONDecodeError, TypeError, ValueError):
+                logger.debug("assistant.get_correction_exemplars: failed to decode slots for message=%r", (r["message"] or "")[:80], exc_info=True)
+                slots = {}
             out.append({"text": r["message"], "label": intent, "slots": slots})
-    except Exception: pass
+    except Exception:
+        logger.debug("assistant.get_correction_exemplars: failed to load correction exemplars", exc_info=True)
     return out
 
 _EXEMPLAR_CACHE = None
@@ -1776,9 +1815,11 @@ def _predict_intent_ml(text: str):
                 try:
                     probs=model.predict_proba([text]); p=probs[0] if hasattr(probs,"__len__") else probs
                     arr=list(p.tolist() if hasattr(p,"tolist") else p); conf=float(max(arr)) if arr else conf
-                except Exception: pass
+                except Exception:
+                    logger.debug("assistant._predict_intent_ml: setfit predict_proba unavailable; using default confidence", exc_info=True)
                 return {"intent":str(label),"confidence":float(conf),"router":"setfit"}
-            except Exception: pass
+            except Exception:
+                logger.debug("assistant._predict_intent_ml: setfit prediction failed", exc_info=True)
         if mode=="setfit": return None
     if mode in ("auto","sklearn"):
         obj=_load_sklearn_router()
@@ -1794,9 +1835,11 @@ def _predict_intent_ml(text: str):
                             df=clf.decision_function(X); vals=df[0] if getattr(df,"ndim",1)>1 else df
                             exps=[math.exp(float(v)) for v in (vals.tolist() if hasattr(vals,"tolist") else list(vals))]; s=sum(exps) or 1.0
                             conf=float(max(exps)/s)
-                    except Exception: pass
+                    except Exception:
+                        logger.debug("assistant._predict_intent_ml: sklearn confidence estimation failed", exc_info=True)
                     return {"intent":str(pred),"confidence":float(conf),"router":"sklearn"}
-            except Exception: pass
+            except Exception:
+                logger.debug("assistant._predict_intent_ml: sklearn prediction failed", exc_info=True)
     return None
 
 # ── Weighted rule NLU (no deps) ──────────────────────────────────────────────
@@ -1953,6 +1996,7 @@ def _guest_disambiguation(candidates, q=None):
             name = g.get("name") or g.get("canonical_name") or "Guest"
             lines.append(f"- **#{g['id']} {name}** — phone: {g.get('phone') or '-'}, email: {g.get('email') or '-'}, stays: {g.get('stays', g.get('reservation_count', 0))}, last stay: {g.get('last_stay') or '-'}")
         except Exception:
+            logger.debug("assistant._guest_disambiguation: failed to format candidate %r", g, exc_info=True)
             lines.append(f"- {g}")
     lines.append("For example: `guest #12 full portfolio`.")
     return {"ok":True,"intent":"ambiguous_needs_clarification","needs_clarification":True,"tools_used":["search_guests"] if q else [],"data":data,"answer":"\n".join(lines)}
@@ -1987,8 +2031,11 @@ def _execute_single(intent: str, text: str, slots: dict):
         import re as _re
         m = _re.search(r"(\d+)\s*day", tl)
         if m:
-            try: days = int(m.group(1))
-            except Exception: days = None
+            try:
+                days = int(m.group(1))
+            except (TypeError, ValueError):
+                logger.debug("assistant._execute_single: failed to parse expiring-batches day count from %r", m.group(1), exc_info=True)
+                days = None
         data=execute_tool("get_expiring_batches",{"within_days": days, "include_expired": True}); tools_used.append("get_expiring_batches")
         return _answer("expiring_batches", tools_used, data)
     if any(k in tl for k in ["trace barcode", "trace lot", "trace code", "scan barcode", "lookup barcode", "barcode lookup", "lot trace", "track lot", "received when", "when received", "batch trace"]):
@@ -2060,8 +2107,11 @@ def _execute_single(intent: str, text: str, slots: dict):
         return _answer(intent, tools_used, data)
     if intent in ("expiring_batches","get_expiring_batches"):
         days = slots.get("days") or slots.get("within_days")
-        try: days = int(days) if days not in (None, "") else None
-        except Exception: days = None
+        try:
+            days = int(days) if days not in (None, "") else None
+        except (TypeError, ValueError):
+            logger.debug("assistant._execute_single: invalid within_days=%r", days, exc_info=True)
+            days = None
         data=execute_tool("get_expiring_batches",{"within_days": days, "include_expired": True}); tools_used.append("get_expiring_batches")
         return _answer("expiring_batches", tools_used, data)
     if intent in ("inventory_batches","list_inventory_batches"):
@@ -2355,8 +2405,10 @@ def chat(message: str, history: list[dict] | None = None) -> dict:
     message=(message or "").strip()
     if not message:
         return {"ok":False,"source":"none","tools_used":[],"data":None,"answer":"Hi! How can I help? Ask me about reports, guests, reservations, operations, or a business briefing — I’ll answer from real app data."}
-    try: services.touch_session()
-    except Exception: pass
+    try:
+        services.touch_session()
+    except Exception:
+        logger.debug("assistant.chat: failed to touch session", exc_info=True)
     config=_llm_config(); mode=config.get("response_mode") or "talking"; provider=config.get("provider") or "auto"
 
     if mode=="full_llm":
@@ -2400,6 +2452,8 @@ def chat(message: str, history: list[dict] | None = None) -> dict:
 
     # propagate resolved guest for context
     if core.get("resolved_guest_id"):
-        try: core.setdefault("slots",{})["guest_id"] = core["resolved_guest_id"]
-        except Exception: pass
+        try:
+            core.setdefault("slots", {})["guest_id"] = core["resolved_guest_id"]
+        except Exception:
+            logger.debug("assistant.chat: failed to propagate resolved_guest_id", exc_info=True)
     return core

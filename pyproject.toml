@@ -60,6 +60,7 @@ dev = [
   "pytest>=7.0",
   "httpx>=0.24",
   "pytest-cov>=4.0",
+  "ruff>=0.8.0",
 ]
 # Label/barcode printing uses configured system/default printers (and text/PDF exports);
 # no extra Python deps required by default.
@@ -87,3 +88,28 @@ exclude = ["tests*", "scripts*", "docs*", "data*", "models*", "deploy*", "**/__p
 [tool.setuptools.package-dir]
 "" = "src"
 "ui" = "ui"
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+extend-exclude = [
+  ".git",
+  "__pycache__",
+  "data",
+  "models",
+  ".pytest_cache",
+]
+
+[tool.ruff.lint]
+# Dead-code and quality gates (pragmatic, targeted baseline).
+# E9: syntax/runtime errors; F401/F841: unused imports/vars (dead code);
+# F82x/F821: undefined names/unused/unpacked issues.
+select = ["E9", "F401", "F841", "F821", "F822", "F823"]
+ignore = []
+
+[tool.ruff.lint.per-file-ignores]
+# Package surfaces, tests, and scripts may contain intentional imports/fixtures/helpers.
+"__init__.py" = ["F401", "F403"]
+"tests/**" = ["F401", "F841"]
+"scripts/**" = ["F401", "F841"]
+"ui/**" = ["F401", "F841"]

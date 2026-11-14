@@ -6,6 +6,7 @@ from app_core import barcodes, services
 from app_core.db import connect
 from ui.web import deps
 from ui.web.rendering import render
+from ui.web.route_utils import flash_redirect
 
 router = APIRouter()
 
@@ -133,6 +134,7 @@ def pos(request: Request, q: str = "", scan: str = "", batch_item: str = "", tab
         activities = services.list_activities(active_only=False)
         activity_stats = services.get_activity_stats()
     except Exception:
+        logger.exception("web.pos_inventory: failed to load activities")
         activities, activity_stats = [], []
     try:
         meals = services.list_meals(active_only=False) if hasattr(services, 'list_meals') else []
@@ -156,6 +158,7 @@ def pos(request: Request, q: str = "", scan: str = "", batch_item: str = "", tab
     try:
         expiring = services.get_expiring_batches(None, include_expired=True)
     except Exception:
+        logger.exception("web.pos_inventory: failed to load expiring batches")
         expiring = []
     batches = []
     try:
@@ -253,8 +256,7 @@ async def cart_remove(request: Request):
 async def cart_clear(request: Request):
     form = await deps.get_form(request)
     deps.get_session(request)["walkin_cart"] = []
-    deps.add_flash(request, "Walk-in cart cleared.", "info")
-    r = deps.redirect("/pos?tab=sell"); deps.save_session(r, deps.get_session(request)); return r
+    return flash_redirect(request, "/pos?tab=sell", "Walk-in cart cleared.", "info")
 
 
 @router.post("/pos/walkin")
@@ -289,15 +291,14 @@ async def walkin(request: Request):
 @router.post("/pos/void/{pos_id}")
 async def pos_void(pos_id: int, request: Request):
     form = await deps.require_unlocked_form(request)
-    try:
-        services.void_pos_item(pos_id, deps.service_password(request, form))
-        deps.add_flash(request, "POS voided", "success")
-    except Exception as e:
-        deps.add_flash(request, str(e), "error")
     ref = (form.get("next") or "/pos?tab=history").strip() or "/pos?tab=history"
     if not ref.startswith("/") or ref.startswith("//"):
         ref = "/pos?tab=history"
-    r = deps.redirect(ref); deps.save_session(r, deps.get_session(request)); return r
+    try:
+        services.void_pos_item(pos_id, deps.service_password(request, form))
+        return flash_redirect(request, ref, "POS voided", "success")
+    except Exception as e:
+        return flash_redirect(request, ref, str(e), "error")
 
 
 @router.post("/inventory/restock")

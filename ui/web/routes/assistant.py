@@ -6,6 +6,7 @@ from fastapi import APIRouter, Request
 from app_core import assistant, services
 from ui.web import deps
 from ui.web.rendering import render
+from ui.web.route_utils import flash_redirect, guarded_unlock_redirect, htmx_partial_or_redirect
 
 router = APIRouter()
 
@@ -42,10 +43,7 @@ def assistant_page(request: Request):
 async def assistant_ask(request: Request):
     form = await deps.get_form(request)
     if not _assistant_allowed(request):
-        deps.add_flash(request, "Unlock required to use Manager Assistant (sensitive data).", "error")
-        r = deps.redirect("/unlock?next=/assistant")
-        deps.save_session(r, deps.get_session(request))
-        return r
+        return guarded_unlock_redirect(request, "/unlock?next=/assistant", "Unlock required to use Manager Assistant (sensitive data).")
     message = (form.get("message") or "").strip()
     hist = _history(request)
     if message:
@@ -65,31 +63,23 @@ async def assistant_ask(request: Request):
             "user_message": message,
         })
         deps.get_session(request)["assistant_history"] = hist[-40:]
-    if request.headers.get("HX-Request"):
-        templates = request.app.state.templates
-        shown = _history(request)[-20:]
-        animate_index = None
-        if message and shown:
-            # animate the newest assistant reply in this rendered slice
-            for i in range(len(shown) - 1, -1, -1):
-                if shown[i].get("role") == "assistant":
-                    animate_index = i
-                    break
-        ctx = {"request": request, "history": shown, "csrf_token": deps.csrf_token(request), "intents": assistant.INTENT_LABELS, "animate_index": animate_index}
-        resp = templates.TemplateResponse(request=request, name="assistant/_messages.html", context=ctx)
-        deps.save_session(resp, deps.get_session(request))
-        return resp
-    r = deps.redirect("/assistant")
-    deps.save_session(r, deps.get_session(request))
-    return r
+    shown = _history(request)[-20:]
+    animate_index = None
+    if message and shown:
+        # animate the newest assistant reply in this rendered slice
+        for i in range(len(shown) - 1, -1, -1):
+            if shown[i].get("role") == "assistant":
+                animate_index = i
+                break
+    ctx = {"request": request, "history": shown, "csrf_token": deps.csrf_token(request), "intents": assistant.INTENT_LABELS, "animate_index": animate_index}
+    return htmx_partial_or_redirect(request, partial_template="assistant/_messages.html", partial_context=ctx, redirect_url="/assistant")
 
 
 @router.post("/assistant/feedback")
 async def assistant_feedback(request: Request):
     form = await deps.get_form(request)
     if not _assistant_allowed(request):
-        deps.add_flash(request, "Unlock required.", "error")
-        r = deps.redirect("/assistant"); deps.save_session(r, deps.get_session(request)); return r
+        return guarded_unlock_redirect(request, "/assistant", "Unlock required.")
     idx = form.get("msg_index")
     rating = int(form.get("rating") or 0)
     corrected_intent = (form.get("corrected_intent") or "").strip()
@@ -135,27 +125,13 @@ async def assistant_feedback(request: Request):
     else:
         deps.add_flash(request, "Could not find assistant message to rate.", "error")
 
-    if request.headers.get("HX-Request"):
-        templates = request.app.state.templates
-        ctx = {"request": request, "history": _history(request)[-20:], "csrf_token": deps.csrf_token(request), "intents": assistant.INTENT_LABELS}
-        resp = templates.TemplateResponse(request=request, name="assistant/_messages.html", context=ctx)
-        deps.save_session(resp, deps.get_session(request))
-        return resp
-    r = deps.redirect("/assistant")
-    deps.save_session(r, deps.get_session(request))
-    return r
+    ctx = {"request": request, "history": _history(request)[-20:], "csrf_token": deps.csrf_token(request), "intents": assistant.INTENT_LABELS}
+    return htmx_partial_or_redirect(request, partial_template="assistant/_messages.html", partial_context=ctx, redirect_url="/assistant")
 
 
 @router.post("/assistant/clear")
 async def assistant_clear(request: Request):
     form = await deps.get_form(request)
     deps.get_session(request)["assistant_history"] = []
-    if request.headers.get("HX-Request"):
-        templates = request.app.state.templates
-        ctx = {"request": request, "history": [], "csrf_token": deps.csrf_token(request), "intents": assistant.INTENT_LABELS}
-        resp = templates.TemplateResponse(request=request, name="assistant/_messages.html", context=ctx)
-        deps.save_session(resp, deps.get_session(request))
-        return resp
-    r = deps.redirect("/assistant")
-    deps.save_session(r, deps.get_session(request))
-    return r
+    ctx = {"request": request, "history": [], "csrf_token": deps.csrf_token(request), "intents": assistant.INTENT_LABELS}
+    return htmx_partial_or_redirect(request, partial_template="assistant/_messages.html", partial_context=ctx, redirect_url="/assistant")
