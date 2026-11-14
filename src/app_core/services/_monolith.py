@@ -4837,11 +4837,15 @@ def apply_demo_data_preset(name, password, confirm_text, allow_existing=False):
 SEED_CONFIG_FORMAT = "pm_seed_config"
 SEED_CONFIG_VERSION = 2  # v2 adds inventory barcode/batch fields and activities
 
+INVENTORY_SEED_CSV_FIELDS = [
+    "item_name", "category", "stock_qty", "unit", "unit_cost", "selling_price",
+    "low_stock_threshold", "overstock_threshold", "active",
+    "sku", "barcode", "barcode_type", "track_batches", "shelf_life_days", "default_supplier",
+]
 
-def export_seed_config():
-    """Export editable master/seed data (rooms, rate plans, inventory, expense categories, meals, activities) to JSON."""
-    paths.ensure_data_dirs()
-    EXPORT_DIR.mkdir(parents=True, exist_ok=True)
+
+def _collect_seed_config_data():
+    """Collect current master/seed data as a dict (same shape as JSON seed config)."""
     conn = db.connect()
     rooms = [dict(r) for r in conn.execute(
         "SELECT room_number, room_type, base_price, housekeeping_status FROM rooms ORDER BY room_number").fetchall()]
@@ -4873,7 +4877,7 @@ def export_seed_config():
             "SELECT name, description, category, unit_price, active FROM activities ORDER BY name").fetchall()]
     except Exception:
         activities = []
-    data = {
+    return {
         "format": SEED_CONFIG_FORMAT,
         "version": SEED_CONFIG_VERSION,
         "exported_at": datetime.now().strftime(DATETIME_FMT),
@@ -4884,6 +4888,13 @@ def export_seed_config():
         "meals": meals,
         "activities": activities,
     }
+
+
+def export_seed_config():
+    """Export editable master/seed data (rooms, rate plans, inventory, expense categories, meals, activities) to JSON."""
+    paths.ensure_data_dirs()
+    EXPORT_DIR.mkdir(parents=True, exist_ok=True)
+    data = _collect_seed_config_data()
     path = (EXPORT_DIR / f"seed_config_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json").resolve()
     if EXPORT_DIR.resolve() not in path.parents:
         raise ValueError("Refusing to write seed config outside export directory.")
@@ -4892,12 +4903,132 @@ def export_seed_config():
     return str(path)
 
 
+def export_inventory_seed_csv(template=False):
+    """Export inventory master data (or a template with examples) as CSV for easy spreadsheet/barcode seeding."""
+    paths.ensure_data_dirs()
+    EXPORT_DIR.mkdir(parents=True, exist_ok=True)
+    if template:
+        rows = [
+            {
+                "item_name": "Bottled Water (0.5L)", "category": "F&B", "stock_qty": 100, "unit": "pcs",
+                "unit_cost": 3.0, "selling_price": 20.0, "low_stock_threshold": 10, "overstock_threshold": 300,
+                "active": 1, "sku": "FB-WATER-05", "barcode": "8901001", "barcode_type": "code128",
+                "track_batches": 1, "shelf_life_days": 365, "default_supplier": "Main Supplier",
+            },
+            {
+                "item_name": "Bath Towel", "category": "Housekeeping", "stock_qty": 50, "unit": "pcs",
+                "unit_cost": 35.0, "selling_price": 70.0, "low_stock_threshold": 5, "overstock_threshold": 120,
+                "active": 1, "sku": "HK-TOWEL", "barcode": "8902002", "barcode_type": "code128",
+                "track_batches": 0, "shelf_life_days": "", "default_supplier": "",
+            },
+        ]
+        fname = f"inventory_seed_template_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        audit = "inventory_seed_template_export"
+    else:
+        conn = db.connect()
+        rows = [dict(r) for r in conn.execute(
+            """SELECT item_name, category, stock_qty, unit, unit_cost, selling_price,
+                      low_stock_threshold, overstock_threshold, active,
+                      sku, barcode, barcode_type, track_batches, shelf_life_days, default_supplier
+               FROM inventory ORDER BY category, item_name""").fetchall()]
+        fname = f"inventory_seed_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        audit = "inventory_seed_export"
+    path = (EXPORT_DIR / fname).resolve()
+    if EXPORT_DIR.resolve() not in path.parents:
+        raise ValueError("Refusing to write inventory CSV outside export directory.")
+    with path.open("w", newline="", encoding="utf-8-sig") as f:
+        w = csv.DictWriter(f, fieldnames=INVENTORY_SEED_CSV_FIELDS, extrasaction="ignore")
+        w.writeheader()
+        for row in rows:
+            out = {k: ("" if row.get(k) is None else row.get(k)) for k in INVENTORY_SEED_CSV_FIELDS}
+            w.writerow(out)
+    _audit(audit, "inventory", "", str(path))
+    return str(path)
+
+
+def _parse_inventory_seed_csv(filepath):
+    """Parse inventory seed CSV rows into normalized inventory item dicts."""
+    p = Path(filepath)
+    if not p.exists():
+        raise ValueError(f"File not found: {filepath}")
+    norm_inv = []
+    seen_items = set()
+    # utf-8-sig handles Excel BOM
+    with p.open("r", encoding="utf-8-sig", newline="") as f:
+        reader = csv.DictReader(f)
+        if not reader.fieldnames:
+            raise ValueError("Inventory CSV is empty or missing a header row.")
+        # normalize header aliases
+        aliases = {
+            "name": "item_name", "inventory_item_name": "item_name",
+            "qty": "stock_qty", "stock": "stock_qty", "quantity": "stock_qty",
+            "cost": "unit_cost", "price": "selling_price",
+            "low": "low_stock_threshold", "low_stock": "low_stock_threshold",
+            "over": "overstock_threshold", "overstock": "overstock_threshold",
+            "supplier": "default_supplier", "shelf_life": "shelf_life_days",
+            "track_batch": "track_batches", "batch_tracking": "track_batches",
+        }
+        for idx, raw in enumerate(reader, start=2):
+            if raw is None:
+                continue
+            row = {}
+            for k, v in raw.items():
+                if k is None:
+                    continue
+                key = str(k).strip().lstrip("\ufeff").lower().replace(" ", "_")
+                key = aliases.get(key, key)
+                row[key] = v
+            # skip fully empty rows
+            if not any(str(v or "").strip() for v in row.values()):
+                continue
+            name = str((row.get("item_name") or "")).strip()
+            if not name:
+                raise ValueError(f"Row {idx}: item_name is required.")
+            keyname = name.lower()
+            if keyname in seen_items:
+                raise ValueError(f"Row {idx}: duplicate inventory item_name '{name}'.")
+            seen_items.add(keyname)
+            def _f(val, default=None):
+                s = str(val if val is not None else "").strip()
+                if s == "":
+                    return default
+                return float(s)
+            def _i(val, default=None):
+                s = str(val if val is not None else "").strip()
+                if s == "":
+                    return default
+                return int(float(s))
+            sld = _i(row.get("shelf_life_days"), None)
+            norm_inv.append({
+                "item_name": name,
+                "category": str((row.get("category") or "General")).strip() or "General",
+                "stock_qty": float(_f(row.get("stock_qty"), 0) or 0),
+                "unit": str((row.get("unit") or "pcs")).strip() or "pcs",
+                "unit_cost": float(_f(row.get("unit_cost"), 0) or 0),
+                "selling_price": float(_f(row.get("selling_price"), 0) or 0),
+                "low_stock_threshold": _f(row.get("low_stock_threshold"), None),
+                "overstock_threshold": _f(row.get("overstock_threshold"), None),
+                "active": 1 if _i(row.get("active"), 1) else 0,
+                "sku": (str((row.get("sku") or "")).strip() or None),
+                "barcode": (str((row.get("barcode") or "")).strip() or None),
+                "barcode_type": str((row.get("barcode_type") or "code128")).strip() or "code128",
+                "track_batches": 1 if _i(row.get("track_batches"), 0) else 0,
+                "shelf_life_days": sld,
+                "default_supplier": str((row.get("default_supplier") or "")).strip(),
+            })
+    if not norm_inv:
+        raise ValueError("Inventory CSV has no valid item rows.")
+    return norm_inv
+
+
 def import_seed_config(filepath, password, confirm_text):
-    """Apply uploaded seed/master config JSON. Intended for first-time setup/customization.
+    """Apply uploaded seed/master config (JSON) or inventory seed CSV. Intended for first-time setup/customization.
 
     Guarded: requires super password + confirmation text 'APPLY SEED CONFIG'.
     Refused when operational data exists (reservations/payments/POS/expenses), to avoid
-    breaking references. Replaces master data (rooms/rate plans/inventory/categories/meals).
+    breaking references. Replaces master data (rooms/rate plans/inventory/categories/meals/activities).
+    For inventory CSV uploads, current non-inventory master data (rooms/rate plans/categories/meals/activities)
+    is preserved and only inventory is replaced from the CSV (pre-operational DBs only).
     """
     if not verify_password(password):
         raise PermissionError("Invalid super password.")
@@ -4908,10 +5039,31 @@ def import_seed_config(filepath, password, confirm_text):
     p = Path(filepath)
     if not p.exists():
         raise ValueError(f"File not found: {filepath}")
-    try:
-        data = json.loads(p.read_text(encoding="utf-8"))
-    except Exception as e:
-        raise ValueError(f"Invalid JSON: {e}")
+    suffix = p.suffix.lower()
+    data = None
+    csv_inventory_mode = False
+    # detect CSV by extension or simple header sniff
+    if suffix == ".csv":
+        csv_inventory_mode = True
+    else:
+        try:
+            head = p.read_text(encoding="utf-8-sig", errors="ignore")[:4096].lstrip()
+            if head and not head.startswith("{") and not head.startswith("[") and "item_name" in head.splitlines()[0].lower():
+                csv_inventory_mode = True
+        except Exception:
+            pass
+    if csv_inventory_mode:
+        inv_rows = _parse_inventory_seed_csv(p)
+        data = _collect_seed_config_data()
+        data["inventory"] = inv_rows
+        # replacing inventory invalidates meal/recipe ingredient links; clear dependent master sections safely
+        data["meals"] = []
+        data["activities"] = data.get("activities") or []
+    else:
+        try:
+            data = json.loads(p.read_text(encoding="utf-8-sig"))
+        except Exception as e:
+            raise ValueError(f"Invalid JSON: {e}")
     if not isinstance(data, dict):
         raise ValueError("Seed config must be a JSON object.")
     rooms = data.get("rooms") or []

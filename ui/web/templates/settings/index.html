@@ -85,18 +85,33 @@
 
 {% elif active_tab == 'data' %}
 <div class="subtab-help">First-time seed/master data, guarded demo presets, and settings reset (protected operations).</div>
-<details class="help-box"><summary>How to use Seed &amp; Data</summary><ul><li><strong>Seed config:</strong> Export JSON, edit, then Import/Apply (unlock + super password + <code>APPLY SEED CONFIG</code>, only when no operational data exists).</li><li><strong>Demo presets:</strong> load synthetic operational data on an empty DB (confirmation <code>APPLY DEMO DATA</code>).</li><li><strong>Reset:</strong> resets settings to defaults (confirmation <code>RESET DEFAULTS</code>, preserves schema/language).</li></ul></details>
+<details class="help-box"><summary>How to use Seed &amp; Data</summary><ul>
+  <li><strong>Inventory CSV (easiest for barcodes/bulk items):</strong> download the inventory template or export current inventory CSV, fill all item fields (name/category/unit/cost/price/stock, SKU, barcode, barcode_type, track_batches, shelf_life_days, thresholds, supplier, active), then upload as CSV. Requires unlock + super password + <code>APPLY SEED CONFIG</code> and only works before operational data exists (pre-operational DB).</li>
+  <li><strong>CSV inventory import behavior:</strong> replaces inventory from the CSV and keeps current rooms/rate plans/expense categories/activities; meals/recipe links are cleared for safety because item IDs/names may change (re-add meals after import if needed). An opening batch/log is created automatically for items with stock.</li>
+  <li><strong>Full seed config (JSON):</strong> export JSON, edit rooms/rate plans/inventory/categories/meals/activities, then import/apply (replaces master data; pre-operational only).</li>
+  <li><strong>Demo presets:</strong> load synthetic operational data on an empty DB (confirmation <code>APPLY DEMO DATA</code>).</li>
+  <li><strong>Reset:</strong> resets settings to defaults (confirmation <code>RESET DEFAULTS</code>, preserves schema/language).</li>
+</ul></details>
 <div class="grid grid-2">
   <div class="panel"><h3>First-time seed / master data</h3>
-    <p class="muted">Export editable JSON for rooms, rate plans, inventory (SKU/barcode, batch/expiry fields), expense categories, meals, and activities. Edit and upload as first seed.</p>
-    <form method="post" action="/settings/seed/export" style="margin-bottom:10px"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
-      <button type="submit">Export seed config JSON (download)</button>
-    </form>
+    <p class="muted">Seed all inventory easily with barcodes and full item data. Use CSV for bulk spreadsheet/barcode workflows, or JSON for full master-data control. Apply is allowed only before operational data exists and requires unlock + super password + <code>APPLY SEED CONFIG</code>.</p>
+    <div style="margin-bottom:12px">
+      <div><strong>Inventory CSV (barcode &amp; bulk-friendly)</strong></div>
+      <form method="post" action="/settings/seed/export-inventory-csv" style="display:inline-block;margin:6px 6px 6px 0"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><input type="hidden" name="template" value="1"/><button type="submit">Download inventory CSV template</button></form>
+      <form method="post" action="/settings/seed/export-inventory-csv" style="display:inline-block;margin:6px 0 6px 0"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><button type="submit">Export current inventory CSV</button></form>
+      <p class="muted" style="margin:4px 0 0">CSV columns: item_name, category, stock_qty, unit, unit_cost, selling_price, low_stock_threshold, overstock_threshold, active, sku, barcode, barcode_type, track_batches, shelf_life_days, default_supplier.</p>
+    </div>
+    <div style="margin-bottom:12px">
+      <div><strong>Full seed config JSON</strong></div>
+      <form method="post" action="/settings/seed/export" style="margin:6px 0"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+        <button type="submit">Export seed config JSON (download)</button>
+      </form>
+    </div>
     <form method="post" action="/settings/seed/import" enctype="multipart/form-data"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
-      <label>Seed config file<input type="file" name="seed_file" accept=".json,application/json" required/></label>
+      <label>Seed file (.csv inventory or .json full config)<input type="file" name="seed_file" accept=".json,.csv,application/json,text/csv" required/></label>
       <input name="confirm" placeholder="APPLY SEED CONFIG"/>
       <input type="password" name="password" placeholder="Super password"/>
-      <button class="warn" type="submit">Upload &amp; apply seed config</button>
+      <button class="warn" type="submit">Upload &amp; apply seed (CSV/JSON)</button>
     </form>
   </div>
   <div class="panel"><h3>Guarded demo data preset</h3>

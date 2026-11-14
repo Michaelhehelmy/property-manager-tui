@@ -224,15 +224,20 @@ async def seed_import(request: Request):
     upload = form.get("seed_file")
     try:
         if upload is None or not getattr(upload, "filename", ""):
-            raise ValueError("Select a seed config JSON file to upload.")
+            raise ValueError("Select a seed config file to upload (.json or .csv).")
         fname = Path(str(getattr(upload, "filename", "seed.json"))).name
-        if not fname.lower().endswith(".json"):
-            raise ValueError("Seed config must be a .json file.")
+        lower = fname.lower()
+        if not (lower.endswith(".json") or lower.endswith(".csv")):
+            raise ValueError("Seed config must be a .json or .csv file.")
         ctype = (getattr(upload, "content_type", "") or "").lower()
-        if ctype and ctype not in ("application/json", "text/json", "text/plain", "application/octet-stream"):
+        allowed = {
+            "application/json", "text/json", "text/plain", "application/octet-stream",
+            "text/csv", "application/csv", "application/vnd.ms-excel",
+        }
+        if ctype and ctype not in allowed:
             raise ValueError("Invalid upload content type for seed config.")
         import tempfile
-        suffix = ".json"
+        suffix = ".csv" if lower.endswith(".csv") else ".json"
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
             data = await upload.read()
             if data is None:
@@ -243,7 +248,8 @@ async def seed_import(request: Request):
             tmp_path = tmp.name
         try:
             res = services.import_seed_config(tmp_path, deps.service_password(request, form), form.get("confirm", ""))
-            deps.add_flash(request, f"Seed config applied (first-time setup): {res.get('summary', {})}", "success")
+            msg_kind = "Inventory CSV seed" if lower.endswith('.csv') else "Seed config"
+            deps.add_flash(request, f"{msg_kind} applied (first-time setup, pre-operational DB): {res.get('summary', {})}", "success")
         finally:
             try:
                 Path(tmp_path).unlink()
@@ -252,6 +258,22 @@ async def seed_import(request: Request):
     except Exception as e:
         deps.add_flash(request, str(e), "error")
     r = deps.redirect("/settings?tab=data"); deps.save_session(r, deps.get_session(request)); return r
+
+
+@router.post("/settings/seed/export-inventory-csv")
+async def seed_export_inventory_csv(request: Request):
+    deps.require_unlock(request)
+    form = await deps.get_form(request)
+    try:
+        template = str(form.get("template") or "").strip().lower() in ("1", "true", "yes", "on")
+        path = services.export_inventory_seed_csv(template=template)
+        name = Path(path).name
+        deps.add_flash(request, f"Inventory {'template ' if template else ''}CSV exported: {name}", "success")
+        r = deps.redirect(f"/files/export/{name}")
+    except Exception as e:
+        deps.add_flash(request, str(e), "error")
+        r = deps.redirect("/settings?tab=data")
+    deps.save_session(r, deps.get_session(request)); return r
 
 
 @router.post("/settings/rooms/add")
