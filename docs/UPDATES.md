@@ -27,10 +27,15 @@ This guide covers how to update a git-based Property Manager installation safely
 ## 3) In-app updates (automated for clean ff-only cases)
 
 ### Web & TUI
-1. Open **Settings → App updates**.
-2. Click **Check for updates** and review changelog/commit details.
-3. If available and applicable, click **Apply/Update**.
-4. **Restart** the app/server.
+1. Open **Settings → Updates & Health → App updates**.
+2. Click **Check for updates** (fetch/compare and show changelog/commit details).
+3. If an update is available and conditions allow, click **Update now / Apply**. (The apply action is shown only when an update is available; local changes or non-ff states may block apply.)
+4. **Restart** the TUI/app/web server to load the new version.
+
+### Auto-check when online (current behavior)
+- **Not automatic by default:** update checks are initiated manually via **Check for updates** (Settings UI) or `python -m app_core.doctor --check-updates`. The app does not currently run a periodic/background startup auto-check or push notification.
+- **If you need automatic checking:** implement an in-app check (e.g. on startup and/or periodic when online) that calls `updater.check_for_updates()`, caches/rate-limits results, and surfaces an indicator so **Update now** appears when available; or schedule external checks (cron/systemd timer/Windows Task Scheduler/Termux jobs) that notify operators.
+- **Auto-apply:** not enabled by default (risky). Prefer semi-auto (auto-check/notify, manual apply with backup/maintenance window). If automating apply, always include verified backup, clean ff-only update, dependency refresh if needed, controlled restart, and health/doctor verification with rollback plan.
 
 ### Requirements and limits
 - **Clean working tree required:** commit, stash, or discard local changes before apply.
@@ -38,8 +43,76 @@ This guide covers how to update a git-based Property Manager installation safely
 - **Dependency changes:** in-app apply updates source; if Python dependencies changed, re-run setup to refresh the venv (see below).
 - **Non-git installs:** in-app git update flow is not applicable; update by replacing source per your packaging/deployment method, then refresh deps and restart.
 
-## 4) Manual update (CLI)
+## 4) First-time update / install-and-update by platform (then use UI)
 
+These flows are for **git-based installs** (recommended). Runtime data (**DB, exports, invoices, `PM_DATA_DIR`**) is preserved across source updates. Always restart after apply/update and keep web on **`--workers 1`**.
+
+### 4.1 Windows (10/11, Server) — first time, then UI
+**Prereqs:** Python 3.10+ and Git (bootstrap scripts can try `winget` if available), PowerShell, network access.
+
+1. **First-time install/update (recommended, idempotent):** rerun anytime to update.
+   ```powershell
+   irm https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install_windows.ps1 | iex
+   ```
+   Examples:
+   ```powershell
+   # Setup/update and launch
+   $env:ACTION='deploy'; $env:MODE='auto'; irm https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install_windows.ps1 | iex
+
+   # Web UI (localhost, SQLite-safe) — set strong secret for non-local/shared use
+   $env:ACTION='deploy'; $env:MODE='web'; $env:HOST='127.0.0.1'; $env:PORT='8000'
+   $env:PM_WEB_SECRET_KEY='(long-random-secret)'
+   irm https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install_windows.ps1 | iex
+
+   # Pinned ref for reproducibility
+   $env:GIT_REF='vX.Y.Z'; irm https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install_windows.ps1 | iex
+   ```
+   Defaults: installs/updates to `%USERPROFILE%\property-manager-tui` (override `INSTALL_DIR`), refreshes `.venv`/deps, and runs per mode. CMD bootstrap: download/run `scripts/install_windows.cmd`.
+2. **From existing local checkout (manual):**
+   ```powershell
+   # recommended: backup first (Settings -> Backup now or scripts/backup_runtime.py --backup)
+   git fetch --all --tags --prune
+   git pull --ff-only   # commit/stash/discard local changes first
+   powershell -ExecutionPolicy Bypass -File .\scripts\setup_windows.ps1 -Action setup -Mode auto
+   ```
+3. **Restart** app/server. Verify: `PYTHONPATH=src python -m app_core.doctor` and web `/healthz`, `/readyz` (web always `--workers 1`; use strong `PM_WEB_SECRET_KEY` and HTTPS reverse proxy/private network for LAN/remote/shared access).
+4. **Later updates from UI:** **Settings → Updates & Health → App updates** → **Check for updates** → **Update now** appears **only when an update is available** → apply (clean ff-only) → **restart**. Refresh deps via setup if dependencies changed.
+
+### 4.2 Termux (Android) — TUI and full Web (first time, then UI)
+**Prereqs:** Termux packages, network access. On constrained devices/ABIs web deps may be unavailable (`pydantic-core`/Rust wheels) — use TUI-only fallback.
+```bash
+pkg update -y && pkg upgrade -y
+pkg install -y git python curl ca-certificates
+```
+
+1. **TUI (most reliable):**
+   ```bash
+   curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh | SKIP_WEB=1 MODE=tui sh
+   ```
+2. **Full Web UI (SQLite-safe, on-device or LAN):**
+   ```bash
+   # Localhost
+   curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh \
+     | MODE=web HOST=127.0.0.1 PORT=8000 PM_WEB_SECRET_KEY="$(openssl rand -hex 32)" sh
+
+   # LAN (trusted/private network only)
+   curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh \
+     | MODE=web HOST=0.0.0.0 PORT=8000 PM_WEB_SECRET_KEY="$(openssl rand -hex 32)" sh
+   ```
+   Always **`--workers 1`**. Set strong `PM_WEB_SECRET_KEY` for non-local/shared use and prefer **HTTPS** (reverse proxy/VPN/tunnel) for shared/remote access.
+3. **Run (if not auto-launched):**
+   ```bash
+   cd ~/property-manager-tui
+   # TUI
+   PYTHONPATH=src .venv/bin/python launcher.py --tui
+   # Web
+   export PM_WEB_SECRET_KEY='(long-random-secret)'
+   PYTHONPATH=src .venv/bin/python -m uvicorn ui.web.server:app --host 127.0.0.1 --port 8000 --workers 1
+   ```
+4. **Manual update from existing checkout:** backup → `git fetch --all --tags --prune && git pull --ff-only` → `ACTION=setup MODE=auto sh scripts/setup.sh` (or `SKIP_WEB=1 MODE=tui`) → restart.
+5. **Later updates from UI:** same as Windows/Web/TUI — **Settings → Updates & Health → App updates** → **Check for updates** → **Update now** only when available → apply → **restart**; refresh deps if needed. Re-running the install one-liner is also a safe data-preserving way to update/refresh on Termux.
+
+### 4.3 Manual update (CLI, any git install)
 ```bash
 cd <install-dir>
 # optional but recommended: backup first
@@ -50,7 +123,7 @@ git status --porcelain   # should be empty for safe ff-only workflow
 git pull --ff-only
 
 # refresh dependencies/environment if needed
-# Unix:
+# Unix/Termux:
 MODE=<auto|tui|web|both> ACTION=setup sh scripts/setup.sh
 # Windows:
 powershell -ExecutionPolicy Bypass -File scripts\setup_windows.ps1 -Action setup
@@ -59,8 +132,8 @@ powershell -ExecutionPolicy Bypass -File scripts\setup_windows.ps1 -Action setup
 ```
 
 Alternative helpers:
-- Unix: re-run `scripts/install.sh` (designed to install/update/launch while preserving runtime data).
-- Web convenience: `scripts/update_and_run_web.sh` (ff-only pull if git repo, then runs uvicorn with `--workers 1`; ensure venv/deps are healthy).
+- Unix/Termux: re-run `scripts/install.sh` (idempotent install/update/launch, preserves runtime data).
+- Web convenience: `scripts/update_and_run_web.sh` (ff-only pull if git repo, then runs uvicorn with `--workers 1`; ensure venv/deps are healthy). Use on a schedule/supervision only with backup/restart/health safeguards.
 
 ## 5) Dependency and environment refresh
 

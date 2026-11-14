@@ -73,10 +73,13 @@ Collect: OS/platform, install method, command used, full error output, whether T
 
 ## 6) Updates
 
+- **"Update now" not shown:** open **Settings → Updates & Health → App updates**, click **Check for updates** first — apply appears only when an update is available. Ensure network/GitHub access and a git install.
+- **No automatic check when online:** auto-check is not enabled by default; checks are manual (UI/doctor) unless you add in-app periodic/startup checks or schedule external checks.
 - **In-app apply blocked (local changes):** `git status` and commit/stash/discard local source changes, then retry.
 - **Non-fast-forward/diverged history:** resolve manually (`git fetch`, review divergence, merge/rebase/reset as appropriate for your controlled workflow) then `git pull --ff-only` if applicable.
 - **Update applied but behavior unchanged:** restart app/server; verify running commit/version and that correct install/venv is launched.
-- **Dependency/import errors after update:** re-run setup/dependency install for the environment; compare with `requirements*.txt`/`pyproject.toml`.
+- **Dependency/import errors after update:** re-run setup/dependency install for the environment; compare with `requirements*.txt`/`pyproject.toml` (Windows: `scripts\setup_windows.ps1 -Action setup`; Unix/Termux: `ACTION=setup sh scripts/setup.sh`).
+- **Termux web update issues:** if web deps fail to build (e.g. `pydantic-core`/Rust), use TUI-only (`SKIP_WEB=1 MODE=tui`) or update on a fuller host; always run web with `--workers 1`.
 - **Rollback needed:** stop app, restore known-good code and matching deps; if schema/data incompatible, restore verified pre-update backup (see `docs/UPDATES.md`, `docs/BACKUP_RESTORE.md`).
 
 ## 7) Backups & restore

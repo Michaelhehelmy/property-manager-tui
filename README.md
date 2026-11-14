@@ -160,6 +160,7 @@ PYTHONPATH=src python -m uvicorn ui.web.server:app --host 127.0.0.1 --port 8000 
 - **Service/autostart:** use systemd/launchd/NSSM/Task Scheduler/supervisor/Docker restart policy to run venv Python/uvicorn with `--workers 1`.
 - **Reverse proxy:** proxy to `127.0.0.1:8000`, terminate TLS, and forward standard proxy headers as needed.
 - **Backups, restore, updates:** take and verify backups before upgrades/migrations; restore is manual/offline (with restore drill validation recommended); restart the app/server after applying updates.
+- **App icon / launcher:** no native installer icons are bundled. For browser/mobile install use "Add to Home Screen" (add PWA assets like `manifest.webmanifest` and icons under `ui/web/static/` and link from `ui/web/templates/base.html` if needed); for Windows/Linux create OS shortcuts (`.lnk`/`.desktop`) pointing to the venv launcher with a custom icon; on Termux prefer browser home-screen shortcut for web or Termux:Widget for TUI scripts.
 - See `docs/DEPLOYMENT.md` and `docs/SECURITY.md` for examples and hardening.
 
 ## Security model (Web) — summary
@@ -173,13 +174,15 @@ PYTHONPATH=src python -m uvicorn ui.web.server:app --host 127.0.0.1 --port 8000 
 
 ## Updates
 
-**In-app (recommended for git installs, Web & TUI):** **Settings → App updates** → **Check for updates** (changelog/commit details) → **Apply/Update** (**git fast-forward**).
+**In-app (recommended for git installs, Web & TUI):** **Settings → Updates & Health → App updates** → **Check for updates** → **Update now / Apply** appears **only when an update is available** (git fast-forward for clean checkouts).
 
-- **Automated:** check/fetch metadata, show changelog/commits, attempt fast-forward apply for clean git checkouts.
-- **Requirements/limits:** local source changes must be committed/stashed/discarded before apply; non-fast-forward/diverged histories require manual git resolution.
+- **Automated:** check/fetch metadata, show changelog/commits, apply ff-only when eligible.
+- **Requirements/limits:** clean working tree required; non-fast-forward/diverged histories need manual git resolution.
 - **Data preserved:** DB, exports, invoices, and configured data directory (`PM_DATA_DIR`/defaults) are not modified by source updates.
-- **After apply:** **restart the app/server** to load the new version.
-- **Manual CLI:** `git pull --ff-only` then re-run setup to refresh deps if needed (Unix: `MODE=<...> ACTION=setup sh scripts/setup.sh`, Windows: `scripts\setup_windows.ps1 -Action setup`). DB migrations run on startup (additive).
+- **After apply:** **restart the app/server** to load the new version. If dependencies changed, refresh the venv via setup scripts.
+- **Auto-check when online:** not automatic by default (checks are manual). Use Settings/doctor checks, external schedulers, or add in-app periodic/startup checking if desired; avoid unattended auto-apply without backup/restart/health safeguards.
+- **First-time update / platform guides:** Windows: rerun `scripts/install_windows.ps1` (or `git pull --ff-only` + `scripts\setup_windows.ps1 -Action setup`) then restart. Termux (TUI/Web): rerun `scripts/install.sh` with `SKIP_WEB=1 MODE=tui` or `MODE=web ... --workers 1` (or manual ff-only + setup) then restart. Details in `docs/UPDATES.md`.
+- **Manual CLI:** `git pull --ff-only` then re-run setup to refresh deps if needed (Unix/Termux: `MODE=<...> ACTION=setup sh scripts/setup.sh`, Windows: `scripts\setup_windows.ps1 -Action setup`).
 
 See `docs/UPDATES.md` for release/update/rollback guidance.
 

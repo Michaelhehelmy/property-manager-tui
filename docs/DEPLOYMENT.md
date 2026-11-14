@@ -181,14 +181,26 @@ Run: `docker run -d --restart unless-stopped -p 127.0.0.1:8000:8000 -v pmdata:/d
 - Mobile browsers can "Add to Home Screen" against the web URL (use HTTPS/VPN for non-local networks where possible).
 - TUI remote access alternative: SSH into host and run TUI.
 
-## 9) Post-deploy verification (automated checks available)
+## 9) App icon and launch shortcuts (platform guidance)
+
+This is a Python app (TUI + web UI), so icons/shortcuts are provided by the OS/browser or added as assets; no bundled native installer icon package is included by default.
+
+- **Web UI (browser tab / installable shortcut):** for "Add to Home Screen" / install prompt, add icons (e.g. 192/512 PNG, favicon) under `ui/web/static/` and a `manifest.webmanifest` (name, `start_url` `/`, `display` `standalone`, icons), then link `<link rel="manifest" ...>` and favicon/theme meta in `ui/web/templates/base.html`. Serve over **HTTPS** for best installability on non-localhost. Optional service worker is not required for an icon/shortcut.
+- **Windows:** create a shortcut (`.lnk`) to the install venv Python/launcher (e.g. `.venv\Scripts\python.exe launcher.py --tui|--web`) with **Start in** set to the install root and a custom `.ico`. Pin to Start/Taskbar or place in Startup; Task Scheduler/NSSM can auto-start services (keep web `--workers 1`, set `PM_WEB_SECRET_KEY`).
+- **Linux:** create a `.desktop` entry in `~/.local/share/applications/` with `Exec`, `Path`/working dir, and `Icon` (PNG/SVG path or theme name). Use `Terminal=true` for TUI or `Terminal=false` for web launch wrappers.
+- **Android (Termux):** use browser **Add to Home screen** for the web UI (recommended icon experience), or Termux:Widget/home-screen script shortcuts to launch venv commands. Termux:Boot/cron can automate starts/checks with safeguards.
+- **iOS/iPadOS:** host web UI on a reachable server and use Safari **Share → Add to Home Screen** (provide web manifest/apple-touch-icon if desired). TUI via terminal apps (e.g. iSH) is possible but more constrained.
+
+## 10) Post-deploy verification (automated checks available)
+
+## 10) Post-deploy verification (automated checks available)
 
 - Web responds: `curl -fsS http://127.0.0.1:8000/health`, `/healthz`, and `/readyz`
 - Doctor/integrity: `PYTHONPATH=src python -m app_core.doctor --json`
 - Backup sanity: `python3 scripts/backup_runtime.py --backup` (safe, non-destructive) and verify result
 - Confirm `PM_WEB_SECRET_KEY` set, `--workers 1`, correct `PM_DATA_DIR`, and TLS/proxy behavior if applicable
 
-## 10) What is automated vs operational/manual
+## 11) What is automated vs operational/manual
 
 - **Automated/tooling:** bootstrap/setup scripts, dependency install, git fast-forward updates (when clean), in-app update check/apply (ff-only), DB migrations on startup, health probes, doctor checks, backup/verify helpers.
 - **Operational/manual:** choosing topology and TLS/proxy/VPN, DNS/domain/cert lifecycle (except ACME automation at proxy if configured), firewall/network segmentation, secret generation/rotation/storage, service account/permissions hardening, monitoring/alerting/SIEM, backup scheduling/offsite retention, restore execution and validation, capacity/DR planning, go-live/pilot sign-off.
