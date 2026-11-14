@@ -1,0 +1,24 @@
+{% macro page_header(title, subtitle='') -%}
+<h2>{{ title }}</h2>
+{% if subtitle %}<p class="muted" style="margin-top:-4px">{{ subtitle }}</p>{% endif %}
+{%- endmacro %}
+
+{% macro subtabs(items, active, aria_label='Sections') -%}
+<div class="subtabs" role="tablist" aria-label="{{ aria_label }}">
+  {%- for it in items %}
+  <a href="{{ it.href }}" class="{% if it.key == active %}active{% endif %}"{% if it.title %} title="{{ it.title }}"{% endif %}>{{ it.label|safe }}</a>
+  {%- endfor %}
+</div>
+{%- endmacro %}
+
+{% macro subtab_help(text) -%}
+<div class="subtab-help">{{ text|safe }}</div>
+{%- endmacro %}
+
+{% macro stat_card(label, value, sub='') -%}
+<div class="panel">
+  <div class="muted">{{ label }}</div>
+  <div class="stat">{{ value }}</div>
+  {% if sub %}<div class="muted">{{ sub|safe }}</div>{% endif %}
+</div>
+{%- endmacro %}

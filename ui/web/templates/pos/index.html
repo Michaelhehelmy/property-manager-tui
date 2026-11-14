@@ -1,16 +1,15 @@
 {% extends "base.html" %}
+{% from "partials/ui.html" import page_header, subtabs %}
 {% block content %}
-<h2>POS / Inventory</h2>
-<p class="muted" style="margin-top:-4px">Simple sub-tabs for sales, inventory, batches/traceability, meals, activities, and history. Reservation POS posts to folio immediately; walk-in cart commits atomically.</p>
-
-<div class="subtabs" role="tablist" aria-label="POS and inventory sections">
-  <a href="/pos?tab=sell" class="{% if active_tab == 'sell' %}active{% endif %}">Sell</a>
-  <a href="/pos?tab=inventory" class="{% if active_tab == 'inventory' %}active{% endif %}">Inventory</a>
-  <a href="/pos?tab=batches" class="{% if active_tab == 'batches' %}active{% endif %}">Batches &amp; Traceability</a>
-  <a href="/pos?tab=meals" class="{% if active_tab == 'meals' %}active{% endif %}">Meals &amp; Recipes</a>
-  <a href="/pos?tab=activities" class="{% if active_tab == 'activities' %}active{% endif %}">Activities</a>
-  <a href="/pos?tab=history" class="{% if active_tab == 'history' %}active{% endif %}">History</a>
-</div>
+{{ page_header('POS / Inventory', 'Simple sub-tabs for sales, inventory, batches/traceability, meals, activities, and history. Reservation POS posts to folio immediately; walk-in cart commits atomically.') }}
+{{ subtabs([
+  {'key':'sell','href':'/pos?tab=sell','label':'Sell'},
+  {'key':'inventory','href':'/pos?tab=inventory','label':'Inventory'},
+  {'key':'batches','href':'/pos?tab=batches','label':'Batches &amp; Traceability'},
+  {'key':'meals','href':'/pos?tab=meals','label':'Meals &amp; Recipes'},
+  {'key':'activities','href':'/pos?tab=activities','label':'Activities'},
+  {'key':'history','href':'/pos?tab=history','label':'History'}
+], active_tab, 'POS and inventory sections') }}
 
 {% if active_tab == 'sell' %}
 <div class="subtab-help">Scan barcodes/lots, charge reservations, or run a walk-in cart sale.</div>

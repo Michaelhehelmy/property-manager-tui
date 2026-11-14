@@ -6,7 +6,7 @@ from app_core import barcodes, services
 from app_core.db import connect
 from ui.web import deps
 from ui.web.rendering import render
-from ui.web.route_utils import flash_redirect
+from ui.web.route_utils import flash_redirect, safe_local_path
 
 router = APIRouter()
 
@@ -291,9 +291,7 @@ async def walkin(request: Request):
 @router.post("/pos/void/{pos_id}")
 async def pos_void(pos_id: int, request: Request):
     form = await deps.require_unlocked_form(request)
-    ref = (form.get("next") or "/pos?tab=history").strip() or "/pos?tab=history"
-    if not ref.startswith("/") or ref.startswith("//"):
-        ref = "/pos?tab=history"
+    ref = safe_local_path(form.get("next"), "/pos?tab=history")
     try:
         services.void_pos_item(pos_id, deps.service_password(request, form))
         return flash_redirect(request, ref, "POS voided", "success")
@@ -462,31 +460,25 @@ async def batch_receive(request: Request):
 @router.post("/inventory/label/item/{item_id}")
 async def label_item(item_id: int, request: Request):
     form = await deps.require_unlocked_form(request)
+    nxt = safe_local_path(form.get("next"), "/pos?tab=batches")
     try:
         _ = deps.service_password(request, form)
         ok, msg, p = services.print_item_label(item_id)
-        deps.add_flash(request, f"Item label: {msg} ({p})", "success" if ok else "warning")
+        return flash_redirect(request, nxt, f"Item label: {msg} ({p})", "success" if ok else "warning")
     except Exception as e:
-        deps.add_flash(request, str(e), "error")
-    nxt = (form.get("next") or "/pos?tab=batches").strip()
-    if not nxt.startswith("/") or nxt.startswith("//"):
-        nxt = "/pos?tab=batches"
-    r = deps.redirect(nxt); deps.save_session(r, deps.get_session(request)); return r
+        return flash_redirect(request, nxt, str(e), "error")
 
 
 @router.post("/inventory/label/batch/{batch_id}")
 async def label_batch(batch_id: int, request: Request):
     form = await deps.require_unlocked_form(request)
+    nxt = safe_local_path(form.get("next"), "/pos?tab=batches")
     try:
         _ = deps.service_password(request, form)
         ok, msg, p = services.print_batch_label(batch_id)
-        deps.add_flash(request, f"Batch label: {msg} ({p})", "success" if ok else "warning")
+        return flash_redirect(request, nxt, f"Batch label: {msg} ({p})", "success" if ok else "warning")
     except Exception as e:
-        deps.add_flash(request, str(e), "error")
-    nxt = (form.get("next") or "/pos?tab=batches").strip()
-    if not nxt.startswith("/") or nxt.startswith("//"):
-        nxt = "/pos?tab=batches"
-    r = deps.redirect(nxt); deps.save_session(r, deps.get_session(request)); return r
+        return flash_redirect(request, nxt, str(e), "error")
 
 
 @router.get("/inventory/scan")

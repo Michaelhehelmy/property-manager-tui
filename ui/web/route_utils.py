@@ -8,6 +8,14 @@ from fastapi import Request
 from ui.web import deps
 
 
+def safe_local_path(value: str | None, default: str = "/") -> str:
+    """Return a safe same-origin path for redirects/next targets; fall back to default."""
+    ref = (value or "").strip()
+    if not ref or not ref.startswith("/") or ref.startswith("//"):
+        return default
+    return ref
+
+
 def flash_redirect(request: Request, url: str, message: str | None = None, level: str = "info", *, status: int = 303):
     """Add optional flash, create redirect, persist session cookie, and return it."""
     if message is not None:

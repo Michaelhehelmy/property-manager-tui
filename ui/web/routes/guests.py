@@ -4,6 +4,7 @@ from app_core import barcodes, services
 from app_core.db import connect
 from ui.web import deps
 from ui.web.rendering import render
+from ui.web.route_utils import flash_redirect
 
 router = APIRouter()
 
@@ -97,8 +98,14 @@ def guest_detail(gid: int, request: Request):
 async def guest_update(gid: int, request: Request):
     form = await deps.require_unlocked_form(request)
     try:
-        services.update_guest(gid, form.get("name",""), form.get("phone",""), form.get("email",""), form.get("notes",""), deps.service_password(request, form))
-        deps.add_flash(request, "Guest updated", "success")
+        services.update_guest(
+            gid,
+            form.get("name", ""),
+            form.get("phone", ""),
+            form.get("email", ""),
+            form.get("notes", ""),
+            deps.service_password(request, form),
+        )
+        return flash_redirect(request, f"/guests/{gid}", "Guest updated", "success")
     except Exception as e:
-        deps.add_flash(request, str(e), "error")
-    r = deps.redirect(f"/guests/{gid}"); deps.save_session(r, deps.get_session(request)); return r
+        return flash_redirect(request, f"/guests/{gid}", str(e), "error")

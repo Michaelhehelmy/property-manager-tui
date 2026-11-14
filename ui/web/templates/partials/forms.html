@@ -1,0 +1,7 @@
+{% macro csrf(token) -%}
+<input type="hidden" name="csrf" value="{{ token }}"/>
+{%- endmacro %}
+
+{% macro confirm_input(name='confirm', placeholder='', required=false) -%}
+<input name="{{ name }}" placeholder="{{ placeholder }}"{% if required %} required{% endif %}/>
+{%- endmacro %}

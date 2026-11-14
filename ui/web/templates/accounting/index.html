@@ -1,29 +1,29 @@
 {% extends "base.html" %}
+{% from "partials/ui.html" import page_header, subtabs, subtab_help, stat_card %}
 {% block content %}
-<h2>Accounting</h2>
-<p class="muted" style="margin-top:-4px">Operational accounting grounded in real ledger data.</p>
-<div class="subtabs" role="tablist" aria-label="Accounting sections">
-  <a href="/accounting?tab=overview" class="{% if active_tab == 'overview' %}active{% endif %}">Overview</a>
-  <a href="/accounting?tab=expenses" class="{% if active_tab == 'expenses' %}active{% endif %}">Expenses</a>
-  <a href="/accounting?tab=payments" class="{% if active_tab == 'payments' %}active{% endif %}">Payments &amp; Refunds</a>
-  <a href="/accounting?tab=ledger" class="{% if active_tab == 'ledger' %}active{% endif %}">Ledger</a>
-</div>
+{{ page_header('Accounting', 'Operational accounting grounded in real ledger data.') }}
+{{ subtabs([
+  {'key':'overview','href':'/accounting?tab=overview','label':'Overview'},
+  {'key':'expenses','href':'/accounting?tab=expenses','label':'Expenses'},
+  {'key':'payments','href':'/accounting?tab=payments','label':'Payments &amp; Refunds'},
+  {'key':'ledger','href':'/accounting?tab=ledger','label':'Ledger'}
+], active_tab, 'Accounting sections') }}
 
 {% if active_tab == 'overview' %}
-<div class="subtab-help">High-level financial summary and quick guidance.</div>
+{{ subtab_help('High-level financial summary and quick guidance.') }}
 <details class="help-box" open><summary>How to use Accounting</summary><ul><li><strong>Expenses:</strong> record and review/void operational expenses (void requires unlock + super password and is audited/reversed).</li><li><strong>Payments &amp; Refunds:</strong> record reservation or walk-in payments; refunds require unlock + super password.</li><li><strong>Ledger:</strong> review recent ledger entries (real data).</li><li><strong>Reports:</strong> use Reports &amp; Analytics for P&L, cash flow, VAT and more.</li></ul></details>
 <div class="grid grid-4">
-  <div class="panel"><div class="muted">Billed revenue</div><div class="stat">{{ "%.2f"|format(summary.billed_revenue) }}</div></div>
-  <div class="panel"><div class="muted">Expenses+COGS</div><div class="stat">{{ "%.2f"|format(summary.expenses) }}</div></div>
-  <div class="panel"><div class="muted">Net profit</div><div class="stat">{{ "%.2f"|format(summary.net_profit) }}</div></div>
-  <div class="panel"><div class="muted">A/R</div><div class="stat">{{ "%.2f"|format(summary.ar_balance) }}</div></div>
+  {{ stat_card('Billed revenue', "%.2f"|format(summary.billed_revenue)) }}
+  {{ stat_card('Expenses+COGS', "%.2f"|format(summary.expenses)) }}
+  {{ stat_card('Net profit', "%.2f"|format(summary.net_profit)) }}
+  {{ stat_card('A/R', "%.2f"|format(summary.ar_balance)) }}
 </div>
 <div class="panel"><h3>Quick actions</h3>
   <p><a class="button-like" href="/accounting?tab=expenses">Record / review expenses</a> <a class="button-like" href="/accounting?tab=payments">Record payment or refund</a> <a class="button-like" href="/accounting?tab=ledger">View recent ledger</a> <a class="button-like" href="/reports">Reports &amp; Analytics</a></p>
 </div>
 
 {% elif active_tab == 'expenses' %}
-<div class="subtab-help">Record operational expenses and review/void recent expense entries.</div>
+{{ subtab_help('Record operational expenses and review/void recent expense entries.') }}
 <div class="grid grid-2">
   <div class="panel"><h3>Record expense</h3>
     <form method="post" action="/accounting/expense"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
@@ -42,7 +42,7 @@
 </div>
 
 {% elif active_tab == 'payments' %}
-<div class="subtab-help">Record payments (reservation or walk-in) and process refunds (password protected).</div>
+{{ subtab_help('Record payments (reservation or walk-in) and process refunds (password protected).') }}
 <div class="grid grid-2">
   <div class="panel"><h3>Record payment</h3>
     <form method="post" action="/accounting/payment"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
@@ -62,7 +62,7 @@
 </div>
 
 {% elif active_tab == 'ledger' %}
-<div class="subtab-help">Recent ledger entries (real data).</div>
+{{ subtab_help('Recent ledger entries (real data).') }}
 <div class="panel"><h3>Recent ledger</h3><table><tr><th>ID</th><th>Date</th><th>Type</th><th>Category</th><th>Net</th><th>VAT</th><th>Gross</th><th>Description</th></tr>
 {% for r in ledger %}<tr><td>{{r['id']}}</td><td>{{r['at']}}</td><td>{{r['entry_type']}}</td><td>{{r['category']}}</td><td>{{r['net']}}</td><td>{{r['vat']}}</td><td>{{r['gross']}}</td><td>{{r['description']}}</td></tr>
 {% else %}<tr><td colspan="8" class="muted">None</td></tr>{% endfor %}</table></div>

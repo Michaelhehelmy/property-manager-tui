@@ -1,10 +1,10 @@
 from __future__ import annotations
 from datetime import datetime
-from pathlib import Path
 from fastapi import APIRouter, Request
 from app_core import paths, services
 from ui.web import deps
 from ui.web.rendering import render
+from ui.web.route_utils import flash_redirect
 router = APIRouter()
 
 @router.get("/reports")
@@ -29,24 +29,28 @@ def reports(request: Request, tab: str = "generate"):
 async def run_report(request: Request):
     form = await deps.get_form(request)
     deps.require_unlock(request)
-    kind = form.get("kind","pl"); start = form.get("start"); end = form.get("end")
+    kind = form.get("kind", "pl")
+    start = form.get("start")
+    end = form.get("end")
     try:
         text = {
-            "pl": services.report_pl_statement, "cash": services.report_cash_flow, "vat": services.report_vat,
-            "payments": services.report_payment_methods, "occupancy": services.report_occupancy,
+            "pl": services.report_pl_statement,
+            "cash": services.report_cash_flow,
+            "vat": services.report_vat,
+            "payments": services.report_payment_methods,
+            "occupancy": services.report_occupancy,
         }.get(kind, services.report_pl_statement)(start, end)
         deps.add_flash(request, "Report generated", "success")
-        return render(request, "reports/view.html", {"title":f"Report: {kind}", "text":text, "kind":kind})
+        return render(request, "reports/view.html", {"title": f"Report: {kind}", "text": text, "kind": kind})
     except Exception as e:
-        deps.add_flash(request, str(e), "error"); r=deps.redirect("/reports?tab=generate"); deps.save_session(r, deps.get_session(request)); return r
+        return flash_redirect(request, "/reports?tab=generate", str(e), "error")
 
 @router.post("/reports/analytics-export")
 async def analytics_export(request: Request):
     form = await deps.get_form(request)
     deps.require_unlock(request)
     try:
-        res = services.generate_unified_report(form.get("preset","management_pack"), form.get("start"), form.get("end"))
-        deps.add_flash(request, f"Analytics export created: {', '.join(res.get('outputs',{}).keys())}", "success")
+        res = services.generate_unified_report(form.get("preset", "management_pack"), form.get("start"), form.get("end"))
+        return flash_redirect(request, "/reports?tab=downloads", f"Analytics export created: {', '.join(res.get('outputs', {}).keys())}", "success")
     except Exception as e:
-        deps.add_flash(request, str(e), "error")
-    r=deps.redirect("/reports?tab=downloads"); deps.save_session(r, deps.get_session(request)); return r
+        return flash_redirect(request, "/reports?tab=downloads", str(e), "error")

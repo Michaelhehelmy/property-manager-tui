@@ -1,13 +1,13 @@
 {% extends "base.html" %}
+{% from "partials/ui.html" import page_header, subtabs, subtab_help %}
 {% block content %}
-<h2>Settings / Branding</h2>
-<p class="muted" style="margin-top:-4px">Configure property, branding, master data, maintenance, and updates. Protected actions require unlock/super password.</p>
-<div class="subtabs" role="tablist" aria-label="Settings sections">
-  <a href="/settings?tab=general" class="{% if active_tab == 'general' %}active{% endif %}">General</a>
-  <a href="/settings?tab=data" class="{% if active_tab == 'data' %}active{% endif %}">Seed &amp; Data</a>
-  <a href="/settings?tab=rooms" class="{% if active_tab == 'rooms' %}active{% endif %}">Rooms &amp; Plans</a>
-  <a href="/settings?tab=updates" class="{% if active_tab == 'updates' %}active{% endif %}">Updates &amp; Health</a>
-</div>
+{{ page_header('Settings / Branding', 'Configure property, branding, master data, maintenance, and updates. Protected actions require unlock/super password.') }}
+{{ subtabs([
+  {'key':'general','href':'/settings?tab=general','label':'General'},
+  {'key':'data','href':'/settings?tab=data','label':'Seed &amp; Data'},
+  {'key':'rooms','href':'/settings?tab=rooms','label':'Rooms &amp; Plans'},
+  {'key':'updates','href':'/settings?tab=updates','label':'Updates &amp; Health'}
+], active_tab, 'Settings sections') }}
 
 {% if active_tab == 'updates' %}
 <div class="subtab-help">Check/apply app updates (data preserved), run backups, and access health/rate plans tools.</div>

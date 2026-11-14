@@ -1,14 +1,14 @@
 {% extends "base.html" %}
+{% from "partials/ui.html" import page_header, subtabs, subtab_help %}
 {% block content %}
-<h2>Reports &amp; Analytics</h2>
-<p class="muted" style="margin-top:-4px">Generate reports/exports and access saved downloads from real data.</p>
-<div class="subtabs" role="tablist" aria-label="Reports sections">
-  <a href="/reports?tab=generate" class="{% if active_tab == 'generate' %}active{% endif %}">Generate</a>
-  <a href="/reports?tab=downloads" class="{% if active_tab == 'downloads' %}active{% endif %}">Downloads</a>
-</div>
+{{ page_header('Reports &amp; Analytics', 'Generate reports/exports and access saved downloads from real data.') }}
+{{ subtabs([
+  {'key':'generate','href':'/reports?tab=generate','label':'Generate'},
+  {'key':'downloads','href':'/reports?tab=downloads','label':'Downloads'}
+], active_tab, 'Reports sections') }}
 
 {% if active_tab == 'generate' %}
-<div class="subtab-help">Run financial/operational reports or analytics export presets (unlock required).</div>
+{{ subtab_help('Run financial/operational reports or analytics export presets (unlock required).') }}
 <div class="grid grid-2">
   <div class="panel"><h3>Run report</h3>
     <form method="post" action="/reports/run"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
@@ -28,7 +28,7 @@
 </div>
 
 {% elif active_tab == 'downloads' %}
-<div class="subtab-help">Access generated exports and invoices (unlock required to download/view protected files).</div>
+{{ subtab_help('Access generated exports and invoices (unlock required to download/view protected files).') }}
 <div class="grid grid-2">
   <div class="panel"><h3>Exports</h3><ul>{% for f in exports %}<li><a href="/files/export/{{f['name']}}">{{f['name']}}</a></li>{% else %}<li class="muted">None</li>{% endfor %}</ul></div>
   <div class="panel"><h3>Invoices</h3><ul>{% for f in invoices %}<li><a href="/files/invoice/{{f['name']}}">{{f['name']}}</a></li>{% else %}<li class="muted">None</li>{% endfor %}</ul></div>

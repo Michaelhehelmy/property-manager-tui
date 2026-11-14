@@ -1,6 +1,7 @@
 {% extends "base.html" %}
+{% from "partials/ui.html" import page_header %}
 {% block content %}
-<h2>{{ title }}</h2>
+{{ page_header(title) }}
 <div class="panel"><a class="btn" href="/reports">Back</a></div>
 <div class="panel"><p class="muted">Rendered report/export text (grounded in generated data). Lot/batch trace fields appear when included by the source report/invoice generator; missing data is shown gracefully by the generator.</p><div class="table-wrap" style="overflow:auto"><pre style="margin:0;min-width:280px">{{ text }}</pre></div></div>
 {% endblock %}
