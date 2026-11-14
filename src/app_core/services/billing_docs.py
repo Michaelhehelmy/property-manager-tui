@@ -6,7 +6,9 @@ from pathlib import Path
 
 from .. import paths
 
-INVOICE_DIR = paths.INVOICE_DIR
+
+def _invoice_dir():
+    return paths.INVOICE_DIR
 
 
 def _money_fmt(value, currency, usd_to_egp=1.0):
@@ -111,11 +113,11 @@ def build_invoice_text(reservation, nights, accom, pos_items, payments, *, curre
 
 
 def save_invoice_file(text, reservation_id, currency):
-    INVOICE_DIR.mkdir(exist_ok=True)
+    _invoice_dir().mkdir(exist_ok=True)
     suffix = "" if currency == "EGP" else f"_{str(currency).lower()}"
     rid = int(reservation_id)
-    path = (INVOICE_DIR / f"invoice_Res{rid}_{datetime.now().strftime('%Y%m%d_%H%M%S')}{suffix}.txt").resolve()
-    base = INVOICE_DIR.resolve()
+    path = (_invoice_dir() / f"invoice_Res{rid}_{datetime.now().strftime('%Y%m%d_%H%M%S')}{suffix}.txt").resolve()
+    base = _invoice_dir().resolve()
     if base != path and base not in path.parents:
         raise ValueError("Refusing to write invoice outside invoice directory.")
     path.write_text(str(text or ""), encoding="utf-8")
@@ -169,10 +171,10 @@ def build_walkin_receipt_text(receipt_items, total_gross, method, payment_id=Non
 
 
 def save_walkin_receipt_file(text, payment_id):
-    INVOICE_DIR.mkdir(exist_ok=True)
+    _invoice_dir().mkdir(exist_ok=True)
     safe_id = int(payment_id) if payment_id else 0
-    path = (INVOICE_DIR / f"walkin_receipt_Pay{safe_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt").resolve()
-    base = INVOICE_DIR.resolve()
+    path = (_invoice_dir() / f"walkin_receipt_Pay{safe_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt").resolve()
+    base = _invoice_dir().resolve()
     if base != path and base not in path.parents:
         raise ValueError("Refusing to write receipt outside invoice directory.")
     path.write_text(str(text or ""), encoding="utf-8")

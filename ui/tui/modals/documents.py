@@ -9,6 +9,7 @@ from app_core import services
 from app_core.services import t, fmt, selected_id, SETTINGS_CATALOG
 from . import common as _common
 from .base import ErrorModal, ConfirmModal, ProtectedModal
+from .reservations import VoidItemScreen
 
 class InvoiceScreen(ModalScreen):
     BINDINGS = [("escape", "close_modal", "Close")]

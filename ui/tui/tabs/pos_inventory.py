@@ -19,6 +19,7 @@ from ..modals import (
     AuditLogScreen, LanguageScreen, ApplyDemoDataModal, BrandingWizardScreen, AssistantCorrectionModal,
     BatchSelectScreen,
 )
+from .settings import SettingsTab
 from .common import PAYMENT_METHODS, PAYMENT_TYPES, SOURCES, push_modal, show_error, _room_options, _category_options
 
 class PosInventoryTab(Vertical):
