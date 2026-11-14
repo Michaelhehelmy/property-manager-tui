@@ -91,13 +91,14 @@ class AccountingTab(VerticalScroll):
     def refresh_data(self):
         log = self.query_one("#ledger_log", RichLog)
         log.clear()
-        s = services.get_general_ledger_summary()
-        log.write(f"[green]{t('Total Revenue')}:[/] {fmt(s['billed_revenue'])}")
-        log.write(f"[red]{t('Total Expenses')}:[/] {fmt(s['expenses'])}")
-        color = "green" if s["net_profit"] >= 0 else "red"
-        log.write(f"[{color}]{t('Net Profit')}:[/] {fmt(s['net_profit'])}")
-        log.write(f"[blue]Cash In/Out:[/] {fmt(s['cash_in'])} / {fmt(s['cash_out'])}")
-        log.write(f"[yellow]A/R:[/] {fmt(s['ar_balance'])}")
+        s = services.get_general_ledger_summary() or {}
+        log.write(f"[green]{t('Total Revenue')}:[/] {fmt(s.get('billed_revenue', s.get('revenue', 0)))}")
+        log.write(f"[red]{t('Total Expenses')}:[/] {fmt(s.get('expenses', 0))}")
+        net = s.get('net_profit', 0)
+        color = "green" if net >= 0 else "red"
+        log.write(f"[{color}]{t('Net Profit')}:[/] {fmt(net)}")
+        log.write(f"[blue]Cash In/Out:[/] {fmt(s.get('cash_in', 0))} / {fmt(s.get('cash_out', 0))}")
+        log.write(f"[yellow]A/R:[/] {fmt(s.get('ar_balance', s.get('accounts_receivable', 0)))}")
 
         exp = self.query_one("#exp_table", DataTable)
         exp.clear(columns=True)

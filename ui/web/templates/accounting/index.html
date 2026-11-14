@@ -13,10 +13,10 @@
 {{ subtab_help('High-level financial summary and quick guidance.') }}
 <details class="help-box" open><summary>How to use Accounting</summary><ul><li><strong>Expenses:</strong> record and review/void operational expenses (void requires unlock + super password and is audited/reversed).</li><li><strong>Payments &amp; Refunds:</strong> record reservation or walk-in payments; refunds require unlock + super password.</li><li><strong>Ledger:</strong> review recent ledger entries (real data).</li><li><strong>Reports:</strong> use Reports &amp; Analytics for P&L, cash flow, VAT and more.</li></ul></details>
 <div class="grid grid-4">
-  {{ stat_card('Billed revenue', "%.2f"|format(summary.billed_revenue)) }}
-  {{ stat_card('Expenses+COGS', "%.2f"|format(summary.expenses)) }}
-  {{ stat_card('Net profit', "%.2f"|format(summary.net_profit)) }}
-  {{ stat_card('A/R', "%.2f"|format(summary.ar_balance)) }}
+  {{ stat_card('Billed revenue', "%.2f"|format(summary.billed_revenue|default(summary.revenue|default(0)))) }}
+  {{ stat_card('Expenses+COGS', "%.2f"|format(summary.expenses|default(0))) }}
+  {{ stat_card('Net profit', "%.2f"|format(summary.net_profit|default(0))) }}
+  {{ stat_card('A/R', "%.2f"|format(summary.ar_balance|default(summary.accounts_receivable|default(0)))) }}
 </div>
 <div class="panel"><h3>Quick actions</h3>
   <p><a class="button-like" href="/accounting?tab=expenses">Record / review expenses</a> <a class="button-like" href="/accounting?tab=payments">Record payment or refund</a> <a class="button-like" href="/accounting?tab=ledger">View recent ledger</a> <a class="button-like" href="/reports">Reports &amp; Analytics</a></p>
