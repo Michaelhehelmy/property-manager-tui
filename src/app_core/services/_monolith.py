@@ -778,17 +778,6 @@ def verify_password(password):
         return is_session_unlocked()
     from ..db import connect, transaction
 
-import sys as _sys
-
-def _svc_attr(name, default=None):
-    try:
-        svc = _sys.modules.get("app_core.services")
-        if svc is not None and hasattr(svc, name):
-            return getattr(svc, name)
-    except Exception:
-        pass
-    return globals().get(name, default)
-
     conn = db.connect()
     rows = {r["key"]: r["value"] for r in conn.execute(
         "SELECT key, value FROM app_metadata WHERE key IN ('super_password_salt','super_password_hash','failed_attempts','lockout_until')")}
@@ -873,18 +862,6 @@ def use_recovery_code(code, new_password, confirm_password):
     ch = hashlib.sha256(code_norm.encode()).hexdigest()
     key = f"recovery_{ch}"
     from ..db import connect, transaction
-
-import sys as _sys
-
-def _svc_attr(name, default=None):
-    try:
-        svc = _sys.modules.get("app_core.services")
-        if svc is not None and hasattr(svc, name):
-            return getattr(svc, name)
-    except Exception:
-        pass
-    return globals().get(name, default)
-
     conn = db.connect()
     row = conn.execute("SELECT 1 FROM app_metadata WHERE key=?", (key,)).fetchone()
     if not row:
@@ -1537,16 +1514,6 @@ def add_rate_plan(name, modifier, password):
         raise ValueError("Name is required.")
     from ..db import connect, transaction
 
-import sys as _sys
-
-def _svc_attr(name, default=None):
-    try:
-        svc = _sys.modules.get("app_core.services")
-        if svc is not None and hasattr(svc, name):
-            return getattr(svc, name)
-    except Exception:
-        pass
-    return globals().get(name, default)
 
     if db.connect().execute("SELECT 1 FROM rate_plans WHERE LOWER(name)=LOWER(?)", (name.strip(),)).fetchone():
         raise ValueError("Name already exists.")
@@ -1563,16 +1530,6 @@ def update_rate_plan(plan_id, name, modifier, password):
         raise ValueError("Name is required.")
     from ..db import connect, transaction
 
-import sys as _sys
-
-def _svc_attr(name, default=None):
-    try:
-        svc = _sys.modules.get("app_core.services")
-        if svc is not None and hasattr(svc, name):
-            return getattr(svc, name)
-    except Exception:
-        pass
-    return globals().get(name, default)
 
     if db.connect().execute("SELECT 1 FROM rate_plans WHERE LOWER(name)=LOWER(?) AND id!=?",
                          (name.strip(), plan_id)).fetchone():
@@ -1588,16 +1545,6 @@ def delete_rate_plan(plan_id, password):
         raise PermissionError("Invalid super password.")
     from ..db import connect, transaction
 
-import sys as _sys
-
-def _svc_attr(name, default=None):
-    try:
-        svc = _sys.modules.get("app_core.services")
-        if svc is not None and hasattr(svc, name):
-            return getattr(svc, name)
-    except Exception:
-        pass
-    return globals().get(name, default)
 
     used = db.connect().execute("SELECT COUNT(*) FROM reservations WHERE rate_plan_id=?", (plan_id,)).fetchone()[0]
     if used > 0:
@@ -1706,16 +1653,6 @@ def create_reservation(guest_name, source, room_id, rate_plan_id, agreed_nightly
 def update_reservation_status(rid, new_status):
     from ..db import connect, transaction
 
-import sys as _sys
-
-def _svc_attr(name, default=None):
-    try:
-        svc = _sys.modules.get("app_core.services")
-        if svc is not None and hasattr(svc, name):
-            return getattr(svc, name)
-    except Exception:
-        pass
-    return globals().get(name, default)
 
     row = db.connect().execute("SELECT status, room_id FROM reservations WHERE id=?", (rid,)).fetchone()
     if not row:
@@ -1802,16 +1739,6 @@ def _reservation_has_payments(rid, conn=None):
 def cancel_reservation(rid, password=None):
     from ..db import connect, transaction
 
-import sys as _sys
-
-def _svc_attr(name, default=None):
-    try:
-        svc = _sys.modules.get("app_core.services")
-        if svc is not None and hasattr(svc, name):
-            return getattr(svc, name)
-    except Exception:
-        pass
-    return globals().get(name, default)
 
     row = db.connect().execute("SELECT status FROM reservations WHERE id=?", (rid,)).fetchone()
     if not row:
@@ -1841,16 +1768,6 @@ def _svc_attr(name, default=None):
 def mark_no_show(rid, password=None):
     from ..db import connect, transaction
 
-import sys as _sys
-
-def _svc_attr(name, default=None):
-    try:
-        svc = _sys.modules.get("app_core.services")
-        if svc is not None and hasattr(svc, name):
-            return getattr(svc, name)
-    except Exception:
-        pass
-    return globals().get(name, default)
 
     row = db.connect().execute("SELECT status FROM reservations WHERE id=?", (rid,)).fetchone()
     if not row:
@@ -1981,16 +1898,6 @@ def modify_reservation(rid, new_rate, new_ci, new_co, new_room_id, password=None
         raise ValueError("Room not available.")
     from ..db import connect, transaction
 
-import sys as _sys
-
-def _svc_attr(name, default=None):
-    try:
-        svc = _sys.modules.get("app_core.services")
-        if svc is not None and hasattr(svc, name):
-            return getattr(svc, name)
-    except Exception:
-        pass
-    return globals().get(name, default)
 
     row = db.connect().execute(
         "SELECT status, room_id, agreed_nightly_rate, tax_amount FROM reservations WHERE id=?",
@@ -2808,16 +2715,6 @@ def void_pos_item(pos_id, password):
         raise PermissionError("Invalid super password.")
     from ..db import connect, transaction
 
-import sys as _sys
-
-def _svc_attr(name, default=None):
-    try:
-        svc = _sys.modules.get("app_core.services")
-        if svc is not None and hasattr(svc, name):
-            return getattr(svc, name)
-    except Exception:
-        pass
-    return globals().get(name, default)
 
     with transaction() as conn:
         row = conn.execute("SELECT * FROM pos_tabs WHERE id=? AND voided_at IS NULL", (pos_id,)).fetchone()
@@ -2973,16 +2870,6 @@ def delete_inventory_item(item_id, password):
         raise PermissionError("Invalid super password.")
     from ..db import connect, transaction
 
-import sys as _sys
-
-def _svc_attr(name, default=None):
-    try:
-        svc = _sys.modules.get("app_core.services")
-        if svc is not None and hasattr(svc, name):
-            return getattr(svc, name)
-    except Exception:
-        pass
-    return globals().get(name, default)
 
     row = db.connect().execute("SELECT stock_qty FROM inventory WHERE id=?", (item_id,)).fetchone()
     if not row:
@@ -3015,16 +2902,6 @@ def set_recipe_components(menu_item_id, components, password):
         raise PermissionError("Invalid super password.")
     from ..db import connect, transaction
 
-import sys as _sys
-
-def _svc_attr(name, default=None):
-    try:
-        svc = _sys.modules.get("app_core.services")
-        if svc is not None and hasattr(svc, name):
-            return getattr(svc, name)
-    except Exception:
-        pass
-    return globals().get(name, default)
 
     conn = db.connect()
     menu = conn.execute("SELECT id, item_name, active FROM inventory WHERE id=?", (menu_item_id,)).fetchone()
@@ -3154,16 +3031,6 @@ def create_meal(name, description, preparation, selling_price, ingredients, pass
         raise ValueError("Selling price cannot be negative.")
     from ..db import connect, transaction
 
-import sys as _sys
-
-def _svc_attr(name, default=None):
-    try:
-        svc = _sys.modules.get("app_core.services")
-        if svc is not None and hasattr(svc, name):
-            return getattr(svc, name)
-    except Exception:
-        pass
-    return globals().get(name, default)
 
     conn = db.connect()
     norm = _normalize_meal_ingredients(conn, ingredients)
@@ -3197,16 +3064,6 @@ def update_meal(meal_id, name, description, preparation, selling_price, ingredie
         raise ValueError("Selling price must be a number.")
     from ..db import connect, transaction
 
-import sys as _sys
-
-def _svc_attr(name, default=None):
-    try:
-        svc = _sys.modules.get("app_core.services")
-        if svc is not None and hasattr(svc, name):
-            return getattr(svc, name)
-    except Exception:
-        pass
-    return globals().get(name, default)
 
     conn = db.connect()
     row = conn.execute("SELECT * FROM meals WHERE id=?", (meal_id,)).fetchone()
@@ -3265,16 +3122,6 @@ def delete_meal(meal_id, password):
         raise PermissionError("Invalid super password.")
     from ..db import connect, transaction
 
-import sys as _sys
-
-def _svc_attr(name, default=None):
-    try:
-        svc = _sys.modules.get("app_core.services")
-        if svc is not None and hasattr(svc, name):
-            return getattr(svc, name)
-    except Exception:
-        pass
-    return globals().get(name, default)
 
     m = db.connect().execute("SELECT name, linked_inventory_id FROM meals WHERE id=?", (meal_id,)).fetchone()
     if not m:
@@ -3326,16 +3173,6 @@ def record_payment(reservation_id, amount, method, notes="", payment_type="Payme
         raise ValueError("Invalid reservation ID.")
     from ..db import connect, transaction
 
-import sys as _sys
-
-def _svc_attr(name, default=None):
-    try:
-        svc = _sys.modules.get("app_core.services")
-        if svc is not None and hasattr(svc, name):
-            return getattr(svc, name)
-    except Exception:
-        pass
-    return globals().get(name, default)
 
     if reservation_id is not None:
         r = db.connect().execute("SELECT status FROM reservations WHERE id=?", (reservation_id,)).fetchone()
@@ -3414,16 +3251,6 @@ def void_expense(expense_id, password):
         raise PermissionError("Invalid super password.")
     from ..db import connect, transaction
 
-import sys as _sys
-
-def _svc_attr(name, default=None):
-    try:
-        svc = _sys.modules.get("app_core.services")
-        if svc is not None and hasattr(svc, name):
-            return getattr(svc, name)
-    except Exception:
-        pass
-    return globals().get(name, default)
 
     row = db.connect().execute("SELECT * FROM operational_expenses WHERE id=? AND voided_at IS NULL",
                             (expense_id,)).fetchone()
@@ -3506,16 +3333,6 @@ def update_activity(activity_id, name, description="", category="Trip", unit_pri
         raise ValueError("Price cannot be negative.")
     from ..db import connect, transaction
 
-import sys as _sys
-
-def _svc_attr(name, default=None):
-    try:
-        svc = _sys.modules.get("app_core.services")
-        if svc is not None and hasattr(svc, name):
-            return getattr(svc, name)
-    except Exception:
-        pass
-    return globals().get(name, default)
 
     aid = int(activity_id)
     with transaction() as conn:
@@ -3538,16 +3355,6 @@ def _svc_attr(name, default=None):
 def set_activity_active(activity_id, active):
     from ..db import connect, transaction
 
-import sys as _sys
-
-def _svc_attr(name, default=None):
-    try:
-        svc = _sys.modules.get("app_core.services")
-        if svc is not None and hasattr(svc, name):
-            return getattr(svc, name)
-    except Exception:
-        pass
-    return globals().get(name, default)
 
     aid = int(activity_id)
     with transaction() as conn:
