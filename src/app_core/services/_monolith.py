@@ -207,6 +207,8 @@ SETTINGS_CATALOG = {
     "allow_negative_stock": ("Allow Negative Stock", "bool", "true", "inventory", ""),
     "language": ("Language", "enum", "en", "system", "", ["en", "ar"]),
     "session_timeout_minutes": ("Session Timeout (min)", "int", "20", "system", "Settings auto-lock"),
+    "auto_check_updates": ("Auto-check for updates", "bool", "true", "system", "Periodically check for new app updates/releases when online and show notifications"),
+    "auto_update_check_interval_hours": ("Update check interval (hours)", "float", "6", "system", "How often to poll for updates when auto-check is enabled"),
     "default_printer": ("Default Printer", "str", "", "system", "cups:Name, win:Name, raw:host:port"),
     "lockout_attempts": ("Lockout After N Failures", "int", "5", "system", ""),
     "lockout_minutes": ("Lockout Duration (min)", "int", "15", "system", ""),

@@ -32,10 +32,14 @@ This guide covers how to update a git-based Property Manager installation safely
 3. If an update is available and conditions allow, click **Update now / Apply**. (The apply action is shown only when an update is available; local changes or non-ff states may block apply.)
 4. **Restart** the TUI/app/web server to load the new version.
 
-### Auto-check when online (current behavior)
-- **Not automatic by default:** update checks are initiated manually via **Check for updates** (Settings UI) or `python -m app_core.doctor --check-updates`. The app does not currently run a periodic/background startup auto-check or push notification.
-- **If you need automatic checking:** implement an in-app check (e.g. on startup and/or periodic when online) that calls `updater.check_for_updates()`, caches/rate-limits results, and surfaces an indicator so **Update now** appears when available; or schedule external checks (cron/systemd timer/Windows Task Scheduler/Termux jobs) that notify operators.
-- **Auto-apply:** not enabled by default (risky). Prefer semi-auto (auto-check/notify, manual apply with backup/maintenance window). If automating apply, always include verified backup, clean ff-only update, dependency refresh if needed, controlled restart, and health/doctor verification with rollback plan.
+### Auto-check and update notifications (polling-based)
+- **Built-in polling checks:** the app performs **best-effort automatic update checks when online** (startup/periodic, cached/rate-limited) and shows notifications when a new update/release is detected:
+  - **Web UI:** banner/notice when an update is available (with links to **App updates** and/or release/details).
+  - **TUI:** startup notification (toast) when an update is available.
+  - **Git installs:** checks remote commits (fast-forward availability). **Native/packaged installs:** checks latest GitHub Release/tag (best-effort version comparison).
+- **Settings:** `auto_check_updates` (default enabled) and `auto_update_check_interval_hours` control polling behavior. Checks are read-only and use network access to GitHub; failures are handled gracefully (no crash).
+- **Important:** notifications are **not push notifications**; apps detect updates when they run and can reach GitHub. Native/packaged apps still require downloading/installing the new release artifact (or a native-aware updater) — `git push` alone does not update an installed native binary.
+- **Auto-apply:** not enabled by default (risky). Prefer semi-auto (notify, manual apply with backup/maintenance window). For git installs, apply via **Settings → App updates** (ff-only, clean tree) then restart; for native builds, install the new release asset. If automating apply, always include verified backup, dependency refresh if needed, controlled restart, and health/doctor verification with rollback plan.
 
 ### Requirements and limits
 - **Clean working tree required:** commit, stash, or discard local changes before apply.

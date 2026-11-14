@@ -24,9 +24,17 @@ def _to_template_data(obj):
 
 def render(request: Request, name: str, ctx: dict | None = None, status: int = 200) -> HTMLResponse:
     templates = request.app.state.templates
+    # Best-effort cached update notice (polling-based). Avoid blocking UI on network issues.
+    update_notice = None
+    try:
+        from app_core import updater
+        update_notice = updater.get_cached_update_notice(force=False, timeout=4)
+    except Exception:
+        update_notice = None
     context = {"request": request, "services": services, "paths": paths, "csrf_token": deps.csrf_token(request),
                "flashes": deps.pop_flashes(request), "unlocked": deps.is_unlocked(request),
-               "brand_name": services.get_app_display_name(), "gift": services.get_gift_attribution()}
+               "brand_name": services.get_app_display_name(), "gift": services.get_gift_attribution(),
+               "update_notice": update_notice}
     if ctx:
         context.update(ctx)
     context = _to_template_data(context)

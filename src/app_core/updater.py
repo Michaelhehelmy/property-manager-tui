@@ -14,6 +14,7 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -26,7 +27,10 @@ REPO_URL = f"https://github.com/{REPO_SLUG}"
 API_COMMITS_URL = f"https://api.github.com/repos/{REPO_SLUG}/commits"
 DEFAULT_BRANCH = "main"
 USER_AGENT = "property-manager-tui-updater"
+API_RELEASE_LATEST_URL = f"https://api.github.com/repos/{REPO_SLUG}/releases/latest"
 _SAFE_REF_RE = re.compile(r"^[A-Za-z0-9._/\-]+$")
+_UPDATE_CACHE: dict[str, Any] = {"checked_at_ts": 0.0, "result": None}
+
 
 
 def _validate_ref(name: str, value: str) -> str:
@@ -140,6 +144,169 @@ def _github_get(url: str, timeout: int = 12) -> Any:
     with urllib.request.urlopen(req, timeout=t) as resp:
         data = resp.read().decode("utf-8", errors="replace")
     return json.loads(data)
+
+
+
+def _parse_version_tag(tag: str | None) -> tuple:
+    """Best-effort semantic-ish version parser for tags like v1.2.3."""
+    s = str(tag or "").strip()
+    if s.lower().startswith("v"):
+        s = s[1:]
+    parts = []
+    for p in re.split(r"[.\-+_]", s):
+        if p.isdigit():
+            parts.append(int(p))
+        else:
+            m = re.match(r"(\d+)", p)
+            if m:
+                parts.append(int(m.group(1)))
+    return tuple(parts) if parts else (0,)
+
+
+def get_latest_release(timeout: int = 12) -> dict[str, Any]:
+    """Fetch latest GitHub release metadata (read-only)."""
+    try:
+        timeout = max(2, min(int(timeout or 12), 30))
+    except Exception:
+        timeout = 12
+    data = _github_get(API_RELEASE_LATEST_URL, timeout=timeout)
+    if not isinstance(data, dict):
+        raise ValueError("Unexpected release response")
+    tag = data.get("tag_name") or data.get("name")
+    assets = []
+    for a in (data.get("assets") or []):
+        if not isinstance(a, dict):
+            continue
+        assets.append({
+            "name": a.get("name"),
+            "browser_download_url": a.get("browser_download_url"),
+            "size": a.get("size"),
+            "content_type": a.get("content_type"),
+        })
+    return {
+        "tag_name": tag,
+        "name": data.get("name"),
+        "html_url": data.get("html_url"),
+        "published_at": data.get("published_at"),
+        "body": data.get("body"),
+        "assets": assets,
+        "prerelease": bool(data.get("prerelease")),
+        "draft": bool(data.get("draft")),
+    }
+
+
+def _default_update_interval_sec() -> int:
+    try:
+        # optional setting; fall back to 6h
+        from .services import get_setting
+        v = get_setting("auto_update_check_interval_hours", "6")
+        hours = float(v)
+        if hours <= 0:
+            return 0
+        return int(max(300, min(hours * 3600, 7 * 24 * 3600)))
+    except Exception:
+        return 6 * 3600
+
+
+def auto_update_checks_enabled() -> bool:
+    try:
+        from .services import get_setting
+        v = str(get_setting("auto_check_updates", "true") or "true").strip().lower()
+        return v in ("1", "true", "yes", "on")
+    except Exception:
+        return True
+
+
+def get_cached_update_notice(force: bool = False, timeout: int = 8) -> dict[str, Any]:
+    """Cached update notification for TUI/Web. Checks git commits and/or latest release.
+
+    Polling-based (no push infra): callers should invoke periodically/on startup when online.
+    """
+    now = time.time()
+    interval = _default_update_interval_sec()
+    if not force and _UPDATE_CACHE.get("result") is not None and interval > 0:
+        if (now - float(_UPDATE_CACHE.get("checked_at_ts") or 0.0)) < interval:
+            return _UPDATE_CACHE["result"]
+
+    local = get_local_state()
+    notice: dict[str, Any] = {
+        "ok": True,
+        "checked_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "checked_at_ts": now,
+        "update_available": False,
+        "kind": "none",  # git|release|none
+        "message": "",
+        "url": f"{REPO_URL}/releases/latest",
+        "latest_release": None,
+        "git": None,
+        "local": local,
+        "error": None,
+    }
+
+    if not auto_update_checks_enabled() and not force:
+        notice["message"] = "Automatic update checks are disabled."
+        _UPDATE_CACHE["checked_at_ts"] = now
+        _UPDATE_CACHE["result"] = notice
+        return notice
+
+    # Prefer git-based check when in a git repo (source/dev installs)
+    try:
+        if local.get("is_git_repo"):
+            git = check_for_updates(timeout=timeout)
+            notice["git"] = {
+                "ok": git.get("ok"),
+                "update_available": bool(git.get("update_available")),
+                "commits_behind": git.get("commits_behind"),
+                "latest": git.get("latest"),
+                "compare_url": git.get("compare_url"),
+                "error": git.get("error"),
+            }
+            if git.get("ok") and git.get("update_available"):
+                n = git.get("commits_behind")
+                notice["update_available"] = True
+                notice["kind"] = "git"
+                notice["message"] = f"Update available ({n} commit(s) behind)." if n is not None else "Update available."
+                notice["url"] = git.get("compare_url") or notice["url"]
+            elif not git.get("ok") and git.get("error"):
+                notice["error"] = git.get("error")
+    except Exception as e:
+        notice["error"] = str(e)
+
+    # Also check latest release (useful for packaged/native installs and release notifications)
+    try:
+        rel = get_latest_release(timeout=timeout)
+        notice["latest_release"] = {
+            "tag_name": rel.get("tag_name"),
+            "name": rel.get("name"),
+            "html_url": rel.get("html_url"),
+            "published_at": rel.get("published_at"),
+            "assets": rel.get("assets") or [],
+        }
+        if rel.get("html_url"):
+            notice["url"] = rel.get("html_url")
+        latest_tag = rel.get("tag_name") or rel.get("name")
+        if latest_tag:
+            if not notice["update_available"]:
+                local_v = _parse_version_tag(APP_VERSION)
+                remote_v = _parse_version_tag(latest_tag)
+                if remote_v > local_v and remote_v != (0,):
+                    notice["update_available"] = True
+                    notice["kind"] = "release"
+                    notice["message"] = f"New release available: {latest_tag}."
+                elif remote_v == (0,) and local_v == (0,) and str(latest_tag).strip() and str(latest_tag).strip() not in (APP_VERSION, ""):
+                    notice["update_available"] = True
+                    notice["kind"] = "release"
+                    notice["message"] = f"New release available: {latest_tag}."
+            if notice["kind"] == "git" and latest_tag and str(latest_tag).strip():
+                notice["message"] = notice["message"] + f" Latest release: {latest_tag}."
+    except Exception as e:
+        if not notice.get("error"):
+            notice["error"] = str(e)
+
+    notice["ok"] = bool(notice.get("update_available") or not notice.get("error") or notice.get("git") or notice.get("latest_release"))
+    _UPDATE_CACHE["checked_at_ts"] = now
+    _UPDATE_CACHE["result"] = notice
+    return notice
 
 
 def check_for_updates(branch: str = DEFAULT_BRANCH, limit: int = 20, timeout: int = 12) -> dict[str, Any]:

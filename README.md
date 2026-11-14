@@ -180,7 +180,7 @@ PYTHONPATH=src python -m uvicorn ui.web.server:app --host 127.0.0.1 --port 8000 
 - **Requirements/limits:** clean working tree required; non-fast-forward/diverged histories need manual git resolution.
 - **Data preserved:** DB, exports, invoices, and configured data directory (`PM_DATA_DIR`/defaults) are not modified by source updates.
 - **After apply:** **restart the app/server** to load the new version. If dependencies changed, refresh the venv via setup scripts.
-- **Auto-check when online:** not automatic by default (checks are manual). Use Settings/doctor checks, external schedulers, or add in-app periodic/startup checking if desired; avoid unattended auto-apply without backup/restart/health safeguards.
+- **Update notifications (auto-check):** built-in polling-based checks run when online (cached/rate-limited, configurable via `auto_check_updates` / `auto_update_check_interval_hours`) and notify in Web/TUI when updates/releases are available. Git installs can be applied in-app (ff-only) then restarted; native/packaged installs require downloading/installing the new release artifact. No push infrastructure; auto-apply is not enabled by default.
 - **First-time update / platform guides:** Windows: rerun `scripts/install_windows.ps1` (or `git pull --ff-only` + `scripts\setup_windows.ps1 -Action setup`) then restart. Termux (TUI/Web): rerun `scripts/install.sh` with `SKIP_WEB=1 MODE=tui` or `MODE=web ... --workers 1` (or manual ff-only + setup) then restart. Details in `docs/UPDATES.md`.
 - **Manual CLI:** `git pull --ff-only` then re-run setup to refresh deps if needed (Unix/Termux: `MODE=<...> ACTION=setup sh scripts/setup.sh`, Windows: `scripts\setup_windows.ps1 -Action setup`).
 

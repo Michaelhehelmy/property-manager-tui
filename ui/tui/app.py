@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from app_core import services
+from app_core import updater
 from app_core.services import get_app_display_name, get_app_tagline, get_loading_animation, get_gift_attribution, is_branding_configured, set_language, t
 from textual.app import App, ComposeResult
 from textual.containers import Vertical
@@ -210,6 +211,57 @@ class PropertyManagerApp(App[None]):
         self._apply_branding()
         self.set_interval(30, self._check_session_timeout)
         self._start_flow()
+        # Poll-based update notification (best-effort, non-blocking)
+        self.set_timer(2.0, self._check_update_notice)
+
+    def _check_update_notice(self) -> None:
+        def work():
+            try:
+                return updater.get_cached_update_notice(force=False, timeout=6)
+            except Exception:
+                return None
+        try:
+            # Textual worker API (newer/older compatibility)
+            if hasattr(self, "run_worker"):
+                worker = self.run_worker(work, thread=True, exclusive=False)
+                if hasattr(worker, "add_done_callback"):
+                    def _done(w):
+                        try:
+                            res = w.result
+                        except Exception:
+                            try:
+                                res = w.result()
+                            except Exception:
+                                res = None
+                        if res and res.get("update_available"):
+                            msg = res.get("message") or "A new update is available."
+                            self.call_from_thread(self.notify, msg + " (Settings → App updates / Releases)", severity="information", timeout=10)
+                    worker.add_done_callback(_done)
+                else:
+                    # fallback: run in thread and notify via call_from_thread inside
+                    import threading
+                    def _t():
+                        res = work()
+                        if res and res.get("update_available"):
+                            msg = res.get("message") or "A new update is available."
+                            try:
+                                self.call_from_thread(self.notify, msg + " (Settings → App updates / Releases)", severity="information", timeout=10)
+                            except Exception:
+                                pass
+                    threading.Thread(target=_t, daemon=True).start()
+            else:
+                import threading
+                def _t():
+                    res = work()
+                    if res and res.get("update_available"):
+                        msg = res.get("message") or "A new update is available."
+                        try:
+                            self.call_from_thread(self.notify, msg + " (Settings → App updates / Releases)", severity="information", timeout=10)
+                        except Exception:
+                            pass
+                threading.Thread(target=_t, daemon=True).start()
+        except Exception:
+            pass
 
     def _apply_branding(self) -> None:
         name = get_app_display_name()
