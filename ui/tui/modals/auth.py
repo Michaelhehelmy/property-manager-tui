@@ -79,8 +79,15 @@ class SetSuperPasswordScreen(ModalScreen):
             yield Input(placeholder=t("Super Password"), id="pw_new", password=True)
             yield Input(placeholder=t("Confirm Password"), id="pw_confirm", password=True)
             with Horizontal(classes="modal_buttons"):
-                yield Button(t("Save"), id="btn_set", variant="success")
+                yield Button("Next → Save Password & Continue", id="btn_set", variant="success")
                 yield Button(t("Quit App"), id="btn_quit", variant="error")
+
+    def on_mount(self):
+        try:
+            self.query_one("#pw_new", Input).focus()
+        except Exception:
+            pass
+
     def on_button_pressed(self, e):
         if e.button.id == "btn_set":
             pw = self.query_one("#pw_new", Input).value
@@ -146,7 +153,7 @@ class ChangePasswordModal(ModalScreen):
             yield Static("⚠ If you forget the new password, you can use an unused recovery code on the unlock screen. "
                          "Without a recovery code, the only recovery is deleting the database.", classes="warn")
             with Horizontal(classes="modal_buttons"):
-                yield Button("Change", id="btn_do", variant="warning")
+                yield Button("Save New Password", id="btn_do", variant="warning")
                 yield Button(t("Cancel"), id="btn_cancel", variant="error")
     def on_button_pressed(self, e):
         if e.button.id == "btn_do":
