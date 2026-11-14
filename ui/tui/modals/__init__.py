@@ -1,5 +1,6 @@
 """TUI modals package (split by feature) with stable import surface."""
 from .common import PLOTEXT_OK, _plt
+from rich.text import Text
 from .base import ErrorModal, ConfirmModal, ProtectedModal
 from .auth import UnlockSettingsModal, RecoveryResetModal, SetSuperPasswordScreen, RecoveryCodesScreen, ChangePasswordModal, ResetDefaultsModal
 from .reservations import DeleteReservationScreen, ModifyReservationScreen, VoidItemScreen, CancelConfirmScreen, RefundScreen, OverrideCheckoutModal
@@ -11,6 +12,7 @@ from .settings import ReviewChangesModal, ImportSettingsModal, AuditLogScreen, B
 from .assistant_misc import AssistantCorrectionModal
 
 __all__ = [
+    "Text",
     "PLOTEXT_OK","_plt",
     "ErrorModal","ConfirmModal","ProtectedModal",
     "UnlockSettingsModal","RecoveryResetModal","SetSuperPasswordScreen","RecoveryCodesScreen","ChangePasswordModal","ResetDefaultsModal",

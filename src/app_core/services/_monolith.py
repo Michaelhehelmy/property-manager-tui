@@ -777,6 +777,18 @@ def verify_password(password):
     if password == "__session__":
         return is_session_unlocked()
     from ..db import connect, transaction
+
+import sys as _sys
+
+def _svc_attr(name, default=None):
+    try:
+        svc = _sys.modules.get("app_core.services")
+        if svc is not None and hasattr(svc, name):
+            return getattr(svc, name)
+    except Exception:
+        pass
+    return globals().get(name, default)
+
     conn = db.connect()
     rows = {r["key"]: r["value"] for r in conn.execute(
         "SELECT key, value FROM app_metadata WHERE key IN ('super_password_salt','super_password_hash','failed_attempts','lockout_until')")}
@@ -861,6 +873,18 @@ def use_recovery_code(code, new_password, confirm_password):
     ch = hashlib.sha256(code_norm.encode()).hexdigest()
     key = f"recovery_{ch}"
     from ..db import connect, transaction
+
+import sys as _sys
+
+def _svc_attr(name, default=None):
+    try:
+        svc = _sys.modules.get("app_core.services")
+        if svc is not None and hasattr(svc, name):
+            return getattr(svc, name)
+    except Exception:
+        pass
+    return globals().get(name, default)
+
     conn = db.connect()
     row = conn.execute("SELECT 1 FROM app_metadata WHERE key=?", (key,)).fetchone()
     if not row:
@@ -1245,7 +1269,7 @@ def assistant_reservation_summary(reservation_id):
         return None
     bal = None
     try:
-        bal = calculate_guest_balance(rid)
+        bal = _svc_attr("calculate_guest_balance", calculate_guest_balance)(rid)
     except Exception as e:
         bal = {"error": str(e)}
     pos_count = db.connect().execute("SELECT COUNT(*) FROM pos_tabs WHERE reservation_id=? AND voided_at IS NULL", (rid,)).fetchone()[0]
@@ -1512,6 +1536,18 @@ def add_rate_plan(name, modifier, password):
     if not name or not name.strip():
         raise ValueError("Name is required.")
     from ..db import connect, transaction
+
+import sys as _sys
+
+def _svc_attr(name, default=None):
+    try:
+        svc = _sys.modules.get("app_core.services")
+        if svc is not None and hasattr(svc, name):
+            return getattr(svc, name)
+    except Exception:
+        pass
+    return globals().get(name, default)
+
     if db.connect().execute("SELECT 1 FROM rate_plans WHERE LOWER(name)=LOWER(?)", (name.strip(),)).fetchone():
         raise ValueError("Name already exists.")
     with transaction() as conn:
@@ -1526,6 +1562,18 @@ def update_rate_plan(plan_id, name, modifier, password):
     if not name or not name.strip():
         raise ValueError("Name is required.")
     from ..db import connect, transaction
+
+import sys as _sys
+
+def _svc_attr(name, default=None):
+    try:
+        svc = _sys.modules.get("app_core.services")
+        if svc is not None and hasattr(svc, name):
+            return getattr(svc, name)
+    except Exception:
+        pass
+    return globals().get(name, default)
+
     if db.connect().execute("SELECT 1 FROM rate_plans WHERE LOWER(name)=LOWER(?) AND id!=?",
                          (name.strip(), plan_id)).fetchone():
         raise ValueError("Name already exists.")
@@ -1539,6 +1587,18 @@ def delete_rate_plan(plan_id, password):
     if not verify_password(password):
         raise PermissionError("Invalid super password.")
     from ..db import connect, transaction
+
+import sys as _sys
+
+def _svc_attr(name, default=None):
+    try:
+        svc = _sys.modules.get("app_core.services")
+        if svc is not None and hasattr(svc, name):
+            return getattr(svc, name)
+    except Exception:
+        pass
+    return globals().get(name, default)
+
     used = db.connect().execute("SELECT COUNT(*) FROM reservations WHERE rate_plan_id=?", (plan_id,)).fetchone()[0]
     if used > 0:
         raise ValueError(f"Cannot delete: {used} reservations use it.")
@@ -1645,6 +1705,18 @@ def create_reservation(guest_name, source, room_id, rate_plan_id, agreed_nightly
 
 def update_reservation_status(rid, new_status):
     from ..db import connect, transaction
+
+import sys as _sys
+
+def _svc_attr(name, default=None):
+    try:
+        svc = _sys.modules.get("app_core.services")
+        if svc is not None and hasattr(svc, name):
+            return getattr(svc, name)
+    except Exception:
+        pass
+    return globals().get(name, default)
+
     row = db.connect().execute("SELECT status, room_id FROM reservations WHERE id=?", (rid,)).fetchone()
     if not row:
         raise ValueError("Reservation not found.")
@@ -1729,6 +1801,18 @@ def _reservation_has_payments(rid, conn=None):
 
 def cancel_reservation(rid, password=None):
     from ..db import connect, transaction
+
+import sys as _sys
+
+def _svc_attr(name, default=None):
+    try:
+        svc = _sys.modules.get("app_core.services")
+        if svc is not None and hasattr(svc, name):
+            return getattr(svc, name)
+    except Exception:
+        pass
+    return globals().get(name, default)
+
     row = db.connect().execute("SELECT status FROM reservations WHERE id=?", (rid,)).fetchone()
     if not row:
         raise ValueError("Reservation not found.")
@@ -1756,6 +1840,18 @@ def cancel_reservation(rid, password=None):
 
 def mark_no_show(rid, password=None):
     from ..db import connect, transaction
+
+import sys as _sys
+
+def _svc_attr(name, default=None):
+    try:
+        svc = _sys.modules.get("app_core.services")
+        if svc is not None and hasattr(svc, name):
+            return getattr(svc, name)
+    except Exception:
+        pass
+    return globals().get(name, default)
+
     row = db.connect().execute("SELECT status FROM reservations WHERE id=?", (rid,)).fetchone()
     if not row:
         raise ValueError("Reservation not found.")
@@ -1884,6 +1980,18 @@ def modify_reservation(rid, new_rate, new_ci, new_co, new_room_id, password=None
     if not allow_over and not check_room_availability(new_room_id, new_ci, new_co, exclude_res_id=rid):
         raise ValueError("Room not available.")
     from ..db import connect, transaction
+
+import sys as _sys
+
+def _svc_attr(name, default=None):
+    try:
+        svc = _sys.modules.get("app_core.services")
+        if svc is not None and hasattr(svc, name):
+            return getattr(svc, name)
+    except Exception:
+        pass
+    return globals().get(name, default)
+
     row = db.connect().execute(
         "SELECT status, room_id, agreed_nightly_rate, tax_amount FROM reservations WHERE id=?",
         (rid,)).fetchone()
@@ -2633,7 +2741,7 @@ def complete_walkin_sale(items, method, notes="", payment_type="Payment"):
             inv_id = it.get("inv_id")
             batch_id = it.get("batch_id")
             lot_code = it.get("lot_code")
-            res = _add_pos_item_tx(conn, None, desc, qty, price, inv_id, batch_id=batch_id, lot_code=lot_code)
+            res = _svc_attr("_add_pos_item_tx", _add_pos_item_tx)(conn, None, desc, qty, price, inv_id, batch_id=batch_id, lot_code=lot_code)
             ids = res.get("pos_ids") or ([res.get("pos_id")] if res.get("pos_id") else [])
             for pid0 in ids:
                 if pid0:
@@ -2646,7 +2754,7 @@ def complete_walkin_sale(items, method, notes="", payment_type="Payment"):
             (reservation_id, amount, method, payment_type, notes) VALUES (NULL, ?, ?, ?, ?)""",
             (total_gross, method, payment_type or "Payment", notes or "Walk-in sale"))
         pid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-        _post(cur, "WALKIN_PAY", pid, "PAYMENT", "", 0, 0, 0, 0, method,
+        _svc_attr("_post", _post)(cur, "WALKIN_PAY", pid, "PAYMENT", "", 0, 0, 0, 0, method,
               f"{payment_type or 'Payment'} via {method} (walk-in)", gross_override=total_gross)
         _audit("walkin_sale", "payment", pid, f"{total_gross} via {method} items={len(pos_ids)}")
 
@@ -2675,9 +2783,9 @@ def complete_walkin_sale(items, method, notes="", payment_type="Payment"):
                     "expiry_date": r["batch_expiry_date"],
                     "received_at": r["batch_received_at"],
                 })
-    receipt_text = generate_walkin_receipt_text(receipt_items, total_gross, method, payment_id=pid)
+    receipt_text = _svc_attr("generate_walkin_receipt_text", generate_walkin_receipt_text)(receipt_items, total_gross, method, payment_id=pid)
     try:
-        receipt_path = save_walkin_receipt_file(receipt_text, pid)
+        receipt_path = _svc_attr("save_walkin_receipt_file", save_walkin_receipt_file)(receipt_text, pid)
     except Exception:
         receipt_path = ""
     return {"total_gross": total_gross, "pos_ids": pos_ids, "payment_id": pid,
@@ -2699,6 +2807,18 @@ def void_pos_item(pos_id, password):
     if not verify_password(password):
         raise PermissionError("Invalid super password.")
     from ..db import connect, transaction
+
+import sys as _sys
+
+def _svc_attr(name, default=None):
+    try:
+        svc = _sys.modules.get("app_core.services")
+        if svc is not None and hasattr(svc, name):
+            return getattr(svc, name)
+    except Exception:
+        pass
+    return globals().get(name, default)
+
     with transaction() as conn:
         row = conn.execute("SELECT * FROM pos_tabs WHERE id=? AND voided_at IS NULL", (pos_id,)).fetchone()
         if not row:
@@ -2852,6 +2972,18 @@ def delete_inventory_item(item_id, password):
     if not verify_password(password):
         raise PermissionError("Invalid super password.")
     from ..db import connect, transaction
+
+import sys as _sys
+
+def _svc_attr(name, default=None):
+    try:
+        svc = _sys.modules.get("app_core.services")
+        if svc is not None and hasattr(svc, name):
+            return getattr(svc, name)
+    except Exception:
+        pass
+    return globals().get(name, default)
+
     row = db.connect().execute("SELECT stock_qty FROM inventory WHERE id=?", (item_id,)).fetchone()
     if not row:
         raise ValueError("Item not found.")
@@ -2882,6 +3014,18 @@ def set_recipe_components(menu_item_id, components, password):
     if not verify_password(password):
         raise PermissionError("Invalid super password.")
     from ..db import connect, transaction
+
+import sys as _sys
+
+def _svc_attr(name, default=None):
+    try:
+        svc = _sys.modules.get("app_core.services")
+        if svc is not None and hasattr(svc, name):
+            return getattr(svc, name)
+    except Exception:
+        pass
+    return globals().get(name, default)
+
     conn = db.connect()
     menu = conn.execute("SELECT id, item_name, active FROM inventory WHERE id=?", (menu_item_id,)).fetchone()
     if not menu:
@@ -3009,6 +3153,18 @@ def create_meal(name, description, preparation, selling_price, ingredients, pass
     if price < 0:
         raise ValueError("Selling price cannot be negative.")
     from ..db import connect, transaction
+
+import sys as _sys
+
+def _svc_attr(name, default=None):
+    try:
+        svc = _sys.modules.get("app_core.services")
+        if svc is not None and hasattr(svc, name):
+            return getattr(svc, name)
+    except Exception:
+        pass
+    return globals().get(name, default)
+
     conn = db.connect()
     norm = _normalize_meal_ingredients(conn, ingredients)
     with transaction() as c2:
@@ -3040,6 +3196,18 @@ def update_meal(meal_id, name, description, preparation, selling_price, ingredie
     except Exception:
         raise ValueError("Selling price must be a number.")
     from ..db import connect, transaction
+
+import sys as _sys
+
+def _svc_attr(name, default=None):
+    try:
+        svc = _sys.modules.get("app_core.services")
+        if svc is not None and hasattr(svc, name):
+            return getattr(svc, name)
+    except Exception:
+        pass
+    return globals().get(name, default)
+
     conn = db.connect()
     row = conn.execute("SELECT * FROM meals WHERE id=?", (meal_id,)).fetchone()
     if not row:
@@ -3096,6 +3264,18 @@ def delete_meal(meal_id, password):
     if not verify_password(password):
         raise PermissionError("Invalid super password.")
     from ..db import connect, transaction
+
+import sys as _sys
+
+def _svc_attr(name, default=None):
+    try:
+        svc = _sys.modules.get("app_core.services")
+        if svc is not None and hasattr(svc, name):
+            return getattr(svc, name)
+    except Exception:
+        pass
+    return globals().get(name, default)
+
     m = db.connect().execute("SELECT name, linked_inventory_id FROM meals WHERE id=?", (meal_id,)).fetchone()
     if not m:
         raise ValueError("Meal not found.")
@@ -3145,6 +3325,18 @@ def record_payment(reservation_id, amount, method, notes="", payment_type="Payme
     if reservation_id is not None and not isinstance(reservation_id, int):
         raise ValueError("Invalid reservation ID.")
     from ..db import connect, transaction
+
+import sys as _sys
+
+def _svc_attr(name, default=None):
+    try:
+        svc = _sys.modules.get("app_core.services")
+        if svc is not None and hasattr(svc, name):
+            return getattr(svc, name)
+    except Exception:
+        pass
+    return globals().get(name, default)
+
     if reservation_id is not None:
         r = db.connect().execute("SELECT status FROM reservations WHERE id=?", (reservation_id,)).fetchone()
         if not r:
@@ -3221,6 +3413,18 @@ def void_expense(expense_id, password):
     if not verify_password(password):
         raise PermissionError("Invalid super password.")
     from ..db import connect, transaction
+
+import sys as _sys
+
+def _svc_attr(name, default=None):
+    try:
+        svc = _sys.modules.get("app_core.services")
+        if svc is not None and hasattr(svc, name):
+            return getattr(svc, name)
+    except Exception:
+        pass
+    return globals().get(name, default)
+
     row = db.connect().execute("SELECT * FROM operational_expenses WHERE id=? AND voided_at IS NULL",
                             (expense_id,)).fetchone()
     if not row:
@@ -3301,6 +3505,18 @@ def update_activity(activity_id, name, description="", category="Trip", unit_pri
     if price < 0:
         raise ValueError("Price cannot be negative.")
     from ..db import connect, transaction
+
+import sys as _sys
+
+def _svc_attr(name, default=None):
+    try:
+        svc = _sys.modules.get("app_core.services")
+        if svc is not None and hasattr(svc, name):
+            return getattr(svc, name)
+    except Exception:
+        pass
+    return globals().get(name, default)
+
     aid = int(activity_id)
     with transaction() as conn:
         row = conn.execute("SELECT id FROM activities WHERE id=?", (aid,)).fetchone()
@@ -3321,6 +3537,18 @@ def update_activity(activity_id, name, description="", category="Trip", unit_pri
 
 def set_activity_active(activity_id, active):
     from ..db import connect, transaction
+
+import sys as _sys
+
+def _svc_attr(name, default=None):
+    try:
+        svc = _sys.modules.get("app_core.services")
+        if svc is not None and hasattr(svc, name):
+            return getattr(svc, name)
+    except Exception:
+        pass
+    return globals().get(name, default)
+
     aid = int(activity_id)
     with transaction() as conn:
         row = conn.execute("SELECT id FROM activities WHERE id=?", (aid,)).fetchone()
@@ -3752,7 +3980,7 @@ def print_to_printer(filepath, printer=None):
             return True, f"Sent to Windows printer {value}"
         if kind == "raw":
             host, port = value
-            _print_raw_socket(host, port, str(p))
+            _svc_attr("_print_raw_socket", _print_raw_socket)(host, port, str(p))
             return True, f"Sent to raw printer {host}:{port}"
         return False, f"Unsupported target: {paths.redact_sensitive(target, 120)}"
     except subprocess.TimeoutExpired:
@@ -3770,7 +3998,7 @@ def test_print(printer=None):
     path = EXPORT_DIR / "printer_test.txt"
     display_name = get_app_display_name().upper()
     path.write_text(f"{display_name} PRINTER TEST\n{datetime.now()}\n", encoding="utf-8")
-    return print_to_printer(str(path), printer)
+    return _svc_attr("print_to_printer", print_to_printer)(str(path), printer)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -4140,21 +4368,18 @@ def _integrity_append_issue(issues, typ, detail):
 
 
 def _integrity_check_ledger_refs(conn, issues, warnings):
-    checks = [
-        ("orphan_ledger_pos_ref", "ledger POS refs missing pos_tabs ids (sample)",
-         "SELECT DISTINCT l.ref_id FROM general_ledger l WHERE l.ref_type='POS' AND l.ref_id NOT IN (SELECT id FROM pos_tabs) LIMIT 20",
-         lambda rows: [r[0] for r in rows]),
-        ("orphan_ledger_res_ref", "ledger RES refs missing reservation ids (sample)",
-         "SELECT DISTINCT l.ref_id FROM general_ledger l WHERE l.ref_type='RES' AND l.ref_id NOT IN (SELECT id FROM reservations) LIMIT 20",
-         lambda rows: [r[0] for r in rows]),
-    ]
-    for typ, label, q, fmt in checks:
-        try:
-            rows = conn.execute(q).fetchall()
-            if rows:
-                _integrity_append_issue(issues, typ, f"{label}: {fmt(rows)}")
-        except Exception as e:
-            warnings.append(f"{typ}: {e}")
+    try:
+        rows = conn.execute("SELECT DISTINCT l.ref_id FROM general_ledger l WHERE l.ref_type='POS' AND l.ref_id NOT IN (SELECT id FROM pos_tabs) LIMIT 20").fetchall()
+        if rows:
+            _integrity_append_issue(issues, "orphan_ledger_pos_ref", f"ledger POS refs missing pos_tabs ids (sample): {[r[0] for r in rows]}")
+    except Exception as e:
+        warnings.append(f"pos ref check: {e}")
+    try:
+        rows = conn.execute("SELECT DISTINCT l.ref_id FROM general_ledger l WHERE l.ref_type='RES' AND l.ref_id NOT IN (SELECT id FROM reservations) LIMIT 20").fetchall()
+        if rows:
+            _integrity_append_issue(issues, "orphan_ledger_res_ref", f"ledger RES refs missing reservation ids (sample): {[r[0] for r in rows]}")
+    except Exception as e:
+        warnings.append(f"res ref check: {e}")
     try:
         rows = conn.execute("""
             SELECT DISTINCT l.ref_type, l.ref_id FROM general_ledger l
@@ -4249,24 +4474,21 @@ def verify_ledger_integrity():
     warnings = []
     stats = {}
 
-    for name, q in [
-        ("ledger_rows", "SELECT COUNT(*) FROM general_ledger"),
-        ("reservations", "SELECT COUNT(*) FROM reservations"),
-        ("pos_rows", "SELECT COUNT(*) FROM pos_tabs"),
-        ("payments", "SELECT COUNT(*) FROM payments"),
-        ("void_reversals", "SELECT COUNT(*) FROM general_ledger WHERE reverses_id IS NOT NULL"),
-    ]:
-        try:
-            stats[name] = conn.execute(q).fetchone()[0]
-        except Exception as e:
-            warnings.append(f"stat {name}: {e}")
+    try:
+        stats["ledger_rows"] = conn.execute("SELECT COUNT(*) FROM general_ledger").fetchone()[0]
+        stats["reservations"] = conn.execute("SELECT COUNT(*) FROM reservations").fetchone()[0]
+        stats["pos_rows"] = conn.execute("SELECT COUNT(*) FROM pos_tabs").fetchone()[0]
+        stats["payments"] = conn.execute("SELECT COUNT(*) FROM payments").fetchone()[0]
+        stats["void_reversals"] = conn.execute("SELECT COUNT(*) FROM general_ledger WHERE reverses_id IS NOT NULL").fetchone()[0]
+    except Exception as e:
+        warnings.append(f"stat ledger_rows: {e}")
 
     _integrity_check_ledger_refs(conn, issues, warnings)
 
     try:
         bad = []
         for r in conn.execute("SELECT id FROM reservations WHERE status IN ('Reserved','Checked In','Checked Out') ORDER BY id DESC LIMIT 100").fetchall():
-            bal = calculate_guest_balance(r["id"])
+            bal = _svc_attr("calculate_guest_balance", calculate_guest_balance)(r["id"])
             if bal < -100000 or bal > 10000000:
                 bad.append({"reservation_id": r["id"], "balance": bal})
         if bad:
@@ -4355,7 +4577,7 @@ def _export_metadata(preset, start, end, extra=None):
 
 
 def dataset_financial_summary(start, end):
-    summary = get_general_ledger_summary()
+    summary = _svc_attr("get_general_ledger_summary", get_general_ledger_summary)()
     return {
         "period": {"start": start, "end": end},
         "summary": summary,
@@ -4395,8 +4617,9 @@ def dataset_payment_methods(start, end):
 
 
 def dataset_decision_support_v1(start, end):
-    fin = dataset_financial_daily(start, end)
-    occ = {r["date"]: r["occupancy_pct"] for r in dataset_occupancy_daily(start, end)}
+    fin = _svc_attr("dataset_financial_daily", dataset_financial_daily)(start, end)
+    occ_rows = _svc_attr("dataset_occupancy_daily", dataset_occupancy_daily)(start, end)
+    occ = {r["date"]: r["occupancy_pct"] for r in occ_rows}
     total_rev = sum(r["revenue_net_plus_service"] for r in fin)
     total_exp = sum(r["expenses_plus_cogs"] for r in fin)
     total_profit = sum(r["profit"] for r in fin)
@@ -4404,7 +4627,7 @@ def dataset_decision_support_v1(start, end):
     best_day = max(fin, key=lambda r: r["profit"], default=None)
     worst_day = min(fin, key=lambda r: r["profit"], default=None)
     neg_days = [r["date"] for r in fin if r["profit"] < 0]
-    summary = get_general_ledger_summary()
+    summary = _svc_attr("get_general_ledger_summary", get_general_ledger_summary)()
     signals = []
     if summary["ar_balance"] > 0:
         signals.append({"type": "cash", "level": "info", "message": f"Outstanding A/R balance: {summary['ar_balance']:.2f} EGP"})
@@ -4477,7 +4700,7 @@ def _dataset_by_name(name, start, end):
 
 
 def _confined_export_path(path, root=None):
-    root = Path(root or ANALYTICS_EXPORT_DIR).resolve()
+    root = Path(root or _svc_attr("ANALYTICS_EXPORT_DIR", ANALYTICS_EXPORT_DIR)).resolve()
     root.mkdir(parents=True, exist_ok=True)
     p = Path(path).resolve()
     if root != p and root not in p.parents:
@@ -4486,13 +4709,13 @@ def _confined_export_path(path, root=None):
 
 
 def _write_json(path, payload, root=None):
-    p = _confined_export_path(path, root=root or ANALYTICS_EXPORT_DIR)
+    p = _confined_export_path(path, root=_svc_attr("ANALYTICS_EXPORT_DIR", ANALYTICS_EXPORT_DIR))
     p.write_text(json.dumps(payload, indent=2, ensure_ascii=False, default=str), encoding="utf-8")
 
 
 def _write_csv(path, rows, root=None):
     rows = list(rows or [])
-    p = _confined_export_path(path, root=root or ANALYTICS_EXPORT_DIR)
+    p = _confined_export_path(path, root=_svc_attr("ANALYTICS_EXPORT_DIR", ANALYTICS_EXPORT_DIR))
     if not rows:
         p.write_text("", encoding="utf-8")
         return
@@ -4521,9 +4744,9 @@ def export_analytics_preset(preset, start, end, formats=None):
     except ValueError:
         raise ValueError("Dates must be YYYY-MM-DD.")
     formats = list(formats or spec.get("formats") or ["json"])
-    ANALYTICS_EXPORT_DIR.mkdir(parents=True, exist_ok=True)
+    _svc_attr("ANALYTICS_EXPORT_DIR", ANALYTICS_EXPORT_DIR).mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    base = ANALYTICS_EXPORT_DIR / f"{preset}_{start}_{end}_{stamp}"
+    base = _svc_attr("ANALYTICS_EXPORT_DIR", ANALYTICS_EXPORT_DIR) / f"{preset}_{start}_{end}_{stamp}"
     metadata = _export_metadata(preset, start, end)
     datasets = {}
     text_sections = []

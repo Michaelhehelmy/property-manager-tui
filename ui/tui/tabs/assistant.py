@@ -57,7 +57,7 @@ class AssistantTab(Vertical):
                 yield Button("Unlock", id="assistant_unlock", variant="warning", tooltip="Unlock to access assistant if unlock is required")
             with Vertical(id="assistant_main"):
                 yield RichLog(id="assistant_log", highlight=False, markup=False, wrap=True)
-                yield Static("", id="assistant_typing", classes="help")
+                yield Static("", id="assistant_typing", classes="help", markup=False)
                 yield Input(placeholder="Ask in plain English (e.g. 'guest #3 full portfolio', 'P&L last month', 'who owes money?', 'today's ops')", id="assistant_input")
                 with Horizontal(classes="button_row"):
                     yield Button("Send", id="assistant_send", variant="success", tooltip="Send question (answered from real app data)")
