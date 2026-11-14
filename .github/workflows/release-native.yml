@@ -1,0 +1,106 @@
+name: Build native binaries (Nuitka)
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact_name: property-manager-windows-x64
+            shell_ext: .exe
+          - os: ubuntu-latest
+            artifact_name: property-manager-linux-x64
+            shell_ext: ""
+          - os: macos-13
+            artifact_name: property-manager-macos-x64
+            shell_ext: ""
+          - os: macos-14
+            artifact_name: property-manager-macos-arm64
+            shell_ext: ""
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-web.txt || true
+          pip install nuitka ordered-set zstandard
+
+      - name: Build (Nuitka standalone)
+        shell: bash
+        run: |
+          python -m nuitka \
+            --standalone \
+            --assume-yes-for-downloads \
+            --enable-plugin=anti-bloat \
+            --include-package=app_core \
+            --include-package=ui \
+            --include-data-dir=ui/web/templates=ui/web/templates \
+            --include-data-dir=ui/web/static=ui/web/static \
+            --output-dir=dist/nuitka \
+            launcher.py
+
+      - name: Package artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist/nuitka
+          # Nuitka outputs launcher.dist or launcher.exe depending on platform/mode
+          if [ -d launcher.dist ]; then
+            if [[ "${{ matrix.os }}" == windows-* ]]; then
+              7z a "../${{ matrix.artifact_name }}.zip" launcher.dist
+            else
+              tar -czf "../${{ matrix.artifact_name }}.tar.gz" launcher.dist
+            fi
+          elif [ -f launcher.exe ]; then
+            7z a "../${{ matrix.artifact_name }}.zip" launcher.exe
+          else
+            echo "Build output not found" >&2; ls -la; exit 1
+          fi
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: dist/${{ matrix.artifact_name }}.*
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: List assets
+        run: ls -R release-assets
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-assets/*
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

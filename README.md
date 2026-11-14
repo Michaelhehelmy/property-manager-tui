@@ -231,6 +231,7 @@ See `docs/TROUBLESHOOTING.md`.
 ## More documentation
 
 - `assistant.md` — assistant capabilities, grounded/read-only behavior, evolution and plan.
+- `docs/NATIVE_BUILDS.md` — Nuitka/native standalone build and release packaging guidance (GitHub Releases assets auto-detected by landing page).
 - `docs/PRODUCTION_ROADMAP.md` — phased P0–P3 production hardening/operations roadmap and checklist.
 - `docs/DEPLOYMENT.md` — local/LAN/remote deployment, reverse proxy + HTTPS, systemd/Docker guidance.
 - `docs/SECURITY.md` — hardening checklist, secrets/cookies, authz/unlock/CSRF, printer/file/data handling.

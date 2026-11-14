@@ -3,60 +3,78 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Property Manager — local-first TUI + Web app. One-line install, update, and launch for Windows, macOS, Linux, Android (Termux), and iSH.">
-  <title>Property Manager — Install</title>
+  <meta name="description" content="Property Manager — local-first TUI + Web app. Auto-detected install, download, and launch for Windows, macOS, Linux, Android (Termux), and iSH.">
+  <title>Property Manager — Download & Install</title>
   <style>
     :root {
-      --bg: #0b1020; --panel: #121a33; --panel2: #0f1730; --text: #e8eefc; --muted: #a9b7d9;
-      --accent: #5eead4; --accent2: #60a5fa; --border: #243055; --code: #0a1226; --warn: #fbbf24; --ok: #34d399;
+      --bg:#0b1020; --panel:#121a33; --panel2:#0f1730; --text:#e8eefc; --muted:#a9b7d9;
+      --accent:#5eead4; --accent2:#60a5fa; --border:#243055; --code:#0a1226; --warn:#fbbf24; --ok:#34d399; --err:#f87171;
     }
-    * { box-sizing: border-box; }
-    body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, "Helvetica Neue", Arial, sans-serif; background: linear-gradient(180deg, #0b1020 0%, #0d1428 100%); color: var(--text); line-height: 1.5; }
-    a { color: var(--accent2); }
-    .wrap { max-width: 980px; margin: 0 auto; padding: 24px 16px 48px; }
-    header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 18px; }
-    .brand { font-size: 1.35rem; font-weight: 700; letter-spacing: .2px; }
-    .brand span { color: var(--accent); }
-    .pill { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border: 1px solid var(--border); border-radius: 999px; background: rgba(255,255,255,.03); color: var(--muted); font-size: .92rem; }
-    .hero { background: linear-gradient(135deg, rgba(94,234,212,.12), rgba(96,165,250,.10)); border: 1px solid var(--border); border-radius: 16px; padding: 20px; margin-bottom: 16px; }
-    h1 { margin: 0 0 8px; font-size: clamp(1.4rem, 2.5vw, 2rem); }
-    p { margin: 0 0 10px; color: var(--muted); }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
-    .card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 16px; }
-    .card h2 { margin: 0 0 8px; font-size: 1.05rem; }
-    .tag { display: inline-block; font-size: .78rem; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--accent); margin-bottom: 8px; }
-    .tag.recommended { background: rgba(52,211,153,.12); border-color: rgba(52,211,153,.35); color: var(--ok); }
-    pre { margin: 8px 0 0; background: var(--code); border: 1px solid var(--border); border-radius: 10px; padding: 12px; overflow: auto; color: #dce7ff; font-size: .9rem; }
-    code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
-    .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
-    button { cursor: pointer; border: 1px solid var(--border); background: #162247; color: var(--text); padding: 8px 12px; border-radius: 10px; font: inherit; }
-    button:hover { border-color: #35508f; }
-    .muted { color: var(--muted); font-size: .92rem; }
-    .note { margin-top: 14px; padding: 12px 14px; border: 1px solid rgba(251,191,36,.35); background: rgba(251,191,36,.08); border-radius: 12px; color: #fde68a; font-size: .93rem; }
-    ul { margin: 8px 0 0 18px; color: var(--muted); }
-    li { margin: 4px 0; }
-    footer { margin-top: 22px; color: var(--muted); font-size: .9rem; }
-    .k { color: var(--accent); }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,"Helvetica Neue",Arial,sans-serif;background:linear-gradient(180deg,#0b1020 0%,#0d1428 100%);color:var(--text);line-height:1.5}
+    a{color:var(--accent2)}
+    .wrap{max-width:1000px;margin:0 auto;padding:24px 16px 48px}
+    header{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:18px}
+    .brand{font-size:1.35rem;font-weight:700;letter-spacing:.2px}.brand span{color:var(--accent)}
+    .pills{display:flex;flex-wrap:wrap;gap:8px}
+    .pill{display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border:1px solid var(--border);border-radius:999px;background:rgba(255,255,255,.03);color:var(--muted);font-size:.92rem}
+    .hero{background:linear-gradient(135deg,rgba(94,234,212,.12),rgba(96,165,250,.10));border:1px solid var(--border);border-radius:16px;padding:20px;margin-bottom:16px}
+    h1{margin:0 0 8px;font-size:clamp(1.4rem,2.5vw,2rem)}
+    p{margin:0 0 10px;color:var(--muted)}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
+    .card{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:16px}
+    .card h2{margin:0 0 8px;font-size:1.05rem}
+    .tag{display:inline-block;font-size:.78rem;padding:2px 8px;border-radius:999px;border:1px solid var(--border);color:var(--accent);margin-bottom:8px}
+    .tag.recommended{background:rgba(52,211,153,.12);border-color:rgba(52,211,153,.35);color:var(--ok)}
+    .tag.native{background:rgba(96,165,250,.12);border-color:rgba(96,165,250,.35);color:var(--accent2)}
+    pre{margin:8px 0 0;background:var(--code);border:1px solid var(--border);border-radius:10px;padding:12px;overflow:auto;color:#dce7ff;font-size:.9rem}
+    code{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace}
+    .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px}
+    button,.btn{cursor:pointer;border:1px solid var(--border);background:#162247;color:var(--text);padding:8px 12px;border-radius:10px;font:inherit;text-decoration:none;display:inline-flex;align-items:center;gap:6px}
+    button:hover,.btn:hover{border-color:#35508f}
+    .btn.primary{background:linear-gradient(135deg,rgba(94,234,212,.2),rgba(96,165,250,.2));border-color:rgba(94,234,212,.45)}
+    .muted{color:var(--muted);font-size:.92rem}
+    .note{margin-top:14px;padding:12px 14px;border:1px solid rgba(251,191,36,.35);background:rgba(251,191,36,.08);border-radius:12px;color:#fde68a;font-size:.93rem}
+    .ok{color:var(--ok)} .warn{color:var(--warn)} .err{color:var(--err)}
+    ul{margin:8px 0 0 18px;color:var(--muted)} li{margin:4px 0}
+    footer{margin-top:22px;color:var(--muted);font-size:.9rem}
+    .k{color:var(--accent)}
+    .hidden{display:none !important}
+    .dl-list{margin:8px 0 0;padding:0;list-style:none}
+    .dl-list li{margin:6px 0}
   </style>
 </head>
 <body>
   <div class="wrap">
     <header>
       <div class="brand">Property <span>Manager</span></div>
-      <div class="pill">Detected: <strong id="detected-os">Detecting…</strong></div>
+      <div class="pills">
+        <div class="pill">Detected: <strong id="detected-os">Detecting…</strong></div>
+        <div class="pill">Latest: <strong id="latest-version">Checking…</strong></div>
+      </div>
     </header>
 
     <section class="hero">
       <h1>Local-first Property Manager — Terminal (TUI) + Web</h1>
-      <p>Cross-platform via terminal and browser: run the <strong class="k">TUI</strong> locally or serve the <strong class="k">Web UI</strong> and access it from any device on your network (or via SSH/VPN). <strong>One command per OS</strong> installs on first run, or checks for updates and launches on re-run — then you choose TUI or Web in the launcher. Runtime data (DB/exports/invoices) is preserved.</p>
+      <p>Cross-platform via terminal and browser: run the <strong class="k">TUI</strong> locally or serve the <strong class="k">Web UI</strong> and access it from any device on your network (or via SSH/VPN). This page auto-detects your device and recommends the best install/download option. Runtime data (DB/exports/invoices) is preserved.</p>
       <div class="row">
+        <a href="https://github.com/Michaelhehelmy/property-manager-tui/releases/latest" target="_blank" rel="noopener"><button type="button" class="primary">Latest Release</button></a>
         <a href="https://github.com/Michaelhehelmy/property-manager-tui" target="_blank" rel="noopener"><button type="button">View on GitHub</button></a>
         <a href="https://github.com/Michaelhehelmy/property-manager-tui#readme" target="_blank" rel="noopener"><button type="button">Documentation</button></a>
       </div>
     </section>
 
+    <section class="card" id="native-card" style="margin-bottom:14px;">
+      <div class="tag native">Native app download (auto-detected)</div>
+      <h2 id="native-title">Checking for native builds…</h2>
+      <p id="native-desc" class="muted">Looking up the latest release assets for your platform.</p>
+      <div id="native-actions" class="row"></div>
+      <ul id="native-assets" class="dl-list"></ul>
+      <p id="native-fallback" class="muted" style="margin-top:10px;"></p>
+    </section>
+
     <section class="card" id="recommended-card" style="margin-bottom:14px;">
-      <div class="tag recommended">Recommended for your device</div>
+      <div class="tag recommended">Recommended install / update / launch</div>
       <h2 id="rec-title">Install / update / launch</h2>
       <p id="rec-desc" class="muted"></p>
       <pre><code id="rec-cmd"></code></pre>
@@ -70,106 +88,182 @@
     <section class="grid" aria-label="Install options">
       <article class="card os-card" data-os="windows">
         <div class="tag">Windows 10/11</div>
-        <h2>PowerShell (one-liner)</h2>
-        <p class="muted">Works on Windows PowerShell 5.1 and PowerShell 7+. Bootstraps Python/Git via winget if needed, installs/updates, and runs setup.</p>
+        <h2>Native build or PowerShell installer</h2>
+        <p class="muted">If a native Windows build is published in Releases, download and run it. Otherwise use the one-liner installer (PowerShell 5.1+/7+, bootstraps Python/Git via winget when needed). Re-run to update.</p>
         <pre><code>irm https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install_windows.ps1 | iex</code></pre>
-        <p class="muted" style="margin-top:8px;">If you already have the repo: <code>powershell -ExecutionPolicy Bypass -File .\scripts\setup_windows.ps1 -Action deploy -Mode auto</code>. Web (local): set <code>$env:MODE='web'; $env:HOST='127.0.0.1'; $env:PORT='8000'; $env:PM_WEB_SECRET_KEY='&lt;strong-random&gt;'</code> before running.</p>
+        <p class="muted" style="margin-top:8px;">Recovery: <code>$env:REPAIR='1'; irm ... | iex</code>. Web (local): set <code>$env:MODE='web'; $env:HOST='127.0.0.1'; $env:PORT='8000'; $env:PM_WEB_SECRET_KEY='&lt;strong-random&gt;'</code>.</p>
       </article>
 
       <article class="card os-card" data-os="linux">
         <div class="tag">Linux / macOS / WSL</div>
-        <h2>curl or wget (install / update / launch)</h2>
+        <h2>Native build or script installer</h2>
         <pre><code>curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh | sh</code></pre>
         <pre><code>wget -qO- https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh | sh</code></pre>
-        <p class="muted" style="margin-top:8px;">Same command on re-run updates &amp; launches. TUI-only: <code>| SKIP_WEB=1 MODE=tui sh</code>. Web: <code>| MODE=web HOST=127.0.0.1 PORT=8000 PM_WEB_SECRET_KEY="$(openssl rand -hex 32)" sh</code>.</p>
+        <p class="muted" style="margin-top:8px;">Re-run to update. Recovery: <code>REPAIR=1</code>. TUI-only: <code>| SKIP_WEB=1 MODE=tui sh</code>. Web: <code>| MODE=web HOST=127.0.0.1 PORT=8000 PM_WEB_SECRET_KEY="$(openssl rand -hex 32)" sh</code>.</p>
       </article>
 
       <article class="card os-card" data-os="android">
         <div class="tag">Android (Termux)</div>
-        <h2>Terminal + Web</h2>
+        <h2>Terminal + Web (script install)</h2>
         <pre><code>pkg update -y &amp;&amp; pkg install -y curl
 curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh | sh</code></pre>
-        <p class="muted" style="margin-top:8px;">Installs/updates and launches the launcher (choose TUI or Web). <strong>If web deps fail to build</strong> (e.g. <code>pydantic-core</code>/maturin/Rust wheel issues), use TUI-only: <code>| SKIP_WEB=1 MODE=tui sh</code>.</p>
+        <p class="muted" style="margin-top:8px;">Native Android APK packaging is separate from desktop Nuitka builds. If web deps fail to build, use <code>SKIP_WEB=1 MODE=tui</code>. Recovery: <code>REPAIR=1</code>.</p>
       </article>
 
       <article class="card os-card" data-os="ios">
-        <div class="tag">iOS (iSH / SSH)</div>
-        <h2>TUI recommended (iSH Alpine)</h2>
+        <div class="tag">iOS (iSH / SSH / Web)</div>
+        <h2>TUI or remote Web UI</h2>
         <pre><code>apk add --no-cache curl
 curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh | SKIP_WEB=1 MODE=tui sh</code></pre>
-        <p class="muted" style="margin-top:8px;">For iPhone/iPad without iSH: <strong>SSH</strong> into a server running the TUI, or open the <strong>Web UI</strong> via LAN/VPN (<code>HOST=0.0.0.0</code>, <code>--workers 1</code>, strong <code>PM_WEB_SECRET_KEY</code>, HTTPS for remote/shared access).</p>
+        <p class="muted" style="margin-top:8px;">No native iOS app package from Nuitka; use iSH (TUI), SSH to a host, or open the Web UI over LAN/VPN/HTTPS.</p>
       </article>
     </section>
 
     <section class="card" style="margin-top:14px;">
-      <h2>After install (and on every re-run)</h2>
+      <h2>After install / download</h2>
       <ul>
-        <li><strong>Same command = auto:</strong> first run installs everything; re-run checks for updates (git fast-forward), refreshes deps, and launches the launcher (choose TUI or Web).</li>
+        <li><strong>Native builds:</strong> download the asset for your OS/arch from the latest GitHub Release, verify/checksum if provided, then run/install. Native bundles still preserve runtime data in configured data dirs; follow release notes for update/replace steps.</li>
+        <li><strong>Script installs:</strong> re-run the same command to update (git fast-forward + deps refresh) and launch. Recovery for stuck git state: <code>REPAIR=1</code> (Unix/Termux) or <code>$env:REPAIR='1'</code> (Windows).</li>
         <li><strong>Run manually:</strong> <code>cd ~/property-manager-tui &amp;&amp; . .venv/bin/activate &amp;&amp; python3 launcher.py</code> (or <code>--tui</code> / <code>--web</code>).</li>
-        <li><strong>Web on LAN/phones:</strong> bind <code>0.0.0.0</code>, set a strong <code>PM_WEB_SECRET_KEY</code>, and run with a single worker (<code>--workers 1</code>, SQLite). For shared/remote access use <strong>HTTPS</strong> (reverse proxy/VPN/private network), not plain public HTTP.</li>
-        <li><strong>Phones via SSH:</strong> connect to the host and run the TUI — no native mobile app required.</li>
-        <li><strong>Updates &amp; data:</strong> in-app Settings → App updates (fast-forward, restart) or re-run the install command; runtime data (DB/exports/invoices/<code>PM_DATA_DIR</code>) is preserved.</li>
-        <li><strong>Troubleshooting (Termux/constrained):</strong> if web dependency builds fail (e.g. <code>pydantic-core</code>/maturin), rerun with <code>SKIP_WEB=1 MODE=tui</code>. On Windows, scripts are compatible with PowerShell 5.1+ (if issues persist in an existing checkout, run <code>git pull --ff-only</code> and use <code>.\scripts\setup_windows.ps1</code>).</li>
+        <li><strong>Web on LAN/phones:</strong> bind <code>0.0.0.0</code>, set strong <code>PM_WEB_SECRET_KEY</code>, run with <code>--workers 1</code> (SQLite). Use <strong>HTTPS</strong> (reverse proxy/VPN/private network) for shared/remote access.</li>
+        <li><strong>Updates &amp; data:</strong> in-app Settings → App updates (git installs), or re-run installer, or download newer native release; runtime data (DB/exports/invoices/<code>PM_DATA_DIR</code>) is preserved.</li>
       </ul>
-      <div class="note">Security: one-line installers download and execute scripts — review them and prefer HTTPS. For non-local/shared web access use HTTPS (reverse proxy/VPN), strong secrets, and keep <code>--workers 1</code>.</div>
+      <div class="note">Security: review installers/scripts and binaries before running. Prefer HTTPS and official GitHub Releases. Native builds (e.g. Nuitka) are published per release when available; if no matching asset exists for your platform, use the script installer above.</div>
     </section>
 
     <footer>
-      Property Manager (TUI + Web, shared core). Repo: <a href="https://github.com/Michaelhehelmy/property-manager-tui">Michaelhehelmy/property-manager-tui</a>. This landing page detects your OS client-side to suggest an install command.
+      Property Manager (TUI + Web, shared core). Repo: <a href="https://github.com/Michaelhehelmy/property-manager-tui">Michaelhehelmy/property-manager-tui</a>. Latest: <a href="https://github.com/Michaelhehelmy/property-manager-tui/releases/latest">GitHub Releases</a>. This page auto-detects OS/arch and checks latest release assets client-side.
     </footer>
   </div>
 
   <script>
     (function () {
-      function detectOS() {
+      var REPO = 'Michaelhehelmy/property-manager-tui';
+      var API_LATEST = 'https://api.github.com/repos/' + REPO + '/releases/latest';
+      var RELEASES_URL = 'https://github.com/' + REPO + '/releases/latest';
+
+      function detect() {
         var ua = navigator.userAgent || '';
-        var plat = navigator.platform || '';
+        var plat = (navigator.platform || '').toLowerCase();
+        var uaL = ua.toLowerCase();
         var touch = navigator.maxTouchPoints || 0;
-        var isAndroid = /Android/i.test(ua);
-        var isIOS = /iPhone|iPad|iPod/i.test(ua) || (plat === 'MacIntel' && touch > 1);
-        var isWindows = /Win/i.test(plat) || /Windows/i.test(ua);
-        var isMac = /Mac/i.test(plat) && !isIOS;
-        var isLinux = /Linux/i.test(plat) && !isAndroid;
-        if (isWindows) return { id: 'windows', label: 'Windows' };
-        if (isAndroid) return { id: 'android', label: 'Android' };
-        if (isIOS) return { id: 'ios', label: 'iOS (iPhone/iPad)' };
-        if (isMac) return { id: 'linux', label: 'macOS' };
-        if (isLinux) return { id: 'linux', label: 'Linux' };
-        return { id: 'linux', label: 'Unix-like' };
+        var isAndroid = /android/i.test(ua);
+        var isIOS = /iphone|ipad|ipod/i.test(ua) || (plat === 'macintel' && touch > 1);
+        var isWindows = /win/i.test(plat) || /windows/i.test(ua);
+        var isMac = /mac/i.test(plat) && !isIOS;
+        var isLinux = /linux/i.test(plat) && !isAndroid;
+        var arch = 'x64';
+        if (/arm64|aarch64|apple/.test(uaL) || (isMac && touch > 1)) arch = 'arm64';
+        if (/armv7|armv8|arm/.test(uaL) && !/arm64|aarch64/.test(uaL)) arch = 'arm';
+        var os = 'linux', label = 'Linux';
+        if (isWindows) { os='windows'; label='Windows'; }
+        else if (isAndroid) { os='android'; label='Android (Termux)'; }
+        else if (isIOS) { os='ios'; label='iOS'; }
+        else if (isMac) { os='macos'; label='macOS'; }
+        else if (isLinux) { os='linux'; label='Linux'; }
+        return { os: os, label: label + (os==='windows'||os==='linux'||os==='macos' ? ' ('+arch+')' : ''), arch: arch, isWindows:isWindows, isMac:isMac, isLinux:isLinux, isAndroid:isAndroid, isIOS:isIOS };
       }
 
       var options = {
         windows: {
-          title: 'Windows — PowerShell one-liner (install / update)',
-          desc: 'Works on Windows PowerShell 5.1 and PowerShell 7+. Bootstraps prerequisites (Python/Git via winget when available), installs/updates the app, and runs setup. Re-run to update. Run PowerShell as Administrator if prerequisites need installing.',
+          title: 'Windows — install / update / launch',
+          desc: 'Use a native Windows build from Releases when available, or the PowerShell installer (5.1+/7+, bootstraps Python/Git via winget when needed). Re-run to update. Use REPAIR=1 for stuck git checkouts.',
           cmd: 'irm https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install_windows.ps1 | iex',
-          alt: 'Customize: $env:MODE=\'tui\'; irm ... | iex  |  Web: $env:MODE=\'web\'; $env:HOST=\'127.0.0.1\'; $env:PORT=\'8000\'; $env:PM_WEB_SECRET_KEY=\'<strong-random>\'; irm ... | iex  |  From repo checkout: powershell -ExecutionPolicy Bypass -File .\\scripts\\setup_windows.ps1 -Action deploy -Mode auto'
+          alt: 'Native: download the Windows asset below (if published). Recovery: $env:REPAIR=\'1\'; irm ... | iex  |  TUI: $env:MODE=\'tui\'  |  Web: $env:MODE=\'web\'; $env:HOST=\'127.0.0.1\'; $env:PORT=\'8000\'; $env:PM_WEB_SECRET_KEY=\'<strong-random>\''
         },
         linux: {
-          title: 'Linux / macOS / WSL — one-liner (install / update / launch)',
-          desc: 'Same command for first install or re-run: detects your system, installs or updates (git fast-forward + deps), and launches the launcher (choose TUI or Web).',
+          title: 'Linux / macOS / WSL — install / update / launch',
+          desc: 'Use a native build from Releases when available, or the script installer. Re-run to update. Use REPAIR=1 for stuck git checkouts.',
           cmd: 'curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh | sh',
-          alt: 'wget fallback: wget -qO- https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh | sh  |  TUI-only: ... | SKIP_WEB=1 MODE=tui sh  |  Web: ... | MODE=web HOST=127.0.0.1 PORT=8000 PM_WEB_SECRET_KEY="$(openssl rand -hex 32)" sh'
+          alt: 'wget fallback available. Recovery: REPAIR=1. TUI-only: ... | SKIP_WEB=1 MODE=tui sh  |  Web: ... | MODE=web HOST=127.0.0.1 PORT=8000 PM_WEB_SECRET_KEY="$(openssl rand -hex 32)" sh'
+        },
+        macos: {
+          title: 'macOS — install / update / launch',
+          desc: 'Use a native macOS build from Releases when available (x64/arm64), or the script installer. Re-run to update. Use REPAIR=1 for stuck git checkouts.',
+          cmd: 'curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh | sh',
+          alt: 'Native: download the macOS asset below (if published). TUI-only: ... | SKIP_WEB=1 MODE=tui sh'
         },
         android: {
-          title: 'Android (Termux) — one-liner (install / update / launch)',
-          desc: 'Runs in Termux. Re-run to update. If web dependencies fail to build (e.g. pydantic-core/maturin/Rust wheel issues on some devices), use TUI-only mode — this is the most reliable fallback.',
+          title: 'Android (Termux) — install / update / launch',
+          desc: 'Script install in Termux (native Android APK packaging is separate). Re-run to update. If web deps fail to build, use SKIP_WEB=1 MODE=tui. Recovery: REPAIR=1.',
           cmd: 'pkg update -y && pkg install -y curl\ncurl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh | sh',
-          alt: 'TUI-only (recommended fallback): ... | SKIP_WEB=1 MODE=tui sh  |  Web/LAN (if deps install): ... | MODE=web HOST=0.0.0.0 PORT=8000 PM_WEB_SECRET_KEY="$(openssl rand -hex 32)" sh  |  Access: http://127.0.0.1:8000 or http://<phone-ip>:8000'
+          alt: 'TUI-only fallback: ... | SKIP_WEB=1 MODE=tui sh  |  Recovery: REPAIR=1 curl -fsSL .../install.sh | sh'
         },
         ios: {
-          title: 'iPhone/iPad — best options (SSH or Web)',
-          desc: 'Native local install is limited on iOS. Use iSH (Alpine) for TUI, SSH into a server running the app, or open the Web UI over LAN/VPN. Re-run the same command to update.',
+          title: 'iPhone/iPad — SSH, iSH (TUI), or Web',
+          desc: 'No native iOS Nuitka package; use iSH (TUI), SSH into a host, or open the Web UI over LAN/VPN/HTTPS.',
           cmd: 'apk add --no-cache curl\ncurl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh | SKIP_WEB=1 MODE=tui sh',
-          alt: 'iSH command shown above (TUI recommended). No iSH? SSH to your host and run the TUI, or browse the Web UI at http://<host-ip>:8000 (server started with HOST=0.0.0.0, --workers 1, strong PM_WEB_SECRET_KEY, HTTPS for remote/shared access).'
+          alt: 'Web UI: run server on a host and browse http://<host-ip>:8000 (use --workers 1, strong PM_WEB_SECRET_KEY, HTTPS for shared/remote access).'
         }
       };
 
-      var os = detectOS();
-      var det = document.getElementById('detected-os');
-      det.textContent = os.label;
+      function matchAssets(assets, info) {
+        if (!assets || !assets.length) return [];
+        var os = info.os, arch = info.arch;
+        function score(name) {
+          var n = name.toLowerCase();
+          var s = 0;
+          if (os === 'windows' && (/win/.test(n) || /\.exe($|\.)/.test(n) || /\.msi($|\.)/.test(n) || /\.zip($|\.)/.test(n))) s += 5;
+          if (os === 'macos' && (/mac|osx|darwin/.test(n) || /\.dmg($|\.)/.test(n) || /\.pkg($|\.)/.test(n))) s += 5;
+          if (os === 'linux' && (/linux/.test(n) || /\.appimage($|\.)/.test(n) || /\.deb($|\.)/.test(n) || /\.tar/.test(n))) s += 5;
+          if (os === 'android' && (/android|\.apk($|\.)/.test(n))) s += 5;
+          if (arch === 'arm64' && (/arm64|aarch64/.test(n))) s += 2;
+          if (arch === 'x64' && (/x64|amd64|x86_64/.test(n))) s += 2;
+          if (/nuitka|native|standalone/.test(n)) s += 1;
+          if (/sha256|checksum|\.sig/.test(n)) s -= 10;
+          return s;
+        }
+        return assets.map(function(a){ return {a:a, s:score(a.name||'')}; })
+          .filter(function(x){ return x.s > 0; })
+          .sort(function(x,y){ return y.s - x.s; })
+          .map(function(x){ return x.a; });
+      }
 
-      var opt = options[os.id] || options.linux;
+      function setNative(info, release, err) {
+        var title = document.getElementById('native-title');
+        var desc = document.getElementById('native-desc');
+        var actions = document.getElementById('native-actions');
+        var list = document.getElementById('native-assets');
+        var fb = document.getElementById('native-fallback');
+        actions.innerHTML = ''; list.innerHTML = '';
+        var verEl = document.getElementById('latest-version');
+        if (err || !release) {
+          if (verEl) verEl.textContent = 'unavailable';
+          title.textContent = 'Native builds: check Releases';
+          desc.textContent = 'Could not auto-check the latest release right now. You can still download native builds (if published) or use the script installer below.';
+          actions.innerHTML = '<a class="btn primary" href="'+RELEASES_URL+'" target="_blank" rel="noopener">Open Latest Release</a>';
+          fb.innerHTML = 'No auto-detected native asset. Use the script installer for your platform below.';
+          return;
+        }
+        var tag = release.tag_name || release.name || 'latest';
+        if (verEl) verEl.textContent = tag;
+        var matches = matchAssets(release.assets || [], info);
+        if (matches.length) {
+          title.textContent = 'Native build available for ' + info.label + ' (' + tag + ')';
+          desc.textContent = 'Download the matching asset for your device, then run/install it. Verify checksums/signatures if provided in the release.';
+          var best = matches[0];
+          actions.innerHTML = '<a class="btn primary" href="'+best.browser_download_url+'" rel="noopener">Download ' + (best.name||'native build') + '</a>' +
+                              '<a class="btn" href="'+(release.html_url||RELEASES_URL)+'" target="_blank" rel="noopener">View Release</a>';
+          fb.innerHTML = '<span class="ok">Auto-detected match found.</span> If this is not the right build for your CPU/OS, pick another asset below or use the script installer.';
+        } else {
+          title.textContent = 'No native build auto-matched for ' + info.label + ' (' + tag + ')';
+          desc.textContent = 'A release exists, but no asset clearly matches this device/OS. You can browse all release assets or use the script installer (recommended fallback).';
+          actions.innerHTML = '<a class="btn primary" href="'+(release.html_url||RELEASES_URL)+'" target="_blank" rel="noopener">Browse Release Assets</a>';
+          fb.innerHTML = 'Script installer below works across supported environments and preserves runtime data.';
+        }
+        var all = (release.assets || []).slice(0, 12);
+        for (var i=0;i<all.length;i++) {
+          var a = all[i];
+          var li = document.createElement('li');
+          li.innerHTML = '<a href="'+a.browser_download_url+'" rel="noopener">'+a.name+'</a> <span class="muted">(' + Math.round((a.size||0)/1024/1024*10)/10 + ' MB)</span>';
+          list.appendChild(li);
+        }
+      }
+
+      var info = detect();
+      document.getElementById('detected-os').textContent = info.label;
+      var key = info.os === 'macos' ? 'macos' : (info.os === 'windows' ? 'windows' : (info.os === 'android' ? 'android' : (info.os === 'ios' ? 'ios' : 'linux')));
+      var opt = options[key] || options.linux;
       document.getElementById('rec-title').textContent = opt.title;
       document.getElementById('rec-desc').textContent = opt.desc;
       document.getElementById('rec-cmd').textContent = opt.cmd;
@@ -182,19 +276,27 @@ curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui
         if (navigator.clipboard && navigator.clipboard.writeText) {
           navigator.clipboard.writeText(text).then(function(){ done('Copied.'); }, function(){ done('Copy failed — select manually.'); });
         } else {
-          try {
-            var ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); done('Copied.');
-          } catch (e) { done('Copy failed — select manually.'); }
+          try { var ta=document.createElement('textarea'); ta.value=text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); done('Copied.'); }
+          catch(e){ done('Copy failed — select manually.'); }
         }
       });
 
       var cards = document.querySelectorAll('.os-card');
-      for (var i = 0; i < cards.length; i++) {
-        if (cards[i].getAttribute('data-os') === os.id) {
+      for (var i=0;i<cards.length;i++) {
+        var d = cards[i].getAttribute('data-os');
+        if (d === info.os || (d === 'linux' && (info.os === 'macos' || info.os === 'linux'))) {
           cards[i].style.borderColor = 'rgba(94,234,212,.45)';
           cards[i].style.boxShadow = '0 0 0 1px rgba(94,234,212,.12) inset';
         }
       }
+
+      // Fetch latest release (client-side). May be rate-limited or blocked by CORS/network policies.
+      try {
+        fetch(API_LATEST, { headers: { 'Accept': 'application/vnd.github+json' } })
+          .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+          .then(function(j){ setNative(info, j, null); })
+          .catch(function(e){ setNative(info, null, e); });
+      } catch (e) { setNative(info, null, e); }
     })();
   </script>
 </body>
