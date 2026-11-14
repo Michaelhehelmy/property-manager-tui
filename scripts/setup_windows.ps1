@@ -185,16 +185,28 @@ function Clone-Or-Update([string]$git) {
   if (-not $git) { throw "Git not found and required to clone/update. Install Git for Windows or run from an existing checkout." }
   if (Test-Path (Join-Path $InstallDir '.git')) {
     Log "Updating existing repo in $InstallDir (data-preserving)"
-    try { & git -C $InstallDir fetch --all --tags --prune } catch { Warn "git fetch failed: $($_.Exception.Message)" }
+    $dirty = ''
+    try { $dirty = (& git -C $InstallDir status --porcelain 2>$null) } catch { $dirty = '' }
+    if ($dirty) {
+      Warn "Local changes detected in $InstallDir. Commit/stash/discard them before auto-update to avoid checkout/reset/pull failures."
+      try { & git -C $InstallDir status --short --branch } catch {}
+      throw "Working tree is not clean. Resolve local changes, then re-run setup/update."
+    }
+    try { & git -C $InstallDir fetch --all --tags --prune *> $null } catch { Warn "git fetch failed: $($_.Exception.Message)" }
     if ($GitRef) {
       Checkout-RequestedRef $InstallDir $GitRef
     } elseif ($Branch) {
-      try { & git -C $InstallDir checkout $Branch } catch {}
+      try { & git -C $InstallDir checkout $Branch *> $null } catch {}
     }
     try {
       & git -C $InstallDir symbolic-ref -q HEAD *> $null
-      if ($LASTEXITCODE -eq 0) { & git -C $InstallDir pull --ff-only }
-    } catch { Warn "git pull --ff-only skipped/failed (continuing)." }
+      if ($LASTEXITCODE -eq 0) {
+        & git -C $InstallDir pull --ff-only
+        if ($LASTEXITCODE -ne 0) { throw "git pull --ff-only failed (diverged or remote issue). Resolve manually, then re-run." }
+      }
+    } catch {
+      throw $_.Exception.Message
+    }
   } else {
     Log "Cloning repo into $InstallDir"
     $parent = Split-Path -Parent $InstallDir

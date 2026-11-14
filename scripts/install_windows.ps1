@@ -114,14 +114,26 @@ try {
   if (-not (Have git)) { throw "Git is not available. Install Git for Windows, reopen PowerShell, and re-run." }
   if (Test-Path (Join-Path $InstallDir '.git')) {
     Log "Updating repo in $InstallDir (data-preserving)"
-    try { git -C $InstallDir fetch --all --tags --prune } catch { Warn "git fetch failed: $($_.Exception.Message)" }
+    $dirty = ''
+    try { $dirty = (git -C $InstallDir status --porcelain 2>$null) } catch { $dirty = '' }
+    if ($dirty) {
+      Warn "Local changes detected in $InstallDir. Commit/stash/discard them before auto-update to avoid checkout/reset/pull failures."
+      try { git -C $InstallDir status --short --branch } catch {}
+      throw "Working tree is not clean. Resolve local changes, then re-run the installer/update."
+    }
+    try { git -C $InstallDir fetch --all --tags --prune *> $null } catch { Warn "git fetch failed: $($_.Exception.Message)" }
     if ($GitRef) { Checkout-RequestedRef -Dir $InstallDir -Ref $GitRef }
-    elseif ($Branch) { try { git -C $InstallDir checkout $Branch } catch {} }
+    elseif ($Branch) { try { git -C $InstallDir checkout $Branch *> $null } catch {} }
     # ff-only only when on a branch
     try {
       git -C $InstallDir symbolic-ref -q HEAD *> $null
-      if ($LASTEXITCODE -eq 0) { git -C $InstallDir pull --ff-only *> $null }
-    } catch {}
+      if ($LASTEXITCODE -eq 0) {
+        git -C $InstallDir pull --ff-only
+        if ($LASTEXITCODE -ne 0) { throw "git pull --ff-only failed (diverged or remote issue). Resolve manually, then re-run." }
+      }
+    } catch {
+      throw $_.Exception.Message
+    }
   } else {
     Log "Cloning repo to $InstallDir"
     $parent = Split-Path -Parent $InstallDir
