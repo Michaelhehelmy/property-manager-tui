@@ -10,6 +10,7 @@
 #   sh scripts/setup.sh
 #   MODE=tui|web|both|auto ACTION=setup|run|deploy|auto sh scripts/setup.sh
 #   REPO_URL=... INSTALL_DIR=... BRANCH=main GIT_REF=<branch|tag|commit> HOST=0.0.0.0 PORT=8000 sh scripts/setup.sh
+#   REPAIR=1 sh scripts/setup.sh  # recover dirty/stuck git checkout
 #
 # Examples:
 #   SKIP_WEB=1 MODE=tui sh scripts/setup.sh
@@ -29,6 +30,7 @@ RUN_TESTS="${RUN_TESTS:-0}"
 HOST="${HOST:-127.0.0.1}"
 PORT="${PORT:-8000}"
 PYTHON="${PYTHON:-python3}"
+REPAIR="${REPAIR:-${FORCE_RESET:-0}}"
 
 log() { printf '%s\n' "==> $*"; }
 warn() { printf '%s\n' "WARNING: $*" >&2; }
@@ -122,21 +124,46 @@ install_system_packages() {
 clone_or_update() {
   if [ -d "$INSTALL_DIR/.git" ]; then
     log "Updating existing repo in $INSTALL_DIR (data-preserving)"
+    [ -f "$INSTALL_DIR/.git/index.lock" ] && { warn "Removing stale .git/index.lock"; rm -f "$INSTALL_DIR/.git/index.lock" || true; }
+    git -C "$INSTALL_DIR" merge --abort >/dev/null 2>&1 || true
+    git -C "$INSTALL_DIR" rebase --abort >/dev/null 2>&1 || true
+    git -C "$INSTALL_DIR" cherry-pick --abort >/dev/null 2>&1 || true
     git -C "$INSTALL_DIR" fetch --all --tags --prune || warn "git fetch failed; continuing with existing checkout."
-    if [ -n "$GIT_REF" ]; then
-      log "Checking out requested ref: $GIT_REF"
-      if git -C "$INSTALL_DIR" rev-parse --verify --quiet "refs/remotes/origin/$GIT_REF" >/dev/null; then
-        git -C "$INSTALL_DIR" checkout -B "$GIT_REF" "origin/$GIT_REF" || git -C "$INSTALL_DIR" checkout "$GIT_REF" || warn "Failed to checkout ref '$GIT_REF'"
-      else
-        git -C "$INSTALL_DIR" checkout "$GIT_REF" || warn "Failed to checkout ref '$GIT_REF'"
-      fi
-      # Fast-forward only if on a branch tracking same name
-      if git -C "$INSTALL_DIR" symbolic-ref -q HEAD >/dev/null 2>&1; then
-        git -C "$INSTALL_DIR" pull --ff-only origin "$GIT_REF" 2>/dev/null || git -C "$INSTALL_DIR" pull --ff-only 2>/dev/null || true
+    if [ "$REPAIR" = "1" ]; then
+      warn "REPAIR=1: resetting local source to origin/$BRANCH (discards local source changes/untracked files inside repo; PM_DATA_DIR/external runtime data unaffected)"
+      git -C "$INSTALL_DIR" checkout -B "$BRANCH" "origin/$BRANCH" || git -C "$INSTALL_DIR" checkout "$BRANCH" || { err "Repair checkout failed"; exit 1; }
+      git -C "$INSTALL_DIR" reset --hard "origin/$BRANCH" || { err "Repair reset failed"; exit 1; }
+      git -C "$INSTALL_DIR" clean -fd >/dev/null 2>&1 || true
+      if [ -n "$GIT_REF" ] && [ "$GIT_REF" != "$BRANCH" ]; then
+        log "Checking out requested ref after repair: $GIT_REF"
+        if git -C "$INSTALL_DIR" rev-parse --verify --quiet "refs/remotes/origin/$GIT_REF" >/dev/null; then
+          git -C "$INSTALL_DIR" checkout -B "$GIT_REF" "origin/$GIT_REF" || git -C "$INSTALL_DIR" checkout "$GIT_REF" || { err "Failed to checkout ref '$GIT_REF' after repair"; exit 1; }
+        else
+          git -C "$INSTALL_DIR" checkout "$GIT_REF" || { err "Failed to checkout ref '$GIT_REF' after repair"; exit 1; }
+        fi
       fi
     else
-      git -C "$INSTALL_DIR" checkout "$BRANCH" 2>/dev/null || true
-      git -C "$INSTALL_DIR" pull --ff-only origin "$BRANCH" 2>/dev/null || git -C "$INSTALL_DIR" pull --ff-only 2>/dev/null || git -C "$INSTALL_DIR" pull 2>/dev/null || warn "git pull failed; continuing."
+      if [ -n "$(git -C "$INSTALL_DIR" status --porcelain 2>/dev/null || true)" ]; then
+        warn "Local changes detected in $INSTALL_DIR. Commit/stash/discard them, or rerun with REPAIR=1 to auto-reset local source to origin/$BRANCH."
+        git -C "$INSTALL_DIR" status --short --branch 2>/dev/null || true
+        err "Working tree is not clean (set REPAIR=1/FORCE_RESET=1 for automatic recovery)."
+        exit 1
+      fi
+      if [ -n "$GIT_REF" ]; then
+        log "Checking out requested ref: $GIT_REF"
+        if git -C "$INSTALL_DIR" rev-parse --verify --quiet "refs/remotes/origin/$GIT_REF" >/dev/null; then
+          git -C "$INSTALL_DIR" checkout -B "$GIT_REF" "origin/$GIT_REF" || git -C "$INSTALL_DIR" checkout "$GIT_REF" || warn "Failed to checkout ref '$GIT_REF'"
+        else
+          git -C "$INSTALL_DIR" checkout "$GIT_REF" || warn "Failed to checkout ref '$GIT_REF'"
+        fi
+        # Fast-forward only if on a branch tracking same name
+        if git -C "$INSTALL_DIR" symbolic-ref -q HEAD >/dev/null 2>&1; then
+          git -C "$INSTALL_DIR" pull --ff-only origin "$GIT_REF" 2>/dev/null || git -C "$INSTALL_DIR" pull --ff-only 2>/dev/null || { err "git pull --ff-only failed. Rerun with REPAIR=1/FORCE_RESET=1 or resolve manually."; exit 1; }
+        fi
+      else
+        git -C "$INSTALL_DIR" checkout "$BRANCH" 2>/dev/null || true
+        git -C "$INSTALL_DIR" pull --ff-only origin "$BRANCH" 2>/dev/null || git -C "$INSTALL_DIR" pull --ff-only 2>/dev/null || { err "git pull --ff-only failed. Rerun with REPAIR=1/FORCE_RESET=1 or resolve manually."; exit 1; }
+      fi
     fi
   else
     log "Cloning repo into $INSTALL_DIR"

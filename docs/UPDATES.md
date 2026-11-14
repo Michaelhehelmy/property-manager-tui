@@ -66,6 +66,9 @@ These flows are for **git-based installs** (recommended). Runtime data (**DB, ex
 
    # Pinned ref for reproducibility
    $env:GIT_REF='vX.Y.Z'; irm https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install_windows.ps1 | iex
+
+   # Built-in recovery for dirty/stuck git checkout (e.g. reset/checkout/pull errors)
+   $env:REPAIR='1'; irm https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install_windows.ps1 | iex
    ```
    Defaults: installs/updates to `%USERPROFILE%\property-manager-tui` (override `INSTALL_DIR`), refreshes `.venv`/deps, and runs per mode. CMD bootstrap: download/run `scripts/install_windows.cmd`.
 2. **From existing local checkout (manual):**

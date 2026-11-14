@@ -15,9 +15,10 @@
 #   curl -fsSL .../install.sh | GIT_REF=v1.2.3 sh        # pinned tag/branch/commit
 #   curl -fsSL .../install.sh | TAG=v1.2.3 sh            # alias for pinned ref
 #   curl -fsSL .../install.sh | COMMIT=<sha> sh          # alias for pinned ref
+#   curl -fsSL .../install.sh | REPAIR=1 sh              # recover dirty/stuck git checkout
 #
 # Env vars: REPO_URL, INSTALL_DIR, BRANCH, GIT_REF, TAG, COMMIT, MODE, ACTION, SKIP_WEB,
-#           HOST, PORT, INSTALL_DEV, RUN_TESTS, PYTHON, PM_DATA_DIR, PM_WEB_SECRET_KEY
+#           HOST, PORT, REPAIR/FORCE_RESET, INSTALL_DEV, RUN_TESTS, PYTHON, PM_DATA_DIR, PM_WEB_SECRET_KEY
 # ACTION: auto|setup|run|deploy (default: auto). MODE: auto|tui|web|both.
 set -eu
 
@@ -31,6 +32,7 @@ ACTION="${ACTION:-auto}"
 SKIP_WEB="${SKIP_WEB:-auto}"
 HOST="${HOST:-127.0.0.1}"
 PORT="${PORT:-8000}"
+REPAIR="${REPAIR:-${FORCE_RESET:-0}}"
 
 log() { printf '%s\n' "==> $*"; }
 warn() { printf '%s\n' "WARNING: $*" >&2; }
@@ -142,12 +144,38 @@ main() {
   # Idempotent clone or update (never delete runtime data dirs/files).
   if [ -d "$INSTALL_DIR/.git" ]; then
     log "Updating existing checkout in $INSTALL_DIR"
+    [ -f "$INSTALL_DIR/.git/index.lock" ] && { warn "Removing stale .git/index.lock"; rm -f "$INSTALL_DIR/.git/index.lock" || true; }
+    git -C "$INSTALL_DIR" merge --abort >/dev/null 2>&1 || true
+    git -C "$INSTALL_DIR" rebase --abort >/dev/null 2>&1 || true
+    git -C "$INSTALL_DIR" cherry-pick --abort >/dev/null 2>&1 || true
     if ! git -C "$INSTALL_DIR" fetch --all --tags --prune; then
       warn "git fetch failed; continuing with existing local checkout."
     fi
-    # Best-effort: only fast-forward when on a local branch (avoid breaking detached pinned refs).
-    if git -C "$INSTALL_DIR" symbolic-ref -q HEAD >/dev/null 2>&1; then
-      git -C "$INSTALL_DIR" pull --ff-only || warn "git pull --ff-only skipped/failed (continuing)."
+    if [ "$REPAIR" = "1" ]; then
+      warn "REPAIR=1: resetting local source to origin/$BRANCH (discards local source changes/untracked files inside repo; PM_DATA_DIR/external runtime data unaffected)"
+      git -C "$INSTALL_DIR" checkout -B "$BRANCH" "origin/$BRANCH" || git -C "$INSTALL_DIR" checkout "$BRANCH" || { err "Repair checkout failed for branch '$BRANCH'."; exit 1; }
+      git -C "$INSTALL_DIR" reset --hard "origin/$BRANCH" || { err "Repair reset failed."; exit 1; }
+      git -C "$INSTALL_DIR" clean -fd >/dev/null 2>&1 || true
+      # if a different pinned ref was requested, checkout after repair
+      if [ -n "$GIT_REF" ] && [ "$GIT_REF" != "$BRANCH" ]; then
+        log "Checking out requested ref after repair: $GIT_REF"
+        if git -C "$INSTALL_DIR" rev-parse --verify --quiet "refs/remotes/origin/$GIT_REF" >/dev/null; then
+          git -C "$INSTALL_DIR" checkout -B "$GIT_REF" "origin/$GIT_REF" || git -C "$INSTALL_DIR" checkout "$GIT_REF"
+        else
+          git -C "$INSTALL_DIR" checkout "$GIT_REF" || { err "Failed to checkout ref '$GIT_REF' after repair."; exit 1; }
+        fi
+      fi
+    else
+      if [ -n "$(git -C "$INSTALL_DIR" status --porcelain 2>/dev/null || true)" ]; then
+        warn "Local changes detected in $INSTALL_DIR. Commit/stash/discard them, or rerun with REPAIR=1 to auto-reset local source to origin/$BRANCH."
+        git -C "$INSTALL_DIR" status --short --branch 2>/dev/null || true
+        err "Working tree is not clean (set REPAIR=1/FORCE_RESET=1 for automatic recovery)."
+        exit 1
+      fi
+      # Best-effort: only fast-forward when on a local branch (avoid breaking detached pinned refs).
+      if git -C "$INSTALL_DIR" symbolic-ref -q HEAD >/dev/null 2>&1; then
+        git -C "$INSTALL_DIR" pull --ff-only || { err "git pull --ff-only failed. Rerun with REPAIR=1/FORCE_RESET=1 or resolve manually."; exit 1; }
+      fi
     fi
   else
     log "Cloning into $INSTALL_DIR"
@@ -158,17 +186,23 @@ main() {
     fi
   fi
 
-  # Checkout pinned ref (branch/tag/commit) safely and idempotently.
+  # Checkout pinned ref (branch/tag/commit) safely and idempotently (skip if repair already handled).
   if [ -n "$GIT_REF" ] && [ -d "$INSTALL_DIR/.git" ]; then
-    log "Checking out requested ref: $GIT_REF"
-    git -C "$INSTALL_DIR" fetch --all --tags --prune >/dev/null 2>&1 || true
-    if git -C "$INSTALL_DIR" rev-parse --verify --quiet "refs/remotes/origin/$GIT_REF" >/dev/null; then
-      git -C "$INSTALL_DIR" checkout -B "$GIT_REF" "origin/$GIT_REF" || git -C "$INSTALL_DIR" checkout "$GIT_REF"
+    if [ "$REPAIR" = "1" ] && [ "$GIT_REF" = "$BRANCH" ]; then
+      :
+    elif [ "$REPAIR" = "1" ] && [ "$GIT_REF" != "$BRANCH" ]; then
+      : # handled after repair above
     else
-      git -C "$INSTALL_DIR" checkout "$GIT_REF" || {
-        err "Failed to checkout ref '$GIT_REF'. Verify branch/tag/commit exists."
-        exit 1
-      }
+      log "Checking out requested ref: $GIT_REF"
+      git -C "$INSTALL_DIR" fetch --all --tags --prune >/dev/null 2>&1 || true
+      if git -C "$INSTALL_DIR" rev-parse --verify --quiet "refs/remotes/origin/$GIT_REF" >/dev/null; then
+        git -C "$INSTALL_DIR" checkout -B "$GIT_REF" "origin/$GIT_REF" || git -C "$INSTALL_DIR" checkout "$GIT_REF"
+      else
+        git -C "$INSTALL_DIR" checkout "$GIT_REF" || {
+          err "Failed to checkout ref '$GIT_REF'. Verify branch/tag/commit exists."
+          exit 1
+        }
+      fi
     fi
   fi
 

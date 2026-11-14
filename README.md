@@ -61,7 +61,7 @@ tests/                       # pytest suite
 
 ## One-line install / update (all supported OS families)
 
-These commands are intended for **first-time install and later re-runs** on git-based installs: they bootstrap prerequisites where possible, clone/update (fast-forward), refresh dependencies, preserve runtime data, and launch/run per selected mode. **Always keep web on `--workers 1`**. For shared/non-local/LAN/remote web access, set a strong `PM_WEB_SECRET_KEY` and use **HTTPS** via reverse proxy/VPN/private networking (do not expose plain HTTP publicly).
+These commands are intended for **first-time install and later re-runs** on git-based installs: they bootstrap prerequisites where possible, clone/update (fast-forward), refresh dependencies, preserve runtime data, and launch/run per selected mode. **Always keep web on `--workers 1`**. For shared/non-local/LAN/remote web access, set a strong `PM_WEB_SECRET_KEY` and use **HTTPS** via reverse proxy/VPN/private networking (do not expose plain HTTP publicly). **Built-in recovery:** if an install/update gets stuck due to dirty tree, stale `.git/index.lock`, stuck merge/rebase, or ff-only/checkout errors (e.g. `Reset branch 'main'`), rerun with `REPAIR=1` (Unix/Termux) or `-Repair` / `$env:REPAIR='1'` (Windows) to auto-recover by resetting local source to the target branch (runtime data in `PM_DATA_DIR`/external data dirs is not removed by git).
 
 | OS / Environment | One-line command | Notes |
 |---|---|---|

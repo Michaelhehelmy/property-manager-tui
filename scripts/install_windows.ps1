@@ -12,9 +12,10 @@ Examples:
   $env:ACTION='deploy'; $env:MODE='tui'; irm https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install_windows.ps1 | iex
   $env:ACTION='deploy'; $env:MODE='web'; $env:HOST='0.0.0.0'; $env:PM_WEB_SECRET_KEY='...'; irm ... | iex
   $env:GIT_REF='v1.2.3'; irm ... | iex
+  $env:REPAIR='1'; irm ... | iex  # auto-recover dirty/stuck git checkout (resets local source to origin branch)
 
 Env vars: ACTION, MODE, SKIP_WEB, INSTALL_DIR, REPO_URL, BRANCH, GIT_REF/TAG/COMMIT, HOST, PORT,
-          INSTALL_DEV, RUN_TESTS, PYTHON, PM_DATA_DIR, PM_WEB_SECRET_KEY
+          INSTALL_DEV, RUN_TESTS, PYTHON, PM_DATA_DIR, PM_WEB_SECRET_KEY, REPAIR/FORCE_RESET
 #>
 [CmdletBinding()]
 param(
@@ -26,7 +27,8 @@ param(
   [string]$Branch = $(if ($env:BRANCH) { $env:BRANCH } else { 'main' }),
   [string]$GitRef = $(if ($env:GIT_REF) { $env:GIT_REF } elseif ($env:TAG) { $env:TAG } elseif ($env:COMMIT) { $env:COMMIT } elseif ($env:BRANCH) { $env:BRANCH } else { 'main' }),
   [string]$BindHost = $(if ($env:HOST) { $env:HOST } else { '127.0.0.1' }),
-  [int]$Port = $(if ($env:PORT) { [int]$env:PORT } else { 8000 })
+  [int]$Port = $(if ($env:PORT) { [int]$env:PORT } else { 8000 }),
+  [switch]$Repair = $(if ($env:REPAIR -eq '1' -or $env:FORCE_RESET -eq '1') { $true } else { $false })
 )
 
 $ErrorActionPreference = 'Stop'
@@ -114,25 +116,43 @@ try {
   if (-not (Have git)) { throw "Git is not available. Install Git for Windows, reopen PowerShell, and re-run." }
   if (Test-Path (Join-Path $InstallDir '.git')) {
     Log "Updating repo in $InstallDir (data-preserving)"
-    $dirty = ''
-    try { $dirty = (git -C $InstallDir status --porcelain 2>$null) } catch { $dirty = '' }
-    if ($dirty) {
-      Warn "Local changes detected in $InstallDir. Commit/stash/discard them before auto-update to avoid checkout/reset/pull failures."
-      try { git -C $InstallDir status --short --branch } catch {}
-      throw "Working tree is not clean. Resolve local changes, then re-run the installer/update."
+    if (Test-Path (Join-Path $InstallDir '.git\index.lock')) {
+      Warn "Found stale .git\\index.lock; removing it (if another git process is running, stop it and retry)."
+      try { Remove-Item (Join-Path $InstallDir '.git\index.lock') -Force -ErrorAction SilentlyContinue } catch {}
     }
+    try { git -C $InstallDir merge --abort *> $null } catch {}
+    try { git -C $InstallDir rebase --abort *> $null } catch {}
+    try { git -C $InstallDir cherry-pick --abort *> $null } catch {}
     try { git -C $InstallDir fetch --all --tags --prune *> $null } catch { Warn "git fetch failed: $($_.Exception.Message)" }
-    if ($GitRef) { Checkout-RequestedRef -Dir $InstallDir -Ref $GitRef }
-    elseif ($Branch) { try { git -C $InstallDir checkout $Branch *> $null } catch {} }
-    # ff-only only when on a branch
-    try {
-      git -C $InstallDir symbolic-ref -q HEAD *> $null
-      if ($LASTEXITCODE -eq 0) {
-        git -C $InstallDir pull --ff-only
-        if ($LASTEXITCODE -ne 0) { throw "git pull --ff-only failed (diverged or remote issue). Resolve manually, then re-run." }
+    if ($Repair) {
+      Warn "Repair mode: resetting local checkout to origin/$Branch (discards local source changes/untracked files inside repo). Runtime data in PM_DATA_DIR/external data dirs is not removed by git."
+      git -C $InstallDir checkout -B $Branch "origin/$Branch"
+      if ($LASTEXITCODE -ne 0) { git -C $InstallDir checkout $Branch }
+      if ($LASTEXITCODE -ne 0) { throw "Repair checkout failed for branch '$Branch'." }
+      git -C $InstallDir reset --hard "origin/$Branch"
+      if ($LASTEXITCODE -ne 0) { throw "Repair reset failed." }
+      try { git -C $InstallDir clean -fd *> $null } catch {}
+      if ($GitRef -and $GitRef -ne $Branch) { Checkout-RequestedRef -Dir $InstallDir -Ref $GitRef }
+    } else {
+      $dirty = ''
+      try { $dirty = (git -C $InstallDir status --porcelain 2>$null) } catch { $dirty = '' }
+      if ($dirty) {
+        Warn "Local changes detected in $InstallDir. Commit/stash/discard them before auto-update to avoid checkout/reset/pull failures."
+        try { git -C $InstallDir status --short --branch } catch {}
+        throw "Working tree is not clean. Re-run with -Repair (or REPAIR=1) to auto-reset local source to origin/$Branch, or resolve changes manually."
       }
-    } catch {
-      throw $_.Exception.Message
+      if ($GitRef) { Checkout-RequestedRef -Dir $InstallDir -Ref $GitRef }
+      elseif ($Branch) { try { git -C $InstallDir checkout $Branch *> $null } catch {} }
+      # ff-only only when on a branch
+      try {
+        git -C $InstallDir symbolic-ref -q HEAD *> $null
+        if ($LASTEXITCODE -eq 0) {
+          git -C $InstallDir pull --ff-only
+          if ($LASTEXITCODE -ne 0) { throw "git pull --ff-only failed (diverged or remote issue). Re-run with -Repair (or REPAIR=1) or resolve manually." }
+        }
+      } catch {
+        throw $_.Exception.Message
+      }
     }
   } else {
     Log "Cloning repo to $InstallDir"
