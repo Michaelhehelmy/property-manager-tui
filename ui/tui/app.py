@@ -171,7 +171,7 @@ class PropertyManagerApp(App[None]):
     Static { text-wrap: wrap; width: 100%; }
     RichLog { text-wrap: wrap; }
     #invoice_body, #report_body, #review_body, #chart_body, #body {
-        height: 1fr; min-height: 10;
+        height: 1fr; min-height: 8; max-height: 16;
         background: #1e1e2e; border: solid #45475a; padding: 0 1;
     }
     #path_info { color: #a6adc8; margin: 1 0; }

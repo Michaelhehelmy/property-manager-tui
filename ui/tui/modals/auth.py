@@ -116,12 +116,14 @@ class RecoveryCodesScreen(ModalScreen):
         self.codes = codes
     def compose(self):
         with Vertical(id="report_dialog"):
-            yield Static("🔑 " + t("Recovery Code"), classes="title")
-            yield Static("Save these codes. Each can be used ONCE to reset the super password (use 'Recovery Code' on unlock screens).", classes="warn")
+            yield Static("🔑 " + t("Recovery Codes"), classes="title")
+            yield Static("Save these codes now. Each can be used ONCE to reset the super password (use 'Recovery Code' on unlock screens).", classes="warn")
             yield RichLog(id="report_body", highlight=False, markup=False)
+            yield Static("", id="recovery_path", classes="help")
             with Horizontal(classes="modal_buttons"):
                 yield Button("Copy All", id="btn_copy", variant="primary")
-                yield Button(t("Close"), id="btn_close", variant="success")
+                yield Button("Save as TXT", id="btn_save_txt", variant="primary")
+                yield Button("Next → Continue", id="btn_close", variant="success")
     def on_mount(self):
         log = self.query_one("#report_body", RichLog)
         log.clear()
@@ -129,11 +131,34 @@ class RecoveryCodesScreen(ModalScreen):
         for c in self.codes:
             log.write(f"  {c}")
         log.write("\nStore them somewhere safe. They are not recoverable.")
+    def _codes_text(self):
+        lines = ["Property Manager - Super Password Recovery Codes", "", "Each code can be used ONCE to reset the super password.", ""]
+        lines.extend(str(c) for c in self.codes)
+        lines.append("")
+        lines.append("Store this file somewhere safe. These codes are not recoverable if lost.")
+        return "\n".join(lines) + "\n"
     def on_button_pressed(self, e):
         if e.button.id == "btn_copy":
             try:
                 self.app.copy_to_clipboard("\n".join(self.codes))
-                self.notify("Copied.")  # pragma: no cover - clipboard notify in headless TUI flow
+                self.notify("Recovery codes copied.")
+            except Exception as exc:
+                self.notify(str(exc), severity="error")
+        elif e.button.id == "btn_save_txt":
+            try:
+                from app_core import paths
+                paths.ensure_data_dirs()
+                export_dir = getattr(paths, "EXPORT_DIR", None) or getattr(paths, "DATA_DIR", None)
+                p = Path(export_dir)
+                p.mkdir(parents=True, exist_ok=True)
+                fname = f"recovery_codes_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+                out = (p / fname).resolve()
+                out.write_text(self._codes_text(), encoding="utf-8")
+                try:
+                    self.query_one("#recovery_path", Static).update(f"Saved: {out}")
+                except Exception:
+                    pass
+                self.notify(f"Saved recovery codes to: {out}")
             except Exception as exc:
                 self.notify(str(exc), severity="error")
         elif e.button.id == "btn_close":
