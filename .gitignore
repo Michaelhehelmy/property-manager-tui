@@ -44,3 +44,22 @@ data/property_manager.db
 data/property_manager.db-*
 data/exports/
 data/invoices/
+
+# Dev/test/CI (kept locally, not tracked for end-user repo experience)
+tests/
+.pytest_cache/
+pytest.ini
+requirements-dev.txt
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.github/workflows/
+CONTRIBUTING.md
+docs/DEVELOPMENT.md
+docs/ARCHITECTURE.md
+scripts/lint.sh
+scripts/coverage.sh
+scripts/install_deps_and_test.sh
+scripts/train_assistant_intent.py
+scripts/eval_assistant_intent.py

@@ -225,9 +225,6 @@ See `docs/TROUBLESHOOTING.md`.
 
 ## More documentation
 
-- `CONTRIBUTING.md` — contribution guidelines, PR checklist, and forking notes.
-- `docs/DEVELOPMENT.md` — developer setup, run/test/lint workflows, and subsystem guidance.
-- `docs/ARCHITECTURE.md` — architecture, module boundaries, data flows, and extension points.
 - `assistant.md` — assistant capabilities, grounded/read-only behavior, evolution and plan.
 - `docs/NATIVE_BUILDS.md` — Nuitka/native standalone build and release packaging guidance (GitHub Releases assets auto-detected by landing page).
 - `docs/PRODUCTION_ROADMAP.md` — phased P0–P3 production hardening/operations roadmap and checklist.
