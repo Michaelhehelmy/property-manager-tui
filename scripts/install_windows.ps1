@@ -177,7 +177,25 @@ try {
   $env:REPO_URL = $RepoUrl; $env:INSTALL_DIR = $InstallDir; $env:BRANCH = $Branch
   $env:GIT_REF = $GitRef; $env:TAG = ''; $env:COMMIT = ''
   & powershell -NoProfile -ExecutionPolicy Bypass -File $setup -Action $Action -Mode $Mode -SkipWeb $SkipWeb -InstallDir $InstallDir -RepoUrl $RepoUrl -Branch $Branch -GitRef $GitRef -BindHost $BindHost -Port $Port
-  exit $LASTEXITCODE
+  $rc = $LASTEXITCODE
+  # If setup returned (e.g. ACTION=setup), optionally offer native build/report for maintainers/community.
+  $bn = if ($env:BUILD_NATIVE) { $env:BUILD_NATIVE } else { 'ask' }
+  $bnScript = Join-Path $InstallDir 'scripts\community_native_build.ps1'
+  if (($bn -ne '0') -and (Test-Path $bnScript) -and ($Action -eq 'setup')) {
+    $doBuild = $false
+    if ($bn -eq '1' -or $bn -match '^(y|yes)$') { $doBuild = $true }
+    elseif ($bn -eq 'ask') {
+      try {
+        $ans = Read-Host 'Build a native app for this OS now and prepare a sanitized report to share with the maintainer? [y/N]'
+        if ($ans -match '^(y|yes)$') { $doBuild = $true }
+      } catch {}
+    }
+    if ($doBuild) {
+      Log 'Starting community native build (best-effort, may take a while; requires toolchain)...'
+      try { & powershell -NoProfile -ExecutionPolicy Bypass -File $bnScript } catch { Warn "Community native build step failed: $($_.Exception.Message)" }
+    }
+  }
+  exit $rc
 } catch {
   Write-Host "ERROR: $($_.Exception.Message)" -ForegroundColor Red
   Write-Host "If Python/Git were just installed, close & reopen PowerShell and re-run the installer." -ForegroundColor Yellow

@@ -229,7 +229,34 @@ main() {
   [ -n "${PM_WEB_SECRET_KEY:-}" ] && export PM_WEB_SECRET_KEY
 
   log "Running setup script..."
-  exec sh "$SETUP"
+  sh "$SETUP"
+  rc=$?
+  # If setup returned (e.g. ACTION=setup), optionally offer native build/report for maintainers/community.
+  if [ "${BUILD_NATIVE:-ask}" != "0" ] && [ -f "$INSTALL_DIR/scripts/community_native_build.sh" ]; then
+    case "${BUILD_NATIVE:-ask}" in
+      1|yes|YES|y|Y) ans=y ;;
+      ask)
+        ans=""
+        if [ -t 0 ]; then
+          printf '%s' 'Build a native app for this OS now and prepare a sanitized report to share with the maintainer? [y/N]: '
+          read -r ans || ans=""
+        elif [ -r /dev/tty ]; then
+          printf '%s' 'Build a native app for this OS now and prepare a sanitized report to share with the maintainer? [y/N]: ' > /dev/tty
+          read -r ans < /dev/tty || ans=""
+        else
+          ans=""
+        fi
+        ;;
+      *) ans="" ;;
+    esac
+    case "$ans" in
+      y|Y|yes|YES)
+        log "Starting community native build (best-effort, may take a while; requires compiler/toolchain)..."
+        (cd "$INSTALL_DIR" && sh scripts/community_native_build.sh) || warn "Community native build step failed (you can retry later with: sh scripts/community_native_build.sh)."
+        ;;
+    esac
+  fi
+  exit $rc
 }
 
 main "$@"

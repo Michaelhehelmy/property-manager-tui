@@ -415,6 +415,23 @@ try {
       }
       Ensure-Venv-And-Deps $py
       Print-Hints
+      # Optional: build native app for this OS and prepare sanitized report/prefilled issue for maintainer.
+      $bn = if ($env:BUILD_NATIVE) { $env:BUILD_NATIVE } else { 'ask' }
+      $bnScript = Join-Path $InstallDir 'scripts\community_native_build.ps1'
+      if (($bn -ne '0') -and (Test-Path $bnScript)) {
+        $doBuild = $false
+        if ($bn -eq '1' -or $bn -match '^(y|yes)$') { $doBuild = $true }
+        elseif ($bn -eq 'ask') {
+          try {
+            $ans = Read-Host 'Build a native app for this OS now and prepare a sanitized report to share with the maintainer? [y/N]'
+            if ($ans -match '^(y|yes)$') { $doBuild = $true }
+          } catch {}
+        }
+        if ($doBuild) {
+          Log 'Starting community native build (best-effort, may take a while; requires toolchain)...'
+          try { & powershell -NoProfile -ExecutionPolicy Bypass -File $bnScript } catch { Warn "Community native build step failed: $($_.Exception.Message)" }
+        }
+      }
     }
     'run' {
       if (-not (Test-Path (Join-Path $InstallDir '.venv'))) { throw "Install not found at $InstallDir. Run with -Action setup first." }

@@ -313,6 +313,17 @@ main() {
       clone_or_update
       setup_venv_and_deps
       print_hints
+      # Optional: build native app for this OS and prepare sanitized report/prefilled issue for maintainer.
+      if [ "${BUILD_NATIVE:-0}" = "1" ] || [ "${BUILD_NATIVE:-0}" = "ask" ]; then
+        if [ -f "$INSTALL_DIR/scripts/community_native_build.sh" ]; then
+          bn_ans=""
+          if [ "${BUILD_NATIVE}" = "1" ]; then bn_ans=y; else
+            if [ -t 0 ]; then printf '%s' 'Build a native app for this OS now and prepare a sanitized report to share with the maintainer? [y/N]: '; read -r bn_ans || bn_ans="";
+            elif [ -r /dev/tty ]; then printf '%s' 'Build a native app for this OS now and prepare a sanitized report to share with the maintainer? [y/N]: ' > /dev/tty; read -r bn_ans < /dev/tty || bn_ans=""; fi
+          fi
+          case "$bn_ans" in y|Y|yes|YES) (cd "$INSTALL_DIR" && sh scripts/community_native_build.sh) || warn "Community native build step failed." ;; esac
+        fi
+      fi
       ;;
     run)
       [ -d "$INSTALL_DIR/.venv" ] || { err "Install not found at $INSTALL_DIR. Run ACTION=setup or ACTION=auto first."; exit 1; }
