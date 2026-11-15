@@ -64,4 +64,39 @@
     </div>
   {% endif %}
 {% endfor %}
+
+{% if pending_action %}
+  <div class="msg-row assistant" id="assistant-pending-action">
+    <div class="bubble" style="border:1px solid var(--border, #ddd);">
+      <div class="msg-head"><span class="role-assistant">Proposed action</span>{% if pending_action.type %}<span class="muted" style="font-weight:500">· {{ pending_action.type }}</span>{% endif %}</div>
+      <div class="msg-body">
+        <div><strong>{{ pending_action.summary or pending_action.title or 'Assistant wants to perform an action' }}</strong></div>
+        {% if pending_action.description %}<div class="muted" style="margin-top:4px;">{{ pending_action.description }}</div>{% endif %}
+        {% if pending_action.resolved %}<details style="margin-top:6px;"><summary>Resolved details</summary><pre style="white-space:pre-wrap; font-size:12px; margin:6px 0 0;">{{ pending_action.resolved | tojson(indent=2) }}</pre></details>{% endif %}
+        {% if pending_action.preview %}<details style="margin-top:6px;"><summary>Preview</summary><pre style="white-space:pre-wrap; font-size:12px; margin:6px 0 0;">{{ pending_action.preview | tojson(indent=2) }}</pre></details>{% endif %}
+        {% if pending_action.warnings %}<div style="margin-top:6px; color:#b45309;"><strong>Warnings:</strong><ul style="margin:4px 0 0 18px;">{% for w in (pending_action.warnings if pending_action.warnings is iterable and pending_action.warnings is not string else [pending_action.warnings]) %}<li>{{ w }}</li>{% endfor %}</ul></div>{% endif %}
+        {% if pending_action.prechecks %}<details style="margin-top:6px;"><summary>Prechecks</summary><pre style="white-space:pre-wrap; font-size:12px; margin:6px 0 0;">{{ pending_action.prechecks | tojson(indent=2) }}</pre></details>{% endif %}
+        {% if pending_action.expires_at %}<div class="muted" style="margin-top:6px; font-size:12px;">Expires: {{ pending_action.expires_at }}</div>{% endif %}
+        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; align-items:flex-end;">
+          <form hx-post="/assistant/action/confirm" hx-target="#assistant-messages" hx-swap="innerHTML" hx-indicator="#top-progress" style="margin:0; display:flex; gap:6px; align-items:flex-end; flex-wrap:wrap;">
+            <input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+            <input type="hidden" name="action_id" value="{{ pending_action.id }}"/>
+            {% if pending_action.requires_password %}
+              <label style="font-size:12px;">Password/Proof
+                <input type="password" name="password" autocomplete="current-password" placeholder="Required for this action" style="font-size:12px;"/>
+              </label>
+            {% endif %}
+            <button type="submit" title="Confirm and execute this proposed action">Confirm action</button>
+          </form>
+          <form hx-post="/assistant/action/cancel" hx-target="#assistant-messages" hx-swap="innerHTML" style="margin:0;">
+            <input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+            <input type="hidden" name="action_id" value="{{ pending_action.id }}"/>
+            <button type="submit" class="warn ghost" title="Cancel this proposed action">Cancel</button>
+          </form>
+        </div>
+        <div class="muted" style="margin-top:6px; font-size:12px;">Nothing is executed until you confirm.</div>
+      </div>
+    </div>
+  </div>
+{% endif %}
 <div id="assistant-bottom"></div>

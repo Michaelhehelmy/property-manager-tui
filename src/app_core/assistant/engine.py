@@ -5,13 +5,173 @@ import logging
 import re
 
 from .common import (
-    _norm_text, _parse_date_range, extract_slots, resolve_guest,
+    _norm_text, _parse_date_range, extract_slots, resolve_guest, _safe_int,
 )
 from .formatting import _apply_proactive, _fmt_capabilities, _format_for_intent
 from .nlu import _has_any, classify_intent, rule_classify
 from .tools import execute_tool
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_write_args(text: str, slots: dict, ui_context=None):
+    t = (text or "").strip()
+    tl = _norm_text(text)
+    args = {}
+    # reservation
+    rid = slots.get("reservation_id") or _safe_int(slots.get("id"))
+    if rid:
+        args["reservation_id"] = rid
+    # qty
+    m = re.search(r"\b(?:qty|quantity|x)\s*[:#-]?\s*(\d+)\b", t, re.I) or re.search(r"\b(\d+)\s*(?:pcs|units?|items?|qty)\b", t, re.I)
+    if m:
+        args["qty"] = int(m.group(1))
+    # amount/price
+    m = re.search(r"\b(?:amount|price|total|sum)\s*(?:of|=|:)?\s*([0-9]+(?:\.[0-9]+)?)\b", t, re.I)
+    if m:
+        try: args["amount"] = float(m.group(1))
+        except Exception: pass
+    # payment method
+    for meth in ["cash", "card", "bank", "transfer", "mobile money", "momo", "credit"]:
+        if re.search(rf"\b{re.escape(meth)}\b", tl):
+            args["method"] = "Cash" if meth == "cash" else ("Card" if meth == "card" else ("Bank Transfer" if meth in ("bank","transfer") else ("Mobile Money" if meth in ("mobile money","momo") else meth.title())))
+            break
+    # item id / sku / barcode hints
+    m = re.search(r"\b(?:item|product|inv(?:entory)?(?:\s*item)?|sku|barcode|code)\s*#?\s*([A-Za-z0-9._\-]+)\b", t, re.I)
+    if m:
+        val = m.group(1)
+        ival = _safe_int(val)
+        if ival is not None:
+            args["item_id"] = ival
+        else:
+            args["sku"] = val; args["barcode"] = val
+    # lot/batch
+    m = re.search(r"\b(?:batch|lot)\s*#?\s*([A-Za-z0-9._\-]+)\b", t, re.I)
+    if m:
+        val = m.group(1); ival = _safe_int(val)
+        if ival is not None: args["batch_id"] = ival
+        else: args["lot_code"] = val
+    # guest name
+    m = re.search(r"\b(?:for|guest)\s+([A-Za-z][A-Za-z .'-]{1,60})\b", t, re.I)
+    if m and not args.get("guest_name"):
+        gn = m.group(1).strip().strip(".,")
+        if gn.lower() not in {"reservation","room","item","product","activity"}:
+            args["guest_name"] = gn
+    # room id
+    m = re.search(r"\broom\s*#?\s*(\d+)\b", t, re.I)
+    if m: args["room_id"] = int(m.group(1))
+    # activity id
+    m = re.search(r"\bactivity\s*#?\s*(\d+)\b", t, re.I)
+    if m: args["activity_id"] = int(m.group(1))
+    # dates
+    if slots.get("date_start"): args["check_in"] = slots.get("date_start")
+    if slots.get("date_end"): args["check_out"] = slots.get("date_end")
+    # notes (quoted)
+    m = re.search(r'"([^"]{2,120})"', t) or re.search(r"'([^']{2,120})'", t)
+    if m: args["notes"] = m.group(1).strip()
+    # try to extract item name for "add <name> to reservation ..."
+    if "item_name" not in args and "item_id" not in args and "sku" not in args and "barcode" not in args:
+        m = re.search(r"\b(?:add|sell|charge)\s+(.+?)\s+\b(?:to\s+reservation|for\s+reservation|reservation\s*#)\b", t, re.I)
+        if m:
+            name = m.group(1).strip().strip(".,")
+            name = re.sub(r"^(?:pos\s+item|item|product)\s+", "", name, flags=re.I).strip()
+            if 1 <= len(name) <= 80:
+                args["item_name"] = name
+    return args
+
+
+def _maybe_propose_action(intent, text, slots, ui_context=None):
+    """Return a proposed-action chat result for supported write intents, else None."""
+    tl = _norm_text(text)
+    args = _extract_write_args(text, slots, ui_context=ui_context)
+    action_type = None
+
+    # add/sell/charge POS item to reservation
+    if (re.search(r"\b(add|sell|charge|post)\b", tl) and re.search(r"\b(reservation|booking|folio)\b", tl) and re.search(r"\b(item|product|pos|meal|drink|food|inventory)\b", tl)) or intent in {"propose_add_pos_item","add_pos_item"}:
+        action_type = "propose_add_pos_item"
+        if not args.get("reservation_id"):
+            return {"ok": True, "intent": "action_needs_info", "tools_used": [], "data": {"action": "propose_add_pos_item", "missing": ["reservation_id"], "args": args},
+                    "answer": "To add a POS item, I need the **reservation** (e.g. `reservation #12`) and the **item** (name/SKU/barcode/item ID), plus quantity if not 1. I’ll verify the reservation and item exist before proposing the action."}
+    # complete walk-in sale
+    elif (re.search(r"\b(walk[- ]?in|counter)\b", tl) and re.search(r"\b(sale|sell|checkout|charge)\b", tl)) or intent in {"propose_complete_walkin_sale","complete_walkin_sale"}:
+        action_type = "propose_complete_walkin_sale"
+        # best-effort single-item payload
+        if not args.get("items"):
+            if args.get("item_id") or args.get("item_name") or args.get("sku") or args.get("barcode"):
+                it = {"inv_id": args.get("item_id"), "item_id": args.get("item_id"), "desc": args.get("item_name") or args.get("desc"), "qty": args.get("qty") or 1, "price": args.get("amount") or args.get("price"), "batch_id": args.get("batch_id"), "lot_code": args.get("lot_code")}
+                args["items"] = [it]
+        if not args.get("items"):
+            return {"ok": True, "intent": "action_needs_info", "tools_used": [], "data": {"action": "propose_complete_walkin_sale", "missing": ["items"], "args": args},
+                    "answer": "To prepare a **walk-in sale** (no reservation), tell me the **item(s)** (name/SKU/barcode/ID), quantity, and payment method. I’ll verify each item exists and is sellable before proposing."}
+        if not args.get("method"):
+            return {"ok": True, "intent": "action_needs_info", "tools_used": [], "data": {"action": "propose_complete_walkin_sale", "missing": ["method"], "args": args},
+                    "answer": "I can prepare that walk-in sale — which **payment method** should I use (Cash, Card, Bank Transfer, Mobile Money, etc.)? I’ll validate the item(s) first."}
+    # record payment
+    elif (re.search(r"\b(record|receive|take|add)\b", tl) and re.search(r"\bpayment\b", tl)) or intent in {"propose_record_payment","record_payment"}:
+        action_type = "propose_record_payment"
+        if not args.get("reservation_id") or args.get("amount") is None or not args.get("method"):
+            missing = [k for k in ("reservation_id","amount","method") if not args.get(k) and not (k=="amount" and args.get("amount") is not None)]
+            return {"ok": True, "intent": "action_needs_info", "tools_used": [], "data": {"action": "propose_record_payment", "missing": missing, "args": args},
+                    "answer": "To record a payment, I need the **reservation** (e.g. `reservation #12`), **amount**, and **method** (Cash/Card/etc.). I’ll verify the reservation exists and show the balance impact before proposing."}
+    # book activity
+    elif (re.search(r"\b(book|schedule|add)\b", tl) and re.search(r"\b(activity|trip|tour|excursion)\b", tl)) or intent in {"propose_book_activity","book_activity"}:
+        action_type = "propose_book_activity"
+        if not args.get("reservation_id") or not args.get("activity_id"):
+            missing = []
+            if not args.get("reservation_id"): missing.append("reservation_id")
+            if not args.get("activity_id"): missing.append("activity_id")
+            return {"ok": True, "intent": "action_needs_info", "tools_used": [], "data": {"action": "propose_book_activity", "missing": missing, "args": args},
+                    "answer": "To book an activity, I need the **reservation** (e.g. `reservation #12`) and **activity ID**. I’ll verify both exist and the reservation is eligible before proposing."}
+    # create reservation
+    elif (re.search(r"\b(create|make|add|book)\b", tl) and re.search(r"\breservation\b", tl) and not re.search(r"\b(item|product|pos|payment|activity|trip|tour|excursion)\b", tl)) or intent in {"propose_create_reservation","create_reservation"}:
+        action_type = "propose_create_reservation"
+        required = []
+        if not args.get("guest_name") and not args.get("guest_id"): required.append("guest_name")
+        if not args.get("room_id"): required.append("room_id")
+        if not args.get("check_in"): required.append("check_in")
+        if not args.get("check_out"): required.append("check_out")
+        if not args.get("rate") and args.get("amount") is None: required.append("rate")
+        if required:
+            return {"ok": True, "intent": "action_needs_info", "tools_used": [], "data": {"action": "propose_create_reservation", "missing": required, "args": args},
+                    "answer": "To create a reservation, I need **guest name/ID, room, check-in, check-out, and nightly rate** (and source/rate plan/deposit if applicable). I’ll verify guest/room/rate plan exist and check availability before proposing."}
+        if args.get("amount") is not None and not args.get("rate"):
+            args["rate"] = args.get("amount")
+
+    if not action_type:
+        return None
+
+    try:
+        from .actions import create_proposal
+        proposal = create_proposal(action_type, args, ui_context=ui_context or {})
+        pre = (proposal.get("prechecks") or {}) if isinstance(proposal, dict) else {}
+        ok = bool(pre.get("ok")) if pre else False
+        summary = proposal.get("summary") or "Proposed action"
+        if ok:
+            ans = f"**Proposed action (requires your confirmation):** {summary}\n\nI’ve checked the referenced entities exist and validated the request as much as possible. Review the details and click **Confirm** to execute, or **Cancel**. No changes are made until you confirm."
+        else:
+            errs = pre.get("errors") or []
+            warns = pre.get("warnings") or []
+            parts = [f"**I can’t propose this action yet (validation failed):** {summary}"]
+            if errs:
+                parts.append("**Issues:**\n" + "\n".join([f"- {e}" for e in errs[:8]]))
+            if warns:
+                parts.append("**Notes:**\n" + "\n".join([f"- {w}" for w in warns[:6]]))
+            parts.append("Please correct the request (ensure the item/reservation/IDs exist and are valid) and I’ll re-check.")
+            ans = "\n\n".join(parts)
+        return {
+            "ok": ok,
+            "intent": action_type,
+            "tools_used": ["validate_entities"],
+            "data": {"proposal": proposal, "prechecks": pre, "args": args},
+            "answer": ans,
+            "proposed_action": proposal if ok else None,
+            "source": "action_proposal",
+            "needs_confirmation": ok,
+        }
+    except Exception as e:
+        logger.exception("assistant._maybe_propose_action failed")
+        return {"ok": False, "intent": action_type or "action_error", "tools_used": [], "data": {"error": str(e), "args": args},
+                "answer": f"I couldn’t prepare that action safely: {e}", "proposed_action": None}
 
 # ── Execution ────────────────────────────────────────────────────────────────
 
@@ -238,7 +398,7 @@ def _execute_single(intent: str, text: str, slots: dict):
 
     # reservations
     if intent in ("reservation_balance","reservation_summary"):
-        if not rid: return _execute_single("ambiguous_needs_clarification", text, slots)
+        if not rid: return _execute_single("ambiguous_needs_clarification", text, slots, ui_context=ui_context)
         name="get_guest_balance" if intent=="reservation_balance" else "get_reservation_summary"
         data=execute_tool(name,{"reservation_id":rid}); tools_used.append(name)
         return _answer(intent, tools_used, data, title=f"Reservation #{rid}")
@@ -276,14 +436,14 @@ def _execute_single(intent: str, text: str, slots: dict):
         if slots.get("guest_id") or slots.get("guest_query"):
             return {"ok":False,"intent":intent,"tools_used":[],"data":{"query":slots.get("guest_query"),"guest_id":slots.get("guest_id")},
                     "answer":"I couldn’t find a matching guest in the real records. Try a different name/phone/email fragment or a specific guest ID (e.g. `guest #3`)."}
-        return _execute_single("ambiguous_needs_clarification", text, slots)
+        return _execute_single("ambiguous_needs_clarification", text, slots, ui_context=ui_context)
 
     # fallback
     data=execute_tool("list_capabilities",{}); tools_used.append("list_capabilities")
     ans = "I couldn’t confidently map that request to a supported, grounded action. " + _fmt_capabilities(data)
     return {"ok":True,"intent":"capabilities_help","tools_used":tools_used,"data":data,"answer":ans}
 
-def _execute_compound(text: str, slots: dict):
+def _execute_compound(text: str, slots: dict, ui_context=None):
     tl=_norm_text(text); subs=[]
     if slots.get("reservation_id") and _has_any(tl,["balance","owe","outstanding","due"]): subs.append(("reservation_balance",slots))
     if slots.get("reservation_id") and _has_any(tl,["summary","details","folio","overview"]): subs.append(("reservation_summary",slots))
@@ -331,12 +491,12 @@ def _execute_compound(text: str, slots: dict):
         key=(it,sl.get("guest_id"),sl.get("reservation_id"),sl.get("report_kind"))
         if key in seen: continue
         seen.add(key); uniq.append((it,sl))
-    if not uniq: return _execute_single("ambiguous_needs_clarification", text, slots)
-    if len(uniq)==1: return _execute_single(uniq[0][0], text, uniq[0][1])
+    if not uniq: return _execute_single("ambiguous_needs_clarification", text, slots, ui_context=ui_context)
+    if len(uniq)==1: return _execute_single(uniq[0][0], text, uniq[0][1], ui_context=ui_context)
     tools_used=[]; parts=[]; data_all={}; ok=True
     parts.append("Sure — here’s what I found (grounded in real data):")
     for it,sl in uniq[:6]:
-        res=_execute_single(it,text,sl)
+        res=_execute_single(it,text,sl,ui_context=ui_context)
         tools_used.extend(res.get("tools_used") or [])
         label = it.replace("_"," ").title()
         parts.append(f"\n### {label}\n{res.get('answer','')}")

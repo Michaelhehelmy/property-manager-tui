@@ -110,8 +110,8 @@ def deterministic_route(message: str) -> dict | None:
     intent=cls.get("intent","capabilities_help"); conf=cls.get("confidence",0.0)
     if cls.get("low_confidence") and conf < 0.4 and not (slots.get("reservation_id") or slots.get("guest_id")):
         return None
-    if intent=="compound_multi_intent": res=_execute_compound(text,slots)
-    else: res=_execute_single(intent,text,slots)
+    if intent=="compound_multi_intent": res=_execute_compound(text,slots,ui_context=None)
+    else: res=_execute_single(intent,text,slots,ui_context=None)
     res.setdefault("source","core_deterministic"); res.setdefault("ok",True); res.setdefault("tools_used",[])
     res["intent"]=res.get("intent") or intent; res["confidence"]=conf; res["slots"]=slots; res["router"]=cls.get("router","rules")
     return res
@@ -124,8 +124,8 @@ def llm_route(message: str, history: list[dict] | None = None, config: dict | No
     cls=classify_intent(message, history)
     intent=cls.get("intent") or "capabilities_help"
     slots={**slots, **(cls.get("slots") or {})}
-    if intent=="compound_multi_intent": core=_execute_compound(message, slots)
-    else: core=_execute_single(intent, message, slots)
+    if intent=="compound_multi_intent": core=_execute_compound(message, slots, ui_context=None)
+    else: core=_execute_single(intent, message, slots, ui_context=None)
     core.setdefault("source","local_grounded"); core["intent"]=core.get("intent") or intent
     core["confidence"]=cls.get("confidence",0.0); core["slots"]=slots; core["router"]=cls.get("router","rules")
     # optionally polish with local model
@@ -186,6 +186,17 @@ def _ui_where(ui_context):
     return path, tab, title, recent
 
 
+def _get_pending_from_ui(ui_context):
+    ctx = ui_context or {}
+    p = ctx.get("pending_action")
+    if isinstance(p, dict):
+        return p
+    sess = ctx.get("session")
+    if isinstance(sess, dict) and isinstance(sess.get("pending_action"), dict):
+        return sess.get("pending_action")
+    return None
+
+
 def _ui_guidance(message: str, ui_context=None):
     """Detect navigation/help requests and return (handled_result_or_None)."""
     t = (message or '').strip()
@@ -196,6 +207,20 @@ def _ui_guidance(message: str, ui_context=None):
 
     def nav(url, label=None):
         actions.append({"type": "navigate", "url": url})
+
+    # confirm/cancel pending action in chat (UI buttons call endpoints; this is text fallback)
+    pending = _get_pending_from_ui(ui_context)
+    if pending and isinstance(pending, dict):
+        pid = str(pending.get("id") or pending.get("action_id") or "")
+        if tl in {"confirm", "confirm action", "yes confirm", "proceed", "approve"} or tl.startswith("confirm "):
+            return {"ok": True, "intent": "action_confirm_request", "confidence": 0.99, "tools_used": [], "data": {"pending_action": pending}, "answer": "Please use the **Confirm** button on the proposed action to execute it safely (with required checks/proofs). I can’t auto-execute writes from a plain text confirmation.", "source": "action_guard", "ui_actions": actions, "slots": {"pending_action_id": pid}}
+        if tl in {"cancel", "cancel action", "abort", "never mind", "nevermind"} or tl.startswith("cancel "):
+            try:
+                from .actions import cancel_pending_action
+                cancelled = cancel_pending_action(pending, reason="user_cancel_text")
+            except Exception:
+                cancelled = {"ok": True, "status": "cancelled", "action_id": pid}
+            return {"ok": True, "intent": "action_cancel", "confidence": 0.99, "tools_used": [], "data": {"pending_action": cancelled}, "answer": "Pending action cancelled (if it was still active). You can ask me to prepare a different action.", "source": "action_guard", "ui_actions": actions, "slots": {"pending_action_id": pid}, "pending_action": None, "clear_pending_action": True}
 
     # where am I / context
     if any(k in tl for k in ["where am i", "where am i?", "which page", "what page", "current page", "what tab"]):
@@ -295,13 +320,16 @@ def chat(message: str, history: list[dict] | None = None, ui_context: dict | Non
     except Exception:
         logger.debug("assistant.chat: failed to touch session", exc_info=True)
 
-    # UI navigation/help with screen context (can return actions like navigate/open tab)
+    # UI navigation/help and action confirm/cancel guards
     try:
         ui_res = _ui_guidance(message, ui_context=ui_context)
         if ui_res:
             ui_res.setdefault("ui_actions", [])
             ui_res.setdefault("response_mode", "core")
             ui_res["ui_context"] = ui_context or {}
+            # preserve pending action context for clients when present
+            if "proposed_action" not in ui_res and _get_pending_from_ui(ui_context) and not ui_res.get("clear_pending_action"):
+                ui_res.setdefault("pending_action", _get_pending_from_ui(ui_context))
             return ui_res
     except Exception:
         logger.debug("assistant.chat: ui guidance failed", exc_info=True)
@@ -319,19 +347,23 @@ def chat(message: str, history: list[dict] | None = None, ui_context: dict | Non
     strong = bool(slots.get("reservation_id") or slots.get("guest_id") or confidence>=0.85)
 
     if intent=="compound_multi_intent":
-        core=_execute_compound(message, slots)
+        core=_execute_compound(message, slots, ui_context=ui_context)
     elif confidence < 0.45 and not strong and intent not in ("capabilities_help","unsupported_or_unsafe","greeting_smalltalk"):
         # stay local: clarify rather than calling external llm
-        core=_execute_single("ambiguous_needs_clarification", message, slots); core["intent"]=intent
+        core=_execute_single("ambiguous_needs_clarification", message, slots, ui_context=ui_context); core["intent"]=intent
     else:
         if intent=="capabilities_help" and confidence < 0.5 and cls.get("low_confidence"):
-            core=_execute_single("ambiguous_needs_clarification", message, slots); core["intent"]="ambiguous_needs_clarification"
+            core=_execute_single("ambiguous_needs_clarification", message, slots, ui_context=ui_context); core["intent"]="ambiguous_needs_clarification"
         else:
-            core=_execute_single(intent, message, slots)
+            core=_execute_single(intent, message, slots, ui_context=ui_context)
 
     core.setdefault("source","core_deterministic"); core["intent"]=core.get("intent") or intent
     core["confidence"]=confidence; core["slots"]=slots; core["router"]=cls.get("router","rules")
     core["response_mode"]=mode; core["core_answer"]=core.get("answer"); core["core_source"]=core.get("source"); core.setdefault("ui_actions", []); core["ui_context"] = ui_context or {}
+    # carry pending action through if not replaced
+    if not core.get("proposed_action") and not core.get("clear_pending_action") and _get_pending_from_ui(ui_context):
+        core.setdefault("pending_action", _get_pending_from_ui(ui_context))
+    core.setdefault("proposed_action", None)
 
     # Local "talking" polish (deterministic always, optional local GGUF) — no external calls
     if mode in ("talking","auto","local") and core.get("ok") and not core.get("needs_clarification") and intent not in ("greeting_smalltalk",):
