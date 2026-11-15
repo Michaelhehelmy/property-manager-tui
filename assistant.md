@@ -1,6 +1,6 @@
 # AI Manager Assistant — Capabilities, Operations & Evolution
 
-**Project:** `property-manager-tui` (shared `src/app_core/` backend with Textual TUI `ui/tui` and FastAPI/HTMX web `ui/web`)  
+**Project:** `property-manager-tui` (shared `src/app_core/` backend with FastAPI/HTMX web `ui/web`)  
 **Assistant focus:** grounded, **read-only** manager/business-partner helper over real backend data  
 **Effort credited to:** Michael Helmy (`Michaelhehelmy`) — design, implementation, iteration, and integration across backend, TUI, web, NLU/learning, and deployment  
 **Document date:** 2026-11-13  
@@ -11,7 +11,7 @@
 ## 1) Current capabilities (accurate)
 
 - **Grounded & read-only:** answers are derived from real tools/services/DB state (no invented records). The assistant does not perform unsafe/mutating actions outside explicit, guarded app flows.
-- **Surfaces:** available in **Web** (`/assistant`, with feedback/correction UI) and **TUI** (Assistant tab with intent/confidence/tools/feedback as implemented).
+- **Surfaces:** available in **Web** (`/assistant`, with feedback/correction UI).
 - **NLU/routing:** exemplar memory (instant reuse) → optional ML (`ASSISTANT_NLU=auto|rules|sklearn|setfit`) → weighted rules/slots, confidence scoring, clarification/disambiguation, compound planning, and basic context carryover.
 - **Response modes:** `core` (deterministic), `talking` (core + optional OpenAI-compatible rephrase, grounded), `full_llm` (tool-calling grounded to tools) where configured.
 - **Learning loop:** 👍/👎 feedback and corrections stored (DB/JSONL as implemented) for instant exemplar reuse and future retraining/eval.
@@ -38,7 +38,7 @@
 - Assistant ask/feedback follow configured unlock/allowlist policy (`assistant_require_unlock` behavior as implemented) and remain read-only. Session-history clear is non-destructive to business data (CSRF-protected).
 - Route-group reference: `docs/web_authz_matrix.md`.
 
-### 2.3 In-app updates (git-based installs, Web & TUI)
+### 2.3 In-app updates (git-based installs, Web UI)
 - **Settings → App updates:** **Check for updates**, view **changelog/commit details**, and **Apply/Update** via **git fast-forward**.
 - **Preserved data:** runtime data is not modified by source updates (DB, exports, invoices, configured data dir such as `PM_DATA_DIR`/defaults).
 - **Restart required:** restart the app/server after applying an update to load the new version.
@@ -63,19 +63,19 @@ The table below summarizes cumulative effort to build and mature the assistant a
 
 | Phase / Date | Effort (what was done) | Key components / areas | Outcome & impact |
 |---|---|---|---|
-| **Foundation & app structure** (2026-11-09) | Initial core/TUI, restructuring into `src/app_core` + `ui/tui` + `ui/web`, launcher, FastAPI+HTMX web UI | `app_core`, `ui/*`, launcher | Shared backend with two frontends; base for grounded assistant |
+| **Foundation & app structure** (2026-11-09) | Initial core/TUI, restructuring into `src/app_core` + `ui/tui` + `ui/web`, launcher, FastAPI+HTMX web UI | `app_core`, `ui/*`, launcher | Shared backend with web frontend; base for grounded assistant |
 | **Quality, reliability & health** (2026-11-09) | High test coverage for core/UI, fixes, health probes `GET /health`, `/healthz` | `tests/*`, web/TUI fixes | Testable backend and observable web runtime |
 | **Domain depth** (2026-11-09–10) | Ledger integrity, POS/inventory/ingredients, recipes/BOM, meals with auto-deduction and sync | `db.py`, `services.py`, UIs | Rich operational data for grounded queries |
 | **Policy, safety & data lifecycle** (2026-11-10) | Reservation/payment/void/refund policy guards, seed/master-data lifecycle | services/routes/UI | Auditable rules; assistant remains read-only and aligned |
 | **Seeding & setup/portability** (2026-11-10) | Seed export/import, room/rate-plan/master-data flows, dynamic setup scripts for Unix/Windows | services, Settings UIs, `scripts/*` | Reproducible install/run and manageable master data |
-| **Assistant v1 — grounded core** | Grounded read-only assistant over real services/DB, web & TUI surfaces, optional talking/full_llm modes | `app_core/assistant.py`, assistant UIs | Trustworthy answers from real app state |
+| **Assistant v1 — grounded core** | Grounded read-only assistant over real services/DB, web surface, optional talking/full_llm modes | `app_core/assistant.py`, assistant UI | Trustworthy answers from real app state |
 | **Assistant v2 — tiered NLU & learning** (2026-11-10) | Rules + confidence/clarification/compound handling, feedback/corrections, exemplar learning, seeded intents, train/eval scripts (sklearn/SetFit-ready) | assistant, DB feedback, seeds/scripts | Better understanding and instant learning from corrections |
 | **Assistant fixes & intent coverage** (2026-11-10) | Fallback/clarification fixes, property stats and intent coverage improvements | assistant, seeds/eval | More reliable routing for stats/ambiguous cases |
 | **Assistant v3 — business partner + tools** (2026-11-10) | Many grounded read-only tools (briefing/insights, ops, AR, inventory, reports, comparisons, etc.), smarter no-dep NLU, deterministic partner narratives | `assistant.py` | Practical business-partner insights with broad in-app visibility |
 | **Traceability, integrity & updates** | Grounded capabilities/docs for version/update status, expiring batches, batch/lot lists, barcode/SKU/lot trace, integrity/health; update/check/changelog/apply and `--workers 1` guidance | assistant, docs, seeds, scripts | Clear answers and aligned deployment/update documentation |
 | **Guest 360° & activities/trips** (2026-11-11) | Guest portfolio (profile/lifetime/trips/POS/payments/invoices/aggregates), activities catalog/booking/stats integrated to folio; assistant tools/intents for portfolios/activities/bookings | services, DB, assistant, UIs | Complete guest tracking and bookable activities queryable by assistant |
 
-**Cumulative result:** a grounded, traceable, increasingly smart business-partner assistant with instant feedback learning, broad read-only tool coverage, and multi-platform delivery (TUI/Web), built iteratively by **Michael Helmy** with emphasis on correctness, safety, portability, and lightweight NLU.
+**Cumulative result:** a grounded, traceable, increasingly smart business-partner assistant with instant feedback learning, broad read-only tool coverage, and web delivery, built iteratively by **Michael Helmy** with emphasis on correctness, safety, portability, and lightweight NLU.
 
 ## 4) Enhancement plan — friendlier replies & smarter assistant (< 400 MB)
 

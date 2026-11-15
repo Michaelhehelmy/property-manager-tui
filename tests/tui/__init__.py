@@ -1,1 +1,0 @@
-"""TUI headless tests."""

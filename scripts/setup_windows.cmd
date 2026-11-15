@@ -3,7 +3,7 @@ setlocal
 REM Convenience wrapper for Windows setup script (data-preserving, idempotent).
 REM Usage examples:
 REM   scripts\setup_windows.cmd
-REM   scripts\setup_windows.cmd -Action deploy -Mode tui
+REM   scripts\setup_windows.cmd -Action deploy -Mode web
 REM   scripts\setup_windows.cmd -Action deploy -Mode web -BindHost 0.0.0.0 -Port 8000 -GitRef v1.2.3
 REM Env: ACTION, MODE, SKIP_WEB, HOST, PORT, GIT_REF/TAG/COMMIT, PM_WEB_SECRET_KEY, PM_DATA_DIR
 

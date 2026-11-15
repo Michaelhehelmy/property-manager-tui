@@ -172,7 +172,7 @@ def create_app(*, init_db: bool = True, run_startup: bool = True) -> FastAPI:
             logger.debug("web_request_log_failed", exc_info=True)
         return response
 
-    from ui.web.routes import accounting, assistant, dashboard, files, guests, pos_inventory, reports_analytics, reservations, settings_branding
+    from ui.web.routes import accounting, assistant, dashboard, files, guests, pos_inventory, reports_analytics, reservations, settings_branding, support
 
     app.include_router(dashboard.router)
     app.include_router(reservations.router)
@@ -183,6 +183,7 @@ def create_app(*, init_db: bool = True, run_startup: bool = True) -> FastAPI:
     app.include_router(assistant.router)
     app.include_router(settings_branding.router)
     app.include_router(files.router)
+    app.include_router(support.router)
 
     @app.get("/health")
     @app.get("/healthz")

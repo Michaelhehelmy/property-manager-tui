@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Property Manager — local-first TUI + Web app. Auto-detected install, download, and launch for Windows, macOS, Linux, Android (Termux), and iSH.">
+  <meta name="description" content="Property Manager — local-first Web app. Auto-detected install, download, and launch for Windows, macOS, Linux, Android (Termux), and iSH.">
   <title>Property Manager — Download & Install</title>
   <style>
     :root {
@@ -55,8 +55,8 @@
     </header>
 
     <section class="hero">
-      <h1>Local-first Property Manager — Terminal (TUI) + Web</h1>
-      <p>Cross-platform via terminal and browser: run the <strong class="k">TUI</strong> locally or serve the <strong class="k">Web UI</strong> and access it from any device on your network (or via SSH/VPN). This page auto-detects your device and recommends the best install/download option. Runtime data (DB/exports/invoices) is preserved.</p>
+      <h1>Local-first Property Manager — Terminal (Web UI) + Web</h1>
+      <p>Cross-platform via terminal and browser: run the <strong class="k">Web UI</strong> locally or serve the <strong class="k">Web UI</strong> and access it from any device on your network (or via SSH/VPN). This page auto-detects your device and recommends the best install/download option. Runtime data (DB/exports/invoices) is preserved.</p>
       <div class="row">
         <a href="https://github.com/Michaelhehelmy/property-manager-tui/releases/latest" target="_blank" rel="noopener"><button type="button" class="primary">Latest Release</button></a>
         <a href="https://github.com/Michaelhehelmy/property-manager-tui" target="_blank" rel="noopener"><button type="button">View on GitHub</button></a>
@@ -99,7 +99,7 @@
         <h2>Native build or script installer</h2>
         <pre><code>curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh | sh</code></pre>
         <pre><code>wget -qO- https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh | sh</code></pre>
-        <p class="muted" style="margin-top:8px;">Re-run to update. Recovery: <code>REPAIR=1</code>. TUI-only: <code>| SKIP_WEB=1 MODE=tui sh</code>. Web: <code>| MODE=web HOST=127.0.0.1 PORT=8000 PM_WEB_SECRET_KEY="$(openssl rand -hex 32)" sh</code>.</p>
+        <p class="muted" style="margin-top:8px;">Re-run to update. Recovery: <code>REPAIR=1</code>. web-only-environment: <code>| MODE=web sh</code>. Web: <code>| MODE=web HOST=127.0.0.1 PORT=8000 PM_WEB_SECRET_KEY="$(openssl rand -hex 32)" sh</code>.</p>
       </article>
 
       <article class="card os-card" data-os="android">
@@ -107,15 +107,15 @@
         <h2>Terminal + Web (script install)</h2>
         <pre><code>pkg update -y &amp;&amp; pkg install -y curl
 curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh | sh</code></pre>
-        <p class="muted" style="margin-top:8px;">Native Android APK packaging is separate from desktop Nuitka builds. If web deps fail to build, use <code>SKIP_WEB=1 MODE=tui</code>. Recovery: <code>REPAIR=1</code>.</p>
+        <p class="muted" style="margin-top:8px;">Native Android APK packaging is separate from desktop Nuitka builds. If web deps fail to build, use <code>SKIP_WEB=0 MODE=web</code>. Recovery: <code>REPAIR=1</code>.</p>
       </article>
 
       <article class="card os-card" data-os="ios">
         <div class="tag">iOS (iSH / SSH / Web)</div>
-        <h2>TUI or remote Web UI</h2>
+        <h2>Web UI or remote Web UI</h2>
         <pre><code>apk add --no-cache curl
-curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh | SKIP_WEB=1 MODE=tui sh</code></pre>
-        <p class="muted" style="margin-top:8px;">No native iOS app package from Nuitka; use iSH (TUI), SSH to a host, or open the Web UI over LAN/VPN/HTTPS.</p>
+curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh | MODE=web sh</code></pre>
+        <p class="muted" style="margin-top:8px;">No native iOS app package from Nuitka; use iSH (Web UI), SSH to a host, or open the Web UI over LAN/VPN/HTTPS.</p>
       </article>
     </section>
 
@@ -124,7 +124,7 @@ curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui
       <ul>
         <li><strong>Native builds:</strong> download the asset for your OS/arch from the latest GitHub Release, verify/checksum if provided, then run/install. Native bundles still preserve runtime data in configured data dirs; follow release notes for update/replace steps.</li>
         <li><strong>Script installs:</strong> re-run the same command to update (git fast-forward + deps refresh) and launch. Recovery for stuck git state: <code>REPAIR=1</code> (Unix/Termux) or <code>$env:REPAIR='1'</code> (Windows).</li>
-        <li><strong>Run manually:</strong> <code>cd ~/property-manager-tui &amp;&amp; . .venv/bin/activate &amp;&amp; python3 launcher.py</code> (or <code>--tui</code> / <code>--web</code>).</li>
+        <li><strong>Run manually:</strong> <code>cd ~/property-manager-tui &amp;&amp; . .venv/bin/activate &amp;&amp; python3 launcher.py</code> (or <code>--web</code> / <code>--web</code>).</li>
         <li><strong>Web on LAN/phones:</strong> bind <code>0.0.0.0</code>, set strong <code>PM_WEB_SECRET_KEY</code>, run with <code>--workers 1</code> (SQLite). Use <strong>HTTPS</strong> (reverse proxy/VPN/private network) for shared/remote access.</li>
         <li><strong>Updates &amp; data:</strong> in-app Settings → App updates (git installs), or re-run installer, or download newer native release; runtime data (DB/exports/invoices/<code>PM_DATA_DIR</code>) is preserved.</li>
       </ul>
@@ -132,7 +132,7 @@ curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui
     </section>
 
     <footer>
-      Property Manager (TUI + Web, shared core). Repo: <a href="https://github.com/Michaelhehelmy/property-manager-tui">Michaelhehelmy/property-manager-tui</a>. Latest: <a href="https://github.com/Michaelhehelmy/property-manager-tui/releases/latest">GitHub Releases</a>. This page auto-detects OS/arch and checks latest release assets client-side.
+      Property Manager (Web, shared core). Repo: <a href="https://github.com/Michaelhehelmy/property-manager-tui">Michaelhehelmy/property-manager-tui</a>. Latest: <a href="https://github.com/Michaelhehelmy/property-manager-tui/releases/latest">GitHub Releases</a>. This page auto-detects OS/arch and checks latest release assets client-side.
     </footer>
   </div>
 
@@ -169,30 +169,30 @@ curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui
           title: 'Windows — install / update / launch',
           desc: 'Use a native Windows build from Releases when available, or the PowerShell installer (5.1+/7+, bootstraps Python/Git via winget when needed). Re-run to update. Use REPAIR=1 for stuck git checkouts.',
           cmd: 'irm https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install_windows.ps1 | iex',
-          alt: 'Native: download the Windows asset below (if published). Recovery: $env:REPAIR=\'1\'; irm ... | iex  |  TUI: $env:MODE=\'tui\'  |  Web: $env:MODE=\'web\'; $env:HOST=\'127.0.0.1\'; $env:PORT=\'8000\'; $env:PM_WEB_SECRET_KEY=\'<strong-random>\''
+          alt: 'Native: download the Windows asset below (if published). Recovery: $env:REPAIR=\'1\'; irm ... | iex  |  Web UI: $env:MODE=\'tui\'  |  Web: $env:MODE=\'web\'; $env:HOST=\'127.0.0.1\'; $env:PORT=\'8000\'; $env:PM_WEB_SECRET_KEY=\'<strong-random>\''
         },
         linux: {
           title: 'Linux / macOS / WSL — install / update / launch',
           desc: 'Use a native build from Releases when available, or the script installer. Re-run to update. Use REPAIR=1 for stuck git checkouts.',
           cmd: 'curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh | sh',
-          alt: 'wget fallback available. Recovery: REPAIR=1. TUI-only: ... | SKIP_WEB=1 MODE=tui sh  |  Web: ... | MODE=web HOST=127.0.0.1 PORT=8000 PM_WEB_SECRET_KEY="$(openssl rand -hex 32)" sh'
+          alt: 'wget fallback available. Recovery: REPAIR=1. web-only-environment: ... | MODE=web sh  |  Web: ... | MODE=web HOST=127.0.0.1 PORT=8000 PM_WEB_SECRET_KEY="$(openssl rand -hex 32)" sh'
         },
         macos: {
           title: 'macOS — install / update / launch',
           desc: 'Use a native macOS build from Releases when available (x64/arm64), or the script installer. Re-run to update. Use REPAIR=1 for stuck git checkouts.',
           cmd: 'curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh | sh',
-          alt: 'Native: download the macOS asset below (if published). TUI-only: ... | SKIP_WEB=1 MODE=tui sh'
+          alt: 'Native: download the macOS asset below (if published). web-only-environment: ... | MODE=web sh'
         },
         android: {
           title: 'Android (Termux) — install / update / launch',
-          desc: 'Script install in Termux (native Android APK packaging is separate). Re-run to update. If web deps fail to build, use SKIP_WEB=1 MODE=tui. Recovery: REPAIR=1.',
+          desc: 'Script install in Termux (native Android APK packaging is separate). Re-run to update. If web deps fail to build, use SKIP_WEB=0 MODE=web. Recovery: REPAIR=1.',
           cmd: 'pkg update -y && pkg install -y curl\ncurl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh | sh',
-          alt: 'TUI-only fallback: ... | SKIP_WEB=1 MODE=tui sh  |  Recovery: REPAIR=1 curl -fsSL .../install.sh | sh'
+          alt: 'dependency/toolchain workaround: ... | MODE=web sh  |  Recovery: REPAIR=1 curl -fsSL .../install.sh | sh'
         },
         ios: {
-          title: 'iPhone/iPad — SSH, iSH (TUI), or Web',
-          desc: 'No native iOS Nuitka package; use iSH (TUI), SSH into a host, or open the Web UI over LAN/VPN/HTTPS.',
-          cmd: 'apk add --no-cache curl\ncurl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh | SKIP_WEB=1 MODE=tui sh',
+          title: 'iPhone/iPad — SSH, iSH (Web UI), or Web',
+          desc: 'No native iOS Nuitka package; use iSH (Web UI), SSH into a host, or open the Web UI over LAN/VPN/HTTPS.',
+          cmd: 'apk add --no-cache curl\ncurl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh | MODE=web sh',
           alt: 'Web UI: run server on a host and browse http://<host-ip>:8000 (use --workers 1, strong PM_WEB_SECRET_KEY, HTTPS for shared/remote access).'
         }
       };

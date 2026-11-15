@@ -1,9 +1,9 @@
-# Contributing to Property Manager (TUI + Web)
+# Contributing to Property Manager (Web)
 
 Thanks for your interest in contributing, forking, or extending this project.
 
 This repository is a **local-first property management app** with:
-- **TUI** (Textual)
+- **Web UI** (Textual)
 - **Web UI** (FastAPI + HTMX/Jinja2)
 - **Shared backend** in `src/app_core/` (business logic, DB/services, assistant, updater, doctor)
 - **SQLite** datastore (web must run with `--workers 1`)
@@ -43,7 +43,7 @@ pip install -r requirements.txt -r requirements-web.txt -r requirements-dev.txt
 
 Run:
 ```bash
-PYTHONPATH=src python3 launcher.py --tui
+PYTHONPATH=src python3 launcher.py --web --host 127.0.0.1 --port 8000
 # Web (always --workers 1)
 export PM_WEB_SECRET_KEY="$(openssl rand -hex 32)"  # set appropriately on Windows
 PYTHONPATH=src python3 -m uvicorn ui.web.server:app --host 127.0.0.1 --port 8000 --workers 1

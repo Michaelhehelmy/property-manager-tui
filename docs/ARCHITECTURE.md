@@ -7,7 +7,6 @@ This document describes the high-level architecture, module boundaries, data flo
 Property Manager is a **local-first** application with:
 - **Shared core/backend:** `src/app_core/` (DB, services/business logic, paths/config, assistant, updater, doctor, barcodes/integrity helpers)
 - **Two frontends:**
-  - **TUI:** Textual app in `ui/tui/` (entry: `main.py`, launcher: `launcher.py --tui`)
   - **Web UI:** FastAPI + HTMX/Jinja2 in `ui/web/` (entry: `ui.web.server:app`, launcher: `launcher.py --web`)
 - **Datastore:** SQLite (local file under `PM_DATA_DIR`/defaults). **Web must run with `--workers 1`.**
 - **Landing page:** static `index.html` (+ `wrangler.toml`) for download/install guidance and release-asset auto-detection (deployable via Cloudflare Worker/Pages).
@@ -18,8 +17,8 @@ Design intent: keep business rules and data access centralized in `app_core` so 
 
 ```text
 .
-├─ main.py                     # TUI entry point
-├─ launcher.py                 # Unified launcher/menu (TUI/Web)
+├─ main.py                     # Web entry point (compat)
+├─ launcher.py                 # Unified web launcher/menu
 ├─ index.html                  # Landing/download page (static)
 ├─ wrangler.toml               # Cloudflare Worker static-assets config for landing page
 ├─ pyproject.toml              # Packaging, deps/extras, scripts, ruff config
@@ -41,7 +40,7 @@ Design intent: keep business rules and data access centralized in `app_core` so 
 └─ .github/workflows/          # CI and release-native build workflow
 ```
 
-> Some areas are modularized with compatibility facades (e.g. `app_core.services`, `app_core.assistant`, TUI tabs/modals packages). Prefer stable/public-facing module APIs when extending.
+> Some areas are modularized with compatibility facades (e.g. `app_core.services`, `app_core.assistant`, web route/template packages). Prefer stable/public-facing module APIs when extending.
 
 ## Core backend (`src/app_core/`)
 
@@ -69,7 +68,7 @@ Design intent: keep business rules and data access centralized in `app_core` so 
 ### Updater (`updater.py`)
 - **Git installs:** checks commits/changelog and applies **fast-forward-only** updates; preserves runtime data; restart required after apply.
 - **Release awareness:** can fetch latest GitHub release metadata for notifications/native-update awareness.
-- **Cached update notices:** polling-based checks (configurable, rate-limited/cached) used by Web/TUI notifications.
+- **Cached update notices:** polling-based checks (configurable, rate-limited/cached) used by web UI notifications.
 - Network access to GitHub required for remote checks; failures should degrade gracefully.
 
 ### Doctor and integrity (`doctor.py`)
@@ -92,21 +91,13 @@ Design intent: keep business rules and data access centralized in `app_core` so 
 - **Path/redirect safety:** local-path sanitization and controlled file handling for exports/downloads.
 - **Authoritative matrix:** see [`docs/web_authz_matrix.md`](web_authz_matrix.md).
 
-## TUI (`ui/tui/`)
-
-- **`app.py`:** Textual application, startup flow (branding/setup wizard, loading, password setup as needed), update notification check, global behavior.
-- **`tabs/`:** feature tabs (front desk/reservations, POS/inventory, accounting, settings, assistant, etc.) with shared/common helpers.
-- **`modals/`:** modal screens for CRUD/actions/wizards (branding wizard, auth/unlock-related flows, domain modals).
-- **`helpers.py`:** shared UI/util helpers.
-
-TUI calls the same `app_core` services as the web UI and should preserve business/security invariants.
 
 ## Key runtime flows
 
 ### Startup
 1. Resolve paths/data dirs and initialize DB/migrations.
 2. Load settings/branding/language as needed.
-3. Start TUI flow (wizards/loading) or Web server (`create_app` -> routes/middleware).
+3. Start Web server startup/wizards (`create_app` -> routes/middleware).
 4. Optional/best-effort update notification checks (polling/cached).
 
 ### Update flow (git install)
@@ -116,12 +107,12 @@ TUI calls the same `app_core` services as the web UI and should preserve busines
 
 ### Update notifications (polling)
 - `updater.get_cached_update_notice()` caches results for a configurable interval.
-- Web injects notice into render context/banner; TUI shows startup notification.
+- Web injects notice into render context/banner and can surface startup/config notices.
 - Not push-based: clients notify when running and online.
 
 ## Extension points (common tasks)
 
-- **New domain capability:** add/extend service logic in `app_core/services` (+ DB/schema changes/migrations in `db.py` if needed) → expose in web route/template and/or TUI tab/modal → add tests and docs.
+- **New domain capability:** add/extend service logic in `app_core/services` (+ DB/schema changes/migrations in `db.py` if needed) → expose in web route/template and/or web route/template → add tests and docs.
 - **New web endpoint/page:** route in `ui/web/routes/*`, template/partial in `ui/web/templates/*`, enforce CSRF/unlock/rate-limit/path safety as appropriate, update `docs/web_authz_matrix.md` if authz posture changes.
 - **New assistant capability:** add grounded read-only tool/NLU mapping in `app_core/assistant/*`, keep responses factual and policy-compliant, add seeds/tests/eval updates.
 - **Install/update/ops:** scripts in `scripts/`, docs in `docs/`, CI in `.github/workflows/`.

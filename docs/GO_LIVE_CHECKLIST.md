@@ -4,7 +4,7 @@ Use this checklist to move Property Manager from setup/testing to production-lik
 
 ## 1) Scope, ownership, and readiness
 
-- [ ] **Define deployment scope (manual):** site(s), users/roles (operational), devices, TUI vs Web, local/LAN/remote topology.
+- [ ] **Define deployment scope (manual):** site(s), users/roles (operational), devices, Web UI vs Web, local/LAN/remote topology.
 - [ ] **Assign owners (manual):** system admin, app operator, backup/restore owner, security/contact, escalation path.
 - [ ] **Document environment (manual):** host(s), OS, install path, `PM_DATA_DIR`, branch/commit/version, service account, network exposure.
 - [ ] **Change/maintenance window plan (manual):** update cadence, restart procedure, rollback contacts.
@@ -12,7 +12,7 @@ Use this checklist to move Property Manager from setup/testing to production-lik
 ## 2) Install and configuration validation
 
 - [ ] **Install/verify runtime (automated/manual):** use supported install/setup scripts or manual venv; confirm Python 3.10+ and required deps.
-- [ ] **Select mode (manual):** TUI and/or Web per environment capability (TUI preferred on constrained systems like iSH).
+- [ ] **Select mode (manual):** Web UI per environment capability (Web UI preferred on constrained systems like iSH).
 - [ ] **Web runtime config (manual):** `--workers 1` enforced (mandatory for SQLite; never increase), correct `HOST`/`PORT`, `PYTHONPATH`/working directory set.
 - [ ] **Set secrets/env (manual, required):** strong `PM_WEB_SECRET_KEY` for any non-local/shared deployment (required for non-loopback unless explicit local/dev insecure override); set `PM_DATA_DIR` if using non-default location.
 - [ ] **Service/autostart (manual):** systemd/launchd/NSSM/Task Scheduler/supervisor/Docker configured with restart policy and correct env vars.
@@ -47,7 +47,7 @@ Use this checklist to move Property Manager from setup/testing to production-lik
 - [ ] **Pre-update backup (manual + tooling):** take and verify a backup before any update/migration.
 - [ ] **Update procedure agreed (manual + tooling):** in-app **Settings → App updates** (git fast-forward) or `git pull --ff-only`; require clean working tree for auto-apply. For reproducible/pinned changes, use `GIT_REF=<tag|commit>` (or Windows `-GitRef`) and bootstrap scripts from the matching raw ref as needed.
 - [ ] **Restart procedure documented (manual):** restart required after apply; service restart commands/runbook verified.
-- [ ] **Dependency refresh plan (manual/tooling):** re-run setup (`ACTION=setup` / `-Action setup`) when dependencies change. If web deps fail on constrained environments (e.g. `pydantic-core`/Rust wheel issues), document TUI-only fallback (`SKIP_WEB=1 MODE=tui` / `-SkipWeb 1 -Mode tui`) or use a supported host for web.
+- [ ] **Dependency refresh plan (manual/tooling):** re-run setup (`ACTION=setup` / `-Action setup`) when dependencies change. If web deps fail on constrained environments (e.g. `pydantic-core`/Rust wheel issues), document dependency/toolchain workaround (`SKIP_WEB=1 MODE=web` / `-SkipWeb 1 -Mode web`) or use a supported host for web.
 - [ ] **Release/version tracking (manual):** record deployed tag/commit and app version (`pyproject.toml`/release notes) with change records.
 - [ ] **Rollback plan (manual):** known-good commit/tag identified, verified pre-update backup available, and restore path understood (including schema compatibility considerations). Restore is manual/offline and should be validated by restore drills. Runtime data (DB/exports/invoices/`PM_DATA_DIR`) is preserved by source updates but backups remain mandatory. Keep web on `--workers 1`, with strong `PM_WEB_SECRET_KEY` and HTTPS/reverse-proxy or private networking for shared access.
 

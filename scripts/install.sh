@@ -1,5 +1,5 @@
 #!/bin/sh
-# One-line bootstrap installer for property-manager-tui (Unix-like OSes).
+# One-line bootstrap installer for Property Manager Web UI (Unix-like OSes).
 # - Idempotent clone/update (git) with optional pinned ref (branch/tag/commit)
 # - Preserves runtime data (DB/exports/invoices/PM_DATA_DIR) across updates/runs
 # - Safe defaults: Web runs with --workers 1 (SQLite); strong secret + HTTPS for non-local use
@@ -9,7 +9,7 @@
 #   wget -qO-  https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh | sh
 #
 # Examples:
-#   curl -fsSL .../install.sh | MODE=tui sh
+#   curl -fsSL .../install.sh | MODE=web sh
 #   curl -fsSL .../install.sh | MODE=web HOST=0.0.0.0 PORT=8000 PM_WEB_SECRET_KEY="$(openssl rand -hex 32)" sh
 #   curl -fsSL .../install.sh | ACTION=setup sh
 #   curl -fsSL .../install.sh | GIT_REF=v1.2.3 sh        # pinned tag/branch/commit
@@ -19,7 +19,7 @@
 #
 # Env vars: REPO_URL, INSTALL_DIR, BRANCH, GIT_REF, TAG, COMMIT, MODE, ACTION, SKIP_WEB,
 #           HOST, PORT, REPAIR/FORCE_RESET, INSTALL_DEV, RUN_TESTS, PYTHON, PM_DATA_DIR, PM_WEB_SECRET_KEY
-# ACTION: auto|setup|run|deploy (default: auto). MODE: auto|tui|web|both.
+# ACTION: auto|setup|run|deploy (default: auto). MODE: auto|web (tui/both map to web).
 set -eu
 
 REPO_URL="${REPO_URL:-https://github.com/Michaelhehelmy/property-manager-tui.git}"
@@ -106,7 +106,7 @@ print_ops_guidance() {
   if [ "${HOST:-127.0.0.1}" = "0.0.0.0" ] || [ "${HOST:-127.0.0.1}" = "::" ]; then
     warn "Non-local/LAN bind requested. Use HTTPS via a reverse proxy (Caddy/Nginx) for shared/network deployments."
   fi
-  log "If web dependency builds fail (e.g. pydantic-core/Rust wheels on constrained environments), use TUI-only: SKIP_WEB=1 MODE=tui."
+  log "If web dependency builds fail (e.g. pydantic-core/Rust wheels on constrained environments), install build deps/Rust or run on a fuller host."
 }
 
 fetch_setup_if_needed() {
@@ -132,7 +132,7 @@ fetch_setup_if_needed() {
 }
 
 main() {
-  log "property-manager-tui bootstrap installer"
+  log "Property Manager web bootstrap installer"
   log "repo=$REPO_URL dir=$INSTALL_DIR ref=$GIT_REF mode=$MODE action=$ACTION skip_web=$SKIP_WEB host=$HOST port=$PORT"
 
   install_bootstrap_deps

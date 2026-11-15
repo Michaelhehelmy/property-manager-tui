@@ -4,7 +4,7 @@ This guide covers how to update a git-based Property Manager installation safely
 
 ## 1) Update model (current implementation)
 
-- **Primary mechanism (git installs):** in-app **Settings → App updates** (Web & TUI)
+- **Primary mechanism (git installs):** in-app **Settings → App updates** (Web UI)
   - **Check for updates** (fetch/compare as implemented)
   - View **changelog/commit details** before applying
   - **Apply/Update** via **git fast-forward** (ff-only)
@@ -12,7 +12,7 @@ This guide covers how to update a git-based Property Manager installation safely
 - **Pinned/reproducible updates:** to move to a specific tag/commit/branch, use `GIT_REF=<tag|commit|branch>` with setup/install scripts (Unix) or `-GitRef` / `$env:GIT_REF` (Windows), and prefer fetching bootstrap scripts from the same raw ref for reproducibility (e.g. `.../raw/<ref>/scripts/install.sh`).
 - **Runtime data preserved:** DB, exports, invoices, and configured data directory (`PM_DATA_DIR`/defaults) are **not modified** by source updates.
 - **Migrations:** DB migrations run on application startup and are additive where applicable.
-- **Restart required:** after applying an update, **restart the TUI/app/web server** to load the new code.
+- **Restart required:** after applying an update, **restart the app/web server** to load the new code.
 - **Web constraint:** always run with **`--workers 1`**. Set `PM_WEB_SECRET_KEY` and use HTTPS reverse proxy/VPN for shared/non-local deployments.
 
 ## 2) Pre-update checklist (operational)
@@ -26,16 +26,16 @@ This guide covers how to update a git-based Property Manager installation safely
 
 ## 3) In-app updates (automated for clean ff-only cases)
 
-### Web & TUI
+### Web UI
 1. Open **Settings → Updates & Health → App updates**.
 2. Click **Check for updates** (fetch/compare and show changelog/commit details).
 3. If an update is available and conditions allow, click **Update now / Apply**. (The apply action is shown only when an update is available; local changes or non-ff states may block apply.)
-4. **Restart** the TUI/app/web server to load the new version.
+4. **Restart** the app/web server to load the new version.
 
 ### Auto-check and update notifications (polling-based)
 - **Built-in polling checks:** the app performs **best-effort automatic update checks when online** (startup/periodic, cached/rate-limited) and shows notifications when a new update/release is detected:
   - **Web UI:** banner/notice when an update is available (with links to **App updates** and/or release/details).
-  - **TUI:** startup notification (toast) when an update is available.
+  - **Web UI:** startup notification (toast) when an update is available.
   - **Git installs:** checks remote commits (fast-forward availability). **Native/packaged installs:** checks latest GitHub Release/tag (best-effort version comparison).
 - **Settings:** `auto_check_updates` (default enabled) and `auto_update_check_interval_hours` control polling behavior. Checks are read-only and use network access to GitHub; failures are handled gracefully (no crash).
 - **Important:** notifications are **not push notifications**; apps detect updates when they run and can reach GitHub. Native/packaged apps still require downloading/installing the new release artifact (or a native-aware updater) — `git push` alone does not update an installed native binary.
@@ -85,16 +85,16 @@ These flows are for **git-based installs** (recommended). Runtime data (**DB, ex
 3. **Restart** app/server. Verify: `PYTHONPATH=src python -m app_core.doctor` and web `/healthz`, `/readyz` (web always `--workers 1`; use strong `PM_WEB_SECRET_KEY` and HTTPS reverse proxy/private network for LAN/remote/shared access).
 4. **Later updates from UI:** **Settings → Updates & Health → App updates** → **Check for updates** → **Update now** appears **only when an update is available** → apply (clean ff-only) → **restart**. Refresh deps via setup if dependencies changed.
 
-### 4.2 Termux (Android) — TUI and full Web (first time, then UI)
-**Prereqs:** Termux packages, network access. On constrained devices/ABIs web deps may be unavailable (`pydantic-core`/Rust wheels) — use TUI-only fallback.
+### 4.2 Termux (Android) — Web UI and full Web (first time, then UI)
+**Prereqs:** Termux packages, network access. On constrained devices/ABIs web deps may be unavailable (`pydantic-core`/Rust wheels) — use dependency/toolchain workaround.
 ```bash
 pkg update -y && pkg upgrade -y
 pkg install -y git python curl ca-certificates
 ```
 
-1. **TUI (most reliable):**
+1. **Web UI (most reliable):**
    ```bash
-   curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh | SKIP_WEB=1 MODE=tui sh
+   curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh | SKIP_WEB=1 MODE=web sh
    ```
 2. **Full Web UI (SQLite-safe, on-device or LAN):**
    ```bash
@@ -110,14 +110,14 @@ pkg install -y git python curl ca-certificates
 3. **Run (if not auto-launched):**
    ```bash
    cd ~/property-manager-tui
-   # TUI
-   PYTHONPATH=src .venv/bin/python launcher.py --tui
+   # Web UI
+   PYTHONPATH=src .venv/bin/python launcher.py --web
    # Web
    export PM_WEB_SECRET_KEY='(long-random-secret)'
    PYTHONPATH=src .venv/bin/python -m uvicorn ui.web.server:app --host 127.0.0.1 --port 8000 --workers 1
    ```
-4. **Manual update from existing checkout:** backup → `git fetch --all --tags --prune && git pull --ff-only` → `ACTION=setup MODE=auto sh scripts/setup.sh` (or `SKIP_WEB=1 MODE=tui`) → restart.
-5. **Later updates from UI:** same as Windows/Web/TUI — **Settings → Updates & Health → App updates** → **Check for updates** → **Update now** only when available → apply → **restart**; refresh deps if needed. Re-running the install one-liner is also a safe data-preserving way to update/refresh on Termux.
+4. **Manual update from existing checkout:** backup → `git fetch --all --tags --prune && git pull --ff-only` → `ACTION=setup MODE=auto sh scripts/setup.sh` (or `SKIP_WEB=1 MODE=web`) → restart.
+5. **Later updates from UI:** same as Windows/Web UI — **Settings → Updates & Health → App updates** → **Check for updates** → **Update now** only when available → apply → **restart**; refresh deps if needed. Re-running the install one-liner is also a safe data-preserving way to update/refresh on Termux.
 
 ### 4.3 Manual update (CLI, any git install)
 ```bash
@@ -185,7 +185,7 @@ Rollback may involve **code**, **dependencies**, and potentially **data/state** 
 - **Changelog / release notes:** record user/operator-visible changes (features, fixes, migrations, security, operational impacts, required env/dependency changes) in release notes or a changelog artifact maintained with the release/tag. In-app update flow surfaces git changelog/commit details when available; ensure commits/tags are meaningful.
 - **Tagging for reproducibility:** create annotated tags for releases (e.g. `vX.Y.Z`) from a verified commit on the intended branch. Prefer installing/updating production or reproducible environments via pinned `GIT_REF=<tag-or-commit>` and raw bootstrap scripts at the same ref.
 - **Pre-release checklist (recommended):** run tests/checks appropriate to scope, verify `--workers 1` web behavior and migrations on a copy, update docs if operational behavior changes, create/verify backup guidance as needed, bump version, publish tag/release notes, and document any manual upgrade/rollback steps.
-- **Compatibility notes:** call out dependency/toolchain constraints (including constrained-environment web build issues such as `pydantic-core`/Rust wheels), TUI-only fallback guidance, and any schema/startup considerations relevant to rollback.
+- **Compatibility notes:** call out dependency/toolchain constraints (including constrained-environment web build issues such as `pydantic-core`/Rust wheels), dependency/toolchain workaround guidance, and any schema/startup considerations relevant to rollback.
 
 ## 9) Automated vs operational/manual
 

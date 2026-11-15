@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install runtime + web + dev dependencies and run tests for property-manager-tui.
+# Install runtime + web + dev dependencies and run tests for Property Manager.
 # Works on Linux/Termux. Uses the active Python (activate a venv first if desired).
 set -euo pipefail
 
@@ -24,14 +24,14 @@ fi
 
 echo ""
 if [[ "${SKIP_WEB:-0}" == "1" ]]; then
-  echo "==> Skipping web dependencies (SKIP_WEB=1)."
+  echo "==> Skipping web dependencies (SKIP_WEB=1). Web UI requires them."
 elif [[ -f requirements-web.txt ]]; then
   echo "==> Installing web dependencies (requirements-web.txt)..."
   if ! $PIP install -r requirements-web.txt; then
     echo ""
     echo "WARNING: Web dependency installation failed (common on Termux/Android due to pydantic-core/Rust wheel builds)." >&2
-    echo "         Core/TUI and the existing test suite do NOT require FastAPI." >&2
-    echo "         To skip this step: SKIP_WEB=1 bash scripts/install_deps_and_test.sh" >&2
+    echo "         The web UI requires web dependencies (FastAPI/uvicorn/etc.)." >&2
+    echo "         To skip web deps (not recommended for web-only app): SKIP_WEB=1 bash scripts/install_deps_and_test.sh" >&2
     echo "         Workarounds (if you need the web UI): try a venv, install Rust toolchain for Termux if available," >&2
     echo "         or use compatible prebuilt wheels/versions for your platform." >&2
     echo ""

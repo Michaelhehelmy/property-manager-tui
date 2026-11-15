@@ -23,7 +23,7 @@ Runtime data is preserved across source/app updates and must be included in back
 
 ## 3) Create backups (automated/helpers)
 
-### 3.1 In-app (Web/TUI)
+### 3.1 In-app (Web UI)
 - **Settings → Backup now** creates a database backup in the app exports/data area (subject to unlock/CSRF as applicable in Web).
 - Suitable for operator-triggered backups; still follow verification and offsite copy practices.
 
@@ -71,7 +71,7 @@ There is **no destructive one-click in-app restore**. Restores must be deliberat
 - Communicate downtime/impact to users.
 
 ### 5.2 Steps
-1. **Stop the application/server** (exit TUI; stop uvicorn/service manager). Ensure no writers are active. Web must run with `--workers 1` when started.
+1. **Stop the application/server** (stop uvicorn/web launcher/service manager). Ensure no writers are active. Web must run with `--workers 1` when started.
 2. **Verify the candidate backup**: `scripts/backup_runtime.* --verify <backup.db>` or `python -m app_core.doctor --verify-backup <backup.db>`. Do not proceed if verification fails.
 3. **Back up current state** (safety copy): copy the current active DB and, if applicable, relevant `exports/`/`invoices/`/data-dir contents before replacement.
 4. **Restore files**: replace the active database file in the correct data directory with the verified backup. Restore related `exports/`/`invoices/`/artifacts if required for consistency with that restore point.

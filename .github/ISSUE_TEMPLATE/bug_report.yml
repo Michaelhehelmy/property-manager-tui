@@ -1,0 +1,45 @@
+name: Bug report
+description: Report a problem with Property Manager (use in-app "Report issue" for sanitized diagnostics when possible)
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Privacy first:** Use the in-app **Report issue** page (`/support/report`) or `python -m app_core.support` to generate a sanitized diagnostics report. Do not include passwords, secrets, tokens, recovery codes, or database/guest/payment records. Attach screenshots manually if helpful.
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Describe the issue and impact.
+      placeholder: Actual behavior and any visible error messages (redact sensitive info).
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Sanitized diagnostics
+      description: Paste the report from in-app Report issue / `python -m app_core.support` (or doctor output). Review before posting.
+      render: markdown
+  - type: input
+    id: version
+    attributes:
+      label: App version / commit
+      placeholder: e.g. v0.1.0 or commit short hash
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, install method (git/scripts/native), browser, and deployment context if relevant.

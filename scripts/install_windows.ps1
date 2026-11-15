@@ -1,15 +1,15 @@
 <#
-One-command Windows installer/bootstrap for property-manager-tui.
+One-command Windows installer/bootstrap for property-manager.
 - Best-effort installs Python 3.12 and Git via winget if missing
 - Idempotent clone/update with optional pinned ref (branch/tag/commit)
 - Preserves runtime data (DB/exports/invoices/PM_DATA_DIR)
 - Delegates to setup_windows.ps1 for venv/deps/run (Web: --workers 1)
 
 Usage (PowerShell):
-  irm https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install_windows.ps1 | iex
+  irm https://raw.githubusercontent.com/Michaelhehelmy/property-manager/main/scripts/install_windows.ps1 | iex
 
 Examples:
-  $env:ACTION='deploy'; $env:MODE='tui'; irm https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install_windows.ps1 | iex
+  $env:ACTION='deploy'; $env:MODE='web'; irm https://raw.githubusercontent.com/Michaelhehelmy/property-manager/main/scripts/install_windows.ps1 | iex
   $env:ACTION='deploy'; $env:MODE='web'; $env:HOST='0.0.0.0'; $env:PM_WEB_SECRET_KEY='...'; irm ... | iex
   $env:GIT_REF='v1.2.3'; irm ... | iex
   $env:REPAIR='1'; irm ... | iex  # auto-recover dirty/stuck git checkout (resets local source to origin branch)
@@ -22,8 +22,8 @@ param(
   [string]$Action = $(if ($env:ACTION) { $env:ACTION } else { 'deploy' }),
   [string]$Mode = $(if ($env:MODE) { $env:MODE } else { 'auto' }),
   [string]$SkipWeb = $(if ($env:SKIP_WEB) { $env:SKIP_WEB } else { 'auto' }),
-  [string]$InstallDir = $(if ($env:INSTALL_DIR) { $env:INSTALL_DIR } else { (Join-Path $HOME 'property-manager-tui') }),
-  [string]$RepoUrl = $(if ($env:REPO_URL) { $env:REPO_URL } else { 'https://github.com/Michaelhehelmy/property-manager-tui.git' }),
+  [string]$InstallDir = $(if ($env:INSTALL_DIR) { $env:INSTALL_DIR } else { (Join-Path $HOME 'property-manager') }),
+  [string]$RepoUrl = $(if ($env:REPO_URL) { $env:REPO_URL } else { 'https://github.com/Michaelhehelmy/property-manager.git' }),
   [string]$Branch = $(if ($env:BRANCH) { $env:BRANCH } else { 'main' }),
   [string]$GitRef = $(if ($env:GIT_REF) { $env:GIT_REF } elseif ($env:TAG) { $env:TAG } elseif ($env:COMMIT) { $env:COMMIT } elseif ($env:BRANCH) { $env:BRANCH } else { 'main' }),
   [string]$BindHost = $(if ($env:HOST) { $env:HOST } else { '127.0.0.1' }),
@@ -86,7 +86,7 @@ function Checkout-RequestedRef {
 }
 
 try {
-  Log "property-manager-tui Windows bootstrap (Action=$Action Mode=$Mode Ref=$GitRef InstallDir=$InstallDir)"
+  Log "property-manager Windows bootstrap (Action=$Action Mode=$Mode Ref=$GitRef InstallDir=$InstallDir)"
   if (($BindHost -eq '0.0.0.0' -or $BindHost -eq '::') -and -not $env:PM_WEB_SECRET_KEY) {
     Warn "Non-local bind requested without PM_WEB_SECRET_KEY. Set a strong random secret for shared/LAN deployments."
   }

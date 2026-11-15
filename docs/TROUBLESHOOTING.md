@@ -20,7 +20,7 @@ git -C <install-dir> status --porcelain --branch
 git -C <install-dir> rev-parse --short HEAD
 ```
 
-Collect: OS/platform, install method, command used, full error output, whether TUI/web, bind host/port, and `PM_DATA_DIR` if customized.
+Collect: OS/platform, install method, command used, full error output, whether Web UI/web, bind host/port, and `PM_DATA_DIR` if customized.
 
 ## 2) Install & environment issues
 
@@ -32,17 +32,17 @@ Collect: OS/platform, install method, command used, full error output, whether T
 
 ### Web dependency build failures
 - **Symptoms:** `pip install -r requirements-web.txt` fails (common on constrained envs like iSH or missing compilers/rust for some deps).
-- **Mitigations:** use **TUI mode** (`SKIP_WEB=1 MODE=tui`), install system build deps if supported, or run web on a more capable host and access via browser.
+- **Mitigations:** use **Web UI mode** (`run on a supported host or install required web dependencies`), install system build deps if supported, or run web on a more capable host and access via browser.
 - **Check installed deps:** `python -c "import fastapi, uvicorn, jinja2; import multipart"`.
 
 ### Git/bootstrap issues
 - **`git` missing or clone fails:** install git/CA certificates and check network/proxy/firewall; bootstrap scripts attempt install on supported platforms.
 - **SSL/cert issues on minimal images:** install/update CA certificates package.
 
-## 3) TUI issues
+## 3) Web UI issues
 
-- **TUI fails to start:** ensure runtime deps installed (`requirements.txt` / textual), run from install root, and `PYTHONPATH` includes `src` when running directly (launcher/main handle typical cases).
-- **Terminal rendering/input issues (constrained terminals/iSH):** prefer TUI mode there; resize terminal, use compatible font/encoding, or run via SSH from a fuller terminal.
+- **Web UI fails to start:** ensure runtime deps installed (`requirements.txt` / textual), run from install root, and `PYTHONPATH` includes `src` when running directly (launcher/main handle typical cases).
+- **Terminal rendering/input issues (constrained terminals/iSH):** prefer Web UI mode there; resize terminal, use compatible font/encoding, or run via SSH from a fuller terminal.
 
 ## 4) Web server issues
 
@@ -80,7 +80,7 @@ Collect: OS/platform, install method, command used, full error output, whether T
 - **Update applied but behavior unchanged:** restart app/server; verify running commit/version and that correct install/venv is launched.
 - **Windows installer/update fails with git reset/checkout/pull errors (e.g. `Reset branch 'main'` followed by failure):** usually caused by a dirty/conflicted checkout, diverged/non-ff state, stale `.git/index.lock`, or stuck git operations. **Built-in recovery:** rerun with `-Repair` / `$env:REPAIR='1'` (or `$env:FORCE_RESET='1'`) to auto-abort stuck ops, remove stale lock, fetch, and reset local source to `origin/main` (discards local source changes/untracked files inside repo; runtime data in external `PM_DATA_DIR` is not removed by git). Examples: `$env:REPAIR='1'; irm https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install_windows.ps1 | iex` or `powershell -ExecutionPolicy Bypass -File .\scripts\setup_windows.ps1 -Action setup -Repair`. Manual fix if needed: `git status --porcelain --branch`; commit/stash/discard local changes, resolve locks/stuck states, then `git fetch --all --tags --prune && git checkout -B main origin/main && git reset --hard origin/main && git clean -fd`; re-run setup. If corrupted, back up runtime data (`PM_DATA_DIR`/DB/exports/invoices), reclone/reinstall, and restore data.
 - **Dependency/import errors after update:** re-run setup/dependency install for the environment; compare with `requirements*.txt`/`pyproject.toml` (Windows: `scripts\setup_windows.ps1 -Action setup`; Unix/Termux: `ACTION=setup sh scripts/setup.sh`).
-- **Termux web update issues:** if web deps fail to build (e.g. `pydantic-core`/Rust), use TUI-only (`SKIP_WEB=1 MODE=tui`) or update on a fuller host; always run web with `--workers 1`.
+- **Termux web update issues:** if web deps fail to build (e.g. `pydantic-core`/Rust), use Web UI-only (`run on a supported host or install required web dependencies`) or update on a fuller host; always run web with `--workers 1`.
 - **Rollback needed:** stop app, restore known-good code and matching deps; if schema/data incompatible, restore verified pre-update backup (see `docs/UPDATES.md`, `docs/BACKUP_RESTORE.md`).
 
 ## 7) Backups & restore
@@ -91,7 +91,7 @@ Collect: OS/platform, install method, command used, full error output, whether T
 
 ## 8) Performance and operational issues (basic)
 
-- **Slow responses on low-resource devices:** prefer TUI; reduce concurrent load; keep web single-worker as required; ensure adequate storage I/O.
+- **Slow responses on low-resource devices:** prefer Web UI; reduce concurrent load; keep web single-worker as required; ensure adequate storage I/O.
 - **Disk growth:** monitor DB/exports/invoices/backups; apply retention/archival policies operationally (with verified backups before deletions).
 - **Service not auto-starting:** verify service manager config, env vars (`PYTHONPATH`, `PM_WEB_SECRET_KEY`, `PM_DATA_DIR`), working directory, executable path, and logs.
 

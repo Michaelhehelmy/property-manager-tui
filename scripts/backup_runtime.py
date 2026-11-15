@@ -37,7 +37,7 @@ from app_core import doctor, paths  # noqa: E402
 
 def _print_restore_guidance() -> None:
     print("\nRestore guidance (manual, offline - no automatic destructive restore):")
-    print("1. Stop the app/server (exit TUI or stop uvicorn; run with --workers 1 only).")
+    print("1. Stop the app/server (stop uvicorn/web launcher; run with --workers 1 only).")
     print("2. Identify the active DB path (PM_DATA_DIR or default data/; see doctor output).")
     print("3. Back up current DB before replacing (recommended safety copy).")
     print("4. Run restore precheck: python3 scripts/backup_runtime.py --restore-precheck <backup.db>")

@@ -30,16 +30,16 @@ pip install -r requirements.txt -r requirements-web.txt -r requirements-dev.txt
 ```
 
 Notes:
-- On constrained environments (e.g. iSH/Termux/some Android ABIs), web deps like `pydantic-core` may require Rust/toolchains or matching wheels. Use TUI-only/dev subset if needed: `pip install -r requirements.txt -r requirements-dev.txt`.
+- On constrained environments (e.g. iSH/Termux/some Android ABIs), web deps like `pydantic-core` may require Rust/toolchains or matching wheels. Install build deps/Rust or use a compatible wheel/host if needed: `pip install -r requirements.txt -r requirements-dev.txt`.
 - Keep runtime/test data isolated during dev using `PM_DATA_DIR` when appropriate.
 
 ## Running the app (development)
 
-### TUI
+### Web launcher
 ```bash
 PYTHONPATH=src python3 main.py
 # or
-PYTHONPATH=src python3 launcher.py --tui
+PYTHONPATH=src python3 launcher.py --web
 ```
 
 ### Web (SQLite-safe)
@@ -82,7 +82,7 @@ CI (`.github/workflows/ci.yml`) runs lint, compileall, and tests with coverage a
 
 ## Project conventions
 
-- **Architecture:** shared logic in `src/app_core/`; UIs (`ui/tui`, `ui/web`) call services/helpers and render/orchestrate.
+- **Architecture:** shared logic in `src/app_core/`; UI (`ui/web`) call services/helpers and render/orchestrate.
 - **DB changes:** prefer additive migrations in `db.py`; preserve compatibility and data safety.
 - **Web safety/security:** `--workers 1`, CSRF on state-changing requests, unlock/super-password for sensitive/admin actions, safe redirects/paths, no hardcoded secrets.
 - **Assistant:** grounded and read-only; never invent records/actions.
@@ -101,8 +101,8 @@ CI (`.github/workflows/ci.yml`) runs lint, compileall, and tests with coverage a
 - Use shared deps/utilities for CSRF, unlock enforcement, form handling, safe redirects, and flash/session behavior.
 - Update [`docs/web_authz_matrix.md`](web_authz_matrix.md) when route authz/CSRF/unlock behavior changes.
 
-### TUI
-- Tabs live in `ui/tui/tabs/`, modals in `ui/tui/modals/`, app wiring in `ui/tui/app.py`.
+### Web launcher
+- Launcher entrypoints: `launcher.py` and `main.py` (web).
 - Reuse services and keep UX consistent with existing flows/terminology.
 
 ### Assistant
@@ -111,7 +111,7 @@ CI (`.github/workflows/ci.yml`) runs lint, compileall, and tests with coverage a
 
 ### Updater and notifications
 - `app_core/updater.py` handles git checks/ff-only apply and release/cached update notices.
-- Polling-based notifications are surfaced in web/TUI; changes should preserve graceful offline behavior and avoid excessive API calls.
+- Polling-based notifications are surfaced in web UI; changes should preserve graceful offline behavior and avoid excessive API calls.
 
 ## Install/update scripts and platform support
 

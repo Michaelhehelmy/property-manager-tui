@@ -1,10 +1,10 @@
 <#
 .SYNOPSIS
-Dynamic setup/deploy script for property-manager-tui on Windows.
+Dynamic setup/deploy script for property-manager on Windows.
 
 .DESCRIPTION
 Auto-bootstraps prerequisites (best-effort winget), clones/updates repo (optional pinned ref),
-creates .venv, installs deps, and can run TUI or Web UI.
+creates .venv, installs deps, and can run Web UI.
 
 Idempotent and data-preserving: never deletes DB/exports/invoices/PM_DATA_DIR.
 Web mode is SQLite-safe only with --workers 1.
@@ -13,14 +13,14 @@ Web mode is SQLite-safe only with --workers 1.
 auto | setup | run | deploy  (deploy = setup + run). Default: setup
 
 .PARAMETER Mode
-auto | tui | web | both. Default: auto
+auto | web. Default: auto (tui/both map to web)
 
 .PARAMETER SkipWeb
 auto | 0 | 1. Default: auto (0 on Windows)
 
 .EXAMPLES
 powershell -ExecutionPolicy Bypass -File scripts\setup_windows.ps1
-powershell -ExecutionPolicy Bypass -File scripts\setup_windows.ps1 -Action deploy -Mode tui
+powershell -ExecutionPolicy Bypass -File scripts\setup_windows.ps1 -Action deploy -Mode web
 powershell -ExecutionPolicy Bypass -File scripts\setup_windows.ps1 -Action deploy -Mode web -BindHost 0.0.0.0 -Port 8000 -GitRef v1.2.3
 
 Environment variables also supported: ACTION, MODE, SKIP_WEB, INSTALL_DEV, RUN_TESTS,
@@ -32,8 +32,8 @@ param(
   [string]$Action = $(if ($env:ACTION) { $env:ACTION } else { 'setup' }),
   [string]$Mode = $(if ($env:MODE) { $env:MODE } else { 'auto' }),
   [string]$SkipWeb = $(if ($env:SKIP_WEB) { $env:SKIP_WEB } else { 'auto' }),
-  [string]$InstallDir = $(if ($env:INSTALL_DIR) { $env:INSTALL_DIR } else { (Join-Path $HOME 'property-manager-tui') }),
-  [string]$RepoUrl = $(if ($env:REPO_URL) { $env:REPO_URL } else { 'https://github.com/Michaelhehelmy/property-manager-tui.git' }),
+  [string]$InstallDir = $(if ($env:INSTALL_DIR) { $env:INSTALL_DIR } else { (Join-Path $HOME 'property-manager') }),
+  [string]$RepoUrl = $(if ($env:REPO_URL) { $env:REPO_URL } else { 'https://github.com/Michaelhehelmy/property-manager.git' }),
   [string]$Branch = $(if ($env:BRANCH) { $env:BRANCH } else { 'main' }),
   [string]$GitRef = $(if ($env:GIT_REF) { $env:GIT_REF } elseif ($env:TAG) { $env:TAG } elseif ($env:COMMIT) { $env:COMMIT } elseif ($env:BRANCH) { $env:BRANCH } else { 'main' }),
   [string]$BindHost = $(if ($env:HOST) { $env:HOST } else { '127.0.0.1' }),
@@ -263,18 +263,18 @@ function Ensure-Venv-And-Deps([string]$py) {
   }
 
   $doWeb = $true
-  if ($SkipWeb -eq '1' -or $Mode -eq 'tui') { $doWeb = $false }
+  if ($SkipWeb -eq '1' -or $Mode -eq 'web') { $doWeb = $false }
   if ($SkipWeb -eq '0') { $doWeb = $true }
 
   if ($doWeb -and (Test-Path (Join-Path $InstallDir 'requirements-web.txt'))) {
     Log "Installing web dependencies (requirements-web.txt)..."
     & $venvPy -m pip install -r requirements-web.txt
     if ($LASTEXITCODE -ne 0) {
-      Warn "Web dependency installation failed. Core/TUI can still be used. Retry with -SkipWeb 1 -Mode tui."
+      Warn "Web dependency installation failed. Core/Web UI can still be used. Retry with -SkipWeb 0 -Mode web."
       Warn "On constrained environments/toolchains, some packages (e.g. pydantic-core) may require Rust/build tools or a prebuilt wheel for your Python version/architecture."
-      Warn "Fallback: use TUI-only (-SkipWeb 1 -Mode tui). If web is required, install build prerequisites or run the web UI on a supported host."
+      Warn "Fallback: use Web UI-only (-SkipWeb 0 -Mode web). If web is required, install build prerequisites or run the web UI on a supported host."
       $script:SkipWeb = '1'
-      if ($script:Mode -eq 'both') { $script:Mode = 'tui' }
+      if ($script:Mode -eq 'both') { $script:Mode = 'web' }
     }
   } elseif (-not $doWeb) {
     Log "Skipping web dependencies (Mode=$Mode SkipWeb=$SkipWeb)."
@@ -317,8 +317,8 @@ Run (PowerShell):
   Set-Location "$InstallDir"
   .\.venv\Scripts\Activate.ps1
 
-  # TUI (local terminal)
-  python launcher.py --tui
+  # Web UI (local terminal)
+  python launcher.py --web --web
 
   # Web server (client/server; SQLite-safe: ALWAYS --workers 1)
   `$env:PM_WEB_SECRET_KEY = 'replace-with-a-long-random-secret'
@@ -330,7 +330,7 @@ Tips / Ops:
   - Runtime data is preserved: DB, exports, invoices, and PM_DATA_DIR are never deleted by setup/update scripts.
   - Updates (git): Settings → App updates (fast-forward) or git pull --ff-only + re-run -Action setup; restart after updates.
   - Pinned/reproducible install: set -GitRef <tag|commit|branch> (or GIT_REF/TAG/COMMIT env). Bootstrap from raw/<ref>/scripts/install_windows.ps1 for a fixed script version.
-  - If web deps fail (e.g. pydantic-core/Rust wheel/build issues), fallback to TUI-only: -SkipWeb 1 -Mode tui.
+  - If web deps fail (e.g. pydantic-core/Rust wheel/build issues), fallback to Web UI-only: -SkipWeb 0 -Mode web.
   - Health: python -m app_core.doctor --json (probes: /health, /healthz)
   - Backup/verify: python scripts/backup_runtime.py --backup  |  --verify <backup.db>
   - Deployment examples: deploy\ (systemd/Caddy/Nginx), Dockerfile, docker-compose.yml
@@ -346,7 +346,7 @@ function Run-Deploy {
   $env:PYTHONPATH = "$(Join-Path $InstallDir 'src');$InstallDir$([IO.Path]::PathSeparator)$($env:PYTHONPATH)"
   Validate-WebTarget
   switch ($Mode) {
-    'tui'  { Log "Launching TUI..."; & $venvPy launcher.py --tui; exit $LASTEXITCODE }
+    'web'  { Log "Launching Web UI..."; & $venvPy launcher.py --web; exit $LASTEXITCODE }
     'web'  {
       if ($SkipWeb -eq '1') { throw "Web deps were skipped; cannot start web mode. Re-run with -SkipWeb 0 -Mode web." }
       Print-SecurityGuidance
@@ -355,8 +355,8 @@ function Run-Deploy {
       & $venvPy -m uvicorn ui.web.server:app --host $BindHost --port $Port --workers 1
       exit $LASTEXITCODE
     }
-    'both' { Log "Launching launcher (choose TUI/Web)..."; & $venvPy launcher.py; exit $LASTEXITCODE }
-    'auto' { Log "Launching launcher (choose TUI/Web)..."; & $venvPy launcher.py; exit $LASTEXITCODE }
+    'both' { Log "Launching launcher (choose Web UI/Web)..."; & $venvPy launcher.py; exit $LASTEXITCODE }
+    'auto' { Log "Launching launcher (choose Web UI/Web)..."; & $venvPy launcher.py; exit $LASTEXITCODE }
     default { throw "Unknown Mode '$Mode' (use auto|tui|web|both)" }
   }
 }
@@ -364,12 +364,12 @@ function Run-Deploy {
 # --- main ---
 try {
   if ($SkipWeb -eq 'auto') { $SkipWeb = '0' }
-  if ($Mode -eq 'auto') { $Mode = 'both' }
+  if ($Mode -eq 'auto' -or $Mode -eq 'tui' -or $Mode -eq 'both') { $Mode = 'web' }
   $script:SkipWeb = $SkipWeb
   $script:Mode = $Mode
   $script:InstallDir = $InstallDir
 
-  Log "Windows setup for property-manager-tui"
+  Log "Windows setup for property-manager"
   Log "Action=$Action Mode=$Mode SkipWeb=$SkipWeb Host=$BindHost Port=$Port Ref=$GitRef"
   Log "InstallDir=$InstallDir"
   Validate-WebTarget
@@ -402,7 +402,7 @@ try {
     }
     'setup' {
       $scriptRoot = if ($PSScriptRoot) { Split-Path -Parent $PSScriptRoot } else { '' }
-      if ($scriptRoot -and (Test-Path (Join-Path $scriptRoot 'launcher.py')) -and ($InstallDir -eq (Join-Path $HOME 'property-manager-tui'))) {
+      if ($scriptRoot -and (Test-Path (Join-Path $scriptRoot 'launcher.py')) -and ($InstallDir -eq (Join-Path $HOME 'property-manager'))) {
         $InstallDir = $scriptRoot
         $script:InstallDir = $InstallDir
         Log "Detected repo checkout; using InstallDir=$InstallDir"

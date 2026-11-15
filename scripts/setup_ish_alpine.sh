@@ -1,27 +1,27 @@
 #!/bin/sh
 # Dynamic setup/deploy script for property-manager-tui (portable POSIX sh).
 # Detects environment (iSH/Alpine, Termux, Debian/Ubuntu, macOS, generic Linux)
-# and installs dependencies + prepares/runs the app (TUI or Web).
+# and installs dependencies + prepares/runs the Web UI.
 #
 # Idempotent and data-preserving: never deletes DB/exports/invoices/PM_DATA_DIR.
 # Web mode is SQLite-safe only with --workers 1.
 #
 # Usage:
 #   sh scripts/setup_ish_alpine.sh
-#   MODE=tui|web|both|auto ACTION=setup|run|deploy|auto sh scripts/setup_ish_alpine.sh
+#   MODE=web|auto ACTION=setup|run|deploy|auto sh scripts/setup_ish_alpine.sh
 #   REPO_URL=... INSTALL_DIR=... BRANCH=main GIT_REF=<branch|tag|commit> HOST=0.0.0.0 PORT=8000 sh scripts/setup_ish_alpine.sh
 #
 # Examples:
-#   SKIP_WEB=1 MODE=tui sh scripts/setup_ish_alpine.sh          # iSH TUI (recommended)
+#   MODE=web sh scripts/setup_ish_alpine.sh
 #   MODE=web HOST=0.0.0.0 PM_WEB_SECRET_KEY='...' ACTION=deploy sh scripts/setup_ish_alpine.sh
-#   ACTION=run MODE=tui sh scripts/setup_ish_alpine.sh
+#   ACTION=run MODE=web sh scripts/setup_ish_alpine.sh
 set -eu
 
 REPO_URL="${REPO_URL:-https://github.com/Michaelhehelmy/property-manager-tui.git}"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/property-manager-tui}"
 BRANCH="${BRANCH:-main}"
 GIT_REF="${GIT_REF:-${TAG:-${COMMIT:-$BRANCH}}}"
-MODE="${MODE:-auto}"                # auto|tui|web|both
+MODE="${MODE:-auto}"                # auto|web
 ACTION="${ACTION:-setup}"           # auto|setup|run|deploy
 SKIP_WEB="${SKIP_WEB:-auto}"        # auto|0|1
 INSTALL_DEV="${INSTALL_DEV:-0}"
@@ -72,12 +72,8 @@ detect_env() {
   if command -v pkg >/dev/null 2>&1 && [ $IS_TERMUX -eq 1 ]; then PMGR="pkg"; fi
   if command -v brew >/dev/null 2>&1 && [ "$PMGR" = "" ]; then PMGR="brew"; fi
 
-  if [ "$SKIP_WEB" = "auto" ]; then
-    if [ $IS_ISH -eq 1 ]; then SKIP_WEB=1; else SKIP_WEB=0; fi
-  fi
-  if [ "$MODE" = "auto" ]; then
-    if [ $IS_ISH -eq 1 ] && [ "$SKIP_WEB" = "1" ]; then MODE="tui"; else MODE="both"; fi
-  fi
+  if [ "$SKIP_WEB" = "auto" ]; then SKIP_WEB=0; fi
+  case "$MODE" in auto|tui|both|"") MODE="web" ;; esac
   log "Environment: OS=$OS ARCH=$ARCH pkg=$PMGR ish=$IS_ISH alpine=$IS_ALPINE termux=$IS_TERMUX debian=$IS_DEBIAN mac=$IS_MAC"
   log "Selected: MODE=$MODE ACTION=$ACTION SKIP_WEB=$SKIP_WEB HOST=$HOST PORT=$PORT ref=$GIT_REF"
 }
@@ -214,8 +210,8 @@ Run (activate venv first):
   cd "$INSTALL_DIR"
   . .venv/bin/activate
 
-  # TUI (local terminal)
-  python3 launcher.py --tui
+  # Web UI (SQLite-safe: ALWAYS --workers 1)
+  python3 launcher.py --web --host ${HOST} --port ${PORT}
 
   # Web server (client/server; SQLite-safe: ALWAYS --workers 1)
   export PM_WEB_SECRET_KEY='replace-with-a-long-random-secret'
@@ -232,10 +228,10 @@ Client/server & ops:
   - Deployment examples: deploy/ (systemd, Caddyfile, nginx) and Dockerfile/docker-compose.yml
 EOF
   if [ $IS_ISH -eq 1 ]; then
-    echo "  - iSH: TUI is most reliable; web deps/builds may be slow or unavailable (use SKIP_WEB=1)."
+    echo "  - iSH/constrained: web deps/builds may require toolchain support; run on a fuller host if unavailable."
   fi
   if [ $IS_TERMUX -eq 1 ]; then
-    echo "  - Termux: both TUI and web are supported; bind 0.0.0.0 for LAN access from other devices."
+    echo "  - Termux: bind 0.0.0.0 for LAN access from other devices (HTTPS/proxy recommended)."
   fi
 }
 
@@ -247,13 +243,10 @@ run_deploy() {
   export PYTHONPATH="$INSTALL_DIR/src:$INSTALL_DIR${PYTHONPATH:+:$PYTHONPATH}"
   validate_web_target
   case "$MODE" in
-    tui)
-      log "Launching TUI..."
-      exec python3 launcher.py --tui
-      ;;
-    web)
+
+    web|tui|both|auto)
       if [ "$SKIP_WEB" = "1" ]; then
-        err "Web deps were skipped; cannot start web mode. Re-run with SKIP_WEB=0 MODE=web."
+        err "Web deps were skipped; cannot start web mode. Re-run with SKIP_WEB=0 MODE=web ACTION=setup."
         exit 1
       fi
       print_security_guidance
@@ -261,14 +254,8 @@ run_deploy() {
       log "Runtime data (DB/exports/invoices/PM_DATA_DIR) is preserved. Health: python3 -m app_core.doctor"
       exec python3 -m uvicorn ui.web.server:app --host "$HOST" --port "$PORT" --workers 1
       ;;
-    both|auto)
-      log "Launching launcher (choose TUI/Web)..."
-      exec python3 launcher.py
-      ;;
-    *)
-      err "Unknown MODE=$MODE (use auto|tui|web|both)"
-      exit 1
-      ;;
+
+
   esac
 }
 

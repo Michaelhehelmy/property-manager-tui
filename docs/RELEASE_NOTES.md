@@ -8,7 +8,7 @@
 - **Auth/session/proof handling:** per-browser signed-session unlock behavior and CSRF/session hardening retained; web-layer password-proof UX clarified so sensitive/admin actions that require backend service proofs continue to pass explicit proofs, while unlock-gated actions whose backend APIs do not take a service password no longer imply a misleading extra proof prompt in the UI. See `docs/web_authz_matrix.md`.
 - **P0/core correctness fixes:** batch sale allocation now avoids satisfying shortfall via aggregate/negative overflow when expiry-blocked (safety policy preserved), dashboard day snapshot/service helpers and DB readiness helper (`is_initialized`) added for clearer operational state, and assistant runtime config/status surfaced via public helper.
 - **UI and operator workflow improvements:** web templates/CSS/routes adjusted for safer rendering, clearer settings/accounting/POS/reservations/reports/assistant flows, backup/update messaging, and traceability/batch/operator context where applicable.
-- **Docs and test coverage:** operational/deployment/security/updates/backup/troubleshooting docs and authz matrix refreshed; `pytest.ini` added and automated tests expanded/updated across assistant, dashboards, DB integrity/idempotency, recipes, TUI modals, and web rendering/reservation/routes coverage.
+- **Docs and test coverage:** operational/deployment/security/updates/backup/troubleshooting docs and authz matrix refreshed; `pytest.ini` added and automated tests expanded/updated across assistant, dashboards, DB integrity/idempotency, recipes, Web UI modals, and web rendering/reservation/routes coverage.
 
 ## Operational notes
 
@@ -22,7 +22,7 @@
 - **Single-writer SQLite constraints remain:** web must stay on `--workers 1`; in-process/session/rate-limit assumptions are not distributed and require disciplined deployment, permissions, and monitoring.
 - **Operational/manual controls still required:** TLS/proxy/cert lifecycle, firewall/VPN, secret rotation/management, backup scheduling/offsite retention/encryption, restore/DR drills, monitoring/alerting, service supervision, and incident/runbook ownership are not automated.
 - **Rollback/schema compatibility:** startup migrations are additive where applicable, but code rollback after migrations may require restoring a verified pre-update backup to align schema/data with older code; validate in a non-production copy.
-- **Environment/platform variability:** constrained environments may need TUI-only fallback or dependency/toolchain workarounds (e.g. web wheel/build issues); operators should pin/test releases in their target environment and keep docs/runbooks current.
+- **Environment/platform variability:** constrained environments may need dependency/toolchain workaround or dependency/toolchain workarounds (e.g. web wheel/build issues); operators should pin/test releases in their target environment and keep docs/runbooks current.
 - **Validation context:** automated tests and docs were updated in this working tree, but no committed CI/test-gate artifacts or coverage report outputs are included here. Run the full recommended validation commands below before commit/release.
 
 ## References

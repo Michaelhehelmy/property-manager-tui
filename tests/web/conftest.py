@@ -75,6 +75,13 @@ def web_env(tmp_path, monkeypatch):
 
     services.init_db()
     services.set_super_password("testpass")
+    # Keep dashboard accessible in most web tests; setup-wizard behavior is covered separately.
+    try:
+        services.set_setting("branding_configured", "true")
+        if not str(services.get_setting("business_name", "") or "").strip():
+            services.set_setting("business_name", "Test Property")
+    except Exception:
+        pass
 
     yield {
         "tmp_path": tmp_path,

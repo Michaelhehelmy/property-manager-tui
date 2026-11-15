@@ -1,7 +1,7 @@
 # Web Authz/CSRF Matrix (`ui/web`)
 
 Scope: `ui/web/server.py`, `ui/web/deps.py`, `ui/web/routes/*.py`, `ui/web/templates/**`  
-Out of scope (not modified): `src/app_core/**`, `ui/tui/**`, `tests/**`, `scripts/**`, `README.md`, `assistant.md`, other docs.
+Out of scope (not modified): `src/app_core/**`, `ui/web/**`, `tests/**`, `scripts/**`, `README.md`, `assistant.md`, other docs.
 
 ## Enforcement model
 

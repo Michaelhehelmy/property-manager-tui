@@ -1,11 +1,10 @@
-# Property Manager (TUI + Web UI)
+# Property Manager (Web UI)
 
-Local-first property management system with a shared backend and two frontends:
+Local-first property management system with a shared backend and a web frontend:
 
-- **TUI:** Textual terminal app (`main.py`, `launcher.py --tui`) for local/SSH/constrained terminals.
-- **Web UI:** FastAPI + HTMX server (`ui.web.server:app`, `launcher.py --web`) for browser access on desktop/mobile, LAN, or behind a reverse proxy.
+- **Web UI:** FastAPI + HTMX server (`ui.web.server:app`, `launcher.py`, `main.py`) for browser access on desktop/mobile, LAN, or behind a reverse proxy.
 
-**Architecture:** all business logic lives in `src/app_core/` (DB, services, paths, assistant, integrity/doctor, updater, barcode/batch logic) and is shared by `ui/tui/` and `ui/web/`. SQLite is the datastore.
+**Architecture:** all business logic lives in `src/app_core/` (DB, services, paths, assistant, integrity/doctor, updater, barcode/batch logic, support/reporting) and is used by `ui/web/`. SQLite is the datastore.
 
 ## Current capabilities
 
@@ -14,9 +13,10 @@ Local-first property management system with a shared backend and two frontends:
 - **Batch/lot traceability & FEFO:** inventory supports batch/lot tracking with received date/time, expiry date, remaining/received quantity, unit cost, supplier/reference/notes, status/expiry state, and movements. Supports **FEFO-aware** (First Expired, First Out) workflows, expiring/expired batch review, batch/lot lists, and barcode/SKU/lot trace (resolved item or lot with received/expiry/remaining and recent movements when available).
 - **Activities/trips:** register/book activities/excursions, track bookings/stats, and post charges to folios/invoices.
 - **Accounting, reports & analytics:** ledger, operational/financial reports and analytics/exports (as available in the app).
-- **Grounded assistant (read-only):** Web & TUI assistant answers from real app data/tools (ops, reports, guests/portfolios, reservations/balances, inventory including expiring batches, batch lists, barcode/lot trace, activities/bookings, integrity/health, and app version/update status). Assistant follows configured unlock/allowlist policy and remains read-only.
+- **Grounded assistant (read-only):** Web assistant answers from real app data/tools (ops, reports, guests/portfolios, reservations/balances, inventory including expiring batches, batch lists, barcode/lot trace, activities/bookings, integrity/health, and app version/update status). Assistant follows configured unlock/allowlist policy and remains read-only.
 - **Integrity & health:** read-only ledger/data integrity checks in-app, CLI **doctor** (`python -m app_core.doctor`), safe backup/verify helpers, and web liveness/readiness probes `GET /health`, `GET /healthz`, `GET /readyz`.
-- **In-app updates (git installs, Web & TUI):** **Settings → App updates** supports **Check for updates**, changelog/commit details, and **Apply/Update** via **git fast-forward**. Local source changes must be committed/stashed/discarded before apply.
+- **Issue reporting (privacy-first):** Web **Report issue** (`/support/report`) and CLI **`python -m app_core.support`** generate sanitized diagnostics (no passwords/secrets/tokens/CSRF/session/recovery codes or DB/guest/payment records), let you review/edit details, copy/download the report, optionally capture/download a screenshot for manual attach, and open a prefilled GitHub issue.
+- **In-app updates (git installs):** **Settings → App updates** supports **Check for updates**, changelog/commit details, and **Apply/Update** via **git fast-forward**. Local source changes must be committed/stashed/discarded before apply.
 - **Backups & data safety:** create verified DB backups from Settings (**Backup now**, subject to unlock/CSRF as applicable) or CLI/scripts. Runtime data is preserved across source updates; **restore is manual and offline**.
 
 ## Operational requirements (important)
@@ -26,7 +26,7 @@ Local-first property management system with a shared backend and two frontends:
 - **HTTPS / transport security:** bind to `127.0.0.1` for local-only use. For LAN/remote/browser access, use **HTTPS** (reverse proxy that terminates TLS) or a private network (VPN/Tailscale/SSH tunnel). Do not expose plain HTTP publicly.
 - **Data directory & permissions:** runtime data lives in `PM_DATA_DIR` or app defaults/legacy locations (DB, exports, invoices). Ensure the process user can read/write the data directory and keep a single writer.
 - **Data preserved across updates:** source/app updates (in-app fast-forward or `git pull --ff-only`) do **not** modify runtime data (DB, exports, invoices, configured data dir). DB migrations run on startup and are additive where applicable.
-- **Restart after apply:** after applying an in-app update, **restart the TUI/app/server** to load the new version.
+- **Restart after apply:** after applying an in-app update, **restart the app/server** to load the new version.
 - **Local source changes:** in-app apply requires a clean working tree for fast-forward; commit, stash, or discard local changes first.
 - **Backups before risky operations:** take and verify backups before upgrades/migrations, restores, or major operational changes.
 - **No destructive one-click restore:** restore is deliberate/manual/offline (stop app, verify backup, replace files, start, verify integrity).
@@ -35,13 +35,12 @@ Local-first property management system with a shared backend and two frontends:
 ## Repository layout
 
 ```text
-launcher.py                  # unified launcher/menu (TUI or Web)
-main.py                      # TUI entry point
+launcher.py                  # unified web launcher/menu
+main.py                      # web entry point (compatibility)
 pyproject.toml               # packaging metadata and extras
 requirements*.txt            # runtime / web / dev Python deps
 scripts/                     # install/setup/update/backup/coverage helpers
 src/app_core/                # shared backend (db, services, paths, assistant, doctor, updater, ...)
-ui/tui/                      # Textual TUI
 ui/web/                      # FastAPI + HTMX web UI
 docs/                        # operations, security, deployment, runbooks
 assistant.md                 # assistant capabilities/evolution/plan
@@ -52,11 +51,11 @@ tests/                       # pytest suite
 
 | Goal | Recommended mode |
 |---|---|
-| Local use on a PC/server terminal | **TUI** (`python launcher.py --tui`) or Web on `127.0.0.1` |
+| Local use on a PC/server terminal | Web on `127.0.0.1` (`python launcher.py` / `python main.py`) |
 | Access from phone/tablet browser on same LAN | **Web** bound to `0.0.0.0` behind trusted LAN/VPN and with `PM_WEB_SECRET_KEY`; prefer HTTPS reverse proxy if feasible |
 | Remote access over internet | **Web** behind **HTTPS** reverse proxy / VPN / Tailscale (never plain HTTP public exposure) |
-| iSH (iOS/Alpine, constrained) | **TUI** with web deps skipped (`SKIP_WEB=1`) |
-| Android (Termux) | **TUI** or **Web** (`--workers 1`) |
+| iSH (iOS/Alpine, constrained) | Run Web UI on a fuller host if web deps/toolchain are unavailable; constrained local installs may require dependency/toolchain workarounds |
+| Android (Termux) | **Web** (`--workers 1`) |
 | Windows desktop/server | `scripts/install_windows.ps1` / `scripts/setup_windows.ps1` or manual venv |
 
 ## One-line install / update (all supported OS families)
@@ -65,12 +64,10 @@ These commands are intended for **first-time install and later re-runs** on git-
 
 | OS / Environment | One-line command | Notes |
 |---|---|---|
-| **Linux / macOS / WSL / generic Unix** (curl) | `curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh \| sh` | Detects environment/package manager, installs/updates, launches launcher (choose TUI or Web). Re-run anytime. |
+| **Linux / macOS / WSL / generic Unix** (curl) | `curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh \| sh` | Detects environment/package manager, installs/updates, and launches the web app. Re-run anytime. |
 | **Linux / macOS / WSL** (wget) | `wget -qO- https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh \| sh` | Fallback if `curl` is unavailable. |
-| **TUI only (minimal / headless / iSH)** | `curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh \| SKIP_WEB=1 MODE=tui sh` | Most reliable for constrained environments. |
 | **Web server for LAN (trusted network)** | `curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh \| MODE=web HOST=0.0.0.0 PORT=8000 PM_WEB_SECRET_KEY="$(openssl rand -hex 32)" sh` | `--workers 1` required (SQLite). Use HTTPS reverse proxy/VPN for shared/remote access. |
-| **Android (Termux)** | `pkg update -y && pkg install -y curl && curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh \| sh` | Launcher (TUI/Web). For LAN web add `MODE=web HOST=0.0.0.0 PORT=8000 PM_WEB_SECRET_KEY=...`; if web deps fail (e.g. pydantic-core/Rust wheel builds), use `SKIP_WEB=1 MODE=tui`. |
-| **iOS (iSH / Alpine)** | `apk add --no-cache curl && curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh \| SKIP_WEB=1 MODE=tui sh` | Prefer TUI on iSH. |
+| **Android (Termux)** | `pkg update -y && pkg install -y curl && curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh \| sh` | Installs/updates and launches web app. For LAN web add `MODE=web HOST=0.0.0.0 PORT=8000 PM_WEB_SECRET_KEY=...` (use HTTPS/proxy for shared access). |
 | **Windows (PowerShell, bootstrap)** | `irm https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install_windows.ps1 \| iex` | Uses winget when available to install Python/Git if missing, then clones/updates and runs setup/deploy. Customize via `$env:ACTION/$env:MODE/$env:HOST/$env:PORT/$env:PM_WEB_SECRET_KEY`. |
 | **Windows (CMD bootstrap)** | `curl -fsSL -o install_windows.cmd https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install_windows.cmd && install_windows.cmd -Action deploy -Mode auto` | Downloads/runs bootstrap wrapper (uses PowerShell script). |
 
@@ -89,15 +86,15 @@ These commands are intended for **first-time install and later re-runs** on git-
 
 ### Dependency/install robustness (constrained environments)
 
-- **TUI-only fallback:** if web dependency installation/build fails, re-run with `SKIP_WEB=1 MODE=tui` (Unix) or `-SkipWeb 1 -Mode tui` (Windows). Core/TUI remains usable.
-- **`pydantic-core` / Rust wheel issues:** on iSH/Termux/older CPU architectures or limited toolchains, some web deps may require Rust/cargo/build tools or a prebuilt wheel matching your Python version/architecture. If unavailable, use TUI-only, upgrade Python/toolchain, or run the web UI on a fuller host.
+- **Web dependency/toolchain issues:** if web dependency installation/build fails (e.g. `pydantic-core`/Rust wheel issues on constrained environments), install/upgrade Python/build tools or a compatible prebuilt wheel, or run the web app on a fuller host.
+- **`pydantic-core` / Rust wheel issues:** on iSH/Termux/older CPU architectures or limited toolchains, some web deps may require Rust/cargo/build tools or a prebuilt wheel matching your Python version/architecture. If unavailable, upgrade Python/toolchain, install build deps, or run the web UI on a fuller host.
 - **SQLite web safety:** always run web with `--workers 1`. Use `PM_WEB_SECRET_KEY` and HTTPS reverse proxy/VPN for non-local/shared access. Runtime data (`PM_DATA_DIR`, DB, exports, invoices) is preserved across setup/update runs.
 
 ## Platform-specific setup
 
 ### Linux / macOS / WSL / Unix-like
 - Use `scripts/install.sh` (bootstrap) or `scripts/setup.sh` from a checkout.
-- Examples: `sh scripts/setup.sh` (setup), `MODE=tui ACTION=deploy sh scripts/setup.sh`, `MODE=web HOST=127.0.0.1 PORT=8000 ACTION=deploy sh scripts/setup.sh`.
+- Examples: `sh scripts/setup.sh` (setup), `MODE=web ACTION=deploy sh scripts/setup.sh`, `MODE=web HOST=127.0.0.1 PORT=8000 ACTION=deploy sh scripts/setup.sh`.
 - WSL: treat as Linux; bind carefully for LAN access and account for Windows firewall/port forwarding.
 
 ### Android (Termux)
@@ -110,9 +107,8 @@ curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui
 ### iOS (iSH / Alpine)
 ```sh
 apk add --no-cache curl
-curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh | SKIP_WEB=1 MODE=tui sh
+curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh | MODE=web sh
 ```
-TUI is recommended on iSH. Web dependency builds may be slow/unavailable.
 
 ### iOS/iPadOS as web client
 Run the server on a capable host (Mac/Linux/Windows/Termux/RPi/VPS) and open from Safari (`http://<host>:8000` on LAN or `https://...` via reverse proxy/Tailscale/VPN). Add to Home Screen for app-like use.
@@ -125,7 +121,7 @@ Run the server on a capable host (Mac/Linux/Windows/Termux/RPi/VPS) and open fro
   Customize: `$env:ACTION='deploy'; $env:MODE='web'; $env:HOST='127.0.0.1'; $env:PORT='8000'; $env:PM_WEB_SECRET_KEY='...'; irm ... | iex`
 - **From existing checkout:**
   ```powershell
-  powershell -ExecutionPolicy Bypass -File scripts\install_windows.ps1 -Action deploy -Mode tui
+  powershell -ExecutionPolicy Bypass -File scripts\install_windows.ps1 -Action deploy -Mode web
   powershell -ExecutionPolicy Bypass -File scripts\setup_windows.ps1 -Action deploy -Mode web -BindHost 127.0.0.1 -Port 8000
   scripts\install_windows.cmd -Action deploy -Mode auto
   ```
@@ -141,7 +137,6 @@ python3 -m venv .venv
 pip install -r requirements.txt
 pip install -r requirements-web.txt  # optional, for web
 python launcher.py          # menu
-python launcher.py --tui
 python launcher.py --web --host 127.0.0.1 --port 8000
 # direct web server (always --workers 1):
 PYTHONPATH=src python -m uvicorn ui.web.server:app --host 127.0.0.1 --port 8000 --workers 1
@@ -160,7 +155,7 @@ PYTHONPATH=src python -m uvicorn ui.web.server:app --host 127.0.0.1 --port 8000 
 - **Service/autostart:** use systemd/launchd/NSSM/Task Scheduler/supervisor/Docker restart policy to run venv Python/uvicorn with `--workers 1`.
 - **Reverse proxy:** proxy to `127.0.0.1:8000`, terminate TLS, and forward standard proxy headers as needed.
 - **Backups, restore, updates:** take and verify backups before upgrades/migrations; restore is manual/offline (with restore drill validation recommended); restart the app/server after applying updates.
-- **App icon / launcher:** no native installer icons are bundled. For browser/mobile install use "Add to Home Screen" (add PWA assets like `manifest.webmanifest` and icons under `ui/web/static/` and link from `ui/web/templates/base.html` if needed); for Windows/Linux create OS shortcuts (`.lnk`/`.desktop`) pointing to the venv launcher with a custom icon; on Termux prefer browser home-screen shortcut for web or Termux:Widget for TUI scripts.
+- **App icon / launcher:** no native installer icons are bundled. For browser/mobile install use "Add to Home Screen" (add PWA assets like `manifest.webmanifest` and icons under `ui/web/static/` and link from `ui/web/templates/base.html` if needed); for Windows/Linux create OS shortcuts (`.lnk`/`.desktop`) pointing to the venv launcher with a custom icon.
 - See `docs/DEPLOYMENT.md` and `docs/SECURITY.md` for examples and hardening.
 
 ## Security model (Web) — summary
@@ -174,28 +169,28 @@ PYTHONPATH=src python -m uvicorn ui.web.server:app --host 127.0.0.1 --port 8000 
 
 ## Updates
 
-**In-app (recommended for git installs, Web & TUI):** **Settings → Updates & Health → App updates** → **Check for updates** → **Update now / Apply** appears **only when an update is available** (git fast-forward for clean checkouts).
+**In-app (recommended for git installs):** **Settings → Updates & Health → App updates** → **Check for updates** → **Update now / Apply** appears **only when an update is available** (git fast-forward for clean checkouts).
 
 - **Automated:** check/fetch metadata, show changelog/commits, apply ff-only when eligible.
 - **Requirements/limits:** clean working tree required; non-fast-forward/diverged histories need manual git resolution.
 - **Data preserved:** DB, exports, invoices, and configured data directory (`PM_DATA_DIR`/defaults) are not modified by source updates.
 - **After apply:** **restart the app/server** to load the new version. If dependencies changed, refresh the venv via setup scripts.
-- **Update notifications (auto-check):** built-in polling-based checks run when online (cached/rate-limited, configurable via `auto_check_updates` / `auto_update_check_interval_hours`) and notify in Web/TUI when updates/releases are available. Git installs can be applied in-app (ff-only) then restarted; native/packaged installs require downloading/installing the new release artifact. No push infrastructure; auto-apply is not enabled by default.
-- **First-time update / platform guides:** Windows: rerun `scripts/install_windows.ps1` (or `git pull --ff-only` + `scripts\setup_windows.ps1 -Action setup`) then restart. Termux (TUI/Web): rerun `scripts/install.sh` with `SKIP_WEB=1 MODE=tui` or `MODE=web ... --workers 1` (or manual ff-only + setup) then restart. Details in `docs/UPDATES.md`.
+- **Update notifications (auto-check):** built-in polling-based checks run when online (cached/rate-limited, configurable via `auto_check_updates` / `auto_update_check_interval_hours`) and notify in the web UI when updates/releases are available. Git installs can be applied in-app (ff-only) then restarted; native/packaged installs require downloading/installing the new release artifact. No push infrastructure; auto-apply is not enabled by default.
+- **First-time update / platform guides:** Windows: rerun `scripts/install_windows.ps1` (or `git pull --ff-only` + `scripts\setup_windows.ps1 -Action setup`) then restart. Termux: rerun `scripts/install.sh` with `MODE=web ... --workers 1` (or manual ff-only + setup) then restart. Details in `docs/UPDATES.md`.
 - **Manual CLI:** `git pull --ff-only` then re-run setup to refresh deps if needed (Unix/Termux: `MODE=<...> ACTION=setup sh scripts/setup.sh`, Windows: `scripts\setup_windows.ps1 -Action setup`).
 
 See `docs/UPDATES.md` for release/update/rollback guidance.
 
 ## Integrity, health checks & doctor
 
-- **In-app (read-only):** ledger/data integrity checks available in Web/TUI and via grounded assistant queries.
+- **In-app (read-only):** ledger/data integrity checks available in Web UI and via grounded assistant queries.
 - **CLI doctor:** `PYTHONPATH=src python -m app_core.doctor` (or `scripts/backup_runtime.* --doctor`) for operational health checks. Supports `--json`, `--check-updates`, `--strict`, and safe backup/verify helpers: `--backup [--backup-to <path>]`, `--verify-backup <path>` / `--verify`.
 - **Web probes:** `GET /health`, `GET /healthz`, `GET /readyz` for liveness/readiness (and detailed readiness checks).
 
 ## Backups & restore
 
 - **Create backups (automated/helpers):**
-  - Web/TUI: **Settings → Backup now** (subject to unlock/CSRF as applicable).
+  - Web UI: **Settings → Backup now** (subject to unlock/CSRF as applicable).
   - CLI: `python3 scripts/backup_runtime.py --backup [--to <path>]`, `python3 scripts/backup_runtime.py --verify <backup.db>`, `python3 scripts/backup_runtime.py --doctor [--json] [--check-updates]`, or `PYTHONPATH=src python -m app_core.doctor --backup/--verify-backup`.
   - Wrappers: `scripts/backup_runtime.sh`, `scripts/backup_runtime.cmd`, `scripts/backup_runtime.ps1`.
 - **Preserve:** DB, exports, invoices, and data dir (`PM_DATA_DIR` or defaults). Take backups regularly and before upgrades/migrations.
@@ -212,7 +207,7 @@ See `docs/BACKUP_RESTORE.md` for DR guidance.
 ## Tests & checks
 
 ```bash
-python -m py_compile src/app_core/*.py ui/tui/*.py ui/web/*.py main.py launcher.py
+python -m py_compile src/app_core/*.py ui/web/*.py main.py launcher.py
 PYTHONPATH=src pytest -q
 bash scripts/coverage.sh
 bash scripts/install_deps_and_test.sh
@@ -220,7 +215,7 @@ bash scripts/install_deps_and_test.sh
 
 ## Troubleshooting (quick)
 
-- **Web deps/build issues (iSH/limited toolchains):** use `SKIP_WEB=1 MODE=tui`.
+- **Web deps/build issues (iSH/limited toolchains):** use `SKIP_WEB=0 MODE=web`.
 - **`venv` missing:** install distro Python venv package (e.g. `python3-venv`) or re-run setup scripts.
 - **Port in use / unreachable:** change `PORT`, bind correct `HOST`, allow firewall, verify LAN IP/proxy.
 - **DB/permission issues:** ensure writable data dir (`PM_DATA_DIR`/defaults), single writer, `--workers 1` for web.
@@ -230,6 +225,9 @@ See `docs/TROUBLESHOOTING.md`.
 
 ## More documentation
 
+- `CONTRIBUTING.md` — contribution guidelines, PR checklist, and forking notes.
+- `docs/DEVELOPMENT.md` — developer setup, run/test/lint workflows, and subsystem guidance.
+- `docs/ARCHITECTURE.md` — architecture, module boundaries, data flows, and extension points.
 - `assistant.md` — assistant capabilities, grounded/read-only behavior, evolution and plan.
 - `docs/NATIVE_BUILDS.md` — Nuitka/native standalone build and release packaging guidance (GitHub Releases assets auto-detected by landing page).
 - `docs/PRODUCTION_ROADMAP.md` — phased P0–P3 production hardening/operations roadmap and checklist.
