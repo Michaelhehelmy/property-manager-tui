@@ -54,7 +54,7 @@ requirements-dev.txt
 .coverage.*
 htmlcov/
 coverage.xml
-.github/workflows/
+.github/workflows/ci.yml
 CONTRIBUTING.md
 docs/DEVELOPMENT.md
 docs/ARCHITECTURE.md
