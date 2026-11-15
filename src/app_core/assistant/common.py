@@ -33,7 +33,9 @@ INTENT_LABELS = [
     "menu_info", "rate_plans", "ledger_integrity", "guest_search", "guest_profile", "guest_portfolio", "guest_last_visit",
     "guest_top_items_last_visit", "guest_last_visit_spend", "guest_activity_bookings",
     "list_activities", "activity_stats",
-    "reservation_summary", "reservation_balance",
+    "reservation_search", "reservation_summary", "reservation_balance",
+    "inventory_search", "inventory_item_details",
+    "walkin_sales_summary", "payments_summary",
     "recent_activity", "expiring_batches", "inventory_batches", "trace_barcode", "app_update_status", "health_diagnostics",
     "ambiguous_needs_clarification", "unsupported_or_unsafe", "compound_multi_intent",
 ]

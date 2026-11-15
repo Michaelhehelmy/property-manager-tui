@@ -42,13 +42,37 @@ def assistant_page(request: Request):
 @router.post("/assistant/ask")
 async def assistant_ask(request: Request):
     form = await deps.get_form(request)
+    want_json = (request.headers.get("accept","" ).find("application/json") >= 0) or (request.headers.get("x-requested-with") == "assistant-widget") or (str(form.get("widget") or "") == "1")
+
     if not _assistant_allowed(request):
+        if want_json:
+            return {"ok": False, "error": "Unlock required to use Manager Assistant (sensitive data).", "ui_actions": [{"type": "navigate", "url": "/unlock?next=/assistant"}]}
         return guarded_unlock_redirect(request, "/unlock?next=/assistant", "Unlock required to use Manager Assistant (sensitive data).")
+
     message = (form.get("message") or "").strip()
+    ui_context = None
+    raw_ctx = form.get("ui_context")
+    if raw_ctx:
+        try:
+            ui_context = json.loads(raw_ctx) if isinstance(raw_ctx, str) else raw_ctx
+        except Exception:
+            ui_context = None
+
     hist = _history(request)
+    result = {"ok": True, "answer": "", "intent": "capabilities_help", "confidence": 0.0, "tools_used": [], "source": "none", "ui_actions": []}
     if message:
-        hist.append({"role": "user", "content": message})
-        result = assistant.chat(message, history=[h for h in hist[:-1] if h.get("role") in ("user","assistant")])
+        hist.append({"role": "user", "content": message, "ui_context": ui_context or {}})
+        try:
+            result = assistant.chat(message, history=[h for h in hist[:-1] if h.get("role") in ("user","assistant")], ui_context=ui_context)
+        except TypeError:
+            # backward compat if chat signature not yet updated
+            result = assistant.chat(message, history=[h for h in hist[:-1] if h.get("role") in ("user","assistant")])
+        except Exception as e:
+            result = {"ok": False, "answer": f"Assistant error: {e}", "intent": "error", "confidence": 0.0, "tools_used": [], "source": "error", "ui_actions": []}
+
+        if not isinstance(result, dict):
+            result = {"ok": True, "answer": str(result), "intent": "unknown", "confidence": 0.0, "tools_used": [], "source": "unknown", "ui_actions": []}
+        result.setdefault("ui_actions", [])
         answer = result.get("answer") or ""
         meta = f"[source={result.get('source')} intent={result.get('intent')} conf={result.get('confidence')} tools={','.join(result.get('tools_used') or []) or '-'}]"
         hist.append({
@@ -61,12 +85,25 @@ async def assistant_ask(request: Request):
             "slots": result.get("slots") or {},
             "source": result.get("source"),
             "user_message": message,
+            "ui_actions": result.get("ui_actions") or [],
         })
         deps.get_session(request)["assistant_history"] = hist[-40:]
+
+    if want_json:
+        return {
+            "ok": bool(result.get("ok", True)),
+            "answer": result.get("answer") or "",
+            "intent": result.get("intent"),
+            "confidence": result.get("confidence"),
+            "tools_used": result.get("tools_used") or [],
+            "source": result.get("source"),
+            "slots": result.get("slots") or {},
+            "ui_actions": result.get("ui_actions") or [],
+        }
+
     shown = _history(request)[-20:]
     animate_index = None
     if message and shown:
-        # animate the newest assistant reply in this rendered slice
         for i in range(len(shown) - 1, -1, -1):
             if shown[i].get("role") == "assistant":
                 animate_index = i

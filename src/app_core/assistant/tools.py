@@ -22,8 +22,10 @@ def tool_list_capabilities(args=None):
         "Reports: P&L, cash flow, VAT, payment methods, occupancy, daily ops; compare periods",
         "Guests: search, profile, full 360° portfolio (all trips/stays, POS activity, payments, invoices, totals/stats), last visit, most-ordered items and spend on last visit, booked activities/trips",
         "Activities/Trips (excursions/experiences): registered catalog, booking/order stats, and guest/reservation bookings (booked like POS to folio/invoice)",
-        "Reservations: summary/details, balance, outstanding balances/AR, pipeline",
-        "Inventory: alerts (low/over/negative), top-selling items, expiring/expired batches and batch/lot lists, barcode/SKU/lot traceability (resolved item or lot with received/expiry/remaining and recent movements); menu/meals",
+        "Reservations: search/list, summary/details, balance, outstanding balances/AR, pipeline",
+        "POS & sales: walk-in sales summary (recent walk-in POS lines/payments/totals), sales breakdown, top sellers (works without room reservations)",
+        "Inventory & products: search/list items, item details/stock/pricing, alerts (low/over/negative), expiring/expired batches and batch/lot lists, barcode/SKU/lot traceability (resolved item or lot with received/expiry/remaining and recent movements); menu/meals",
+        "Payments & finance: payment summary by period/method, expenses, and financial reports",
         "Integrity, doctor & readiness: read-only ledger/data integrity checks and doctor/health diagnostics (schema, SQLite/FK integrity, batch-stock consistency, printer/update readiness, backup/restore readiness guidance)",
         "App version & updates: local app version/commit state and safe update guidance (in-app git-based fast-forward check/apply with changelog/details; runtime data DB/exports/invoices preserved, restart after apply)",
         "Expenses and sales breakdown; rate plans; room availability",
@@ -32,6 +34,7 @@ def tool_list_capabilities(args=None):
         "Doctor/health diagnostics are read-only and never delete or modify runtime data.",
         "Last visit = most recent Checked Out, else most recent non-deleted.",
         "Booked activities/trips are posted as POS charges to the reservation folio/invoice.",
+        "Walk-in POS/products/meals can be sold without room reservations; walk-in sales and inventory tools work independently of stays.",
         "Inventory traceability is batch/lot-aware when enabled: you can review expiring batches, list lots, and trace barcodes/SKUs/lot codes to see received, expiry, remaining quantity, and movements.",
     ]}
 
@@ -560,6 +563,186 @@ def tool_trace_barcode(args=None):
         return {"error": str(e)}
 
 
+def tool_search_reservations(args=None):
+    """Search/list reservations by guest name, status, id, or date range (read-only)."""
+    try:
+        from ..db import connect
+        args = args or {}
+        q = (args.get("query") or args.get("q") or "").strip()
+        status = (args.get("status") or "").strip()
+        start = (args.get("start") or "").strip()
+        end = (args.get("end") or "").strip()
+        rid = _safe_int(args.get("reservation_id") or args.get("id"))
+        limit = int(args.get("limit") or 30)
+        if limit < 1: limit = 30
+        if limit > 100: limit = 100
+        where = ["1=1"]
+        params = []
+        if rid:
+            where.append("r.id = ?"); params.append(rid)
+        if q:
+            like = f"%{q}%"
+            where.append("(r.guest_name LIKE ? OR CAST(r.id AS TEXT) LIKE ? OR COALESCE(r.source,'') LIKE ? OR COALESCE(rm.room_number,'') LIKE ?)")
+            params.extend([like, like, like, like])
+        if status:
+            where.append("r.status = ?"); params.append(status)
+        if start:
+            where.append("date(r.check_in_date) >= date(?)"); params.append(start)
+        if end:
+            where.append("date(r.check_out_date) <= date(?)"); params.append(end)
+        sql = f"""
+            SELECT r.id, r.guest_name, r.status, r.check_in_date, r.check_out_date, r.agreed_nightly_rate,
+                   r.source, r.created_at, rm.room_number, rm.room_type
+            FROM reservations r
+            LEFT JOIN rooms rm ON r.room_id = rm.id
+            WHERE {' AND '.join(where)}
+            ORDER BY r.check_in_date DESC, r.id DESC
+            LIMIT ?
+        """
+        params.append(limit)
+        rows = connect().execute(sql, tuple(params)).fetchall()
+        out = [dict(r) for r in rows]
+        return {"reservations": out, "count": len(out), "filters": {"query": q, "status": status, "start": start, "end": end, "reservation_id": rid}}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def tool_search_inventory(args=None):
+    """Search/list inventory products with stock, pricing, and category (read-only)."""
+    try:
+        args = args or {}
+        q = (args.get("query") or args.get("q") or "").strip()
+        category = (args.get("category") or "").strip()
+        stock_filter = (args.get("stock_filter") or "").strip()
+        limit = int(args.get("limit") or 40)
+        if limit < 1: limit = 40
+        if limit > 150: limit = 150
+        rows = services.get_inventory_items(query=q, category=category, stock_filter=stock_filter, include_inactive=False)
+        items = []
+        for r in (rows or [])[:limit]:
+            d = dict(r) if hasattr(r, "keys") else (r if isinstance(r, dict) else {})
+            items.append({
+                "id": d.get("id"),
+                "item_name": d.get("item_name") or d.get("name"),
+                "category": d.get("category"),
+                "unit": d.get("unit"),
+                "stock_qty": d.get("stock_qty"),
+                "selling_price": d.get("selling_price"),
+                "unit_cost": d.get("unit_cost"),
+                "sku": d.get("sku"),
+                "barcode": d.get("barcode"),
+                "active": d.get("active", 1),
+            })
+        return {"items": items, "count": len(items), "query": q, "category": category, "stock_filter": stock_filter}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def tool_get_inventory_item(args=None):
+    """Get a single inventory item/product details by id (read-only)."""
+    try:
+        item_id = _safe_int((args or {}).get("item_id") or (args or {}).get("id"))
+        if not item_id:
+            return {"error": "item_id is required"}
+        row = services.get_inventory_item(item_id)
+        if not row:
+            return {"error": f"Inventory item #{item_id} not found"}
+        d = dict(row) if hasattr(row, "keys") else row
+        return {"item": d}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def tool_get_walkin_sales_summary(args=None):
+    """Summarize recent walk-in (non-reservation) POS sales and payments (read-only). Works without rooms/reservations."""
+    try:
+        args = args or {}
+        limit_pos = int(args.get("limit_pos") or args.get("limit") or 30)
+        limit_pay = int(args.get("limit_payments") or 20)
+        if limit_pos < 1: limit_pos = 30
+        if limit_pos > 100: limit_pos = 100
+        if limit_pay < 1: limit_pay = 20
+        if limit_pay > 100: limit_pay = 100
+        pos_rows = services.list_walkin_pos(limit=limit_pos) or []
+        pay_rows = services.list_walkin_payments(limit=limit_pay) or []
+
+        pos_items = []
+        gross_total = 0.0
+        qty_total = 0.0
+        for r in pos_rows:
+            d = dict(r) if hasattr(r, "keys") else r
+            qty = float(d.get("quantity") or 0)
+            unit = float(d.get("unit_price") or 0)
+            tax = float(d.get("tax_amount") or 0)
+            gross = unit * qty + tax
+            gross_total += gross
+            qty_total += qty
+            pos_items.append({
+                "id": d.get("id"),
+                "created_at": d.get("created_at"),
+                "item_description": d.get("item_description"),
+                "quantity": qty,
+                "unit_price": unit,
+                "gross": round(gross, 2),
+                "lot_code": d.get("lot_code"),
+            })
+        payments = []
+        paid_total = 0.0
+        for r in pay_rows:
+            d = dict(r) if hasattr(r, "keys") else r
+            amt = float(d.get("amount") or 0)
+            if not d.get("voided_at"):
+                paid_total += amt
+            payments.append({
+                "id": d.get("id"),
+                "at": d.get("at"),
+                "amount": round(amt, 2),
+                "method": d.get("method"),
+                "payment_type": d.get("payment_type"),
+                "notes": d.get("notes"),
+                "voided_at": d.get("voided_at"),
+            })
+        return {
+            "walkin_pos": pos_items,
+            "walkin_pos_count": len(pos_items),
+            "walkin_pos_gross_total": round(gross_total, 2),
+            "walkin_pos_qty_total": round(qty_total, 2),
+            "walkin_payments": payments,
+            "walkin_payments_count": len(payments),
+            "walkin_payments_total": round(paid_total, 2),
+            "note": "Walk-in POS/sales are not linked to room reservations and work for product/meal sales.",
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def tool_get_payments_summary(args=None):
+    """Summarize payments (including walk-ins) for a period by method (read-only)."""
+    try:
+        args = args or {}
+        start, end = args.get("start"), args.get("end")
+        if not start or not end:
+            start, end = _parse_date_range(args.get("range") or "")
+        from ..db import connect
+        rows = connect().execute("""
+            SELECT method, COUNT(*) AS n, SUM(amount) AS total
+            FROM payments
+            WHERE voided_at IS NULL AND date(at) >= ? AND date(at) <= ?
+            GROUP BY method ORDER BY total DESC
+        """, (start, end)).fetchall()
+        by_method = [{"method": r["method"] or "Unknown", "count": r["n"], "total": round(float(r["total"] or 0), 2)} for r in rows]
+        total = round(sum(x["total"] for x in by_method), 2)
+        walkin_rows = connect().execute("""
+            SELECT COUNT(*) AS n, COALESCE(SUM(amount),0) AS total
+            FROM payments WHERE voided_at IS NULL AND reservation_id IS NULL AND date(at) >= ? AND date(at) <= ?
+        """, (start, end)).fetchone()
+        walkin = {"count": int(walkin_rows["n"] or 0), "total": round(float(walkin_rows["total"] or 0), 2)} if walkin_rows else {"count": 0, "total": 0.0}
+        return {"start": start, "end": end, "by_method": by_method, "total": total, "walkin_payments": walkin}
+    except Exception as e:
+        return {"start": start, "end": end, "error": str(e)}
+
+
+
 TOOLS = {
     "list_capabilities": {"fn": tool_list_capabilities, "description": "List assistant capabilities.", "parameters": {"type":"object","properties":{},"additionalProperties":False}},
     "get_property_stats": {"fn": tool_get_property_stats, "description": "Property counts/stats (guests, rooms, reservations by status, in-house, arrivals/departures today).", "parameters": {"type":"object","properties":{},"additionalProperties":False}},
@@ -597,6 +780,11 @@ TOOLS = {
     "trace_barcode": {"fn": tool_trace_barcode, "description": "Trace a barcode/SKU/lot code to the inventory item or batch (lot, received, expiry, remaining, movements).", "parameters": {"type":"object","properties":{"code":{"type":"string"},"barcode":{"type":"string"},"sku":{"type":"string"}},"additionalProperties":False}},
     "get_app_update_status": {"fn": tool_get_app_update_status, "description": "Get local app version/commit/update state and how to check/apply updates (data preserved).", "parameters": {"type":"object","properties":{},"additionalProperties":False}},
     "get_health_diagnostics": {"fn": tool_get_health_diagnostics, "description": "Read-only doctor/health diagnostics: schema/integrity, batch-stock consistency, printer/update readiness, and backup/restore guidance.", "parameters": {"type":"object","properties":{},"additionalProperties":False}},
+    "search_reservations": {"fn": tool_search_reservations, "description": "Search/list reservations by guest name, id, status, or date range (read-only).", "parameters": {"type":"object","properties":{"query":{"type":"string"},"reservation_id":{"type":"integer"},"status":{"type":"string"},"start":{"type":"string"},"end":{"type":"string"},"limit":{"type":"integer"}},"additionalProperties":False}},
+    "search_inventory": {"fn": tool_search_inventory, "description": "Search/list inventory products with stock, pricing, SKU/barcode, and category.", "parameters": {"type":"object","properties":{"query":{"type":"string"},"category":{"type":"string"},"stock_filter":{"type":"string"},"limit":{"type":"integer"}},"additionalProperties":False}},
+    "get_inventory_item": {"fn": tool_get_inventory_item, "description": "Get inventory item/product details and stock by item id.", "parameters": {"type":"object","properties":{"item_id":{"type":"integer"}},"required":["item_id"],"additionalProperties":False}},
+    "get_walkin_sales_summary": {"fn": tool_get_walkin_sales_summary, "description": "Recent walk-in (non-reservation) POS sales and payments summary/totals; works without room reservations.", "parameters": {"type":"object","properties":{"limit_pos":{"type":"integer"},"limit_payments":{"type":"integer"},"limit":{"type":"integer"}},"additionalProperties":False}},
+    "get_payments_summary": {"fn": tool_get_payments_summary, "description": "Payments summary for a period by method, including walk-in payment totals.", "parameters": {"type":"object","properties":{"start":{"type":"string"},"end":{"type":"string"},"range":{"type":"string"}},"additionalProperties":False}},
 }
 
 def execute_tool(name: str, args: dict | None = None) -> dict:

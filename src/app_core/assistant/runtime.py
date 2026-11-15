@@ -136,19 +136,181 @@ def llm_route(message: str, history: list[dict] | None = None, config: dict | No
         core["source"]="local_grounded_core"
     return core
 
-def chat(message: str, history: list[dict] | None = None) -> dict:
+UI_FIELD_GUIDE = {
+    "/reservations": {
+        "create": [
+            ("guest_name", "Guest name", "Full name of the guest/contact for this reservation."),
+            ("source", "Source", "Booking source/channel (e.g. Direct, Booking.com, Walk-in)."),
+            ("room_id", "Room", "Select the room to assign for this stay."),
+            ("rate_plan_id", "Rate plan", "Optional pricing plan/package to apply."),
+            ("rate", "Rate (agreed nightly)", "Nightly rate agreed for the reservation."),
+            ("check_in", "Check-in date", "Arrival/check-in date."),
+            ("check_out", "Check-out date", "Departure/check-out date (must be after check-in)."),
+            ("deposit", "Deposit", "Optional deposit amount collected/recorded."),
+        ],
+    },
+    "/pos": {
+        "sell": [
+            ("scan/barcode", "Scan/lookup", "Scan or enter barcode/SKU/lot to find item/batch quickly."),
+            ("reservation_id", "Reservation (charge to folio)", "Select a reservation to post POS charges to its folio."),
+            ("desc/qty/price", "Item, quantity, price", "Item description, quantity, and unit/line price for the charge."),
+            ("walk-in cart", "Walk-in cart", "Add items to cart and complete a walk-in sale without a room reservation."),
+        ],
+        "inventory": [
+            ("item_name/category/unit", "Item details", "Name, category, and unit of measure for the product."),
+            ("stock_qty/unit_cost/selling_price", "Stock & pricing", "Current/opening stock, cost, and selling price."),
+            ("sku/barcode", "SKU/Barcode", "Identifiers for lookup, labels, and traceability."),
+            ("batch/expiry settings", "Batch/expiry tracking", "Enable lot tracking and shelf-life defaults when needed."),
+        ],
+    },
+    "/guests": {
+        "directory": [
+            ("search (q)", "Search guests", "Find guests by name/phone/email or ID fragment."),
+        ],
+    },
+    "/settings": {
+        "general": [("business settings", "General settings", "Core app/business configuration options.")],
+        "branding": [("display name/tagline/logo", "Branding", "Property display name, tagline, and branding assets.")],
+        "rooms": [("room_number/type/price", "Rooms", "Room inventory, type, and base pricing.")],
+        "rate_plans": [("plan name/modifier", "Rate plans", "Pricing plans/packages and modifiers.")],
+    },
+}
+
+
+def _ui_where(ui_context):
+    ctx = ui_context or {}
+    path = (ctx.get('path') or '/').rstrip('/') or '/'
+    tab = (ctx.get('tab') or '').strip()
+    title = ctx.get('title') or ''
+    recent = ctx.get('recent_actions') or []
+    return path, tab, title, recent
+
+
+def _ui_guidance(message: str, ui_context=None):
+    """Detect navigation/help requests and return (handled_result_or_None)."""
+    t = (message or '').strip()
+    tl = t.lower()
+    path, tab, title, recent = _ui_where(ui_context)
+    actions = []
+    answer_parts = []
+
+    def nav(url, label=None):
+        actions.append({"type": "navigate", "url": url})
+
+    # where am I / context
+    if any(k in tl for k in ["where am i", "where am i?", "which page", "what page", "current page", "what tab"]):
+        loc = f"You are on **{path}**" + (f" (tab: **{tab}**)" if tab else "") + (f" — {title}" if title else "") + "."
+        if recent:
+            last = recent[-3:]
+            ra = "; ".join([f"{a.get('type','action')}{(': '+a.get('text','')) if a.get('text') else ''}{(' '+a.get('href','')) if a.get('href') else ''}" for a in last])
+            loc += f"\nRecent actions: {ra}"
+        return {"ok": True, "intent": "ui_context", "confidence": 0.99, "tools_used": [], "data": {"ui_context": ui_context or {}}, "answer": loc, "source": "ui_context", "ui_actions": actions, "slots": {}}
+
+    # navigation/help intents
+    wants_how = any(k in tl for k in ["how to", "how do i", "how can i", "guide me", "show me how", "help me", "steps to", "explain how"])
+    wants_open = any(k in tl for k in ["open ", "go to", "take me", "navigate to", "show ", "switch to"])
+    wants_explain_fields = any(k in tl for k in ["explain fields", "explain all fields", "what do the fields mean", "field meanings", "what does each field", "explain this form", "explain form"])
+
+    # reservation create
+    if ("reservation" in tl or "booking" in tl) and (("add" in tl) or ("create" in tl) or ("new" in tl) or ("make" in tl)):
+        nav("/reservations?tab=create")
+        guide = UI_FIELD_GUIDE.get("/reservations", {}).get("create", [])
+        lines = ["I can take you to **Reservations → Create** to add a new reservation."]
+        if wants_how or wants_explain_fields or "how" in tl or "explain" in tl or True:
+            lines.append("\n**Steps:** open Reservations → Create tab, fill guest and stay details, choose room/rate, then submit to create the reservation.")
+            if guide:
+                lines.append("\n**Fields explained:**")
+                for _, label, desc in guide:
+                    lines.append(f"- **{label}:** {desc}")
+        lines.append("\nI’ve opened the Create Reservation tab for you. If you want, ask me to explain any specific field while you fill it in.")
+        return {"ok": True, "intent": "ui_navigate_help", "confidence": 0.98, "tools_used": [], "data": {"target": "/reservations?tab=create", "ui_context": ui_context or {}}, "answer": "\n".join(lines), "source": "ui_guide", "ui_actions": actions, "slots": {}}
+
+    # explain fields on current screen
+    if wants_explain_fields or (("explain" in tl or "what does" in tl) and ("field" in tl or "form" in tl or "input" in tl)):
+        guide = UI_FIELD_GUIDE.get(path, {}).get(tab) or UI_FIELD_GUIDE.get(path, {}).get("sell") or UI_FIELD_GUIDE.get(path, {}).get("directory") or []
+        # also include visible fields from context as fallback
+        visible = (ui_context or {}).get("fields") or []
+        lines = [f"Here’s guidance for the current screen (**{path}**{(' / '+tab) if tab else ''}):"]
+        if guide:
+            lines.append("\n**Known fields:**")
+            for _, label, desc in guide:
+                lines.append(f"- **{label}:** {desc}")
+        if visible:
+            labels = []
+            for f in visible:
+                if f.get('kind')=='label':
+                    labels.append(f.get('text'))
+                elif f.get('label'):
+                    labels.append(f.get('label'))
+            labels = [x for x in labels if x]
+            if labels:
+                uniq=[]; seen=set()
+                for x in labels:
+                    k=x.lower()
+                    if k in seen: continue
+                    seen.add(k); uniq.append(x)
+                if uniq:
+                    lines.append("\n**Visible labels/fields detected on this page:** " + ", ".join(uniq[:20]))
+        if not guide and not visible:
+            lines.append("I don’t have a detailed field map for this specific view yet, but tell me the field name and I’ll explain what it’s for.")
+        return {"ok": True, "intent": "ui_explain_fields", "confidence": 0.95, "tools_used": [], "data": {"ui_context": ui_context or {}}, "answer": "\n".join(lines), "source": "ui_guide", "ui_actions": actions, "slots": {}}
+
+    # generic navigation shortcuts
+    nav_map = [
+        ("/", ["dashboard", "home", "overview"]),
+        ("/reservations?tab=list", ["reservation list", "reservations list", "bookings", "all reservations"]),
+        ("/reservations?tab=create", ["new reservation", "create reservation", "add reservation", "book a room"]),
+        ("/guests", ["guests", "guest directory", "guest list"]),
+        ("/pos?tab=sell", ["pos", "sell", "point of sale", "walk-in sale", "sell product", "sell meal"]),
+        ("/pos?tab=inventory", ["inventory", "products", "stock"]),
+        ("/pos?tab=meals", ["meals", "recipes"]),
+        ("/pos?tab=activities", ["activities", "trips"]),
+        ("/accounting", ["accounting", "expenses", "ledger"]),
+        ("/reports", ["reports", "analytics"]),
+        ("/settings", ["settings", "branding", "rooms setup", "rate plans"]),
+    ]
+    if wants_open or ("open" in tl) or ("go to" in tl) or ("take me" in tl):
+        for url, keys in nav_map:
+            if any(k in tl for k in keys):
+                nav(url)
+                return {"ok": True, "intent": "ui_navigate", "confidence": 0.97, "tools_used": [], "data": {"target": url, "ui_context": ui_context or {}}, "answer": f"Opening **{url}** for you now.", "source": "ui_guide", "ui_actions": actions, "slots": {}}
+
+    # how-to for POS/products/meals without reservation
+    if wants_how and any(k in tl for k in ["sell", "pos", "product", "meal", "without reservation", "no reservation", "walk-in", "walk in"]):
+        nav("/pos?tab=sell")
+        lines = ["To sell products/meals **without a room reservation** (walk-in): go to **POS / Inventory → Sell**, add items to the **walk-in cart**, then complete the walk-in sale/payment."]
+        lines.append("- You can scan barcodes/SKUs/lots, search products, and sell meals/recipes from inventory.")
+        lines.append("- Reservation/folio charging is optional — only use it when you want to post to a guest stay.")
+        return {"ok": True, "intent": "ui_navigate_help", "confidence": 0.96, "tools_used": [], "data": {"target": "/pos?tab=sell", "ui_context": ui_context or {}}, "answer": "\n".join(lines), "source": "ui_guide", "ui_actions": actions, "slots": {}}
+
+    return None
+
+
+def chat(message: str, history: list[dict] | None = None, ui_context: dict | None = None) -> dict:
     message=(message or "").strip()
     if not message:
-        return {"ok":False,"source":"none","tools_used":[],"data":None,"answer":"Hi! How can I help? Ask me about reports, guests, reservations, operations, or a business briefing — I’ll answer from real app data."}
+        return {"ok":False,"source":"none","tools_used":[],"data":None,"ui_actions":[],"answer":"Hi! How can I help? Ask me about reports, guests, reservations, operations, a business briefing — or ask me to open a page/tab and explain fields. I’ll answer from real app data."}
     try:
         services.touch_session()
     except Exception:
         logger.debug("assistant.chat: failed to touch session", exc_info=True)
+
+    # UI navigation/help with screen context (can return actions like navigate/open tab)
+    try:
+        ui_res = _ui_guidance(message, ui_context=ui_context)
+        if ui_res:
+            ui_res.setdefault("ui_actions", [])
+            ui_res.setdefault("response_mode", "core")
+            ui_res["ui_context"] = ui_context or {}
+            return ui_res
+    except Exception:
+        logger.debug("assistant.chat: ui guidance failed", exc_info=True)
+
     config=_pkg()._llm_config(); mode=config.get("response_mode") or "talking"; provider=config.get("provider") or "auto"
 
     if mode=="full_llm":
         res=llm_route(message, history=history, config=config)
-        if res: res["response_mode"]="full_llm_local"; return res
+        if res: res["response_mode"]="full_llm_local"; res.setdefault("ui_actions", []); res["ui_context"]=ui_context or {}; return res
 
     slots=extract_slots(message, history)
     cls=classify_intent(message, history)
@@ -169,7 +331,7 @@ def chat(message: str, history: list[dict] | None = None) -> dict:
 
     core.setdefault("source","core_deterministic"); core["intent"]=core.get("intent") or intent
     core["confidence"]=confidence; core["slots"]=slots; core["router"]=cls.get("router","rules")
-    core["response_mode"]=mode; core["core_answer"]=core.get("answer"); core["core_source"]=core.get("source")
+    core["response_mode"]=mode; core["core_answer"]=core.get("answer"); core["core_source"]=core.get("source"); core.setdefault("ui_actions", []); core["ui_context"] = ui_context or {}
 
     # Local "talking" polish (deterministic always, optional local GGUF) — no external calls
     if mode in ("talking","auto","local") and core.get("ok") and not core.get("needs_clarification") and intent not in ("greeting_smalltalk",):

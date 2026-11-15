@@ -789,6 +789,110 @@ def _apply_proactive(intent: str, data: dict, answer: str) -> str:
         return answer
     return answer.rstrip() + "\n\n" + " ".join(sugg)
 
+def _fmt_reservation_search(data: dict) -> str:
+    if data.get("error"): return f"I couldn’t search reservations ({data.get('error')})."
+    rows = data.get("reservations") or []
+    if not rows:
+        return "I didn’t find reservations matching that (real records). Try a different guest name, reservation ID, status, or date range."
+    lines = [f"Found **{len(rows)}** reservation(s) (showing up to requested limit):"]
+    for r in rows[:20]:
+        rid = r.get("id"); guest = r.get("guest_name") or "-"; st = r.get("status") or "-"
+        ci = r.get("check_in_date") or "-"; co = r.get("check_out_date") or "-"
+        room = r.get("room_number") or "-"; rtype = r.get("room_type") or ""
+        lines.append(f"- **#{rid}** {guest} — {st}, {ci} → {co}, room {room}{(' ('+rtype+')') if rtype else ''}, rate {_fmt_money(r.get('agreed_nightly_rate') or 0)}")
+    if len(rows) > 20:
+        lines.append(f"- …and {len(rows)-20} more.")
+    lines.append("\nTip: ask for `reservation #<id> summary` or `reservation #<id> balance` for details.")
+    return "\n".join(lines)
+
+
+def _fmt_inventory_search(data: dict) -> str:
+    if data.get("error"): return f"I couldn’t search inventory ({data.get('error')})."
+    items = data.get("items") or []
+    if not items:
+        return "I didn’t find matching inventory items/products (real records). Try a different name/category/SKU/barcode or stock filter."
+    lines = [f"Found **{len(items)}** inventory item(s):"]
+    for it in items[:25]:
+        name = it.get("item_name") or f"Item #{it.get('id')}"
+        stock = it.get("stock_qty")
+        price = it.get("selling_price")
+        cat = it.get("category") or "-"
+        sku = it.get("sku") or ""
+        code = it.get("barcode") or ""
+        extra = []
+        if sku: extra.append(f"SKU {sku}")
+        if code: extra.append(f"barcode {code}")
+        lines.append(f"- **#{it.get('id')} {name}** ({cat}) — stock **{stock}**, price {_fmt_money(price or 0)}" + (f" [{', '.join(extra)}]" if extra else ""))
+    if len(items) > 25:
+        lines.append(f"- …and {len(items)-25} more.")
+    lines.append("\nTip: ask for `item details #<id>` or trace a barcode/SKU/lot for batch/expiry/movements.")
+    return "\n".join(lines)
+
+
+def _fmt_inventory_item_details(data: dict) -> str:
+    if data.get("error"): return f"I couldn’t load that inventory item ({data.get('error')})."
+    it = data.get("item") or {}
+    if not it:
+        return "No inventory item details found."
+    name = it.get("item_name") or it.get("name") or f"Item #{it.get('id')}"
+    lines = [f"**{name}** (inventory item #{it.get('id')}, grounded in real data):"]
+    for k,label in [("category","Category"),("unit","Unit"),("stock_qty","Stock"),("selling_price","Selling price"),("unit_cost","Unit cost"),("low_stock_threshold","Low stock threshold"),("overstock_threshold","Overstock threshold"),("sku","SKU"),("barcode","Barcode"),("barcode_type","Barcode type"),("active","Active"),("track_batches","Track batches"),("shelf_life_days","Shelf life (days)"),("default_supplier","Default supplier")]:
+        if k in it and it.get(k) not in (None, ""):
+            v = it.get(k)
+            if k in ("selling_price","unit_cost") and isinstance(v,(int,float,str)):
+                try: v = _fmt_money(v)
+                except Exception: pass
+            lines.append(f"- {label}: **{v}**")
+    lines.append("\nTip: ask to trace its barcode/SKU/lot for received/expiry/remaining/movements if batch tracking is used.")
+    return "\n".join(lines)
+
+
+def _fmt_walkin_sales_summary(data: dict) -> str:
+    if data.get("error"): return f"I couldn’t load walk-in sales ({data.get('error')})."
+    pos = data.get("walkin_pos") or []
+    pays = data.get("walkin_payments") or []
+    lines = ["Walk-in (non-reservation) sales summary — grounded in real POS/payment data (works without room reservations):"]
+    lines.append(f"- Walk-in POS lines: **{data.get('walkin_pos_count', len(pos))}**, qty **{data.get('walkin_pos_qty_total', 0)}**, gross **{_fmt_money(data.get('walkin_pos_gross_total', 0))}**")
+    lines.append(f"- Walk-in payments: **{data.get('walkin_payments_count', len(pays))}**, total **{_fmt_money(data.get('walkin_payments_total', 0))}**")
+    if pos:
+        lines.append("\n**Recent walk-in POS items**")
+        for p in pos[:12]:
+            lot = f" (lot {p.get('lot_code')})" if p.get("lot_code") else ""
+            lines.append(f"- #{p.get('id')} {p.get('created_at') or ''}: {p.get('item_description')} x{p.get('quantity')} @ {_fmt_money(p.get('unit_price') or 0)} = {_fmt_money(p.get('gross') or 0)}{lot}")
+        if len(pos) > 12: lines.append(f"- …and {len(pos)-12} more lines.")
+    else:
+        lines.append("- No walk-in POS lines found.")
+    if pays:
+        lines.append("\n**Recent walk-in payments**")
+        for p in pays[:10]:
+            v = " (voided)" if p.get("voided_at") else ""
+            lines.append(f"- #{p.get('id')} {p.get('at') or ''}: {_fmt_money(p.get('amount') or 0)} via {p.get('method') or '-'} ({p.get('payment_type') or 'Payment'}){v}")
+        if len(pays) > 10: lines.append(f"- …and {len(pays)-10} more payments.")
+    note = data.get("note")
+    if note: lines.append(f"\n**Note:** {note}")
+    return "\n".join(lines)
+
+
+def _fmt_payments_summary(data: dict) -> str:
+    if data.get("error"): return f"I couldn’t load payments summary ({data.get('error')})."
+    start, end = data.get("start"), data.get("end")
+    by = data.get("by_method") or []
+    total = data.get("total") or 0
+    walkin = data.get("walkin_payments") or {}
+    lines = [f"Payments summary for **{start} → {end}** (grounded in real records):"]
+    lines.append(f"- Total received (non-voided): **{_fmt_money(total)}**")
+    if walkin:
+        lines.append(f"- Walk-in payments (no reservation): **{_fmt_money(walkin.get('total',0))}** across {walkin.get('count',0)} payment(s)")
+    if by:
+        lines.append("\n**By method**")
+        for m in by:
+            lines.append(f"- {m.get('method')}: {_fmt_money(m.get('total',0))} ({m.get('count',0)} payments)")
+    else:
+        lines.append("- No payments found for this period.")
+    return "\n".join(lines)
+
+
+
 def _format_for_intent(intent: str, data: dict, fallback_title: str = "Result") -> str:
     try:
         if intent == "capabilities_help": return _fmt_capabilities(data)
@@ -819,6 +923,7 @@ def _format_for_intent(intent: str, data: dict, fallback_title: str = "Result") 
         if intent == "list_activities": return _fmt_activities_catalog(data)
         if intent == "activity_stats": return _fmt_activity_stats(data)
         if intent == "guest_activity_bookings": return _fmt_activity_bookings(data)
+        if intent == "reservation_search": return _fmt_reservation_search(data)
         if intent in ("reservation_summary","reservation_balance"): return _fmt_reservation(data)
         if intent == "guest_search": return _fmt_guest_search(data)
         if intent == "guest_profile": return _fmt_guest_profile(data)
@@ -826,6 +931,10 @@ def _format_for_intent(intent: str, data: dict, fallback_title: str = "Result") 
         if intent == "guest_last_visit": return _fmt_guest_last_visit(data)
         if intent == "guest_top_items_last_visit": return _fmt_guest_top_items(data)
         if intent == "guest_last_visit_spend": return _fmt_guest_last_visit_spend(data)
+        if intent == "inventory_search": return _fmt_inventory_search(data)
+        if intent == "inventory_item_details": return _fmt_inventory_item_details(data)
+        if intent == "walkin_sales_summary": return _fmt_walkin_sales_summary(data)
+        if intent == "payments_summary": return _fmt_payments_summary(data)
     except Exception:
         logger.warning("assistant._format_for_intent: formatter failed intent=%r; falling back to raw data", intent, exc_info=True)
     return _format_data(fallback_title, data)

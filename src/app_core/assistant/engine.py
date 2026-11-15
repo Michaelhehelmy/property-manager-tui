@@ -171,6 +171,34 @@ def _execute_single(intent: str, text: str, slots: dict):
     if intent=="reservation_pipeline":
         data=execute_tool("get_reservation_pipeline",{}); tools_used.append("get_reservation_pipeline")
         return _answer(intent, tools_used, data)
+    if intent=="reservation_search":
+        q = slots.get("guest_query") or slots.get("query") or ""
+        if not q:
+            # try to extract query from text by stripping common words
+            q = re.sub(r"(?i)\b(find|search|show|list|look up|reservation|reservations|booking|bookings|for|of)\b", " ", text)
+            q = re.sub(r"\s+", " ", q).strip(" ?.,#:") or ""
+        data=execute_tool("search_reservations",{"query": q, "reservation_id": rid, "status": slots.get("status") or "", "start": start, "end": end})
+        tools_used.append("search_reservations")
+        return _answer(intent, tools_used, data)
+    if intent=="inventory_search":
+        q = slots.get("query") or slots.get("guest_query") or ""
+        if not q:
+            q = re.sub(r"(?i)\b(search|find|list|show|inventory|product|products|item|items|stock|for|of)\b", " ", text)
+            q = re.sub(r"\s+", " ", q).strip(" ?.,#:") or ""
+        data=execute_tool("search_inventory",{"query": q, "category": slots.get("category") or "", "stock_filter": slots.get("stock_filter") or ""})
+        tools_used.append("search_inventory")
+        return _answer(intent, tools_used, data)
+    if intent=="inventory_item_details":
+        item_id = slots.get("item_id") or slots.get("inventory_item_id")
+        data=execute_tool("get_inventory_item",{"item_id": item_id})
+        tools_used.append("get_inventory_item")
+        return _answer(intent, tools_used, data)
+    if intent=="walkin_sales_summary":
+        data=execute_tool("get_walkin_sales_summary",{}); tools_used.append("get_walkin_sales_summary")
+        return _answer(intent, tools_used, data)
+    if intent=="payments_summary":
+        data=execute_tool("get_payments_summary",{"start":start,"end":end}); tools_used.append("get_payments_summary")
+        return _answer(intent, tools_used, data)
     if intent=="housekeeping_summary":
         data=execute_tool("get_housekeeping_summary",{}); tools_used.append("get_housekeeping_summary")
         return _answer(intent, tools_used, data)
@@ -266,6 +294,9 @@ def _execute_compound(text: str, slots: dict):
         if _has_any(tl,cues[rk]): subs.append((intent,slots))
     if _has_any(tl,["compare","vs last","versus last","previous period"]): subs.append(("compare_periods",slots))
     if _has_any(tl,["who owes","outstanding","unpaid","receivables"]): subs.append(("outstanding_balances",slots))
+    if _has_any(tl,["walk-in sales","walkin sales","walk in sales","counter sales","non-reservation sales"]): subs.append(("walkin_sales_summary",slots))
+    if _has_any(tl,["payments summary","payment totals","total payments","money received"]): subs.append(("payments_summary",slots))
+    if _has_any(tl,["search inventory","find product","search product","list products","inventory search"]): subs.append(("inventory_search",slots))
     if _has_any(tl,["low stock","inventory alert","running low","overstock"]): subs.append(("inventory_alerts",slots))
     if _has_any(tl,["top selling","best seller","most sold"]): subs.append(("top_selling_items",slots))
     if _has_any(tl,["expense breakdown","expenses by category","where did we spend"]): subs.append(("expenses_summary",slots))
