@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h2>Report an issue</h2>
+    <p class="muted">Create a privacy-safe issue report for GitHub. Diagnostics are sanitized (no passwords, secrets, tokens, session/CSRF/recovery codes, and no database/guest/payment records). Review before submitting.</p>
+  </div>
+  <div class="actions">
+    <a class="btn ghost" href="/settings?tab=updates" title="Check app/updates and health first">Updates &amp; Health</a>
+  </div>
+</div>
+
+<div class="grid two-col">
+  <section class="card">
+    <h3>What went wrong?</h3>
+    <form id="issue-form" onsubmit="return false;">
+      <label>Title <input id="f-title" type="text" placeholder="Short summary (e.g. Error when saving reservation)" maxlength="120" value="{{ prefill.title if prefill else '' }}"/></label>
+      <div class="row" style="gap:12px; flex-wrap:wrap;">
+        <label style="flex:1; min-width:180px;">Category
+          <select id="f-category">
+            <option value="">Select…</option>
+            <option value="bug">Bug / Error</option>
+            <option value="ui">UI / UX</option>
+            <option value="data">Data / Calculation</option>
+            <option value="performance">Performance</option>
+            <option value="install">Install / Update</option>
+            <option value="question">Question</option>
+          </select>
+        </label>
+        <label style="flex:1; min-width:180px;">Severity
+          <select id="f-severity">
+            <option value="">Select…</option>
+            <option value="blocking">Blocking</option>
+            <option value="major">Major</option>
+            <option value="minor">Minor</option>
+          </select>
+        </label>
+      </div>
+      <label>Steps to reproduce
+        <textarea id="f-steps" rows="4" placeholder="1. Go to...\n2. Click...\n3. See error..."></textarea>
+      </label>
+      <label>Expected behavior
+        <textarea id="f-expected" rows="3" placeholder="What should happen?"></textarea>
+      </label>
+      <label>Actual behavior / error details
+        <textarea id="f-actual" rows="4" placeholder="What happened instead? Include any error message shown.">{{ prefill.actual if prefill else '' }}</textarea>
+      </label>
+      <label>Additional notes
+        <textarea id="f-notes" rows="3" placeholder="Anything else helpful (environment, recent changes, screenshots you will attach manually).">{{ prefill.notes if prefill else '' }}</textarea>
+      </label>
+      <p class="muted small">Do not include passwords, recovery codes, guest/payment data, or secrets. Attach screenshots manually on GitHub if needed.</p>
+      <div class="actions" style="gap:8px; flex-wrap:wrap; margin-top:8px;">
+        <button type="button" class="primary" id="btn-generate">Generate report</button>
+        <button type="button" id="btn-copy" disabled>Copy report</button>
+        <button type="button" id="btn-download" disabled>Download .md</button>
+        <a id="btn-github" class="btn" href="#" target="_blank" rel="noopener" aria-disabled="true" style="pointer-events:none;opacity:.6;">Open GitHub issue</a>
+      </div>
+      <div id="gen-status" class="muted small" style="margin-top:8px;"></div>
+    </form>
+  </section>
+
+  <section class="card">
+    <h3>Sanitized diagnostics (included)</h3>
+    <p class="muted small">This is the technical context included in the report. Sensitive values are redacted; database/guest/payment records are not collected.</p>
+    <pre id="diag-preview" style="max-height:420px; overflow:auto; white-space:pre-wrap; font-size:12px;"></pre>
+  </section>
+</div>
+
+<section class="card" style="margin-top:16px;">
+  <h3>Generated report preview</h3>
+  <p class="muted small">Review before sharing. If the prefilled GitHub URL is too long, copy/download the full report and paste it into the issue.</p>
+  <textarea id="report-preview" rows="14" readonly style="width:100%; font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size:12px;" placeholder="Click “Generate report” to create the report."></textarea>
+</section>
+
+<script type="application/json" id="diag-data">{{ diagnostics_json | safe }}</script>
+<script>
+(function(){
+  const repo = {{ github_repo | tojson }};
+  let diagnostics = {};
+  try { diagnostics = JSON.parse(document.getElementById('diag-data').textContent || '{}'); } catch(e){ diagnostics = {}; }
+  const diagPreview = document.getElementById('diag-preview');
+  if(diagPreview){ diagPreview.textContent = JSON.stringify(diagnostics, null, 2); }
+
+  function val(id){ const el=document.getElementById(id); return el ? (el.value||'').trim() : ''; }
+  function escMd(s){ return String(s||''); }
+  function truncate(s,n){ s=String(s||''); return s.length>n ? s.slice(0,n)+'\n...(truncated)' : s; }
+
+  function buildMarkdown(){
+    const title = val('f-title');
+    const category = val('f-category');
+    const severity = val('f-severity');
+    const steps = val('f-steps');
+    const expected = val('f-expected');
+    const actual = val('f-actual');
+    const notes = val('f-notes');
+    const lines = [];
+    lines.push('## Issue report');
+    if(title) lines.push('**Title:** ' + escMd(title));
+    const meta = [];
+    meta.push('generated_at: ' + (diagnostics.generated_at || ''));
+    meta.push('report_version: ' + (diagnostics.report_version || '1'));
+    if(category) meta.push('category: ' + category);
+    if(severity) meta.push('severity: ' + severity);
+    if(meta.length) lines.push('- ' + meta.join('\n- '));
+    lines.push('');
+    function section(label, text){ if(!text) return; lines.push('### '+label); lines.push(text); lines.push(''); }
+    section('Steps to reproduce', steps);
+    section('Expected behavior', expected);
+    section('Actual behavior', actual);
+    section('Additional notes', notes);
+    lines.push('### Diagnostics (sanitized)');
+    lines.push('```json');
+    lines.push(truncate(JSON.stringify(diagnostics, null, 2), 12000));
+    lines.push('```');
+    lines.push('');
+    lines.push('> Review before posting. Remove any remaining sensitive/business data. Attach screenshot manually if needed.');
+    return lines.join('\n');
+  }
+
+  function buildIssueUrl(title, body){
+    const base = 'https://github.com/' + (repo || 'Michaelhehelmy/property-manager-tui') + '/issues/new';
+    let t = (title||'').slice(0,120);
+    let b = body || '';
+    let truncated = false;
+    if(b.length > 6000){ b = b.slice(0,6000) + '\n\n...(report truncated for URL length; paste/download full report)'; truncated = true; }
+    const params = new URLSearchParams();
+    if(t) params.set('title', t);
+    if(b) params.set('body', b);
+    let url = base + '?' + params.toString();
+    if(url.length > 8200){ params.delete('body'); url = base + '?' + params.toString(); truncated = true; }
+    return {url, truncated};
+  }
+
+  let lastMarkdown = '';
+  const btnGen = document.getElementById('btn-generate');
+  const btnCopy = document.getElementById('btn-copy');
+  const btnDl = document.getElementById('btn-download');
+  const btnGh = document.getElementById('btn-github');
+  const preview = document.getElementById('report-preview');
+  const status = document.getElementById('gen-status');
+
+  function setEnabled(enabled){
+    [btnCopy, btnDl].forEach(b=>{ if(b) b.disabled = !enabled; });
+    if(btnGh){
+      btnGh.style.pointerEvents = enabled ? 'auto' : 'none';
+      btnGh.style.opacity = enabled ? '1' : '.6';
+      btnGh.setAttribute('aria-disabled', enabled ? 'false' : 'true');
+    }
+  }
+
+  if(btnGen) btnGen.addEventListener('click', function(){
+    lastMarkdown = buildMarkdown();
+    if(preview) preview.value = lastMarkdown;
+    const issue = buildIssueUrl(val('f-title') || 'App issue report', lastMarkdown);
+    if(btnGh){ btnGh.href = issue.url; }
+    setEnabled(true);
+    if(status){ status.textContent = issue.truncated ? 'Report generated (URL body truncated for length). Use “Copy report” or “Download .md” for the full report, then paste into GitHub if needed.' : 'Report generated. Review it, then open GitHub issue or copy/download the full report.'; }
+  });
+
+  if(btnCopy) btnCopy.addEventListener('click', async function(){
+    if(!lastMarkdown) return;
+    try { await navigator.clipboard.writeText(lastMarkdown); if(status) status.textContent = 'Report copied to clipboard.'; }
+    catch(e){ if(preview){ preview.focus(); preview.select(); } if(status) status.textContent = 'Clipboard copy not available; report selected for manual copy.'; }
+  });
+
+  if(btnDl) btnDl.addEventListener('click', function(){
+    if(!lastMarkdown) return;
+    const blob = new Blob([lastMarkdown], {type:'text/markdown;charset=utf-8'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'property-manager-issue-report.md';
+    document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 0);
+    if(status) status.textContent = 'Report downloaded.';
+  });
+})();
+</script>
+{% endblock %}

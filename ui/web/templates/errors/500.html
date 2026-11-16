@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h2>Something went wrong</h2>
+    <p class="muted">The app hit an unexpected error while handling your request. Your data has not been intentionally changed by this page. You can go back and try again, or send a privacy-safe issue report so it can be fixed.</p>
+  </div>
+</div>
+
+<section class="card">
+  <h3>What you can do</h3>
+  <ul>
+    <li>Go back and retry the action (avoid repeating it multiple times if it may have side effects).</li>
+    <li>Check <a href="/settings?tab=updates">Updates &amp; Health</a> and restart the app if needed.</li>
+    <li>Report the issue with sanitized diagnostics so the maintainer can investigate.</li>
+  </ul>
+  <div class="actions" style="gap:8px; flex-wrap:wrap; margin-top:12px;">
+    <a class="btn" href="javascript:history.back()">Go back</a>
+    <a class="btn" href="/">Dashboard</a>
+    <a class="btn primary" href="/support/report?from_error=1{% if error_ref %}&ref={{ error_ref }}{% endif %}">Report this issue</a>
+  </div>
+  {% if error_hint %}
+  <details style="margin-top:12px;">
+    <summary>Technical details (sanitized)</summary>
+    <pre style="white-space:pre-wrap; font-size:12px; margin-top:8px;">{{ error_hint }}</pre>
+  </details>
+  {% endif %}
+</section>
+{% endblock %}
