@@ -57,10 +57,12 @@ This document provides practical security guidance for operating Property Manage
 - Form submissions include/verify CSRF tokens; JSON/header requests are verified via header tokens as applicable. Template/helper utilities support token rendering and cached-form access but do not replace middleware enforcement.
 - Mutating HTML forms must include CSRF tokens. Do not bypass CSRF checks.
 
-### 4.2 Super-password unlock (implemented, policy-based)
-- **Sensitive/destructive/admin mutations** require an active unlock (super password) in addition to CSRF. Examples include (non-exhaustive, see matrix): financial/accounting operations, inventory/stock/batch/recipe/meal/activity mutations, voids/refunds/cancels/deletes/modifications, exports/backups/seed/demo/settings/rate-plan changes, labels, and protected downloads where gated.
-- **Routine operational flows** (e.g. some front-desk create/check-in/checkout/payment and POS cart/walk-in operations) may remain usable without unlock but **still require CSRF**; policy-sensitive overrides and destructive actions remain gated.
-- **Assistant:** ask/feedback follow configured unlock/allowlist policy and remain read-only and grounded.
+### 4.2 Super-password unlock (implemented, policy-based) — accepted RISK-1
+- **Accepted policy:** in trusted/local/LAN/VPN or HTTPS-reverse-proxy deployments, selected **operational front-desk mutations may remain CSRF-only** (no web unlock gate) for usability, while **sensitive/admin/financial/destructive mutations remain unlock-gated** with service-level proofs/checks enforced where required.
+- **Sensitive/destructive/admin mutations** require an active unlock (super password) in addition to CSRF. Examples include (non-exhaustive, see matrix): financial/accounting operations (as gated), inventory/stock/batch/recipe/meal/activity mutations, voids/refunds/overrides/cancels/no-shows/deletes/modifications (as gated), exports/backups/seed/demo/settings/rate-plan/room/branding changes, labels, and protected downloads where gated.
+- **Routine operational flows** (e.g. reservation create/check-in/standard checkout/payment recording and POS cart/walk-in operations) may remain usable without unlock but **still require CSRF** and rely on service-layer validation/transactions; policy-sensitive overrides and destructive actions remain gated.
+- **Compensating controls:** strong persistent `PM_WEB_SECRET_KEY`, secure cookies over HTTPS, `--workers 1`, least-privilege permissions, no public plain-HTTP exposure, firewall/VPN/reverse-proxy restrictions, session timeout/lock practices, and verified backups/restore drills. Reassess/tighten for shared or less-trusted environments.
+- **Assistant:** ask/feedback and pending actions follow configured unlock/allowlist policy; confirmations pass proofs to action/service enforcement where required. Assistant remains read-only/grounded by design.
 
 ### 4.3 Reference (authoritative for route groups)
 - **`docs/web_authz_matrix.md`** documents enforcement model and route-group matrix (CSRF/unlock/conditional/proof notes) for `ui/web`. Consult it before changing routes/templates or when auditing access controls.

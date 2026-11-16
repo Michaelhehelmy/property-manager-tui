@@ -20,10 +20,11 @@
 3. Commit
 - Committed: "Fix web route logger defects and harden download headers" (see git log).
 
-## RISK-1 (route-level unlock policy) decision record (draft for approval)
-- Current implementation (as documented in `docs/web_authz_matrix.md`): CSRF is enforced for all mutating routes; sensitive/destructive/financial/admin actions are unlock-gated with explicit service proofs where required. Some operational front-desk mutations remain CSRF-only (not web-unlock-gated), e.g. reservation create/check-in/standard checkout/payment recording and POS cart/walk-in flows; service-layer rules/transactions still apply.
-- Recommendation: ACCEPT AS-IS for controlled single-process/front-desk deployment, with compensating controls (CSRF, per-browser timed unlock for sensitive ops, password/proof for guarded service actions, rate limiting, trusted network/VPN/HTTPS, physical access control, auditability via records/logs). Revisit if deployment model requires stricter role separation.
-- Status: PENDING stakeholder/business-owner sign-off. If stricter policy required, implement `require_unlocked_form` + proofs for selected operational mutations in web/TUI and update matrix/docs/tests.
+## RISK-1 (route-level unlock policy) decision record (APPROVED)
+- **Decision:** ACCEPT AS-IS for trusted/local/LAN/VPN or HTTPS-reverse-proxy single-process front-desk deployments.
+- **Policy:** CSRF enforced for all mutating routes. Sensitive/admin/financial/destructive actions remain unlock-gated with service proofs/checks where required. Selected operational front-desk mutations may remain CSRF-only (e.g. reservation create/check-in/standard checkout/payment recording, POS cart/walk-in, non-destructive update check) relying on service-layer validation/transactions and compensating controls.
+- **Compensating controls:** strong persistent `PM_WEB_SECRET_KEY`, secure cookies over HTTPS, `--workers 1`, least-privilege permissions, no public plain-HTTP exposure, firewall/VPN/reverse-proxy restrictions, session timeout/rate limiting/physical controls, and regular verified backups/restore drills. Reassess/tighten for shared or less-trusted environments.
+- **Docs updated:** `docs/web_authz_matrix.md` (added accepted policy, omitted routes `/assistant/action/confirm`, `/assistant/action/cancel`, `/setup`, and proof/enforcement clarifications), `docs/SECURITY.md`, `docs/GO_LIVE_CHECKLIST.md`.
 
 ## RISK-1/authz scan findings (subagent, actionable)
 - Mutating routes without `require_unlocked_form`/`require_unlock` (CSRF still middleware-enforced): reservations `POST /reservations/create|/{rid}/checkin|/{rid}/checkout|/{rid}/pay` (operational; services mostly no password except checkout override path), POS `POST /pos/cart/add|remove|clear|/pos/walkin` (session/financial+inventory mutations without unlock/proof), assistant `POST /assistant/ask|feedback|clear` (policy/conditional gates; clear CSRF-only) and `POST /assistant/action/confirm|cancel` (conditional policy gate, proof passthrough), settings `POST /settings/updates/check` (CSRF-only, session/network side effects), and `POST /setup` (first-run config mutation).

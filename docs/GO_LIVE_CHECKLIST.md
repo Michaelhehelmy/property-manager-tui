@@ -23,7 +23,8 @@ Use this checklist to move Property Manager from setup/testing to production-lik
 - [ ] **Transport security (manual):** local-only on `127.0.0.1` or LAN/remote behind **HTTPS** reverse proxy / VPN / Tailscale. No plain HTTP public exposure.
 - [ ] **Firewall/network controls (manual):** restrict inbound access to trusted sources/segments; only required ports exposed.
 - [ ] **TLS/domain (manual):** domain/DNS configured (if applicable), valid certificates, renewal/monitoring in place at proxy.
-- [ ] **CSRF/unlock model understood (manual):** operators trained on unlock requirements for sensitive/admin actions; review `docs/web_authz_matrix.md` and `docs/SECURITY.md`.
+- [ ] **CSRF/unlock model understood (manual):** operators trained on unlock requirements for sensitive/admin actions and the **accepted RISK-1 policy** (selected operational front-desk mutations may be CSRF-only in trusted deployments; sensitive/admin/financial/destructive actions remain unlock-gated with proofs/checks as required). Review `docs/web_authz_matrix.md` and `docs/SECURITY.md`.
+- [ ] **Compensating controls for accepted RISK-1 (manual):** trusted network only, strong persistent `PM_WEB_SECRET_KEY`, secure cookies on HTTPS, `--workers 1`, least-privilege service/file permissions, session timeout/lock discipline, and no insecure dev overrides.
 - [ ] **Super-password/credentials handling (manual):** secure storage/process for super password and admin workflows; avoid shared accounts where possible by policy.
 - [ ] **Printer/file/data handling (manual):** trusted printer targets, protected export/invoice/backup storage, controlled access to downloads/uploads.
 
