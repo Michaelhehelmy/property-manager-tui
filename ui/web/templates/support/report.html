@@ -3,7 +3,7 @@
 <div class="page-head">
   <div>
     <h2>Report an issue</h2>
-    <p class="muted">Create a privacy-safe issue report for GitHub. Diagnostics are sanitized (no passwords, secrets, tokens, session/CSRF/recovery codes, and no database/guest/payment records). Review before submitting.</p>
+    <p class="muted">Create a privacy-safe issue report. It includes sanitized app diagnostics plus device/browser info, your recent in-app steps (best effort), and what you describe. Download the JSON/Markdown report and upload/attach it to a GitHub issue after review (no passwords, secrets, tokens, session/CSRF/recovery codes, or database/guest/payment records are included).</p>
   </div>
   <div class="actions">
     <a class="btn ghost" href="/settings?tab=updates" title="Check app/updates and health first">Updates &amp; Health</a>
@@ -46,13 +46,18 @@
         <textarea id="f-actual" rows="4" placeholder="What happened instead? Include any error message shown.">{{ prefill.actual if prefill else '' }}</textarea>
       </label>
       <label>Additional notes
-        <textarea id="f-notes" rows="3" placeholder="Anything else helpful (environment, recent changes, screenshots you will attach manually).">{{ prefill.notes if prefill else '' }}</textarea>
+        <textarea id="f-notes" rows="3" placeholder="Anything else helpful (recent changes, screenshots you will attach manually).">{{ prefill.notes if prefill else '' }}</textarea>
       </label>
-      <p class="muted small">Do not include passwords, recovery codes, guest/payment data, or secrets. Attach screenshots manually on GitHub if needed.</p>
+      <div class="row" style="gap:12px; flex-wrap:wrap; margin-top:4px;">
+        <label style="display:flex; gap:8px; align-items:center;"><input id="f-include-device" type="checkbox" checked/> Include device/browser/OS info</label>
+        <label style="display:flex; gap:8px; align-items:center;"><input id="f-include-steps" type="checkbox" checked/> Include recent in-app steps/actions (best effort)</label>
+      </div>
+      <p class="muted small">Review before sharing. Do not add passwords, recovery codes, guest/payment data, or secrets. After downloading, you can upload/attach the JSON or Markdown report file to the GitHub issue.</p>
       <div class="actions" style="gap:8px; flex-wrap:wrap; margin-top:8px;">
         <button type="button" class="primary" id="btn-generate">Generate report</button>
-        <button type="button" id="btn-copy" disabled>Copy report</button>
+        <button type="button" id="btn-copy" disabled>Copy Markdown</button>
         <button type="button" id="btn-download" disabled>Download .md</button>
+        <button type="button" id="btn-download-json" disabled>Download .json</button>
         <a id="btn-github" class="btn" href="#" target="_blank" rel="noopener" aria-disabled="true" style="pointer-events:none;opacity:.6;">Open GitHub issue</a>
       </div>
       <div id="gen-status" class="muted small" style="margin-top:8px;"></div>
@@ -60,15 +65,15 @@
   </section>
 
   <section class="card">
-    <h3>Sanitized diagnostics (included)</h3>
-    <p class="muted small">This is the technical context included in the report. Sensitive values are redacted; database/guest/payment records are not collected.</p>
+    <h3>Sanitized diagnostics & device context (included)</h3>
+    <p class="muted small">Preview of what will be exported. Sensitive values are redacted; database/guest/payment records are not collected. Recent steps come from local in-app UI actions when available.</p>
     <pre id="diag-preview" style="max-height:420px; overflow:auto; white-space:pre-wrap; font-size:12px;"></pre>
   </section>
 </div>
 
 <section class="card" style="margin-top:16px;">
-  <h3>Generated report preview</h3>
-  <p class="muted small">Review before sharing. If the prefilled GitHub URL is too long, copy/download the full report and paste it into the issue.</p>
+  <h3>Generated report preview (Markdown)</h3>
+  <p class="muted small">Review before sharing. Download the JSON report for full structured details, then upload/attach it to GitHub if helpful.</p>
   <textarea id="report-preview" rows="14" readonly style="width:100%; font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size:12px;" placeholder="Click “Generate report” to create the report."></textarea>
 </section>
 
@@ -76,44 +81,146 @@
 <script>
 (function(){
   const repo = {{ github_repo | tojson }};
-  let diagnostics = {};
-  try { diagnostics = JSON.parse(document.getElementById('diag-data').textContent || '{}'); } catch(e){ diagnostics = {}; }
+  let serverDiagnostics = {};
+  try { serverDiagnostics = JSON.parse(document.getElementById('diag-data').textContent || '{}'); } catch(e){ serverDiagnostics = {}; }
   const diagPreview = document.getElementById('diag-preview');
-  if(diagPreview){ diagPreview.textContent = JSON.stringify(diagnostics, null, 2); }
 
   function val(id){ const el=document.getElementById(id); return el ? (el.value||'').trim() : ''; }
-  function escMd(s){ return String(s||''); }
+  function checked(id){ const el=document.getElementById(id); return !!(el && el.checked); }
   function truncate(s,n){ s=String(s||''); return s.length>n ? s.slice(0,n)+'\n...(truncated)' : s; }
+  function safeJsonParse(raw, fallback){ try { return JSON.parse(raw); } catch(e){ return fallback; } }
+  function clipStr(v, n){ v = (v==null?'':String(v)); return v.length>n ? v.slice(0,n) : v; }
 
-  function buildMarkdown(){
-    const title = val('f-title');
-    const category = val('f-category');
-    const severity = val('f-severity');
-    const steps = val('f-steps');
-    const expected = val('f-expected');
-    const actual = val('f-actual');
-    const notes = val('f-notes');
+  function collectDeviceInfo(){
+    try {
+      const nav = navigator || {};
+      const scr = screen || {};
+      const conn = nav.connection || nav.mozConnection || nav.webkitConnection || {};
+      return {
+        user_agent: clipStr(nav.userAgent || '', 400),
+        platform: clipStr(nav.platform || '', 120),
+        language: clipStr(nav.language || '', 40),
+        languages: Array.isArray(nav.languages) ? nav.languages.slice(0,10) : [],
+        vendor: clipStr(nav.vendor || '', 120),
+        cookie_enabled: !!nav.cookieEnabled,
+        online: !!nav.onLine,
+        timezone: (Intl && Intl.DateTimeFormat ? Intl.DateTimeFormat().resolvedOptions().timeZone : '') || '',
+        viewport: { width: window.innerWidth || 0, height: window.innerHeight || 0, dpr: window.devicePixelRatio || 1 },
+        screen: { width: scr.width || 0, height: scr.height || 0, avail_width: scr.availWidth || 0, avail_height: scr.availHeight || 0, color_depth: scr.colorDepth || 0 },
+        connection: (conn && (conn.effectiveType || conn.type || conn.downlink)) ? { effective_type: conn.effectiveType || '', type: conn.type || '', downlink: conn.downlink || null, save_data: !!conn.saveData } : null,
+        url: clipStr(location.href || '', 300),
+        referrer: clipStr(document.referrer || '', 300),
+      };
+    } catch(e){ return { error: 'device_info_unavailable' }; }
+  }
+
+  function collectRecentSteps(){
+    const steps = [];
+    try {
+      const acts = safeJsonParse(sessionStorage.getItem('pm_ui_actions_v1') || '[]', []);
+      if(Array.isArray(acts)){
+        acts.slice(-20).forEach(a => {
+          if(!a || typeof a !== 'object') return;
+          steps.push({
+            kind: 'ui_action',
+            at: a.at || null,
+            path: clipStr(a.path || '', 120),
+            tab: clipStr(a.tab || '', 60),
+            type: clipStr(a.type || '', 40),
+            text: clipStr(a.text || '', 120),
+            href: clipStr(a.href || '', 200),
+            name: clipStr(a.name || '', 80),
+          });
+        });
+      }
+    } catch(e){}
+    try {
+      const aw = safeJsonParse(sessionStorage.getItem('pm_assistant_widget_v1') || '{}', {});
+      const msgs = Array.isArray(aw.messages) ? aw.messages.slice(-6) : [];
+      msgs.forEach(m => {
+        if(!m || typeof m !== 'object') return;
+        steps.push({ kind: 'assistant_message', role: clipStr(m.role || '', 20), meta: clipStr(m.meta || '', 120), content: clipStr(m.content || '', 300) });
+      });
+      if(aw.pendingAction && aw.pendingAction.id){
+        steps.push({ kind: 'assistant_pending_action', action_id: clipStr(aw.pendingAction.id, 80), type: clipStr(aw.pendingAction.type || '', 80), summary: clipStr(aw.pendingAction.summary || aw.pendingAction.title || '', 200) });
+      }
+    } catch(e){}
+    return steps.slice(-30);
+  }
+
+  function buildReportObject(){
+    const includeDevice = checked('f-include-device');
+    const includeSteps = checked('f-include-steps');
+    const user = {
+      title: val('f-title'),
+      category: val('f-category'),
+      severity: val('f-severity'),
+      steps_to_reproduce: val('f-steps'),
+      expected_behavior: val('f-expected'),
+      actual_behavior: val('f-actual'),
+      notes: val('f-notes'),
+    };
+    const report = JSON.parse(JSON.stringify(serverDiagnostics || {}));
+    report.report_kind = 'in_app_issue_report';
+    report.generated_at_client = new Date().toISOString();
+    report.user_report = user;
+    if(includeDevice) report.client_device = collectDeviceInfo();
+    if(includeSteps) report.recent_steps = collectRecentSteps();
+    report.attachments_guidance = [
+      'After downloading, upload/attach this JSON (and/or Markdown) file to the GitHub issue.',
+      'Attach screenshots manually if helpful.',
+      'Review and remove any sensitive/business information before sharing publicly.'
+    ];
+    return report;
+  }
+
+  function buildMarkdown(report){
+    const u = report.user_report || {};
     const lines = [];
     lines.push('## Issue report');
-    if(title) lines.push('**Title:** ' + escMd(title));
+    if(u.title) lines.push('**Title:** ' + u.title);
     const meta = [];
-    meta.push('generated_at: ' + (diagnostics.generated_at || ''));
-    meta.push('report_version: ' + (diagnostics.report_version || '1'));
-    if(category) meta.push('category: ' + category);
-    if(severity) meta.push('severity: ' + severity);
+    if(report.generated_at) meta.push('generated_at: ' + report.generated_at);
+    if(report.generated_at_client) meta.push('generated_at_client: ' + report.generated_at_client);
+    if(report.report_version != null) meta.push('report_version: ' + report.report_version);
+    if(u.category) meta.push('category: ' + u.category);
+    if(u.severity) meta.push('severity: ' + u.severity);
     if(meta.length) lines.push('- ' + meta.join('\n- '));
     lines.push('');
     function section(label, text){ if(!text) return; lines.push('### '+label); lines.push(text); lines.push(''); }
-    section('Steps to reproduce', steps);
-    section('Expected behavior', expected);
-    section('Actual behavior', actual);
-    section('Additional notes', notes);
+    section('Steps to reproduce', u.steps_to_reproduce || '');
+    section('Expected behavior', u.expected_behavior || '');
+    section('Actual behavior', u.actual_behavior || '');
+    section('Additional notes', u.notes || '');
+    if(Array.isArray(report.recent_steps) && report.recent_steps.length){
+      lines.push('### Recent in-app steps (best effort)');
+      report.recent_steps.slice(-20).forEach((s, i)=>{
+        if(s.kind === 'ui_action'){
+          lines.push(`${i+1}. [${s.path||''}${s.tab ? ' tab='+s.tab : ''}] ${s.type||'action'} ${s.text||s.href||s.name||''}`.trim());
+        } else if(s.kind === 'assistant_message'){
+          lines.push(`${i+1}. [assistant ${s.role||''}] ${(s.content||'').replace(/\s+/g,' ').slice(0,180)}`.trim());
+        } else if(s.kind === 'assistant_pending_action'){
+          lines.push(`${i+1}. [assistant pending action] ${s.type||''} ${s.summary||s.action_id||''}`.trim());
+        }
+      });
+      lines.push('');
+    }
+    if(report.client_device){
+      lines.push('### Device / browser / OS (client)');
+      lines.push('```json');
+      lines.push(truncate(JSON.stringify(report.client_device, null, 2), 4000));
+      lines.push('```');
+      lines.push('');
+    }
     lines.push('### Diagnostics (sanitized)');
     lines.push('```json');
-    lines.push(truncate(JSON.stringify(diagnostics, null, 2), 12000));
+    const diagForMd = JSON.parse(JSON.stringify(report));
+    // keep markdown readable; full structured data is in downloadable JSON
+    if(diagForMd.recent_steps) diagForMd.recent_steps = `[${(report.recent_steps||[]).length} items included in JSON report]`;
+    lines.push(truncate(JSON.stringify(diagForMd, null, 2), 12000));
     lines.push('```');
     lines.push('');
-    lines.push('> Review before posting. Remove any remaining sensitive/business data. Attach screenshot manually if needed.');
+    lines.push('> Review before posting. Download and attach the JSON report file to the GitHub issue for full details. Remove any remaining sensitive/business data and attach screenshots manually if needed.');
     return lines.join('\n');
   }
 
@@ -122,7 +229,7 @@
     let t = (title||'').slice(0,120);
     let b = body || '';
     let truncated = false;
-    if(b.length > 6000){ b = b.slice(0,6000) + '\n\n...(report truncated for URL length; paste/download full report)'; truncated = true; }
+    if(b.length > 6000){ b = b.slice(0,6000) + '\n\n...(report truncated for URL length; download and attach the JSON/Markdown report file)'; truncated = true; }
     const params = new URLSearchParams();
     if(t) params.set('title', t);
     if(b) params.set('body', b);
@@ -132,15 +239,27 @@
   }
 
   let lastMarkdown = '';
+  let lastReport = null;
   const btnGen = document.getElementById('btn-generate');
   const btnCopy = document.getElementById('btn-copy');
   const btnDl = document.getElementById('btn-download');
+  const btnDlJson = document.getElementById('btn-download-json');
   const btnGh = document.getElementById('btn-github');
   const preview = document.getElementById('report-preview');
   const status = document.getElementById('gen-status');
 
+  function renderPreviewDiagnostics(){
+    if(!diagPreview) return;
+    try {
+      const r = buildReportObject();
+      diagPreview.textContent = JSON.stringify(r, null, 2);
+    } catch(e){ diagPreview.textContent = JSON.stringify(serverDiagnostics, null, 2); }
+  }
+  renderPreviewDiagnostics();
+  ['f-include-device','f-include-steps'].forEach(id=>{ const el=document.getElementById(id); if(el) el.addEventListener('change', renderPreviewDiagnostics); });
+
   function setEnabled(enabled){
-    [btnCopy, btnDl].forEach(b=>{ if(b) b.disabled = !enabled; });
+    [btnCopy, btnDl, btnDlJson].forEach(b=>{ if(b) b.disabled = !enabled; });
     if(btnGh){
       btnGh.style.pointerEvents = enabled ? 'auto' : 'none';
       btnGh.style.opacity = enabled ? '1' : '.6';
@@ -149,28 +268,40 @@
   }
 
   if(btnGen) btnGen.addEventListener('click', function(){
-    lastMarkdown = buildMarkdown();
+    lastReport = buildReportObject();
+    lastMarkdown = buildMarkdown(lastReport);
     if(preview) preview.value = lastMarkdown;
     const issue = buildIssueUrl(val('f-title') || 'App issue report', lastMarkdown);
     if(btnGh){ btnGh.href = issue.url; }
+    if(diagPreview){ diagPreview.textContent = JSON.stringify(lastReport, null, 2); }
     setEnabled(true);
-    if(status){ status.textContent = issue.truncated ? 'Report generated (URL body truncated for length). Use “Copy report” or “Download .md” for the full report, then paste into GitHub if needed.' : 'Report generated. Review it, then open GitHub issue or copy/download the full report.'; }
+    if(status){ status.textContent = (issue.truncated ? 'Report generated (GitHub URL body truncated). ' : 'Report generated. ') + 'Download the JSON report file and attach/upload it to the GitHub issue after review.'; }
   });
 
   if(btnCopy) btnCopy.addEventListener('click', async function(){
     if(!lastMarkdown) return;
-    try { await navigator.clipboard.writeText(lastMarkdown); if(status) status.textContent = 'Report copied to clipboard.'; }
-    catch(e){ if(preview){ preview.focus(); preview.select(); } if(status) status.textContent = 'Clipboard copy not available; report selected for manual copy.'; }
+    try { await navigator.clipboard.writeText(lastMarkdown); if(status) status.textContent = 'Markdown report copied to clipboard.'; }
+    catch(e){ if(preview){ preview.focus(); preview.select(); } if(status) status.textContent = 'Clipboard copy not available; Markdown selected for manual copy.'; }
   });
+
+  function downloadBlob(text, filename, type){
+    const blob = new Blob([text], {type: type || 'application/octet-stream'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 0);
+  }
 
   if(btnDl) btnDl.addEventListener('click', function(){
     if(!lastMarkdown) return;
-    const blob = new Blob([lastMarkdown], {type:'text/markdown;charset=utf-8'});
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'property-manager-issue-report.md';
-    document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 0);
-    if(status) status.textContent = 'Report downloaded.';
+    downloadBlob(lastMarkdown, 'property-manager-issue-report.md', 'text/markdown;charset=utf-8');
+    if(status) status.textContent = 'Markdown report downloaded. You can attach/upload it to the GitHub issue.';
+  });
+
+  if(btnDlJson) btnDlJson.addEventListener('click', function(){
+    if(!lastReport) return;
+    downloadBlob(JSON.stringify(lastReport, null, 2), 'property-manager-issue-report.json', 'application/json;charset=utf-8');
+    if(status) status.textContent = 'JSON report downloaded. Attach/upload this file to the GitHub issue after review.';
   });
 })();
 </script>
