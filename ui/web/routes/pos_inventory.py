@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from fastapi import APIRouter, Request
 from app_core import barcodes, services
@@ -8,6 +9,7 @@ from ui.web import deps
 from ui.web.rendering import render
 from ui.web.route_utils import flash_redirect, safe_local_path
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 

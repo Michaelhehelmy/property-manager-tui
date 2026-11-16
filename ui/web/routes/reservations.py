@@ -1,4 +1,5 @@
 from __future__ import annotations
+import logging
 from pathlib import Path
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Form, Request
@@ -7,6 +8,8 @@ from app_core.db import connect
 from ui.web import deps
 from ui.web.rendering import render
 from ui.web.route_utils import flash_redirect
+
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
