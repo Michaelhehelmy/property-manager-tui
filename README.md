@@ -15,7 +15,7 @@ Local-first property management system with a shared backend and a web frontend:
 - **Accounting, reports & analytics:** ledger, operational/financial reports and analytics/exports (as available in the app).
 - **Grounded assistant (read-only):** Web assistant answers from real app data/tools (ops, reports, guests/portfolios, reservations/balances, inventory including expiring batches, batch lists, barcode/lot trace, activities/bookings, integrity/health, and app version/update status). Assistant follows configured unlock/allowlist policy and remains read-only.
 - **Integrity & health:** read-only ledger/data integrity checks in-app, CLI **doctor** (`python -m app_core.doctor`), safe backup/verify helpers, and web liveness/readiness probes `GET /health`, `GET /healthz`, `GET /readyz`.
-- **Issue reporting (privacy-first):** Web **Report issue** (`/support/report`) and CLI **`python -m app_core.support`** generate sanitized diagnostics (no passwords/secrets/tokens/CSRF/session/recovery codes or DB/guest/payment records), let you review/edit details, copy/download the report, optionally capture/download a screenshot for manual attach, and open a prefilled GitHub issue.
+- **Issue reporting (privacy-first):** Web **Report issue** (`/support/report`) and CLI **`python -m app_core.support`** generate sanitized diagnostics (no passwords/secrets/tokens/CSRF/session/recovery codes or DB/guest/payment records), let you review/edit details, download/copy Markdown or JSON reports (including device/OS info and recent in-app steps), open a prefilled GitHub issue, or upload the downloaded JSON report via the landing page (if configured) so it can be delivered to maintainers. Unhandled web errors show a friendly “Report this issue” page with prefilled context.
 - **In-app updates (git installs):** **Settings → App updates** supports **Check for updates**, changelog/commit details, and **Apply/Update** via **git fast-forward**. Local source changes must be committed/stashed/discarded before apply.
 - **Backups & data safety:** create verified DB backups from Settings (**Backup now**, subject to unlock/CSRF as applicable) or CLI/scripts. Runtime data is preserved across source updates; **restore is manual and offline**.
 
@@ -226,7 +226,7 @@ See `docs/TROUBLESHOOTING.md`.
 ## More documentation
 
 - `assistant.md` — assistant capabilities, grounded/read-only behavior, evolution and plan.
-- `docs/NATIVE_BUILDS.md` — Nuitka/native standalone build and release packaging guidance (GitHub Releases assets auto-detected by landing page).
+- `docs/NATIVE_BUILDS.md` — Nuitka/native standalone build and release packaging guidance (GitHub Releases assets auto-detected by landing page). Landing page can also accept uploaded JSON issue reports via Cloudflare Pages Function (`functions/api/report.js`) when configured with secrets (e.g. `REPORT_GITHUB_TOKEN`, optional `REPORT_GITHUB_REPO`/`REPORT_GITHUB_LABELS`) to create GitHub issues for maintainers.
 - `docs/PRODUCTION_ROADMAP.md` — phased P0–P3 production hardening/operations roadmap and checklist.
 - `docs/DEPLOYMENT.md` — local/LAN/remote deployment, reverse proxy + HTTPS, systemd/Docker guidance.
 - `docs/SECURITY.md` — hardening checklist, secrets/cookies, authz/unlock/CSRF, printer/file/data handling.
