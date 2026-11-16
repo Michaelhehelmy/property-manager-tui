@@ -25,12 +25,18 @@
 - Recommendation: ACCEPT AS-IS for controlled single-process/front-desk deployment, with compensating controls (CSRF, per-browser timed unlock for sensitive ops, password/proof for guarded service actions, rate limiting, trusted network/VPN/HTTPS, physical access control, auditability via records/logs). Revisit if deployment model requires stricter role separation.
 - Status: PENDING stakeholder/business-owner sign-off. If stricter policy required, implement `require_unlocked_form` + proofs for selected operational mutations in web/TUI and update matrix/docs/tests.
 
+## RISK-1/authz scan findings (subagent, actionable)
+- Mutating routes without `require_unlocked_form`/`require_unlock` (CSRF still middleware-enforced): reservations `POST /reservations/create|/{rid}/checkin|/{rid}/checkout|/{rid}/pay` (operational; services mostly no password except checkout override path), POS `POST /pos/cart/add|remove|clear|/pos/walkin` (session/financial+inventory mutations without unlock/proof), assistant `POST /assistant/ask|feedback|clear` (policy/conditional gates; clear CSRF-only) and `POST /assistant/action/confirm|cancel` (conditional policy gate, proof passthrough), settings `POST /settings/updates/check` (CSRF-only, session/network side effects), and `POST /setup` (first-run config mutation).
+- Matrix discrepancies to fix: `POST /assistant/action/confirm`, `POST /assistant/action/cancel`, and `POST /setup` omitted from `docs/web_authz_matrix.md`; some handlers use `require_unlock+get_form` vs `require_unlocked_form` (document or normalize); proof/enforcement mismatches noted (e.g. delete/modify collect/pass password but service verification may be policy-only; several unlock-gated routes call services with no password params) - align UI/docs/service enforcement to avoid false assurance.
+- Agent 1 next code/doc actions: update matrix for completeness/accuracy, decide tighten-vs-accept for operational CSRF-only mutations, and resolve proof/enforcement mismatches (service-side enforcement or UI/doc correction) with tests.
+
 ## Remaining Agent 1 tasks
 - [ ] Stakeholder sign-off on RISK-1 policy; update `docs/web_authz_matrix.md` and `docs/SECURITY.md` accordingly.
+- [ ] Resolve matrix discrepancies and proof/enforcement mismatches identified above (incl. assistant action routes and `/setup`).
 - [ ] Parity sweep for web sub-tabs and TUI core flows (POS/inventory/batches/meals/activities/history, reservations/guests/accounting/reports/settings) including traceability fields in receipts/invoices/history/labels/exports.
 - [ ] Assistant/action safety and local-only/grounding review confirmation.
 - [ ] Docs sync pass (README, assistant.md, deployment/security/updates/troubleshooting/go-live checklist).
 - [ ] Targeted regression tests for any policy/behavior changes; confirm CI green on pushed branch/RC.
 
 ## Handoff
-- G1 not yet complete (policy sign-off + final doc sync pending).
+- G1 not yet complete (policy sign-off + matrix/proof alignment + final doc sync pending). Current HEAD: 0132a42.
