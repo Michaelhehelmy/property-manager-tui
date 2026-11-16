@@ -195,7 +195,7 @@ def _answer(intent: str, tools_used, data, title="Result", ok=True, **extra):
     res.update(extra)
     return res
 
-def _execute_single(intent: str, text: str, slots: dict):
+def _execute_single(intent: str, text: str, slots: dict, ui_context=None):
     tools_used=[]; start,end = slots.get("date_start"), slots.get("date_end")
     if not start or not end: start,end = _parse_date_range(text)
     rid = slots.get("reservation_id")
