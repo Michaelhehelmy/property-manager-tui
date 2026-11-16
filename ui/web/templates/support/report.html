@@ -3,12 +3,23 @@
 <div class="page-head">
   <div>
     <h2>Report an issue</h2>
-    <p class="muted">Create a privacy-safe issue report. It includes sanitized app diagnostics plus device/browser info, your recent in-app steps (best effort), and what you describe. Download the JSON/Markdown report and upload/attach it to a GitHub issue after review (no passwords, secrets, tokens, session/CSRF/recovery codes, or database/guest/payment records are included).</p>
+    <p class="muted">Create a privacy-safe issue report to send to the maintainer. It includes your description, sanitized app diagnostics, device/browser/OS info, and recent in-app steps (best effort) — no passwords, secrets, tokens, session/CSRF/recovery codes, or database/guest/payment records.</p>
   </div>
   <div class="actions">
     <a class="btn ghost" href="/settings?tab=updates" title="Check app/updates and health first">Updates &amp; Health</a>
   </div>
 </div>
+
+<section class="card" style="margin-bottom:16px;">
+  <h3>How to send your report</h3>
+  <ol style="margin:8px 0 0 20px; padding:0;">
+    <li><strong>Fill out the form below</strong> with as much detail as you can (title, steps to reproduce, what you expected, what actually happened, and notes).</li>
+    <li><strong>Click “Generate report”.</strong> Your info plus auto-collected, sanitized diagnostics (device/OS, app state, recent in-app steps, and error context if any) will be included in the report file.</li>
+    <li><strong>Download the JSON report</strong> (<code>.json</code>) — this is the best file to send. (You can also download/copy the Markdown report.)</li>
+    <li><strong>Upload the downloaded JSON report on the landing page</strong> in the “Send an issue report from the app” section to send it to the maintainer. If upload isn’t available, open a GitHub issue and attach the report file instead.</li>
+  </ol>
+  <p class="muted small" style="margin-top:8px;">Please review the report before uploading/sharing and remove anything sensitive.</p>
+</section>
 
 <div class="grid two-col">
   <section class="card">
@@ -52,15 +63,18 @@
         <label style="display:flex; gap:8px; align-items:center;"><input id="f-include-device" type="checkbox" checked/> Include device/browser/OS info</label>
         <label style="display:flex; gap:8px; align-items:center;"><input id="f-include-steps" type="checkbox" checked/> Include recent in-app steps/actions (best effort)</label>
       </div>
-      <p class="muted small">Review before sharing. Do not add passwords, recovery codes, guest/payment data, or secrets. After downloading, you can upload/attach the JSON or Markdown report file to the GitHub issue.</p>
+      <p class="muted small">Review before sharing. Do not add passwords, recovery codes, guest/payment data, or secrets. When generated, your details and auto-collected info are included in the downloaded report file.</p>
       <div class="actions" style="gap:8px; flex-wrap:wrap; margin-top:8px;">
         <button type="button" class="primary" id="btn-generate">Generate report</button>
         <button type="button" id="btn-copy" disabled>Copy Markdown</button>
         <button type="button" id="btn-download" disabled>Download .md</button>
-        <button type="button" id="btn-download-json" disabled>Download .json</button>
+        <button type="button" id="btn-download-json" disabled>Download .json (upload this)</button>
         <a id="btn-github" class="btn" href="#" target="_blank" rel="noopener" aria-disabled="true" style="pointer-events:none;opacity:.6;">Open GitHub issue</a>
       </div>
       <div id="gen-status" class="muted small" style="margin-top:8px;"></div>
+      <div class="note" style="margin-top:10px;">
+        <strong>Next step:</strong> after downloading the JSON report, go to the landing page and upload it in <strong>“Send an issue report from the app”</strong> to send it to the maintainer. If upload isn’t available, attach the downloaded file to a GitHub issue instead.
+      </div>
     </form>
   </section>
 
@@ -275,7 +289,7 @@
     if(btnGh){ btnGh.href = issue.url; }
     if(diagPreview){ diagPreview.textContent = JSON.stringify(lastReport, null, 2); }
     setEnabled(true);
-    if(status){ status.textContent = (issue.truncated ? 'Report generated (GitHub URL body truncated). ' : 'Report generated. ') + 'Download the JSON report file and attach/upload it to the GitHub issue after review.'; }
+    if(status){ status.textContent = (issue.truncated ? 'Report generated (GitHub URL body truncated). ' : 'Report generated. ') + 'Download the JSON report file, then upload it on the landing page (“Send an issue report from the app”) to send it to the maintainer. You can also attach it to a GitHub issue.'; }
   });
 
   if(btnCopy) btnCopy.addEventListener('click', async function(){
@@ -301,7 +315,7 @@
   if(btnDlJson) btnDlJson.addEventListener('click', function(){
     if(!lastReport) return;
     downloadBlob(JSON.stringify(lastReport, null, 2), 'property-manager-issue-report.json', 'application/json;charset=utf-8');
-    if(status) status.textContent = 'JSON report downloaded. Attach/upload this file to the GitHub issue after review.';
+    if(status) status.textContent = 'JSON report downloaded. Next: upload this file on the landing page in “Send an issue report from the app” to send it to the maintainer (or attach it to a GitHub issue).';
   });
 })();
 </script>
