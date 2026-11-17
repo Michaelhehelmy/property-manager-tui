@@ -16,7 +16,7 @@ from . import paths
 DATA_DIR = paths.DATA_DIR
 BASE_DIR = paths.BASE_DIR
 DB_PATH = paths.DB_PATH
-SCHEMA_VERSION = 18
+SCHEMA_VERSION = 19
 
 _conn = None
 _lock = threading.RLock()
@@ -628,6 +628,60 @@ CREATE TABLE reservation_group_members (
     FOREIGN KEY (reservation_id) REFERENCES reservations(id)
 );
 CREATE INDEX idx_res_group_members_group ON reservation_group_members(group_id);
+
+
+CREATE TABLE packages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    description TEXT NOT NULL DEFAULT '',
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX idx_packages_active ON packages(active);
+
+CREATE TABLE package_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    package_id INTEGER NOT NULL,
+    service_id INTEGER,
+    description TEXT NOT NULL DEFAULT '',
+    quantity REAL NOT NULL DEFAULT 1,
+    unit_price REAL,
+    taxable INTEGER,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    FOREIGN KEY (package_id) REFERENCES packages(id),
+    FOREIGN KEY (service_id) REFERENCES service_catalog(id)
+);
+CREATE INDEX idx_package_items_pkg ON package_items(package_id);
+
+CREATE TABLE reservation_packages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    reservation_id INTEGER NOT NULL,
+    package_id INTEGER,
+    package_name TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'applied',
+    total_net REAL NOT NULL DEFAULT 0,
+    total_tax REAL NOT NULL DEFAULT 0,
+    total_gross REAL NOT NULL DEFAULT 0,
+    snapshot_json TEXT NOT NULL DEFAULT '{}',
+    notes TEXT NOT NULL DEFAULT '',
+    applied_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    voided_at TEXT,
+    FOREIGN KEY (reservation_id) REFERENCES reservations(id),
+    FOREIGN KEY (package_id) REFERENCES packages(id)
+);
+CREATE INDEX idx_res_packages_res ON reservation_packages(reservation_id);
+
+CREATE TABLE reservation_package_lines (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    reservation_package_id INTEGER NOT NULL,
+    reservation_service_id INTEGER NOT NULL,
+    item_snapshot_json TEXT NOT NULL DEFAULT '{}',
+    FOREIGN KEY (reservation_package_id) REFERENCES reservation_packages(id),
+    FOREIGN KEY (reservation_service_id) REFERENCES reservation_services(id)
+);
+CREATE INDEX idx_res_pkg_lines_pkg ON reservation_package_lines(reservation_package_id);
 
 CREATE TABLE operational_expenses (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1261,6 +1315,72 @@ def _migrate_to_18(conn):
         """)
 
 
+
+def _migrate_to_19(conn):
+    # P5: packages/bundles foundation (additive)
+    if not _table_exists(conn, "packages"):
+        conn.executescript("""
+        CREATE TABLE IF NOT EXISTS packages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            description TEXT NOT NULL DEFAULT '',
+            active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_packages_active ON packages(active);
+        """)
+    if not _table_exists(conn, "package_items"):
+        conn.executescript("""
+        CREATE TABLE IF NOT EXISTS package_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            package_id INTEGER NOT NULL,
+            service_id INTEGER,
+            description TEXT NOT NULL DEFAULT '',
+            quantity REAL NOT NULL DEFAULT 1,
+            unit_price REAL,
+            taxable INTEGER,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            FOREIGN KEY (package_id) REFERENCES packages(id),
+            FOREIGN KEY (service_id) REFERENCES service_catalog(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_package_items_pkg ON package_items(package_id);
+        """)
+    if not _table_exists(conn, "reservation_packages"):
+        conn.executescript("""
+        CREATE TABLE IF NOT EXISTS reservation_packages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            reservation_id INTEGER NOT NULL,
+            package_id INTEGER,
+            package_name TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'applied',
+            total_net REAL NOT NULL DEFAULT 0,
+            total_tax REAL NOT NULL DEFAULT 0,
+            total_gross REAL NOT NULL DEFAULT 0,
+            snapshot_json TEXT NOT NULL DEFAULT '{}',
+            notes TEXT NOT NULL DEFAULT '',
+            applied_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            voided_at TEXT,
+            FOREIGN KEY (reservation_id) REFERENCES reservations(id),
+            FOREIGN KEY (package_id) REFERENCES packages(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_res_packages_res ON reservation_packages(reservation_id);
+        """)
+    if not _table_exists(conn, "reservation_package_lines"):
+        conn.executescript("""
+        CREATE TABLE IF NOT EXISTS reservation_package_lines (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            reservation_package_id INTEGER NOT NULL,
+            reservation_service_id INTEGER NOT NULL,
+            item_snapshot_json TEXT NOT NULL DEFAULT '{}',
+            FOREIGN KEY (reservation_package_id) REFERENCES reservation_packages(id),
+            FOREIGN KEY (reservation_service_id) REFERENCES reservation_services(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_res_pkg_lines_pkg ON reservation_package_lines(reservation_package_id);
+        """)
+
+
 def migrate():
     """Create or upgrade schema to SCHEMA_VERSION.
 
@@ -1326,6 +1446,8 @@ def migrate():
                     _migrate_to_17(conn)
                 if version < 18:
                     _migrate_to_18(conn)
+                if version < 19:
+                    _migrate_to_19(conn)
                 conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
                 ensure_runtime_indexes(conn)
                 _record_migration_meta(conn, status="upgraded", from_version=from_version, to_version=SCHEMA_VERSION)

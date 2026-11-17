@@ -492,3 +492,73 @@ async def updates_apply(request: Request):
         deps.add_flash(request, str(e), "error")
         logger.warning("web_update_event event=apply_exception error=%s", str(e)[:240])
     r = deps.redirect("/settings?tab=updates"); deps.save_session(r, deps.get_session(request)); return r
+
+
+
+@router.get("/settings/packages")
+def packages(request: Request):
+    try:
+        pkgs = services.list_packages(active_only=False)
+    except Exception:
+        pkgs = []
+    try:
+        catalog = services.list_service_catalog(active_only=True)
+    except Exception:
+        catalog = []
+    return render(request, "settings/packages.html", {"title": "Packages & Bundles", "packages": pkgs, "catalog": catalog})
+
+
+@router.post("/settings/packages/add")
+async def package_add(request: Request):
+    form = await deps.require_unlocked_form(request)
+    try:
+        services.create_package(form.get("name", ""), form.get("description", ""), active=bool(form.get("active", "1")))
+        deps.add_flash(request, "Package created.", "success")
+    except Exception as e:
+        deps.add_flash(request, str(e), "error")
+    r = deps.redirect("/settings/packages"); deps.save_session(r, deps.get_session(request)); return r
+
+
+@router.post("/settings/packages/{package_id}/edit")
+async def package_edit(request: Request, package_id: int):
+    form = await deps.require_unlocked_form(request)
+    try:
+        services.update_package(package_id, name=form.get("name"), description=form.get("description"), active=bool(form.get("active")))
+        deps.add_flash(request, "Package updated.", "success")
+    except Exception as e:
+        deps.add_flash(request, str(e), "error")
+    r = deps.redirect("/settings/packages"); deps.save_session(r, deps.get_session(request)); return r
+
+
+@router.post("/settings/packages/{package_id}/items/add")
+async def package_item_add(request: Request, package_id: int):
+    form = await deps.require_unlocked_form(request)
+    try:
+        sid = form.get("service_id") or None
+        up = form.get("unit_price")
+        tax_raw = form.get("taxable")
+        taxable = None if tax_raw in (None, "", "inherit") else (str(tax_raw) in ("1","true","on","yes"))
+        services.add_package_item(
+            package_id,
+            service_id=int(sid) if sid not in (None, "", "0") else None,
+            description=form.get("description", ""),
+            quantity=float(form.get("quantity") or 1),
+            unit_price=(float(up) if up not in (None, "") else None),
+            taxable=taxable,
+            sort_order=int(form.get("sort_order") or 0),
+        )
+        deps.add_flash(request, "Package item added.", "success")
+    except Exception as e:
+        deps.add_flash(request, str(e), "error")
+    r = deps.redirect("/settings/packages"); deps.save_session(r, deps.get_session(request)); return r
+
+
+@router.post("/settings/packages/items/{item_id}/delete")
+async def package_item_delete(request: Request, item_id: int):
+    await deps.require_unlocked_form(request)
+    try:
+        services.delete_package_item(item_id)
+        deps.add_flash(request, "Package item removed.", "success")
+    except Exception as e:
+        deps.add_flash(request, str(e), "error")
+    r = deps.redirect("/settings/packages"); deps.save_session(r, deps.get_session(request)); return r

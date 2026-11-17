@@ -160,4 +160,22 @@
   </details>
 </div>
 
+
+<div class="panel" style="margin-top:16px"><h3>Packages / bundles</h3>
+  <p class="muted">Apply predefined packages to post bundled service/folio lines with allocation snapshots. Voiding an applied package reverses its posted service lines (requires unlock + super password).</p>
+  <div class="table-wrap"><table><tr><th>ID</th><th>Package</th><th>Gross</th><th>Status</th><th>Applied</th><th>Action</th></tr>
+  {% for rp in reservation_packages or [] %}<tr>
+    <td>{{rp['id']}}</td><td>{{rp['package_name'] or ('#' ~ rp['package_id'])}}</td><td>{{"%.2f"|format(rp['total_gross'] or 0)}}</td><td>{{rp['status']}}</td><td>{{rp['applied_at']}}</td>
+    <td>{% if rp['status']=='applied' and not rp['voided_at'] %}<form method="post" action="/reservations/{{r['id']}}/packages/{{rp['id']}}/void" class="inline"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><input type="password" name="password" placeholder="Pwd" style="width:90px;display:inline-block"/><button class="err" title="Void applied package (reverses posted lines; requires super password)">Void</button></form>{% else %}—{% endif %}</td>
+  </tr>{% else %}<tr><td colspan="6" class="muted">No packages applied</td></tr>{% endfor %}</table></div>
+  <details style="margin-top:10px"><summary><strong>Apply package</strong></summary>
+    <form method="post" action="/reservations/{{r['id']}}/packages/apply"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+      <label>Package<select name="package_id" required>{% for pk in packages or [] %}<option value="{{pk['id']}}">{{pk['name']}} ({{(pk['items'] or [])|length}} items, est {{'%.2f'|format(pk['estimated_total'] or 0)}})</option>{% else %}<option value="">No active packages</option>{% endfor %}</select></label>
+      <label>Notes<input name="notes" placeholder="Optional notes"/></label>
+      <button class="ok" type="submit" {% if not packages %}disabled{% endif %}>Apply package</button>
+    </form>
+    {% if not packages %}<p class="muted">No active packages. Manage packages in <a href="/settings/packages">Settings → Packages &amp; Bundles</a>.</p>{% endif %}
+  </details>
+</div>
+
 {% endblock %}

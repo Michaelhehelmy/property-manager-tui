@@ -6457,3 +6457,247 @@ def remove_reservation_from_group(group_id, reservation_id):
         conn.execute("DELETE FROM reservation_group_members WHERE group_id=? AND reservation_id=?", (int(group_id), int(reservation_id)))
     _audit("reservation_group_remove_member", "reservation_group", group_id, f"res={reservation_id}")
     return group_id
+
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# PACKAGES / BUNDLES (P5 foundation, additive)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def list_packages(active_only=False):
+    try:
+        q = "SELECT * FROM packages"
+        if active_only:
+            q += " WHERE active=1"
+        q += " ORDER BY active DESC, name, id"
+        pkgs = [dict(r) for r in db.connect().execute(q).fetchall()]
+        for pkg in pkgs:
+            try:
+                items = db.connect().execute(
+                    """SELECT pi.*, sc.name AS service_name, sc.category AS service_category, sc.unit_price AS service_unit_price, sc.taxable AS service_taxable
+                       FROM package_items pi LEFT JOIN service_catalog sc ON sc.id = pi.service_id
+                       WHERE pi.package_id=? ORDER BY pi.sort_order, pi.id""", (pkg["id"],)
+                ).fetchall()
+                pkg["items"] = [dict(i) for i in items]
+                total = 0.0
+                for i in pkg["items"]:
+                    price = i.get("unit_price") if i.get("unit_price") is not None else i.get("service_unit_price")
+                    try: price = float(price or 0)
+                    except Exception: price = 0.0
+                    try: qty = float(i.get("quantity") or 1)
+                    except Exception: qty = 1.0
+                    total += price * qty
+                pkg["estimated_total"] = round(total, 2)
+            except Exception:
+                pkg["items"] = []; pkg["estimated_total"] = 0.0
+        return pkgs
+    except Exception:
+        return []
+
+
+def get_package(package_id):
+    try:
+        row = db.connect().execute("SELECT * FROM packages WHERE id=?", (int(package_id),)).fetchone()
+        if not row: return None
+        pkg = dict(row)
+        items = db.connect().execute(
+            """SELECT pi.*, sc.name AS service_name, sc.category AS service_category, sc.unit_price AS service_unit_price, sc.taxable AS service_taxable
+               FROM package_items pi LEFT JOIN service_catalog sc ON sc.id = pi.service_id
+               WHERE pi.package_id=? ORDER BY pi.sort_order, pi.id""", (pkg["id"],)
+        ).fetchall()
+        pkg["items"] = [dict(i) for i in items]
+        return pkg
+    except Exception:
+        return None
+
+
+def create_package(name, description="", active=True):
+    name = (name or "").strip()
+    if not name:
+        raise ValueError("Package name is required.")
+    with db.transaction() as conn:
+        try:
+            cur = conn.execute(
+                "INSERT INTO packages (name, description, active) VALUES (?, ?, ?)",
+                (name, (description or "").strip(), 1 if active else 0)
+            )
+            pid = cur.lastrowid
+        except Exception as e:
+            if "UNIQUE" in str(e).upper():
+                raise ValueError("A package with this name already exists.")
+            raise
+    _audit("package_create", "package", pid, name)
+    return pid
+
+
+def update_package(package_id, name=None, description=None, active=None):
+    pid = int(package_id)
+    row = db.connect().execute("SELECT * FROM packages WHERE id=?", (pid,)).fetchone()
+    if not row:
+        raise ValueError("Package not found.")
+    vals = {
+        "name": (name if name is not None else row["name"]),
+        "description": (description if description is not None else row["description"]),
+        "active": (active if active is not None else row["active"]),
+    }
+    vals["name"] = (vals["name"] or "").strip()
+    if not vals["name"]:
+        raise ValueError("Package name is required.")
+    with db.transaction() as conn:
+        try:
+            conn.execute(
+                "UPDATE packages SET name=?, description=?, active=?, updated_at=datetime('now','localtime') WHERE id=?",
+                (vals["name"], (vals["description"] or "").strip(), 1 if vals["active"] else 0, pid)
+            )
+        except Exception as e:
+            if "UNIQUE" in str(e).upper():
+                raise ValueError("A package with this name already exists.")
+            raise
+    _audit("package_update", "package", pid, vals["name"])
+    return pid
+
+
+def add_package_item(package_id, service_id=None, description="", quantity=1, unit_price=None, taxable=None, sort_order=0):
+    pid = int(package_id)
+    if not db.connect().execute("SELECT 1 FROM packages WHERE id=?", (pid,)).fetchone():
+        raise ValueError("Package not found.")
+    svc = None
+    if service_id not in (None, "", 0, "0"):
+        svc = db.connect().execute("SELECT * FROM service_catalog WHERE id=?", (int(service_id),)).fetchone()
+        if not svc:
+            raise ValueError("Service not found.")
+    desc = (description or (svc["name"] if svc else "") or "").strip()
+    if not desc:
+        raise ValueError("Package item description is required.")
+    try: qty = float(quantity or 1)
+    except Exception: raise ValueError("Invalid quantity.")
+    if qty <= 0: raise ValueError("Quantity must be greater than 0.")
+    up = None
+    if unit_price not in (None, ""):
+        try: up = round(float(unit_price), 2)
+        except Exception: raise ValueError("Invalid unit price.")
+        if up < 0: raise ValueError("Unit price cannot be negative.")
+    tax_val = None if taxable is None else (1 if taxable else 0)
+    with db.transaction() as conn:
+        cur = conn.execute(
+            """INSERT INTO package_items (package_id, service_id, description, quantity, unit_price, taxable, sort_order)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (pid, int(svc["id"]) if svc else None, desc, qty, up, tax_val, int(sort_order or 0))
+        )
+        iid = cur.lastrowid
+    _audit("package_item_add", "package", pid, f"item={iid}")
+    return iid
+
+
+def delete_package_item(item_id):
+    iid = int(item_id)
+    row = db.connect().execute("SELECT package_id FROM package_items WHERE id=?", (iid,)).fetchone()
+    if not row:
+        raise ValueError("Package item not found.")
+    with db.transaction() as conn:
+        conn.execute("DELETE FROM package_items WHERE id=?", (iid,))
+    _audit("package_item_delete", "package", row["package_id"], f"item={iid}")
+    return iid
+
+
+def apply_package_to_reservation(reservation_id, package_id, notes=""):
+    rid = int(reservation_id)
+    pid = int(package_id)
+    res = db.connect().execute("SELECT id, status, guest_name FROM reservations WHERE id=?", (rid,)).fetchone()
+    if not res:
+        raise ValueError("Reservation not found.")
+    if res["status"] in ("Cancelled", "No-Show", "Deleted", "Checked Out"):
+        raise ValueError(f"Cannot apply packages to a '{res['status']}' reservation.")
+    pkg = get_package(pid)
+    if not pkg:
+        raise ValueError("Package not found.")
+    if not pkg.get("active"):
+        raise ValueError("Selected package is inactive.")
+    items = pkg.get("items") or []
+    if not items:
+        raise ValueError("Package has no items to apply.")
+    total_net = total_tax = total_gross = 0.0
+    resolved = []
+    for it in items:
+        svc = None
+        if it.get("service_id"):
+            svc = db.connect().execute("SELECT * FROM service_catalog WHERE id=?", (int(it["service_id"]),)).fetchone()
+        desc = (it.get("description") or (svc["name"] if svc else "") or (it.get("service_name") or "")).strip()
+        if not desc:
+            raise ValueError("Package item description is required.")
+        try: qty = float(it.get("quantity") or 1)
+        except Exception: qty = 1.0
+        if qty <= 0: raise ValueError("Package item quantity must be greater than 0.")
+        if it.get("unit_price") is not None:
+            price = float(it.get("unit_price") or 0)
+        elif svc is not None:
+            price = float(svc["unit_price"] or 0)
+        else:
+            price = float(it.get("service_unit_price") or 0)
+        price = round(price, 2)
+        if price < 0: raise ValueError("Package item unit price cannot be negative.")
+        if svc is not None:
+            taxable = bool(svc["taxable"])
+        elif it.get("taxable") is not None:
+            taxable = bool(it.get("taxable"))
+        else:
+            taxable = bool(it.get("service_taxable", 1))
+        line_net = round(price * qty, 2)
+        tax = _calc_service_line_tax(line_net, taxable=taxable)
+        total_net += tax["net"]; total_tax += tax["vat"]; total_gross += tax["gross"]
+        resolved.append({"item": it, "desc": desc, "qty": qty, "price": price, "taxable": taxable, "tax": tax, "svc": svc})
+    snapshot = {"package": {"id": pkg["id"], "name": pkg.get("name"), "description": pkg.get("description")}, "items": resolved}
+    with db.transaction() as conn:
+        cur = conn.cursor()
+        pcur = conn.execute(
+            """INSERT INTO reservation_packages (reservation_id, package_id, package_name, status, total_net, total_tax, total_gross, snapshot_json, notes)
+               VALUES (?, ?, ?, 'applied', ?, ?, ?, ?, ?)""",
+            (rid, pid, pkg.get("name") or "", round(total_net,2), round(total_tax,2), round(total_gross,2), json.dumps(snapshot, ensure_ascii=False, default=str), (notes or "").strip())
+        )
+        rpid = pcur.lastrowid
+        for r in resolved:
+            scur = conn.execute(
+                """INSERT INTO reservation_services
+                   (reservation_id, service_id, description, quantity, unit_price, tax_amount, gross_amount, status, notes, posted_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, 'posted', ?, datetime('now','localtime'))""",
+                (rid, int(r["svc"]["id"]) if r["svc"] else (int(r["item"]["service_id"]) if r["item"].get("service_id") else None),
+                 f"[Pkg: {pkg.get('name')}] {r['desc']}", r["qty"], r["price"], r["tax"]["vat"], r["tax"]["gross"], (notes or "").strip())
+            )
+            rsid = scur.lastrowid
+            _post(cur, "RSVC", rsid, "CHARGE", "Service", r["tax"]["net"], r["tax"]["service"], r["tax"]["vat"], r["tax"]["city_tax"], "", f"Package '{pkg.get('name')}' Res #{rid}: {r['desc']} x{r['qty']:g}")
+            conn.execute(
+                "INSERT INTO reservation_package_lines (reservation_package_id, reservation_service_id, item_snapshot_json) VALUES (?, ?, ?)",
+                (rpid, rsid, json.dumps({"desc": r["desc"], "qty": r["qty"], "price": r["price"], "tax": r["tax"]}, ensure_ascii=False, default=str))
+            )
+    _audit("reservation_package_apply", "reservation_package", rpid, f"res={rid} pkg={pid} gross={round(total_gross,2)}")
+    return rpid
+
+
+def list_reservation_packages(reservation_id):
+    try:
+        rows = db.connect().execute("SELECT * FROM reservation_packages WHERE reservation_id=? ORDER BY id DESC", (int(reservation_id),)).fetchall()
+        return [dict(r) for r in rows]
+    except Exception:
+        return []
+
+
+def void_reservation_package(reservation_package_id, password=None):
+    _require_super_password(password)
+    rpid = int(reservation_package_id)
+    with db.transaction() as conn:
+        rp = conn.execute("SELECT * FROM reservation_packages WHERE id=?", (rpid,)).fetchone()
+        if not rp:
+            raise ValueError("Applied package not found.")
+        if rp["voided_at"] or rp["status"] == "voided":
+            return rpid
+        lines = conn.execute("SELECT reservation_service_id FROM reservation_package_lines WHERE reservation_package_id=?", (rpid,)).fetchall()
+        cur = conn.cursor()
+        for ln in lines:
+            rsid = ln["reservation_service_id"]
+            row = conn.execute("SELECT * FROM reservation_services WHERE id=?", (rsid,)).fetchone()
+            if row and not row["voided_at"] and row["status"] == "posted":
+                _reverse(cur, "RSVC", rsid, entry_type_filter=("CHARGE",))
+                conn.execute("UPDATE reservation_services SET status='voided', voided_at=datetime('now','localtime') WHERE id=?", (rsid,))
+        conn.execute("UPDATE reservation_packages SET status='voided', voided_at=datetime('now','localtime') WHERE id=?", (rpid,))
+    _audit("reservation_package_void", "reservation_package", rpid, f"res={rp['reservation_id']}")
+    return rpid

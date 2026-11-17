@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Packages &amp; Bundles</h2>
+<p class="muted">Foundation for bundled offerings (packages of services/add-ons). Applying a package to a reservation posts its items to the folio with ledger/tax handling and stores an application snapshot.</p>
+
+<div class="grid grid-2">
+  <div class="panel"><h3>Create package</h3>
+    <form method="post" action="/settings/packages/add"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+      <label>Name<input name="name" required/></label>
+      <label>Description<textarea name="description" rows="2"></textarea></label>
+      <label><input type="checkbox" name="active" checked/> Active</label>
+      <label>Super password<input type="password" name="password" required/></label>
+      <button class="ok" type="submit">Create package</button>
+    </form>
+  </div>
+  <div class="panel"><h3>Notes</h3>
+    <ul>
+      <li>Package items can reference the service catalog or be custom descriptions/prices.</li>
+      <li>Applying a package creates posted service/folio lines (and ledger entries) per item; voiding the applied package reverses those lines.</li>
+      <li>Use reservation detail to apply packages; manage definitions here.</li>
+    </ul>
+  </div>
+</div>
+
+<div class="panel" style="margin-top:16px"><h3>Packages</h3>
+  {% for p in packages %}
+  <details style="margin-bottom:12px" {% if loop.first %}open{% endif %}>
+    <summary><strong>#{{p.id}} {{p.name}}</strong> — {{'active' if p.active else 'inactive'}} · {{(p.items or [])|length}} item(s) · est. {{'%.2f'|format(p.estimated_total or 0)}} (ex-tax)</summary>
+    {% if p.description %}<p class="muted">{{p.description}}</p>{% endif %}
+    <form method="post" action="/settings/packages/{{p.id}}/edit" style="margin:8px 0"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+      <div class="row"><label>Name<input name="name" value="{{p.name}}"/></label><label><input type="checkbox" name="active" {% if p.active %}checked{% endif %}/> Active</label></div>
+      <label>Description<input name="description" value="{{p.description}}"/></label>
+      <label>Super password<input type="password" name="password" required/></label>
+      <button type="submit">Save package</button>
+    </form>
+
+    <h4>Items</h4>
+    <table><tr><th>#</th><th>Description</th><th>Qty</th><th>Unit price</th><th>Taxable</th><th>Source</th><th></th></tr>
+    {% for it in p.items %}
+      <tr>
+        <td>{{it.sort_order}}</td>
+        <td>{{it.description}}{% if it.service_name %}<div class="muted">Catalog: {{it.service_name}}</div>{% endif %}</td>
+        <td>{{it.quantity}}</td>
+        <td>{% if it.unit_price is not none %}{{'%.2f'|format(it.unit_price)}}{% elif it.service_unit_price is not none %}{{'%.2f'|format(it.service_unit_price)}} (catalog){% else %}—{% endif %}</td>
+        <td>{% if it.taxable is not none %}{{'yes' if it.taxable else 'no'}}{% elif it.service_taxable is not none %}{{'yes' if it.service_taxable else 'no'}} (catalog){% else %}inherit{% endif %}</td>
+        <td>{% if it.service_id %}Service #{{it.service_id}}{% else %}Custom{% endif %}</td>
+        <td><form method="post" action="/settings/packages/items/{{it.id}}/delete" style="margin:0"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><input type="hidden" name="password" value=""/><label class="muted" style="font-size:12px">Super pwd <input type="password" name="password" required style="width:120px"/></label><button class="small danger" type="submit">Remove</button></form></td>
+      </tr>
+    {% else %}<tr><td colspan="7" class="muted">No items</td></tr>{% endfor %}
+    </table>
+
+    <details style="margin-top:8px"><summary>Add item</summary>
+      <form method="post" action="/settings/packages/{{p.id}}/items/add"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+        <label>Service catalog item<select name="service_id"><option value="">(custom item)</option>{% for s in catalog %}<option value="{{s.id}}">{{s.name}} — {{'%.2f'|format(s.unit_price or 0)}}</option>{% endfor %}</select></label>
+        <label>Description<input name="description" placeholder="Defaults to service name if selected"/></label>
+        <div class="row"><label>Qty<input name="quantity" type="number" step="0.01" value="1"/></label><label>Unit price override<input name="unit_price" type="number" step="0.01" placeholder="catalog/default"/></label></div>
+        <div class="row"><label>Taxable<select name="taxable"><option value="inherit">inherit</option><option value="1">yes</option><option value="0">no</option></select></label><label>Sort order<input name="sort_order" type="number" value="0"/></label></div>
+        <label>Super password<input type="password" name="password" required/></label>
+        <button type="submit">Add item</button>
+      </form>
+    </details>
+  </details>
+  {% else %}
+    <p class="muted">No packages yet.</p>
+  {% endfor %}
+</div>
+
+<p style="margin-top:12px"><a href="/settings">← Back to Settings</a></p>
+{% endblock %}

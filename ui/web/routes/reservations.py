@@ -140,11 +140,20 @@ def detail(rid: int, request: Request):
     except Exception:
         logger.exception("web.reservations: failed to load reservation discounts")
         reservation_discounts = []
+    try:
+        packages = services.list_packages(active_only=True)
+    except Exception:
+        packages = []
+    try:
+        reservation_packages = services.list_reservation_packages(rid)
+    except Exception:
+        reservation_packages = []
     return render(request, "reservations/detail.html", {
         "title":f"Reservation #{rid}","r":res,"folio":folio,"pos":pos,"pays":pays,
         "rooms":_rooms(),"activities":activities,"inventory":inventory,"active_batches":active_batches,
         "reservation_services":reservation_services,"service_catalog":service_catalog,
         "reservation_discounts":reservation_discounts,
+        "packages":packages,"reservation_packages":reservation_packages,
         "today":datetime.now().strftime("%Y-%m-%d")
     })
 
@@ -326,6 +335,29 @@ async def void_discount(rid: int, discount_id: int, request: Request):
         deps.add_flash(request, str(e), "error")
     r = deps.redirect(f"/reservations/{rid}"); deps.save_session(r, deps.get_session(request)); return r
 
+
+
+
+@router.post("/reservations/{rid}/packages/apply")
+async def apply_package(rid: int, request: Request):
+    form = await deps.get_form(request)
+    try:
+        services.apply_package_to_reservation(rid, int(form.get("package_id")), notes=(form.get("notes") or "").strip())
+        deps.add_flash(request, "Package applied to reservation", "success")
+    except Exception as e:
+        deps.add_flash(request, str(e), "error")
+    r = deps.redirect(f"/reservations/{rid}"); deps.save_session(r, deps.get_session(request)); return r
+
+
+@router.post("/reservations/{rid}/packages/{reservation_package_id}/void")
+async def void_package(rid: int, reservation_package_id: int, request: Request):
+    form = await deps.require_unlocked_form(request)
+    try:
+        services.void_reservation_package(reservation_package_id, deps.service_password(request, form))
+        deps.add_flash(request, "Applied package voided", "success")
+    except Exception as e:
+        deps.add_flash(request, str(e), "error")
+    r = deps.redirect(f"/reservations/{rid}"); deps.save_session(r, deps.get_session(request)); return r
 
 
 # --- Reservation groups (P5 foundation) ---
