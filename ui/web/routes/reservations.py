@@ -325,3 +325,54 @@ async def void_discount(rid: int, discount_id: int, request: Request):
     except Exception as e:
         deps.add_flash(request, str(e), "error")
     r = deps.redirect(f"/reservations/{rid}"); deps.save_session(r, deps.get_session(request)); return r
+
+
+
+# --- Reservation groups (P5 foundation) ---
+@router.get("/reservations/groups")
+def groups(request: Request):
+    try:
+        groups = services.list_reservation_groups(status="")
+    except Exception:
+        groups = []
+    recent = connect().execute(
+        "SELECT id, guest_name, status FROM reservations WHERE status NOT IN ('Deleted') ORDER BY id DESC LIMIT 200"
+    ).fetchall()
+    return render(request, "reservations/groups.html", {"title":"Reservation Groups","groups":groups,"recent_reservations":recent})
+
+
+@router.post("/reservations/groups/create")
+async def groups_create(request: Request):
+    form = await deps.get_form(request)
+    try:
+        gid = services.create_reservation_group(
+            form.get("name",""),
+            group_type=form.get("group_type","group"),
+            contact_name=form.get("contact_name",""),
+            contact_phone=form.get("contact_phone",""),
+            contact_email=form.get("contact_email",""),
+            notes=form.get("notes",""),
+        )
+        return flash_redirect(request, "/reservations/groups", f"Group #{gid} created", "success")
+    except Exception as e:
+        return flash_redirect(request, "/reservations/groups", str(e), "error")
+
+
+@router.post("/reservations/groups/{gid}/add")
+async def groups_add(gid: int, request: Request):
+    form = await deps.get_form(request)
+    try:
+        services.add_reservation_to_group(gid, int(form.get("reservation_id")), role=form.get("role","member"), notes=form.get("notes",""))
+        return flash_redirect(request, "/reservations/groups", "Reservation added to group", "success")
+    except Exception as e:
+        return flash_redirect(request, "/reservations/groups", str(e), "error")
+
+
+@router.post("/reservations/groups/{gid}/remove/{rid}")
+async def groups_remove(gid: int, rid: int, request: Request):
+    await deps.get_form(request)
+    try:
+        services.remove_reservation_from_group(gid, rid)
+        return flash_redirect(request, "/reservations/groups", "Reservation removed from group", "success")
+    except Exception as e:
+        return flash_redirect(request, "/reservations/groups", str(e), "error")

@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h2>Reservation Groups</h2>
+    <p class="page-subtitle">Basic group bookings foundation: group related reservations for coordinated operations and future aggregated folio/reporting.</p>
+  </div>
+  <div><a class="button-like" href="/reservations">← Reservations</a></div>
+</div>
+
+<div class="grid grid-2">
+  <div class="panel"><h3>Create group</h3>
+    <form method="post" action="/reservations/groups/create"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+      <label>Group name<input name="name" required placeholder="e.g. Smith Family, ACME Conference"/></label>
+      <div class="row"><label>Type<input name="group_type" value="group" placeholder="group/tour/corporate/event"/></label><label>Contact name<input name="contact_name"/></label></div>
+      <div class="row"><label>Contact phone<input name="contact_phone"/></label><label>Contact email<input name="contact_email"/></label></div>
+      <label>Notes<textarea name="notes" rows="2"></textarea></label>
+      <button class="ok" type="submit">Create group</button>
+    </form>
+  </div>
+  <div class="panel"><h3>Add reservation to group</h3>
+    <form method="post" id="add-group-form" action="/reservations/groups/0/add" onsubmit="this.action='/reservations/groups/'+this.group_id.value+'/add'"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+      <label>Group<select name="group_id" required>{% for g in groups %}<option value="{{g.id}}">#{{g.id}} — {{g.name}} ({{g.status}})</option>{% else %}<option value="">No groups yet</option>{% endfor %}</select></label>
+      <label>Reservation<select name="reservation_id" required>{% for r in recent_reservations %}<option value="{{r['id']}}">#{{r['id']}} — {{r['guest_name']}} ({{r['status']}})</option>{% endfor %}</select></label>
+      <div class="row"><label>Role<input name="role" value="member"/></label><label>Notes<input name="notes"/></label></div>
+      <button type="submit">Add to group</button>
+    </form>
+    <p class="muted">A reservation can belong to only one group at a time (foundation constraint).</p>
+  </div>
+</div>
+
+<div class="panel" style="margin-top:16px"><h3>Groups</h3>
+  {% for g in groups %}
+    <details style="margin-bottom:10px" {% if loop.first %}open{% endif %}><summary><strong>#{{g.id}} {{g.name}}</strong> — {{g.group_type}} · {{g.status}} · {{g.member_count or 0}} reservation(s){% if g.contact_name %} · {{g.contact_name}}{% endif %}</summary>
+      {% if g.notes %}<p class="muted">{{g.notes}}</p>{% endif %}
+      <table><tr><th>Res</th><th>Guest</th><th>Room</th><th>Dates</th><th>Status</th><th>Role</th><th></th></tr>
+      {% for m in g.members %}<tr>
+        <td><a href="/reservations/{{m.reservation_id}}">#{{m.reservation_id}}</a></td><td>{{m.guest_name}}</td><td>{{m.room_number or ''}}</td>
+        <td>{{m.check_in_date}} → {{m.check_out_date}}</td><td>{{m.reservation_status}}</td><td>{{m.role}}</td>
+        <td><form method="post" action="/reservations/groups/{{g.id}}/remove/{{m.reservation_id}}" style="margin:0"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><button class="small danger" type="submit">Remove</button></form></td>
+      </tr>{% else %}<tr><td colspan="7" class="muted">No members</td></tr>{% endfor %}</table>
+    </details>
+  {% else %}
+    <p class="muted">No reservation groups yet.</p>
+  {% endfor %}
+</div>
+{% endblock %}
