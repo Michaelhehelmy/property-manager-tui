@@ -41,7 +41,7 @@ Collect: OS/platform, install method, command used, full error output, whether W
 
 ## 3) Web UI issues
 
-- **Web UI fails to start:** ensure runtime deps installed (`requirements.txt` / textual), run from install root, and `PYTHONPATH` includes `src` when running directly (launcher/main handle typical cases).
+- **Web UI fails to start:** ensure runtime/web deps installed (`requirements.txt`, `requirements-web.txt`), run from install root, and `PYTHONPATH` includes `src` when running directly (launcher/main handle typical cases).
 - **Terminal rendering/input issues (constrained terminals/iSH):** prefer Web UI mode there; resize terminal, use compatible font/encoding, or run via SSH from a fuller terminal.
 
 ## 4) Web server issues

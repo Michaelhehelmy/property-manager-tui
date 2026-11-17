@@ -92,11 +92,11 @@ pkg update -y && pkg upgrade -y
 pkg install -y git python curl ca-certificates
 ```
 
-1. **Web UI (most reliable):**
+1. **Install/update and run Web UI (recommended on capable Termux setups):**
    ```bash
-   curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh | SKIP_WEB=1 MODE=web sh
+   curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh | MODE=web sh
    ```
-2. **Full Web UI (SQLite-safe, on-device or LAN):**
+2. **LAN or explicit local web (SQLite-safe):**
    ```bash
    # Localhost
    curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh \
@@ -107,17 +107,17 @@ pkg install -y git python curl ca-certificates
      | MODE=web HOST=0.0.0.0 PORT=8000 PM_WEB_SECRET_KEY="$(openssl rand -hex 32)" sh
    ```
    Always **`--workers 1`**. Set strong `PM_WEB_SECRET_KEY` for non-local/shared use and prefer **HTTPS** (reverse proxy/VPN/tunnel) for shared/remote access.
-3. **Run (if not auto-launched):**
+3. **If web dependencies cannot be built/installed on this device (constrained):** the app is web-only. Install build deps/toolchain for required wheels or run the web UI on a supported host. You may run `SKIP_WEB=1 ACTION=setup sh scripts/setup.sh` for core dependency setup only, but web UI will not start until web deps are installed.
+4. **Run (if not auto-launched):**
    ```bash
    cd ~/property-manager-tui
-   # Web UI
    PYTHONPATH=src .venv/bin/python launcher.py --web
-   # Web
+   # or
    export PM_WEB_SECRET_KEY='(long-random-secret)'
    PYTHONPATH=src .venv/bin/python -m uvicorn ui.web.server:app --host 127.0.0.1 --port 8000 --workers 1
    ```
-4. **Manual update from existing checkout:** backup → `git fetch --all --tags --prune && git pull --ff-only` → `ACTION=setup MODE=auto sh scripts/setup.sh` (or `SKIP_WEB=1 MODE=web`) → restart.
-5. **Later updates from UI:** same as Windows/Web UI — **Settings → Updates & Health → App updates** → **Check for updates** → **Update now** only when available → apply → **restart**; refresh deps if needed. Re-running the install one-liner is also a safe data-preserving way to update/refresh on Termux.
+5. **Manual update from existing checkout:** backup → `git fetch --all --tags --prune && git pull --ff-only` → `ACTION=setup MODE=web sh scripts/setup.sh` → restart.
+6. **Later updates from UI:** **Settings → Updates & Health → App updates** → **Check for updates** → **Update now** only when available → apply → **restart**; refresh deps if needed. Re-running the install one-liner is also a safe data-preserving way to update/refresh.
 
 ### 4.3 Manual update (CLI, any git install)
 ```bash
@@ -131,7 +131,7 @@ git pull --ff-only
 
 # refresh dependencies/environment if needed
 # Unix/Termux:
-MODE=<auto|tui|web|both> ACTION=setup sh scripts/setup.sh
+MODE=<auto|web (legacy tui/both map to web)> ACTION=setup sh scripts/setup.sh
 # Windows:
 powershell -ExecutionPolicy Bypass -File scripts\setup_windows.ps1 -Action setup
 

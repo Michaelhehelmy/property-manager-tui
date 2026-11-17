@@ -1,15 +1,15 @@
 <#
-One-command Windows installer/bootstrap for property-manager.
+One-command Windows installer/bootstrap for Property Manager (web-only).
 - Best-effort installs Python 3.12 and Git via winget if missing
 - Idempotent clone/update with optional pinned ref (branch/tag/commit)
 - Preserves runtime data (DB/exports/invoices/PM_DATA_DIR)
 - Delegates to setup_windows.ps1 for venv/deps/run (Web: --workers 1)
 
 Usage (PowerShell):
-  irm https://raw.githubusercontent.com/Michaelhehelmy/property-manager/main/scripts/install_windows.ps1 | iex
+  irm https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install_windows.ps1 | iex
 
 Examples:
-  $env:ACTION='deploy'; $env:MODE='web'; irm https://raw.githubusercontent.com/Michaelhehelmy/property-manager/main/scripts/install_windows.ps1 | iex
+  $env:ACTION='deploy'; $env:MODE='web'; irm https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install_windows.ps1 | iex
   $env:ACTION='deploy'; $env:MODE='web'; $env:HOST='0.0.0.0'; $env:PM_WEB_SECRET_KEY='...'; irm ... | iex
   $env:GIT_REF='v1.2.3'; irm ... | iex
   $env:REPAIR='1'; irm ... | iex  # auto-recover dirty/stuck git checkout (resets local source to origin branch)
@@ -22,8 +22,8 @@ param(
   [string]$Action = $(if ($env:ACTION) { $env:ACTION } else { 'deploy' }),
   [string]$Mode = $(if ($env:MODE) { $env:MODE } else { 'auto' }),
   [string]$SkipWeb = $(if ($env:SKIP_WEB) { $env:SKIP_WEB } else { 'auto' }),
-  [string]$InstallDir = $(if ($env:INSTALL_DIR) { $env:INSTALL_DIR } else { (Join-Path $HOME 'property-manager') }),
-  [string]$RepoUrl = $(if ($env:REPO_URL) { $env:REPO_URL } else { 'https://github.com/Michaelhehelmy/property-manager.git' }),
+  [string]$InstallDir = $(if ($env:INSTALL_DIR) { $env:INSTALL_DIR } else { (Join-Path $HOME 'property-manager-tui') }),
+  [string]$RepoUrl = $(if ($env:REPO_URL) { $env:REPO_URL } else { 'https://github.com/Michaelhehelmy/property-manager-tui.git' }),
   [string]$Branch = $(if ($env:BRANCH) { $env:BRANCH } else { 'main' }),
   [string]$GitRef = $(if ($env:GIT_REF) { $env:GIT_REF } elseif ($env:TAG) { $env:TAG } elseif ($env:COMMIT) { $env:COMMIT } elseif ($env:BRANCH) { $env:BRANCH } else { 'main' }),
   [string]$BindHost = $(if ($env:HOST) { $env:HOST } else { '127.0.0.1' }),
@@ -86,12 +86,15 @@ function Checkout-RequestedRef {
 }
 
 try {
-  Log "property-manager Windows bootstrap (Action=$Action Mode=$Mode Ref=$GitRef InstallDir=$InstallDir)"
+  # Legacy modes mapped to web-only (TUI deprecated/removed)
+  if ($Mode -eq 'tui' -or $Mode -eq 'both' -or $Mode -eq 'auto' -or -not $Mode) { $Mode = 'web' }
+
+  Log "Property Manager Windows bootstrap (web-only, Action=$Action Mode=$Mode Ref=$GitRef InstallDir=$InstallDir)"
   if (($BindHost -eq '0.0.0.0' -or $BindHost -eq '::') -and -not $env:PM_WEB_SECRET_KEY) {
     Warn "Non-local bind requested without PM_WEB_SECRET_KEY. Set a strong random secret for shared/LAN deployments."
   }
-  if ($BindHost -eq '0.0.0.0' -or $BindHost -eq '::') {
-    Warn "Use HTTPS via a reverse proxy (Caddy/Nginx) for shared/network deployments. SQLite web mode requires --workers 1."
+  if ($BindHost -eq '0.0.0.0' -or $BindHost -eq '::' -or ($BindHost -ne '127.0.0.1' -and $BindHost -ne 'localhost' -and $BindHost -ne '::1')) {
+    Warn "Use HTTPS via a reverse proxy (Caddy/Nginx) or VPN for shared/network deployments. SQLite web mode requires --workers 1."
   }
 
   Refresh-PathEnv
@@ -117,7 +120,7 @@ try {
   if (Test-Path (Join-Path $InstallDir '.git')) {
     Log "Updating repo in $InstallDir (data-preserving)"
     if (Test-Path (Join-Path $InstallDir '.git\index.lock')) {
-      Warn "Found stale .git\\index.lock; removing it (if another git process is running, stop it and retry)."
+      Warn "Found stale .git\index.lock; removing it (if another git process is running, stop it and retry)."
       try { Remove-Item (Join-Path $InstallDir '.git\index.lock') -Force -ErrorAction SilentlyContinue } catch {}
     }
     try { git -C $InstallDir merge --abort *> $null } catch {}

@@ -1,5 +1,5 @@
 #!/bin/sh
-# Dynamic setup/deploy script for property-manager-tui.
+# Dynamic setup/deploy script for Property Manager (web-only).
 # Detects environment (iSH/Alpine, Termux, Debian/Ubuntu, macOS, generic Linux)
 # and installs dependencies + prepares/runs the Web UI.
 #
@@ -22,7 +22,7 @@ REPO_URL="${REPO_URL:-https://github.com/Michaelhehelmy/property-manager-tui.git
 INSTALL_DIR="${INSTALL_DIR:-$HOME/property-manager-tui}"
 BRANCH="${BRANCH:-main}"
 GIT_REF="${GIT_REF:-${TAG:-${COMMIT:-$BRANCH}}}"
-MODE="${MODE:-auto}"                # auto|web (tui/both map to web)
+MODE="${MODE:-auto}"                # auto|web (legacy tui/both map to web)
 ACTION="${ACTION:-setup}"           # auto|setup|run|deploy
 SKIP_WEB="${SKIP_WEB:-auto}"        # auto|0|1
 INSTALL_DEV="${INSTALL_DEV:-0}"
@@ -76,7 +76,8 @@ detect_env() {
   if command -v brew >/dev/null 2>&1 && [ "$PMGR" = "" ]; then PMGR="brew"; fi
 
   if [ "$SKIP_WEB" = "auto" ]; then SKIP_WEB=0; fi
-  case "$MODE" in auto|tui|both|"") MODE="web" ;; esac
+  # Legacy modes mapped to web-only (TUI deprecated/removed)
+  case "$MODE" in auto|web|tui|both|"") MODE="web" ;; esac
   log "Environment: OS=$OS ARCH=$ARCH pkg=$PMGR ish=$IS_ISH alpine=$IS_ALPINE termux=$IS_TERMUX debian=$IS_DEBIAN mac=$IS_MAC"
   log "Selected: MODE=$MODE ACTION=$ACTION SKIP_WEB=$SKIP_WEB HOST=$HOST PORT=$PORT ref=$GIT_REF"
 }
@@ -188,24 +189,22 @@ setup_venv_and_deps() {
   . .venv/bin/activate
   python -m pip install --upgrade pip setuptools wheel || warn "pip bootstrap upgrade failed; continuing..."
 
-  log "Installing runtime dependencies..."
+  log "Installing runtime/core dependencies..."
   if [ -f requirements.txt ]; then
     python -m pip install -r requirements.txt
   else
-    python -m pip install "textual>=0.47"
+    warn "requirements.txt not found; continuing without legacy TUI dependency install (web-only app)."
   fi
 
-  if [ "$SKIP_WEB" = "1" ] || [ "$MODE" = "tui" ]; then
-    if [ "$MODE" = "tui" ] && [ "$SKIP_WEB" = "auto" ]; then SKIP_WEB=1; fi
-    log "Skipping web dependencies (MODE=$MODE SKIP_WEB=$SKIP_WEB)."
+  if [ "$SKIP_WEB" = "1" ]; then
+    log "Skipping web dependencies (SKIP_WEB=1). Web UI will be unavailable until web deps are installed."
   elif [ -f requirements-web.txt ]; then
     log "Installing web dependencies..."
     if ! python -m pip install -r requirements-web.txt; then
-      warn "Web dependency installation failed. Core/TUI can still be used."
+      warn "Web dependency installation failed. Web UI requires web dependencies."
       warn "Constrained environments (iSH/Termux/older CPU archs, limited build toolchains): some packages (e.g. pydantic-core) may require Rust/cargo or a prebuilt wheel for your Python version/architecture."
-      warn "Fallback: re-run with SKIP_WEB=1 MODE=tui (or ACTION=setup SKIP_WEB=1). If web is required, install build deps/Rust, use a supported Python version with wheels, or run the web UI on a fuller host."
+      warn "Install build deps/Rust and retry, or run the web UI on a supported host. To continue core setup only, rerun with SKIP_WEB=1 ACTION=setup."
       SKIP_WEB=1
-      [ "$MODE" = "both" ] && MODE="tui"
     fi
   fi
 
@@ -273,10 +272,9 @@ run_deploy() {
   export PYTHONPATH="$INSTALL_DIR/src:$INSTALL_DIR${PYTHONPATH:+:$PYTHONPATH}"
   validate_web_target
   case "$MODE" in
-
-    web|tui|both|auto)
+    web|auto|tui|both)
       if [ "$SKIP_WEB" = "1" ]; then
-        err "Web deps were skipped; cannot start web mode. Re-run with SKIP_WEB=0 MODE=web ACTION=setup."
+        err "Web dependencies are not installed/skipped; cannot start web UI. Re-run with SKIP_WEB=0 ACTION=setup."
         exit 1
       fi
       print_security_guidance
@@ -284,8 +282,10 @@ run_deploy() {
       log "Runtime data (DB/exports/invoices/PM_DATA_DIR) is preserved. Health: python3 -m app_core.doctor"
       exec python3 -m uvicorn ui.web.server:app --host "$HOST" --port "$PORT" --workers 1
       ;;
-
-
+    *)
+      err "Unknown MODE=$MODE (supported: web; legacy tui/both map to web)"
+      exit 1
+      ;;
   esac
 }
 

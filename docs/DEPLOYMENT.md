@@ -38,13 +38,13 @@ Use the OS-appropriate one-liner from `README.md` (Unix `scripts/install.sh`, Wi
 
 ### 4.2 Setup scripts (from checkout)
 - **Unix-like:** `sh scripts/setup.sh` (alias `scripts/setup_ish_alpine.sh`)
-  - `MODE=auto|tui|web|both`, `ACTION=auto|setup|run|deploy`, `SKIP_WEB=auto|0|1`
+  - `MODE=auto|web (legacy tui/both map to web)`, `ACTION=auto|setup|run|deploy`, `SKIP_WEB=auto|0|1`
   - Examples:
     - `MODE=web ACTION=deploy SKIP_WEB=1 sh scripts/setup.sh`
     - `MODE=web HOST=127.0.0.1 PORT=8000 ACTION=deploy sh scripts/setup.sh`
     - `MODE=web HOST=0.0.0.0 PORT=8000 ACTION=deploy sh scripts/setup.sh` (LAN; set secret)
 - **Windows:** `scripts/install_windows.ps1` or `scripts/setup_windows.ps1` / `.cmd`
-  - `-Action setup|run|deploy`, `-Mode auto|tui|web|both`, `-BindHost`, `-Port`, `-SkipWeb`, `-InstallDev`, `-RunTests`
+  - `-Action setup|run|deploy`, `-Mode auto|web (legacy tui/both map to web)`, `-BindHost`, `-Port`, `-SkipWeb`, `-InstallDev`, `-RunTests`
   - Example: `powershell -ExecutionPolicy Bypass -File scripts\setup_windows.ps1 -Action deploy -Mode web -BindHost 127.0.0.1 -Port 8000`
 
 ### 4.3 Manual run

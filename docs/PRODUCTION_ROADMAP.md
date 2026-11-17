@@ -30,7 +30,7 @@ Concise, factual roadmap/checklist for hardening and operating this repository i
 ## P3 — Continuous improvement (as needed)
 
 - [ ] **Documentation upkeep:** keep README and `docs/*` aligned with implementation (authz/CSRF enforcement, probes, update/restore behavior, platform constraints).
-- [ ] **Platform/dependency resilience:** validate constrained-environment fallbacks (e.g. web-only-environment when web deps fail), dependency refresh practices, and reproducible installs.
+- [ ] **Platform/dependency resilience:** validate constrained-environment fallbacks (e.g. constrained environment (web deps/toolchain unavailable) when web deps fail), dependency refresh practices, and reproducible installs.
 - [ ] **Audit and refinement:** periodically review route/authz matrix, backup/restore drill outcomes, monitoring coverage, and operational pain points; prioritize fixes that reduce data-loss and availability risk.
 
 ## References

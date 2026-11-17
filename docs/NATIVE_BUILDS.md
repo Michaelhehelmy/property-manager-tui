@@ -91,7 +91,7 @@ See `.github/workflows/release-native.yml` for a matrix workflow scaffold that b
 
 ## Testing checklist for packaged builds
 
-- [ ] Launch Web UI and Web modes on a clean target machine
+- [ ] Launch the Web UI on a clean target machine (web-only app)
 - [ ] Verify templates/static load correctly in web mode
 - [ ] Confirm `PM_DATA_DIR`/default data dir is writable and external to bundle
 - [ ] Run with `--workers 1` for web; test unlock/CSRF/core flows

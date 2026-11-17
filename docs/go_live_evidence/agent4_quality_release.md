@@ -17,7 +17,7 @@
 ## Planned tasks
 - [ ] Add/restore CI workflow with required gates (lint, full tests, web/integration/invariant, coverage threshold/ratchet)
 - [ ] Re-run full regression on RC and confirm CI green
-- [ ] E2E critical journeys (web + TUI headless where applicable): unlock, reservations lifecycle, POS/batches/FEFO/expiry/labels, payments/refunds/voids, invoices/exports/downloads, settings/seed/backup/update checks
+- [ ] E2E critical journeys (web UI): unlock, reservations lifecycle, POS/batches/FEFO/expiry/labels, payments/refunds/voids, invoices/exports/downloads, settings/seed/backup/update checks (legacy TUI removed)
 - [ ] Negative/security E2E: unauthorized/locked, CSRF invalid, path traversal, malformed inputs
 - [ ] Stress/concurrency smoke under `--workers 1`
 - [ ] Performance smoke on target-class hardware

@@ -1,10 +1,10 @@
 <#
 .SYNOPSIS
-Dynamic setup/deploy script for property-manager on Windows.
+Dynamic setup/deploy script for Property Manager on Windows (web-only).
 
 .DESCRIPTION
 Auto-bootstraps prerequisites (best-effort winget), clones/updates repo (optional pinned ref),
-creates .venv, installs deps, and can run Web UI.
+creates .venv, installs deps, and can run the Web UI.
 
 Idempotent and data-preserving: never deletes DB/exports/invoices/PM_DATA_DIR.
 Web mode is SQLite-safe only with --workers 1.
@@ -13,7 +13,7 @@ Web mode is SQLite-safe only with --workers 1.
 auto | setup | run | deploy  (deploy = setup + run). Default: setup
 
 .PARAMETER Mode
-auto | web. Default: auto (tui/both map to web)
+auto | web. Default: auto (legacy tui/both map to web)
 
 .PARAMETER SkipWeb
 auto | 0 | 1. Default: auto (0 on Windows)
@@ -32,8 +32,8 @@ param(
   [string]$Action = $(if ($env:ACTION) { $env:ACTION } else { 'setup' }),
   [string]$Mode = $(if ($env:MODE) { $env:MODE } else { 'auto' }),
   [string]$SkipWeb = $(if ($env:SKIP_WEB) { $env:SKIP_WEB } else { 'auto' }),
-  [string]$InstallDir = $(if ($env:INSTALL_DIR) { $env:INSTALL_DIR } else { (Join-Path $HOME 'property-manager') }),
-  [string]$RepoUrl = $(if ($env:REPO_URL) { $env:REPO_URL } else { 'https://github.com/Michaelhehelmy/property-manager.git' }),
+  [string]$InstallDir = $(if ($env:INSTALL_DIR) { $env:INSTALL_DIR } else { (Join-Path $HOME 'property-manager-tui') }),
+  [string]$RepoUrl = $(if ($env:REPO_URL) { $env:REPO_URL } else { 'https://github.com/Michaelhehelmy/property-manager-tui.git' }),
   [string]$Branch = $(if ($env:BRANCH) { $env:BRANCH } else { 'main' }),
   [string]$GitRef = $(if ($env:GIT_REF) { $env:GIT_REF } elseif ($env:TAG) { $env:TAG } elseif ($env:COMMIT) { $env:COMMIT } elseif ($env:BRANCH) { $env:BRANCH } else { 'main' }),
   [string]$BindHost = $(if ($env:HOST) { $env:HOST } else { '127.0.0.1' }),
@@ -188,7 +188,7 @@ function Clone-Or-Update([string]$git) {
     Log "Updating existing repo in $InstallDir (data-preserving)"
     $lock = Join-Path $InstallDir '.git\index.lock'
     if (Test-Path $lock) {
-      Warn "Found stale .git\\index.lock; removing it (if another git process is running, stop it and retry)."
+      Warn "Found stale .git\index.lock; removing it (if another git process is running, stop it and retry)."
       try { Remove-Item $lock -Force -ErrorAction SilentlyContinue } catch {}
     }
     try { & git -C $InstallDir merge --abort *> $null } catch {}
@@ -254,30 +254,28 @@ function Ensure-Venv-And-Deps([string]$py) {
   try { & $venvPy -m pip install --upgrade pip setuptools wheel } catch { Warn "pip upgrade failed: $($_.Exception.Message)" }
 
   if (Test-Path (Join-Path $InstallDir 'requirements.txt')) {
-    Log "Installing runtime dependencies (requirements.txt)..."
+    Log "Installing runtime/core dependencies (requirements.txt)..."
     & $venvPy -m pip install -r requirements.txt
     if ($LASTEXITCODE -ne 0) { throw "Failed to install requirements.txt" }
   } else {
-    Log "Installing core dependency (textual)..."
-    & $venvPy -m pip install 'textual>=0.47'
+    Warn "requirements.txt not found; continuing without legacy TUI dependency install (web-only app)."
   }
 
   $doWeb = $true
-  if ($SkipWeb -eq '1' -or $Mode -eq 'web') { $doWeb = $false }
+  if ($SkipWeb -eq '1') { $doWeb = $false }
   if ($SkipWeb -eq '0') { $doWeb = $true }
 
   if ($doWeb -and (Test-Path (Join-Path $InstallDir 'requirements-web.txt'))) {
     Log "Installing web dependencies (requirements-web.txt)..."
     & $venvPy -m pip install -r requirements-web.txt
     if ($LASTEXITCODE -ne 0) {
-      Warn "Web dependency installation failed. Core/Web UI can still be used. Retry with -SkipWeb 0 -Mode web."
+      Warn "Web dependency installation failed. Web UI requires web dependencies."
       Warn "On constrained environments/toolchains, some packages (e.g. pydantic-core) may require Rust/build tools or a prebuilt wheel for your Python version/architecture."
-      Warn "Fallback: use Web UI-only (-SkipWeb 0 -Mode web). If web is required, install build prerequisites or run the web UI on a supported host."
+      Warn "Install build prerequisites and retry, or run on a supported host. To continue core setup only: -SkipWeb 1 -Action setup."
       $script:SkipWeb = '1'
-      if ($script:Mode -eq 'both') { $script:Mode = 'web' }
     }
   } elseif (-not $doWeb) {
-    Log "Skipping web dependencies (Mode=$Mode SkipWeb=$SkipWeb)."
+    Log "Skipping web dependencies (SkipWeb=$SkipWeb). Web UI will be unavailable until web deps are installed."
   }
 
   if ($InstallDev) {
@@ -317,20 +315,17 @@ Run (PowerShell):
   Set-Location "$InstallDir"
   .\.venv\Scripts\Activate.ps1
 
-  # Web UI (local terminal)
-  python launcher.py --web --web
-
-  # Web server (client/server; SQLite-safe: ALWAYS --workers 1)
+  # Web UI (SQLite-safe: ALWAYS --workers 1)
   `$env:PM_WEB_SECRET_KEY = 'replace-with-a-long-random-secret'
-  python -m uvicorn ui.web.server:app --host $BindHost --port $Port --workers 1
+  python launcher.py --web --host $BindHost --port $Port
+  # or: python -m uvicorn ui.web.server:app --host $BindHost --port $Port --workers 1
 
 Tips / Ops:
   - Same device browser: HOST=127.0.0.1 -> http://127.0.0.1:$Port
   - LAN/other devices: use -BindHost 0.0.0.0, set a strong `$env:PM_WEB_SECRET_KEY`, and terminate HTTPS via reverse proxy (Caddy/Nginx/Traefik). Keep web on --workers 1 (SQLite).
   - Runtime data is preserved: DB, exports, invoices, and PM_DATA_DIR are never deleted by setup/update scripts.
   - Updates (git): Settings → App updates (fast-forward) or git pull --ff-only + re-run -Action setup; restart after updates.
-  - Pinned/reproducible install: set -GitRef <tag|commit|branch> (or GIT_REF/TAG/COMMIT env). Bootstrap from raw/<ref>/scripts/install_windows.ps1 for a fixed script version.
-  - If web deps fail (e.g. pydantic-core/Rust wheel/build issues), fallback to Web UI-only: -SkipWeb 0 -Mode web.
+  - Pinned/reproducible install: set -GitRef <tag|commit|branch> (or GIT_REF/TAG/COMMIT env).
   - Health: python -m app_core.doctor --json (probes: /health, /healthz)
   - Backup/verify: python scripts/backup_runtime.py --backup  |  --verify <backup.db>
   - Deployment examples: deploy\ (systemd/Caddy/Nginx), Dockerfile, docker-compose.yml
@@ -345,31 +340,24 @@ function Run-Deploy {
   if (-not (Test-Path $venvPy)) { throw "Install not found at $InstallDir. Run with -Action setup or -Action auto first." }
   $env:PYTHONPATH = "$(Join-Path $InstallDir 'src');$InstallDir$([IO.Path]::PathSeparator)$($env:PYTHONPATH)"
   Validate-WebTarget
-  switch ($Mode) {
-    'web'  { Log "Launching Web UI..."; & $venvPy launcher.py --web; exit $LASTEXITCODE }
-    'web'  {
-      if ($SkipWeb -eq '1') { throw "Web deps were skipped; cannot start web mode. Re-run with -SkipWeb 0 -Mode web." }
-      Print-SecurityGuidance
-      Log "Launching Web server on ${BindHost}:${Port} (workers=1)..."
-      Log "Runtime data (DB/exports/invoices/PM_DATA_DIR) is preserved. Health: python -m app_core.doctor"
-      & $venvPy -m uvicorn ui.web.server:app --host $BindHost --port $Port --workers 1
-      exit $LASTEXITCODE
-    }
-    'both' { Log "Launching launcher (choose Web UI/Web)..."; & $venvPy launcher.py; exit $LASTEXITCODE }
-    'auto' { Log "Launching launcher (choose Web UI/Web)..."; & $venvPy launcher.py; exit $LASTEXITCODE }
-    default { throw "Unknown Mode '$Mode' (use auto|tui|web|both)" }
-  }
+  if ($SkipWeb -eq '1') { throw "Web dependencies are not installed/skipped; cannot start web UI. Re-run with -SkipWeb 0 -Action setup." }
+  Print-SecurityGuidance
+  Log "Launching Web server on ${BindHost}:${Port} (workers=1)..."
+  Log "Runtime data (DB/exports/invoices/PM_DATA_DIR) is preserved. Health: python -m app_core.doctor"
+  & $venvPy -m uvicorn ui.web.server:app --host $BindHost --port $Port --workers 1
+  exit $LASTEXITCODE
 }
 
 # --- main ---
 try {
   if ($SkipWeb -eq 'auto') { $SkipWeb = '0' }
-  if ($Mode -eq 'auto' -or $Mode -eq 'tui' -or $Mode -eq 'both') { $Mode = 'web' }
+  # Legacy modes mapped to web-only (TUI deprecated/removed)
+  if ($Mode -eq 'auto' -or $Mode -eq 'web' -or $Mode -eq 'tui' -or $Mode -eq 'both' -or -not $Mode) { $Mode = 'web' }
   $script:SkipWeb = $SkipWeb
   $script:Mode = $Mode
   $script:InstallDir = $InstallDir
 
-  Log "Windows setup for property-manager"
+  Log "Windows setup for Property Manager (web-only)"
   Log "Action=$Action Mode=$Mode SkipWeb=$SkipWeb Host=$BindHost Port=$Port Ref=$GitRef"
   Log "InstallDir=$InstallDir"
   Validate-WebTarget
@@ -402,7 +390,8 @@ try {
     }
     'setup' {
       $scriptRoot = if ($PSScriptRoot) { Split-Path -Parent $PSScriptRoot } else { '' }
-      if ($scriptRoot -and (Test-Path (Join-Path $scriptRoot 'launcher.py')) -and ($InstallDir -eq (Join-Path $HOME 'property-manager'))) {
+      $defaultInstall = Join-Path $HOME 'property-manager-tui'
+      if ($scriptRoot -and (Test-Path (Join-Path $scriptRoot 'launcher.py')) -and ($InstallDir -eq $defaultInstall)) {
         $InstallDir = $scriptRoot
         $script:InstallDir = $InstallDir
         Log "Detected repo checkout; using InstallDir=$InstallDir"
@@ -439,7 +428,8 @@ try {
     }
     'deploy' {
       $scriptRoot = if ($PSScriptRoot) { Split-Path -Parent $PSScriptRoot } else { '' }
-      if ($scriptRoot -and (Test-Path (Join-Path $scriptRoot 'launcher.py')) -and (-not (Test-Path (Join-Path $InstallDir '.git')))) {
+      $defaultInstall = Join-Path $HOME 'property-manager-tui'
+      if ($scriptRoot -and (Test-Path (Join-Path $scriptRoot 'launcher.py')) -and (-not (Test-Path (Join-Path $InstallDir '.git'))) -and ($InstallDir -eq $defaultInstall)) {
         $InstallDir = $scriptRoot
         $script:InstallDir = $InstallDir
       }

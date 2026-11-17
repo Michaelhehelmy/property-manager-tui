@@ -2,7 +2,7 @@
 
 **Project:** `property-manager-tui` (shared `src/app_core/` backend with FastAPI/HTMX web `ui/web`)  
 **Assistant focus:** grounded, **read-only** manager/business-partner helper over real backend data  
-**Effort credited to:** Michael Helmy (`Michaelhehelmy`) — design, implementation, iteration, and integration across backend, TUI, web, NLU/learning, and deployment  
+**Effort credited to:** Michael Helmy (`Michaelhehelmy`) — design, implementation, iteration, and integration across backend, web, NLU/learning, and deployment (legacy TUI removed).  
 **Document date:** 2026-11-13  
 **Resource constraint (planning):** < 400 MB total budget for assistant model/assets/runtime (on top of base app), favoring lightweight/local options
 
@@ -63,8 +63,8 @@ The table below summarizes cumulative effort to build and mature the assistant a
 
 | Phase / Date | Effort (what was done) | Key components / areas | Outcome & impact |
 |---|---|---|---|
-| **Foundation & app structure** (2026-11-09) | Initial core/TUI, restructuring into `src/app_core` + `ui/tui` + `ui/web`, launcher, FastAPI+HTMX web UI | `app_core`, `ui/*`, launcher | Shared backend with web frontend; base for grounded assistant |
-| **Quality, reliability & health** (2026-11-09) | High test coverage for core/UI, fixes, health probes `GET /health`, `/healthz` | `tests/*`, web/TUI fixes | Testable backend and observable web runtime |
+| **Foundation & app structure** (2026-11-09) | Initial core/UI structure and shared backend + FastAPI/HTMX web UI (legacy TUI later removed) | `app_core`, `ui/web`, launcher | Shared backend with web frontend; base for grounded assistant |
+| **Quality, reliability & health** (2026-11-09) | High test coverage for core/UI, fixes, health probes `GET /health`, `/healthz` | `tests/*`, web UI fixes | Testable backend and observable web runtime |
 | **Domain depth** (2026-11-09–10) | Ledger integrity, POS/inventory/ingredients, recipes/BOM, meals with auto-deduction and sync | `db.py`, `services.py`, UIs | Rich operational data for grounded queries |
 | **Policy, safety & data lifecycle** (2026-11-10) | Reservation/payment/void/refund policy guards, seed/master-data lifecycle | services/routes/UI | Auditable rules; assistant remains read-only and aligned |
 | **Seeding & setup/portability** (2026-11-10) | Seed export/import, room/rate-plan/master-data flows, dynamic setup scripts for Unix/Windows | services, Settings UIs, `scripts/*` | Reproducible install/run and manageable master data |

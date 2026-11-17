@@ -99,7 +99,7 @@
         <h2>Native build or script installer</h2>
         <pre><code>curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh | sh</code></pre>
         <pre><code>wget -qO- https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh | sh</code></pre>
-        <p class="muted" style="margin-top:8px;">Re-run to update. Recovery: <code>REPAIR=1</code>. web-only-environment: <code>| MODE=web sh</code>. Web: <code>| MODE=web HOST=127.0.0.1 PORT=8000 PM_WEB_SECRET_KEY="$(openssl rand -hex 32)" sh</code>.</p>
+        <p class="muted" style="margin-top:8px;">Re-run to update. Recovery: <code>REPAIR=1</code>. constrained environment (web deps/toolchain unavailable): <code>| MODE=web sh</code>. Web: <code>| MODE=web HOST=127.0.0.1 PORT=8000 PM_WEB_SECRET_KEY="$(openssl rand -hex 32)" sh</code>.</p>
       </article>
 
       <article class="card os-card" data-os="android">
@@ -124,7 +124,7 @@ curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui
       <ul>
         <li><strong>Native builds:</strong> download the asset for your OS/arch from the latest GitHub Release, verify/checksum if provided, then run/install. Native bundles still preserve runtime data in configured data dirs; follow release notes for update/replace steps.</li>
         <li><strong>Script installs:</strong> re-run the same command to update (git fast-forward + deps refresh) and launch. Recovery for stuck git state: <code>REPAIR=1</code> (Unix/Termux) or <code>$env:REPAIR='1'</code> (Windows).</li>
-        <li><strong>Run manually:</strong> <code>cd ~/property-manager-tui &amp;&amp; . .venv/bin/activate &amp;&amp; python3 launcher.py</code> (or <code>--web</code> / <code>--web</code>).</li>
+        <li><strong>Run manually:</strong> <code>cd ~/property-manager-tui &amp;&amp; . .venv/bin/activate &amp;&amp; python3 launcher.py --web</code> (or <code>python3 -m uvicorn ui.web.server:app --host 127.0.0.1 --port 8000 --workers 1</code>).</li>
         <li><strong>Web on LAN/phones:</strong> bind <code>0.0.0.0</code>, set strong <code>PM_WEB_SECRET_KEY</code>, run with <code>--workers 1</code> (SQLite). Use <strong>HTTPS</strong> (reverse proxy/VPN/private network) for shared/remote access.</li>
         <li><strong>Updates &amp; data:</strong> in-app Settings → App updates (git installs), or re-run installer, or download newer native release; runtime data (DB/exports/invoices/<code>PM_DATA_DIR</code>) is preserved.</li>
       </ul>
@@ -184,19 +184,19 @@ curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui
           title: 'Windows — install / update / launch',
           desc: 'Use a native Windows build from Releases when available, or the PowerShell installer (5.1+/7+, bootstraps Python/Git via winget when needed). Re-run to update. Use REPAIR=1 for stuck git checkouts.',
           cmd: 'irm https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install_windows.ps1 | iex',
-          alt: 'Native: download the Windows asset below (if published). Recovery: $env:REPAIR=\'1\'; irm ... | iex  |  Web UI: $env:MODE=\'tui\'  |  Web: $env:MODE=\'web\'; $env:HOST=\'127.0.0.1\'; $env:PORT=\'8000\'; $env:PM_WEB_SECRET_KEY=\'<strong-random>\''
+          alt: 'Native: download the Windows asset below (if published). Recovery: $env:REPAIR=\'1\'; irm ... | iex  |  Web (local): default  |  Web (LAN): $env:MODE=\'web\'; $env:HOST=\'0.0.0.0\'; $env:PORT=\'8000\'; $env:PM_WEB_SECRET_KEY=\'<strong-random>\''
         },
         linux: {
           title: 'Linux / macOS / WSL — install / update / launch',
           desc: 'Use a native build from Releases when available, or the script installer. Re-run to update. Use REPAIR=1 for stuck git checkouts.',
           cmd: 'curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh | sh',
-          alt: 'wget fallback available. Recovery: REPAIR=1. web-only-environment: ... | MODE=web sh  |  Web: ... | MODE=web HOST=127.0.0.1 PORT=8000 PM_WEB_SECRET_KEY="$(openssl rand -hex 32)" sh'
+          alt: 'wget fallback available. Recovery: REPAIR=1. constrained environment (web deps/toolchain unavailable): ... | MODE=web sh  |  Web: ... | MODE=web HOST=127.0.0.1 PORT=8000 PM_WEB_SECRET_KEY="$(openssl rand -hex 32)" sh'
         },
         macos: {
           title: 'macOS — install / update / launch',
           desc: 'Use a native macOS build from Releases when available (x64/arm64), or the script installer. Re-run to update. Use REPAIR=1 for stuck git checkouts.',
           cmd: 'curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh | sh',
-          alt: 'Native: download the macOS asset below (if published). web-only-environment: ... | MODE=web sh'
+          alt: 'Native: download the macOS asset below (if published). constrained environment (web deps/toolchain unavailable): ... | MODE=web sh'
         },
         android: {
           title: 'Android (Termux) — install / update / launch',
