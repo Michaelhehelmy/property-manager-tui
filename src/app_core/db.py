@@ -16,7 +16,7 @@ from . import paths
 DATA_DIR = paths.DATA_DIR
 BASE_DIR = paths.BASE_DIR
 DB_PATH = paths.DB_PATH
-SCHEMA_VERSION = 12
+SCHEMA_VERSION = 13
 
 _conn = None
 _lock = threading.RLock()
@@ -488,6 +488,41 @@ CREATE TABLE expense_categories (
     category_name TEXT NOT NULL UNIQUE
 );
 
+
+CREATE TABLE discount_vouchers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    code TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL DEFAULT '',
+    description TEXT NOT NULL DEFAULT '',
+    discount_type TEXT NOT NULL DEFAULT 'amount',
+    value REAL NOT NULL DEFAULT 0,
+    max_uses INTEGER,
+    used_count INTEGER NOT NULL DEFAULT 0,
+    valid_from TEXT NOT NULL DEFAULT '',
+    valid_to TEXT NOT NULL DEFAULT '',
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX idx_discount_vouchers_active ON discount_vouchers(active);
+
+CREATE TABLE reservation_discounts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    reservation_id INTEGER NOT NULL,
+    voucher_id INTEGER,
+    description TEXT NOT NULL,
+    discount_type TEXT NOT NULL DEFAULT 'amount',
+    value REAL NOT NULL DEFAULT 0,
+    amount REAL NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'applied',
+    voided_at TEXT,
+    notes TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    applied_at TEXT,
+    FOREIGN KEY (reservation_id) REFERENCES reservations(id),
+    FOREIGN KEY (voucher_id) REFERENCES discount_vouchers(id)
+);
+CREATE INDEX idx_res_discounts_res ON reservation_discounts(reservation_id);
+
 CREATE TABLE operational_expenses (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     category_id INTEGER NOT NULL,
@@ -508,10 +543,14 @@ CREATE TABLE payments (
     method TEXT NOT NULL,
     payment_type TEXT NOT NULL DEFAULT 'Payment',
     notes TEXT NOT NULL DEFAULT '',
+    idempotency_key TEXT NOT NULL DEFAULT '',
+    allocation_json TEXT NOT NULL DEFAULT '{}',
+    reference TEXT NOT NULL DEFAULT '',
     voided_at TEXT,
     at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
     FOREIGN KEY (reservation_id) REFERENCES reservations(id)
 );
+CREATE INDEX IF NOT EXISTS idx_payments_idempotency ON payments(idempotency_key);
 CREATE INDEX idx_payments_res ON payments(reservation_id);
 
 CREATE TABLE general_ledger (
@@ -857,6 +896,61 @@ def _migrate_to_12(conn):
         """)
 
 
+
+def _migrate_to_13(conn):
+    # P2: discounts/vouchers and payment hardening fields (additive)
+    if not _table_exists(conn, "discount_vouchers"):
+        conn.executescript("""
+        CREATE TABLE IF NOT EXISTS discount_vouchers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code TEXT NOT NULL UNIQUE,
+            name TEXT NOT NULL DEFAULT '',
+            description TEXT NOT NULL DEFAULT '',
+            discount_type TEXT NOT NULL DEFAULT 'amount',
+            value REAL NOT NULL DEFAULT 0,
+            max_uses INTEGER,
+            used_count INTEGER NOT NULL DEFAULT 0,
+            valid_from TEXT NOT NULL DEFAULT '',
+            valid_to TEXT NOT NULL DEFAULT '',
+            active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_discount_vouchers_active ON discount_vouchers(active);
+        """)
+    if not _table_exists(conn, "reservation_discounts"):
+        conn.executescript("""
+        CREATE TABLE IF NOT EXISTS reservation_discounts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            reservation_id INTEGER NOT NULL,
+            voucher_id INTEGER,
+            description TEXT NOT NULL,
+            discount_type TEXT NOT NULL DEFAULT 'amount',
+            value REAL NOT NULL DEFAULT 0,
+            amount REAL NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'applied',
+            voided_at TEXT,
+            notes TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            applied_at TEXT,
+            FOREIGN KEY (reservation_id) REFERENCES reservations(id),
+            FOREIGN KEY (voucher_id) REFERENCES discount_vouchers(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_res_discounts_res ON reservation_discounts(reservation_id);
+        """)
+    if _table_exists(conn, "payments"):
+        cols = _table_columns(conn, "payments")
+        for col, decl in (
+            ("idempotency_key", "TEXT NOT NULL DEFAULT ''"),
+            ("allocation_json", "TEXT NOT NULL DEFAULT '{}'"),
+            ("reference", "TEXT NOT NULL DEFAULT ''"),
+        ):
+            _ensure_column(conn, "payments", col, decl, cols)
+        try:
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_payments_idempotency ON payments(idempotency_key)")
+        except Exception:
+            pass
+
+
 def migrate():
     """Create or upgrade schema to SCHEMA_VERSION.
 
@@ -910,6 +1004,8 @@ def migrate():
                     _migrate_to_11(conn)
                 if version < 12:
                     _migrate_to_12(conn)
+                if version < 13:
+                    _migrate_to_13(conn)
                 conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
                 ensure_runtime_indexes(conn)
                 _record_migration_meta(conn, status="upgraded", from_version=from_version, to_version=SCHEMA_VERSION)

@@ -725,7 +725,7 @@ def _ledger_scalar(conn, expr, where, params=()):
 
 
 def _reservation_charge_net(conn, rid):
-    """Net accommodation + POS + extra service charge gross for a reservation (includes VOID_*)."""
+    """Net accommodation + POS + extra service + discount adjustment gross for a reservation (includes VOID_*)."""
     types = _net_types(("CHARGE",))
     ph = ",".join("?" * len(types))
     accom = _ledger_scalar(
@@ -743,7 +743,12 @@ def _reservation_charge_net(conn, rid):
         f"ref_type='RSVC' AND ref_id IN (SELECT id FROM reservation_services WHERE reservation_id=?) AND entry_type IN ({ph})",
         (rid, *types),
     )
-    return round((accom or 0) + (pos or 0) + (svc or 0), 2)
+    disc = _ledger_scalar(
+        conn, "SUM(gross)",
+        f"ref_type='DISC' AND ref_id IN (SELECT id FROM reservation_discounts WHERE reservation_id=?) AND entry_type IN ({ph})",
+        (rid, *types),
+    )
+    return round((accom or 0) + (pos or 0) + (svc or 0) + (disc or 0), 2)
 
 
 def _reservation_charge_components(conn, rid):
@@ -779,6 +784,17 @@ def _reservation_charge_components(conn, rid):
         "ref_type='RSVC' AND ref_id IN (SELECT id FROM reservation_services WHERE reservation_id=?)",
         (rid,),
     )
+    disc_net = q(
+        "net",
+        "ref_type='DISC' AND ref_id IN (SELECT id FROM reservation_discounts WHERE reservation_id=?)",
+        (rid,),
+    )
+    disc_gross = q(
+        "gross",
+        "ref_type='DISC' AND ref_id IN (SELECT id FROM reservation_discounts WHERE reservation_id=?)",
+        (rid,),
+    )
+    total = round(accom_gross + pos_gross + svc_gross + disc_gross, 2)
     return {
         "accommodation_net": round(accom_net, 2),
         "accommodation_gross": round(accom_gross, 2),
@@ -789,7 +805,10 @@ def _reservation_charge_components(conn, rid):
         "services_net": round(svc_net, 2),
         "services_gross": round(svc_gross, 2),
         "services_tax": round(svc_gross - svc_net, 2),
-        "total_charges": round(accom_gross + pos_gross + svc_gross, 2),
+        "discounts_net": round(disc_net, 2),
+        "discounts_gross": round(disc_gross, 2),
+        "discounts_tax": round(disc_gross - disc_net, 2),
+        "total_charges": total,
     }
 
 
@@ -1674,6 +1693,7 @@ def _terminate_reservation_with_policy(rid, password, *, target_status, policy_s
         _reverse_charges_for_reservation(cur, rid)
         _void_pos_for_reservation(cur, rid)
         _reverse_reservation_services(cur, rid)
+        _reverse_reservation_discounts(cur, rid)
         if refund > 0:
             conn.execute("""INSERT INTO payments
                 (reservation_id, amount, method, payment_type, notes)
@@ -1994,9 +2014,12 @@ def delete_reservation(rid, password=None):
             raise ValueError("Cannot delete a reservation with POS items. Cancel instead.")
         if conn.execute("SELECT 1 FROM reservation_services WHERE reservation_id=? AND voided_at IS NULL AND status='posted'", (rid,)).fetchone():
             raise ValueError("Cannot delete a reservation with extra services. Cancel/void instead.")
+        if conn.execute("SELECT 1 FROM reservation_discounts WHERE reservation_id=? AND voided_at IS NULL AND status='applied'", (rid,)).fetchone():
+            raise ValueError("Cannot delete a reservation with discounts/adjustments. Cancel/void instead.")
         cur = conn.cursor()
         _reverse(cur, "RES", rid)
         _reverse_reservation_services(cur, rid)
+        _reverse_reservation_discounts(cur, rid)
         conn.execute("UPDATE reservations SET status='Deleted' WHERE id=?", (rid,))
     _audit("reservation_delete", "reservation", rid, "")
 
@@ -2188,6 +2211,165 @@ def _reverse_reservation_services(cur, reservation_id):
         _reverse(cur, "RSVC", r["id"], entry_type_filter=("CHARGE",))
         cur.execute("UPDATE reservation_services SET status='voided', voided_at=datetime('now','localtime') WHERE id=?", (r["id"],))
     return len(rows)
+
+
+def _reverse_reservation_discounts(cur, reservation_id):
+    rows = cur.execute(
+        "SELECT id FROM reservation_discounts WHERE reservation_id=? AND voided_at IS NULL AND status='applied'",
+        (int(reservation_id),),
+    ).fetchall()
+    for r in rows:
+        _reverse(cur, "DISC", r["id"], entry_type_filter=("CHARGE",))
+        cur.execute("UPDATE reservation_discounts SET status='voided', voided_at=datetime('now','localtime') WHERE id=?", (r["id"],))
+        vid = cur.execute("SELECT voucher_id FROM reservation_discounts WHERE id=?", (r["id"],)).fetchone()
+        if vid and vid["voucher_id"]:
+            cur.execute("UPDATE discount_vouchers SET used_count = MAX(0, used_count - 1) WHERE id=?", (vid["voucher_id"],))
+    return len(rows)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# DISCOUNTS / VOUCHERS (P2, additive)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def list_discount_vouchers(active_only=False):
+    q = "SELECT * FROM discount_vouchers"
+    if active_only:
+        q += " WHERE active=1"
+    q += " ORDER BY active DESC, id DESC"
+    return [dict(r) for r in db.connect().execute(q).fetchall()]
+
+
+def create_discount_voucher(code, discount_type="amount", value=0.0, name="", description="", max_uses=None, valid_from="", valid_to="", active=True):
+    code = (code or "").strip().upper()
+    if not code:
+        raise ValueError("Voucher code is required.")
+    discount_type = (discount_type or "amount").strip().lower()
+    if discount_type not in ("amount", "percent"):
+        discount_type = "amount"
+    try:
+        value = float(value or 0)
+    except Exception:
+        raise ValueError("Invalid discount value.")
+    if value <= 0:
+        raise ValueError("Discount value must be greater than 0.")
+    if discount_type == "percent" and value > 100:
+        raise ValueError("Percent discount cannot exceed 100.")
+    with db.transaction() as conn:
+        try:
+            cur = conn.execute(
+                """INSERT INTO discount_vouchers (code, name, description, discount_type, value, max_uses, valid_from, valid_to, active)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (code, (name or "").strip(), (description or "").strip(), discount_type, value,
+                 int(max_uses) if max_uses not in (None, "") else None, (valid_from or "").strip(), (valid_to or "").strip(), 1 if active else 0),
+            )
+            vid = cur.lastrowid
+        except Exception as e:
+            if "UNIQUE" in str(e).upper():
+                raise ValueError("A voucher with this code already exists.")
+            raise
+    _audit("discount_voucher_create", "discount_voucher", vid, code)
+    return vid
+
+
+def list_reservation_discounts(reservation_id):
+    rid = int(reservation_id)
+    rows = db.connect().execute(
+        """SELECT rd.*, dv.code AS voucher_code
+           FROM reservation_discounts rd
+           LEFT JOIN discount_vouchers dv ON dv.id = rd.voucher_id
+           WHERE rd.reservation_id=?
+           ORDER BY rd.id DESC""", (rid,)
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def apply_reservation_discount(reservation_id, amount=None, discount_type="amount", value=None, voucher_code=None, description="", notes="", password=None):
+    rid = int(reservation_id)
+    res = db.connect().execute("SELECT id, status FROM reservations WHERE id=?", (rid,)).fetchone()
+    if not res:
+        raise ValueError("Reservation not found.")
+    if res["status"] in ("Cancelled", "No-Show", "Deleted", "Checked Out"):
+        raise ValueError(f"Cannot apply discount to a '{res['status']}' reservation.")
+    voucher = None
+    code = (voucher_code or "").strip().upper()
+    if code:
+        voucher = db.connect().execute("SELECT * FROM discount_vouchers WHERE UPPER(code)=?", (code,)).fetchone()
+        if not voucher:
+            raise ValueError("Voucher not found.")
+        if not voucher["active"]:
+            raise ValueError("Voucher is inactive.")
+        mu = voucher["max_uses"]
+        if mu not in (None, "") and int(voucher["used_count"] or 0) >= int(mu):
+            raise ValueError("Voucher usage limit reached.")
+        vf = (voucher["valid_from"] or "").strip()
+        vt = (voucher["valid_to"] or "").strip()
+        today = datetime.now().strftime(DATE_FMT)
+        if vf and today < vf:
+            raise ValueError("Voucher is not valid yet.")
+        if vt and today > vt:
+            raise ValueError("Voucher has expired.")
+        discount_type = voucher["discount_type"]
+        value = voucher["value"]
+        if not description:
+            description = f"Voucher {voucher['code']}"
+    discount_type = (discount_type or "amount").strip().lower()
+    if discount_type not in ("amount", "percent"):
+        discount_type = "amount"
+    try:
+        value = float(value if value is not None else amount or 0)
+    except Exception:
+        raise ValueError("Invalid discount value.")
+    if value <= 0:
+        raise ValueError("Discount value must be greater than 0.")
+    conn0 = db.connect()
+    comp = _reservation_charge_components(conn0, rid)
+    base = round(float(comp.get("accommodation_gross", 0) or 0) + float(comp.get("pos_gross", 0) or 0) + float(comp.get("services_gross", 0) or 0), 2)
+    if discount_type == "percent":
+        if value > 100:
+            raise ValueError("Percent discount cannot exceed 100.")
+        disc_amt = round(base * value / 100.0, 2)
+    else:
+        disc_amt = round(value, 2)
+    if disc_amt <= 0:
+        raise ValueError("Discount amount resolves to 0.")
+    max_disc = round(max(0.0, base + float(comp.get("discounts_gross") or 0)), 2)
+    if disc_amt > max_disc:
+        disc_amt = max_disc
+    if disc_amt <= 0:
+        raise ValueError("No charge amount available to discount.")
+    desc = (description or "Discount").strip() or "Discount"
+    with db.transaction() as conn:
+        cur = conn.execute(
+            """INSERT INTO reservation_discounts (reservation_id, voucher_id, description, discount_type, value, amount, status, notes, applied_at)
+               VALUES (?, ?, ?, ?, ?, ?, 'applied', ?, datetime('now','localtime'))""",
+            (rid, int(voucher["id"]) if voucher else None, desc, discount_type, value, disc_amt, (notes or "").strip()),
+        )
+        did = cur.lastrowid
+        _post(cur, "DISC", did, "CHARGE", "Discount",
+              -disc_amt, 0, 0, 0, "",
+              f"Discount Res #{rid}: {desc}")
+        if voucher:
+            conn.execute("UPDATE discount_vouchers SET used_count = used_count + 1 WHERE id=?", (voucher["id"],))
+    _audit("reservation_discount_apply", "reservation_discount", did, f"res={rid} amount={disc_amt}")
+    return did
+
+
+def void_reservation_discount(discount_id, password=None):
+    _require_super_password(password)
+    did = int(discount_id)
+    with db.transaction() as conn:
+        row = conn.execute("SELECT * FROM reservation_discounts WHERE id=?", (did,)).fetchone()
+        if not row:
+            raise ValueError("Discount not found.")
+        if row["voided_at"] or row["status"] == "voided":
+            return did
+        cur = conn.cursor()
+        _reverse(cur, "DISC", did, entry_type_filter=("CHARGE",))
+        conn.execute("UPDATE reservation_discounts SET status='voided', voided_at=datetime('now','localtime') WHERE id=?", (did,))
+        if row.get("voucher_id"):
+            conn.execute("UPDATE discount_vouchers SET used_count = MAX(0, used_count - 1) WHERE id=?", (row["voucher_id"],))
+    _audit("reservation_discount_void", "reservation_discount", did, f"res={row['reservation_id']}")
+    return did
 
 # ═══════════════════════════════════════════════════════════════════════════
 # BARCODES / BATCHES / TRACEABILITY
@@ -3385,49 +3567,73 @@ def restock_inventory(item_id, qty, unit_cost=0.0, password=""):
 # PAYMENTS
 # ═══════════════════════════════════════════════════════════════════════════
 
-def record_payment(reservation_id, amount, method, notes="", payment_type="Payment"):
+def record_payment(reservation_id, amount, method, notes="", payment_type="Payment", idempotency_key="", reference="", allocation_json="{}"):
     if amount <= 0:
         raise ValueError("Payment amount must be positive.")
     if reservation_id is not None and not isinstance(reservation_id, int):
         raise ValueError("Invalid reservation ID.")
-    if reservation_id is not None:
-        r = db.connect().execute("SELECT status FROM reservations WHERE id=?", (reservation_id,)).fetchone()
-        if not r:
-            raise ValueError("Reservation not found.")
-        if r["status"] in ("Cancelled", "No-Show", "Deleted", "Checked Out"):
-            raise ValueError(f"Cannot record payment on a '{r['status']}' reservation.")
+    idempotency_key = (idempotency_key or "").strip()
+    reference = (reference or "").strip()
+    allocation_json = allocation_json if isinstance(allocation_json, str) else json.dumps(allocation_json or {}, ensure_ascii=False)
     with db.transaction() as conn:
         cur = conn.cursor()
+        if idempotency_key:
+            existing = conn.execute(
+                "SELECT id FROM payments WHERE idempotency_key=? AND COALESCE(reservation_id,0)=COALESCE(?,0) AND voided_at IS NULL LIMIT 1",
+                (idempotency_key, reservation_id),
+            ).fetchone()
+            if existing:
+                return existing["id"]
+        if reservation_id is not None:
+            r = conn.execute("SELECT status FROM reservations WHERE id=?", (reservation_id,)).fetchone()
+            if not r:
+                raise ValueError("Reservation not found.")
+            if r["status"] in ("Cancelled", "No-Show", "Deleted", "Checked Out"):
+                raise ValueError(f"Cannot record payment on a '{r['status']}' reservation.")
         conn.execute("""INSERT INTO payments
-            (reservation_id, amount, method, payment_type, notes) VALUES (?, ?, ?, ?, ?)""",
-            (reservation_id, amount, method, payment_type, notes))
+            (reservation_id, amount, method, payment_type, notes, idempotency_key, allocation_json, reference)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (reservation_id, amount, method, payment_type, notes, idempotency_key, allocation_json, reference))
         pid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
         ref_type = "PAY" if reservation_id else "WALKIN_PAY"
         _post(cur, ref_type, pid, "PAYMENT", "", 0, 0, 0, 0, method,
               f"{payment_type} via {method}" + (f" Res #{reservation_id}" if reservation_id else " (walk-in)"),
               gross_override=amount)
     _audit("payment_record", "payment", pid, f"{amount} via {method}")
+    return pid
 
 
-def record_refund(reservation_id, amount, method, notes, password):
+def record_refund(reservation_id, amount, method, notes, password, idempotency_key="", reference="", allocation_json="{}"):
     _require_super_password(password)
     if amount <= 0:
         raise ValueError("Refund amount must be positive.")
+    idempotency_key = (idempotency_key or "").strip()
+    reference = (reference or "").strip()
+    allocation_json = allocation_json if isinstance(allocation_json, str) else json.dumps(allocation_json or {}, ensure_ascii=False)
     with db.transaction() as conn:
         cur = conn.cursor()
+        if idempotency_key:
+            existing = conn.execute(
+                "SELECT id FROM payments WHERE idempotency_key=? AND COALESCE(reservation_id,0)=COALESCE(?,0) AND voided_at IS NULL LIMIT 1",
+                (idempotency_key, reservation_id),
+            ).fetchone()
+            if existing:
+                return existing["id"]
         paid = conn.execute(
             "SELECT COALESCE(SUM(amount), 0) FROM payments WHERE reservation_id=? AND voided_at IS NULL",
             (reservation_id,)).fetchone()[0] or 0
         if amount > paid:
             raise ValueError(f"Refund exceeds paid amount ({paid:.2f}).")
         conn.execute("""INSERT INTO payments
-            (reservation_id, amount, method, payment_type, notes) VALUES (?, ?, ?, 'Refund', ?)""",
-            (reservation_id, -amount, method, notes))
+            (reservation_id, amount, method, payment_type, notes, idempotency_key, allocation_json, reference)
+            VALUES (?, ?, ?, 'Refund', ?, ?, ?, ?)""",
+            (reservation_id, -amount, method, notes, idempotency_key, allocation_json, reference))
         pid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
         _post(cur, "PAY", pid, "REFUND", "", 0, 0, 0, 0, method,
               f"Refund via {method} Res #{reservation_id}: {notes}",
               gross_override=-amount)
     _audit("refund", "payment", pid, f"{amount} via {method}")
+    return pid
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -3669,7 +3875,8 @@ def get_balance_breakdown(rid):
         return {"total_charges": 0, "total_paid": 0, "balance_due": 0,
                 "nights": 0, "accommodation_net": 0, "accommodation_tax": 0,
                 "accommodation_gross": 0, "pos_net": 0, "pos_tax": 0, "pos_gross": 0,
-                "services_net": 0, "services_tax": 0, "services_gross": 0}
+                "services_net": 0, "services_tax": 0, "services_gross": 0,
+                "discounts_net": 0, "discounts_tax": 0, "discounts_gross": 0}
     comp = _reservation_charge_components(conn, rid)
     paid = conn.execute(
         "SELECT COALESCE(SUM(amount), 0) FROM payments WHERE reservation_id=? AND voided_at IS NULL",
@@ -3688,6 +3895,9 @@ def get_balance_breakdown(rid):
         "services_net": comp.get("services_net", 0),
         "services_tax": comp.get("services_tax", 0),
         "services_gross": comp.get("services_gross", 0),
+        "discounts_net": comp.get("discounts_net", 0),
+        "discounts_tax": comp.get("discounts_tax", 0),
+        "discounts_gross": comp.get("discounts_gross", 0),
     }
 
 
