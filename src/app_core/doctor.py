@@ -40,12 +40,12 @@ def _exists_info(p: Path) -> dict[str, Any]:
         return {"path": str(p), "exists": False, "error": str(e)}
 
 
-def _db_integrity_summary(conn: sqlite3.Connection) -> dict[str, Any]:
+def _db_integrity_summary(conn: sqlite3.Connection, *, max_details: int = 10) -> dict[str, Any]:
     out: dict[str, Any] = {"ok": False, "integrity_check": None, "foreign_key_violations": None}
     try:
         rows = conn.execute("PRAGMA integrity_check").fetchall()
         vals = [r[0] for r in rows] if rows else []
-        out["integrity_check"] = vals[:10] if vals else []
+        out["integrity_check"] = vals[:max_details] if vals else []
         out["ok_integrity"] = (len(vals) == 1 and str(vals[0]).lower() == "ok")
     except Exception as e:
         out["integrity_error"] = str(e)
@@ -59,6 +59,13 @@ def _db_integrity_summary(conn: sqlite3.Connection) -> dict[str, Any]:
         out["ok_foreign_keys"] = False
     out["ok"] = bool(out.get("ok_integrity")) and bool(out.get("ok_foreign_keys"))
     return out
+
+
+def _inspect_db_conn(conn: sqlite3.Connection) -> dict[str, Any]:
+    schema = {"user_version": conn.execute("PRAGMA user_version").fetchone()[0], "tables": _schema_table_checks(conn)}
+    integrity = {"sqlite": _db_integrity_summary(conn)}
+    consistency = {"batch_stock": _batch_stock_consistency(conn)}
+    return {"schema": schema, "integrity": integrity, "consistency": consistency}
 
 
 def _schema_table_checks(conn: sqlite3.Connection) -> dict[str, Any]:
@@ -150,11 +157,8 @@ def verify_backup_file(backup_path: str | Path) -> dict[str, Any]:
     try:
         conn = sqlite3.connect(f"file:{p}?mode=ro", uri=True, timeout=5.0)
         conn.row_factory = sqlite3.Row
-        out["schema"] = {"user_version": conn.execute("PRAGMA user_version").fetchone()[0], "tables": _schema_table_checks(conn)}
-        out["integrity"] = {"sqlite": _db_integrity_summary(conn)}
-        out["consistency"] = {"batch_stock": _batch_stock_consistency(conn)}
-        ok = bool(((out.get("integrity") or {}).get("sqlite") or {}).get("ok")) and bool((((out.get("schema") or {}).get("tables") or {}).get("ok", True)))
-        out["ok"] = ok
+        out.update(_inspect_db_conn(conn))
+        out["ok"] = bool(((out.get("integrity") or {}).get("sqlite") or {}).get("ok")) and bool((((out.get("schema") or {}).get("tables") or {}).get("ok", True)))
         return out
     except Exception as e:
         out["error"] = paths.redact_sensitive(e, 300)
@@ -454,15 +458,15 @@ def collect_health(check_updates: bool = False) -> dict[str, Any]:
             conn = sqlite3.connect(str(db_path), timeout=5.0)
             try:
                 conn.row_factory = sqlite3.Row
-                report["schema"]["user_version"] = conn.execute("PRAGMA user_version").fetchone()[0]
+                inspected = _inspect_db_conn(conn)
+                report["schema"].update(inspected.get("schema") or {})
                 report["schema"]["expected_version"] = getattr(db, "SCHEMA_VERSION", None)
                 report["schema"]["matches_expected"] = (
                     report["schema"]["expected_version"] is None
-                    or report["schema"]["user_version"] == report["schema"]["expected_version"]
+                    or report["schema"].get("user_version") == report["schema"]["expected_version"]
                 )
-                report["schema"]["tables"] = _schema_table_checks(conn)
-                report["integrity"]["sqlite"] = _db_integrity_summary(conn)
-                report["consistency"]["batch_stock"] = _batch_stock_consistency(conn)
+                report["integrity"].update(inspected.get("integrity") or {})
+                report["consistency"].update(inspected.get("consistency") or {})
                 try:
                     report["db"]["table_count"] = len([r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()])
                 except Exception:

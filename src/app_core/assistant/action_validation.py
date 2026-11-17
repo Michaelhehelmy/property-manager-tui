@@ -30,6 +30,9 @@ ACTION_MAP = {
     "propose_create_reservation": ("preview_create_reservation", "execute_create_reservation"),
 }
 
+PROPOSAL_ACTION_TYPES = set(ACTION_MAP.keys())
+EXECUTE_ACTION_TYPES = {v[1] for v in ACTION_MAP.values() if v[1]}
+
 
 def _ok_base(preview_type: str, args: dict | None = None) -> dict[str, Any]:
     return {

@@ -24,11 +24,13 @@ _lock = threading.RLock()
 
 def _apply_pragmas(conn):
     # Safety/performance defaults for single-process app usage.
-    conn.execute("PRAGMA foreign_keys = ON")
-    # WAL is persistent for the DB file; set on each connection for clarity.
-    conn.execute("PRAGMA journal_mode = WAL")
-    conn.execute("PRAGMA synchronous = NORMAL")
-    conn.execute("PRAGMA busy_timeout = 30000")
+    for sql in (
+        "PRAGMA foreign_keys = ON",
+        "PRAGMA journal_mode = WAL",
+        "PRAGMA synchronous = NORMAL",
+        "PRAGMA busy_timeout = 30000",
+    ):
+        conn.execute(sql)
     try:
         conn.execute("PRAGMA trusted_schema = OFF")
     except Exception:
@@ -117,26 +119,22 @@ def query(sql, params=()):
         return conn.execute(sql, params)
 
 
-def query_all(sql, params=()):
-    cur = query(sql, params)
+def _fetch_cursor(cur, one: bool):
     try:
-        return cur.fetchall()
+        return cur.fetchone() if one else cur.fetchall()
     finally:
         try:
             cur.close()
         except Exception:
             pass
+
+
+def query_all(sql, params=()):
+    return _fetch_cursor(query(sql, params), one=False)
 
 
 def query_one(sql, params=()):
-    cur = query(sql, params)
-    try:
-        return cur.fetchone()
-    finally:
-        try:
-            cur.close()
-        except Exception:
-            pass
+    return _fetch_cursor(query(sql, params), one=True)
 
 
 def user_version():
@@ -173,15 +171,32 @@ def integrity_check(max_errors=20):
     return ok, details
 
 
+def _table_exists(conn, name: str) -> bool:
+    return bool(conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone())
+
+
+def _table_columns(conn, name: str) -> list[str]:
+    return [r[1] for r in conn.execute(f"PRAGMA table_info({name})").fetchall()]
+
+
+def _ensure_column(conn, table: str, col: str, decl: str, cols: list[str] | None = None):
+    if cols is None:
+        cols = _table_columns(conn, table)
+    if col not in cols:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
+        cols.append(col)
+    return cols
+
+
 def _record_migration_meta(conn, status: str, from_version: int | None = None, to_version: int | None = None):
     """Best-effort provenance marker in app_metadata (idempotent/safe if table absent)."""
     try:
-        has = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='app_metadata'").fetchone()
-        if not has:
+        if not _table_exists(conn, "app_metadata"):
             return
         now = conn.execute("SELECT datetime('now','localtime')").fetchone()[0]
+        current_ver = conn.execute('PRAGMA user_version').fetchone()[0]
         pairs = [
-            ("schema_version", str(to_version if to_version is not None else conn.execute('PRAGMA user_version').fetchone()[0])),
+            ("schema_version", str(to_version if to_version is not None else current_ver)),
             ("schema_migration_status", str(status)),
             ("schema_migration_at", str(now)),
         ]
@@ -583,29 +598,24 @@ def _migrate_to_8(conn):
     );
     CREATE INDEX IF NOT EXISTS idx_activities_active ON activities(active);
     """)
-    pos_exists = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='pos_tabs'").fetchone()
-    if pos_exists:
-        cols = [r[1] for r in conn.execute("PRAGMA table_info(pos_tabs)").fetchall()]
-        if "activity_id" not in cols:
-            conn.execute("ALTER TABLE pos_tabs ADD COLUMN activity_id INTEGER REFERENCES activities(id)")
+    if _table_exists(conn, "pos_tabs"):
+        _ensure_column(conn, "pos_tabs", "activity_id", "INTEGER REFERENCES activities(id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_pos_activity ON pos_tabs(activity_id)")
 
 
 def _migrate_to_9(conn):
     # inventory identity/barcode/batch tracking columns
-    inv_exists = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='inventory'").fetchone()
-    if inv_exists:
-        inv_cols = [r[1] for r in conn.execute("PRAGMA table_info(inventory)").fetchall()]
-        def _add_inv(col, decl):
-            if col not in inv_cols:
-                conn.execute(f"ALTER TABLE inventory ADD COLUMN {col} {decl}")
-                inv_cols.append(col)
-        _add_inv("sku", "TEXT")
-        _add_inv("barcode", "TEXT")
-        _add_inv("barcode_type", "TEXT NOT NULL DEFAULT 'code128'")
-        _add_inv("track_batches", "INTEGER NOT NULL DEFAULT 0")
-        _add_inv("shelf_life_days", "INTEGER")
-        _add_inv("default_supplier", "TEXT NOT NULL DEFAULT ''")
+    if _table_exists(conn, "inventory"):
+        inv_cols = _table_columns(conn, "inventory")
+        for col, decl in (
+            ("sku", "TEXT"),
+            ("barcode", "TEXT"),
+            ("barcode_type", "TEXT NOT NULL DEFAULT 'code128'"),
+            ("track_batches", "INTEGER NOT NULL DEFAULT 0"),
+            ("shelf_life_days", "INTEGER"),
+            ("default_supplier", "TEXT NOT NULL DEFAULT ''"),
+        ):
+            _ensure_column(conn, "inventory", col, decl, inv_cols)
         conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_inventory_sku ON inventory(sku) WHERE sku IS NOT NULL AND sku <> ''")
         conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_inventory_barcode ON inventory(barcode) WHERE barcode IS NOT NULL AND barcode <> ''")
 
@@ -635,38 +645,34 @@ def _migrate_to_9(conn):
     CREATE INDEX IF NOT EXISTS idx_batches_barcode ON inventory_batches(barcode_value);
     """)
 
-    if conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='inventory_logs'").fetchone():
-        log_cols = [r[1] for r in conn.execute("PRAGMA table_info(inventory_logs)").fetchall()]
-        if "batch_id" not in log_cols:
-            conn.execute("ALTER TABLE inventory_logs ADD COLUMN batch_id INTEGER REFERENCES inventory_batches(id)")
-        if "unit_cost" not in log_cols:
-            conn.execute("ALTER TABLE inventory_logs ADD COLUMN unit_cost REAL")
-        if "balance_after" not in log_cols:
-            conn.execute("ALTER TABLE inventory_logs ADD COLUMN balance_after REAL")
+    if _table_exists(conn, "inventory_logs"):
+        log_cols = _table_columns(conn, "inventory_logs")
+        _ensure_column(conn, "inventory_logs", "batch_id", "INTEGER REFERENCES inventory_batches(id)", log_cols)
+        _ensure_column(conn, "inventory_logs", "unit_cost", "REAL", log_cols)
+        _ensure_column(conn, "inventory_logs", "balance_after", "REAL", log_cols)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_invlogs_batch ON inventory_logs(batch_id)")
 
-    if conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='pos_tabs'").fetchone():
-        pos_cols = [r[1] for r in conn.execute("PRAGMA table_info(pos_tabs)").fetchall()]
-        if "batch_id" not in pos_cols:
-            conn.execute("ALTER TABLE pos_tabs ADD COLUMN batch_id INTEGER REFERENCES inventory_batches(id)")
-        if "lot_code" not in pos_cols:
-            conn.execute("ALTER TABLE pos_tabs ADD COLUMN lot_code TEXT")
+    if _table_exists(conn, "pos_tabs"):
+        pos_cols = _table_columns(conn, "pos_tabs")
+        _ensure_column(conn, "pos_tabs", "batch_id", "INTEGER REFERENCES inventory_batches(id)", pos_cols)
+        _ensure_column(conn, "pos_tabs", "lot_code", "TEXT", pos_cols)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_pos_batch ON pos_tabs(batch_id)")
 
     # Backfill legacy/opening batches for existing stock so traceability is consistent.
     # Provenance guard/marker: only create when no batch exists for the item AND no prior
     # v9 legacy backfill opening log exists (idempotent on re-run/partial states).
-    if conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='inventory'").fetchone():
+    if _table_exists(conn, "inventory"):
         items = conn.execute("SELECT id, stock_qty, unit_cost, created_at FROM inventory").fetchall()
-        has_logs_table = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='inventory_logs'").fetchone()
+        has_logs_table = _table_exists(conn, "inventory_logs")
         backfill_marker = "v9_legacy_backfill"
+        legacy_ref = f"legacy opening batch [{backfill_marker}]"
         for it in items:
             has_batch = conn.execute("SELECT 1 FROM inventory_batches WHERE item_id=? LIMIT 1", (it["id"],)).fetchone()
             has_backfill_log = False
             if has_logs_table:
                 has_backfill_log = conn.execute(
                     "SELECT 1 FROM inventory_logs WHERE item_id=? AND change_type='OPENING' AND reference=? LIMIT 1",
-                    (it["id"], f"legacy opening batch [{backfill_marker}]"),
+                    (it["id"], legacy_ref),
                 ).fetchone()
             if has_batch or has_backfill_log:
                 continue
@@ -697,7 +703,7 @@ def _migrate_to_9(conn):
                 conn.execute(
                     """INSERT INTO inventory_logs (item_id, change_type, quantity, reference, batch_id, unit_cost, balance_after)
                        VALUES (?, 'OPENING', ?, ?, ?, ?, ?)""",
-                    (it["id"], qty, f"legacy opening batch [{backfill_marker}]", bid, float(it["unit_cost"] or 0), qty)
+                    (it["id"], qty, legacy_ref, bid, float(it["unit_cost"] or 0), qty)
                 )
 
 

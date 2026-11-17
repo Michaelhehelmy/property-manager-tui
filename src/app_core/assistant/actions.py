@@ -22,7 +22,7 @@ from .. import services
 
 logger = logging.getLogger(__name__)
 
-PROPOSAL_ACTION_TYPES = {
+PROPOSAL_ACTION_TYPES = set(getattr(av, "PROPOSAL_ACTION_TYPES", ())) or {
     "preview_add_pos_item",
     "propose_add_pos_item",
     "propose_complete_walkin_sale",
@@ -31,7 +31,7 @@ PROPOSAL_ACTION_TYPES = {
     "propose_create_reservation",
 }
 
-EXECUTE_ACTION_TYPES = {
+EXECUTE_ACTION_TYPES = set(getattr(av, "EXECUTE_ACTION_TYPES", ())) or {
     "execute_add_pos_item",
     "execute_complete_walkin_sale",
     "execute_record_payment",
@@ -40,18 +40,15 @@ EXECUTE_ACTION_TYPES = {
 }
 
 # Metadata only: callers/UI/web layers must enforce actual proofs.
-REQUIRED_PROOFS = {
+_REQUIRED_PROOFS_BASE = {
     "propose_add_pos_item": ["ui_confirmation", "session_or_auth_context"],
     "propose_complete_walkin_sale": ["ui_confirmation", "payment_confirmation", "session_or_auth_context"],
     "propose_record_payment": ["ui_confirmation", "payment_confirmation", "session_or_auth_context"],
     "propose_book_activity": ["ui_confirmation", "session_or_auth_context"],
     "propose_create_reservation": ["ui_confirmation", "session_or_auth_context"],
-    "execute_add_pos_item": ["ui_confirmation", "session_or_auth_context"],
-    "execute_complete_walkin_sale": ["ui_confirmation", "payment_confirmation", "session_or_auth_context"],
-    "execute_record_payment": ["ui_confirmation", "payment_confirmation", "session_or_auth_context"],
-    "execute_book_activity": ["ui_confirmation", "session_or_auth_context"],
-    "execute_create_reservation": ["ui_confirmation", "session_or_auth_context"],
 }
+REQUIRED_PROOFS = dict(_REQUIRED_PROOFS_BASE)
+REQUIRED_PROOFS.update({k.replace("propose_", "execute_"): v for k, v in _REQUIRED_PROOFS_BASE.items()})
 
 
 def _norm_str(v: Any) -> str:

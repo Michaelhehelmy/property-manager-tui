@@ -47,12 +47,16 @@ def _project_root() -> Path:
         return Path(__file__).resolve().parents[2]
 
 
+def _clamp_int(value, default: int, lo: int, hi: int) -> int:
+    try:
+        return max(lo, min(int(value if value is not None else default), hi))
+    except Exception:
+        return default
+
+
 def _run_git(args: list[str], cwd: Path | None = None, timeout: int = 20) -> tuple[int, str, str]:
     cwd = cwd or _project_root()
-    try:
-        t = max(1, min(int(timeout or 20), 300))
-    except Exception:
-        t = 20
+    t = _clamp_int(timeout, 20, 1, 300)
     env = os.environ.copy()
     # non-interactive, no prompts/pagers; avoids hangs in TUI/web contexts
     env.setdefault("GIT_TERMINAL_PROMPT", "0")
@@ -140,7 +144,7 @@ def _github_get(url: str, timeout: int = 12) -> Any:
     if token:
         req.add_header("Authorization", f"Bearer {token}")
     # Hard timeout to avoid hanging on network issues
-    t = max(1, min(int(timeout or 12), 30))
+    t = _clamp_int(timeout, 12, 1, 30)
     with urllib.request.urlopen(req, timeout=t) as resp:
         data = resp.read().decode("utf-8", errors="replace")
     return json.loads(data)
@@ -163,26 +167,25 @@ def _parse_version_tag(tag: str | None) -> tuple:
     return tuple(parts) if parts else (0,)
 
 
+def _shape_release_asset(asset: Any) -> dict[str, Any] | None:
+    if not isinstance(asset, dict):
+        return None
+    return {
+        "name": asset.get("name"),
+        "browser_download_url": asset.get("browser_download_url"),
+        "size": asset.get("size"),
+        "content_type": asset.get("content_type"),
+    }
+
+
 def get_latest_release(timeout: int = 12) -> dict[str, Any]:
     """Fetch latest GitHub release metadata (read-only)."""
-    try:
-        timeout = max(2, min(int(timeout or 12), 30))
-    except Exception:
-        timeout = 12
+    timeout = _clamp_int(timeout, 12, 2, 30)
     data = _github_get(API_RELEASE_LATEST_URL, timeout=timeout)
     if not isinstance(data, dict):
         raise ValueError("Unexpected release response")
     tag = data.get("tag_name") or data.get("name")
-    assets = []
-    for a in (data.get("assets") or []):
-        if not isinstance(a, dict):
-            continue
-        assets.append({
-            "name": a.get("name"),
-            "browser_download_url": a.get("browser_download_url"),
-            "size": a.get("size"),
-            "content_type": a.get("content_type"),
-        })
+    assets = [a for a in (_shape_release_asset(x) for x in (data.get("assets") or [])) if a]
     return {
         "tag_name": tag,
         "name": data.get("name"),
@@ -333,13 +336,10 @@ def check_for_updates(branch: str = DEFAULT_BRANCH, limit: int = 20, timeout: in
         result["ok"] = False
         result["error"] = str(e)
         return result
-    try:
-        timeout = max(2, min(int(timeout or 12), 30))
-    except Exception:
-        timeout = 12
+    timeout = _clamp_int(timeout, 12, 2, 30)
     local_commit = local.get("commit")
     try:
-        safe_limit = max(1, min(int(limit or 20), 100))
+        safe_limit = _clamp_int(limit, 20, 1, 100)
         q = urllib.parse.urlencode({"sha": branch, "per_page": str(safe_limit)})
         commits = _github_get(f"{API_COMMITS_URL}?{q}", timeout=timeout)
     except Exception as e:

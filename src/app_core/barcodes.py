@@ -173,51 +173,49 @@ def _escpos_text_barcode(code: str, human: str = "") -> bytes:
     return b"\x1b@" + txt.encode("utf-8", errors="replace") + b"\x1dV\x00"
 
 
+def _get_field(o, k, d=""):
+    try:
+        v = o[k]
+        return d if v is None else v
+    except Exception:
+        v = getattr(o, k, d)
+        return d if v is None else v
+
+
 def render_item_label_text(item) -> str:
-    def _get(o, k, d=""):
-        try:
-            return o[k] if o[k] is not None else d
-        except Exception:
-            return getattr(o, k, d)
-    name = _get(item, "item_name")
-    sku = _get(item, "sku") or ""
-    code = _get(item, "barcode") or sku or f"ITEM-{_get(item,'id','')}"
-    cat = _get(item, "category") or ""
-    price = _get(item, "selling_price") or 0
-    return "\n".join([
+    name = _get_field(item, "item_name")
+    sku = _get_field(item, "sku") or ""
+    code = _get_field(item, "barcode") or sku or f"ITEM-{_get_field(item, 'id', '')}"
+    cat = _get_field(item, "category") or ""
+    price = _get_field(item, "selling_price") or 0
+    lines = [
         "=== ITEM LABEL ===",
         f"Name: {name}",
         f"SKU: {sku}" if sku else None,
         f"Category: {cat}",
         f"Code: {code}",
-        f"Type: {_get(item,'barcode_type','code128')}",
+        f"Type: {_get_field(item, 'barcode_type', 'code128')}",
         f"Price: {price}",
         "==================",
         "",
-    ]).replace("\nNone\n", "\n")
+    ]
+    return "\n".join(l for l in lines if l is not None)
 
 
 def render_batch_label_text(item, batch, include_payload: bool = True) -> str:
-    def _get(o, k, d=""):
-        try:
-            v = o[k]
-            return d if v is None else v
-        except Exception:
-            v = getattr(o, k, d)
-            return d if v is None else v
     payload = make_lot_payload(item, batch) if include_payload else None
     lines = [
         "=== BATCH / LOT LABEL ===",
-        f"Item: {_get(item,'item_name')}",
-        f"SKU: {_get(item,'sku')}",
-        f"LOT: {_get(batch,'lot_code')}",
-        f"Received: {_get(batch,'received_at')}",
-        f"Expiry: {_get(batch,'expiry_date') or 'N/A'}",
-        f"Qty: {_get(batch,'quantity_received')} (rem {_get(batch,'quantity_remaining')})",
-        f"Unit cost: {_get(batch,'unit_cost')}",
-        f"Supplier: {_get(batch,'supplier')}",
-        f"Ref: {_get(batch,'reference')}",
-        f"Code: {_get(batch,'barcode_value') or _get(batch,'lot_code')}",
+        f"Item: {_get_field(item, 'item_name')}",
+        f"SKU: {_get_field(item, 'sku')}",
+        f"LOT: {_get_field(batch, 'lot_code')}",
+        f"Received: {_get_field(batch, 'received_at')}",
+        f"Expiry: {_get_field(batch, 'expiry_date') or 'N/A'}",
+        f"Qty: {_get_field(batch, 'quantity_received')} (rem {_get_field(batch, 'quantity_remaining')})",
+        f"Unit cost: {_get_field(batch, 'unit_cost')}",
+        f"Supplier: {_get_field(batch, 'supplier')}",
+        f"Ref: {_get_field(batch, 'reference')}",
+        f"Code: {_get_field(batch, 'barcode_value') or _get_field(batch, 'lot_code')}",
     ]
     if payload:
         lines.append("QR-PAYLOAD:")
@@ -232,21 +230,10 @@ def render_label_for_print(fmt: str, item, batch=None, include_payload: bool = T
     fmt = normalize_barcode_type(fmt or "code128", default="code128")
     if batch is not None:
         text_label = render_batch_label_text(item, batch, include_payload=include_payload)
+        raw_code = _get_field(batch, "lot_code") or _get_field(batch, "barcode_value") or "CODE"
     else:
         text_label = render_item_label_text(item)
-    # ZPL/EPL/TSPL/ESC-POS command templates (simple, readable text fallback embedded)
-    try:
-        if batch is not None:
-            raw_code = (batch.get("lot_code") if isinstance(batch, dict) else getattr(batch, "lot_code", None))
-            if not raw_code:
-                raw_code = (batch.get("barcode_value") if isinstance(batch, dict) else getattr(batch, "barcode_value", None))
-        else:
-            if isinstance(item, dict):
-                raw_code = item.get("barcode") or item.get("sku") or f"ITEM-{item.get('id','')}"
-            else:
-                raw_code = getattr(item, "barcode", None) or getattr(item, "sku", None) or f"ITEM-{getattr(item,'id','')}"
-    except Exception:
-        raw_code = "CODE"
+        raw_code = _get_field(item, "barcode") or _get_field(item, "sku") or f"ITEM-{_get_field(item, 'id', '')}"
     code = sanitize_label_text(raw_code, max_len=80) or "CODE"
     if fmt == "zpl":
         zpl = (

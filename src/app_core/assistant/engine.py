@@ -245,154 +245,135 @@ def _execute_single(intent: str, text: str, slots: dict, ui_context=None):
         data=execute_tool("get_app_update_status",{}); tools_used.append("get_app_update_status")
         return _answer("app_update_status", tools_used, data)
 
-    if intent=="capabilities_help":
-        data=execute_tool("list_capabilities",{}); tools_used.append("list_capabilities")
+    if intent == "capabilities_help":
+        data = execute_tool("list_capabilities", {}); tools_used.append("list_capabilities")
         return _answer(intent, tools_used, data)
 
-    if intent=="unsupported_or_unsafe":
+    if intent == "unsupported_or_unsafe":
         ans = ("I can help with **read-only** questions grounded in real app data (reports, guests/portfolios, reservations, balances, inventory, activities, ops, insights). "
                "I can’t perform actions, make changes, or guess/invent information. "
                "If you tell me what you’d like to look up (e.g. a guest, reservation, report, or date range), I’ll fetch it for you.")
-        return {"ok":False,"intent":intent,"tools_used":[],"data":{"reason":"unsafe_or_out_of_scope"},"answer":ans}
+        return {"ok": False, "intent": intent, "tools_used": [], "data": {"reason": "unsafe_or_out_of_scope"}, "answer": ans}
 
-    if intent=="ambiguous_needs_clarification":
-        tl=_norm_text(text)
-        if rid and _has_any(tl,["balance","owe","outstanding","due"]):
+    if intent == "ambiguous_needs_clarification":
+        tl = _norm_text(text)
+        if rid and _has_any(tl, ["balance", "owe", "outstanding", "due"]):
             return _execute_single("reservation_balance", text, slots)
-        if _has_any(tl,["balance","owe","outstanding","due"]) and not rid:
-            return {"ok":True,"intent":intent,"needs_clarification":True,"tools_used":[],"data":{"missing":"reservation_id","suggestion":"overall_ar"},
-                    "answer":"Do you mean a **specific reservation’s balance** (e.g. `reservation #12 balance`) or **overall outstanding balances** (who owes money across all reservations)? Tell me which one and I’ll pull the real figures."}
-        if _has_any(tl,["ordered","last visit","last stay","profile","spend","portfolio","invoice","activity","activities","trip","excursion","when did they","he ","she ","they ","his ","her ","their "]) and not (slots.get("guest_id") or slots.get("guest_query")):
-            return {"ok":True,"intent":intent,"needs_clarification":True,"tools_used":[],"data":{"missing":"guest"},
-                    "answer":"Which guest do you mean? Please share a **guest ID** (e.g. `guest #3`) or a name/phone fragment so I can look them up in the real records."}
+        if _has_any(tl, ["balance", "owe", "outstanding", "due"]) and not rid:
+            return {"ok": True, "intent": intent, "needs_clarification": True, "tools_used": [], "data": {"missing": "reservation_id", "suggestion": "overall_ar"},
+                    "answer": "Do you mean a **specific reservation’s balance** (e.g. `reservation #12 balance`) or **overall outstanding balances** (who owes money across all reservations)? Tell me which one and I’ll pull the real figures."}
+        if _has_any(tl, ["ordered", "last visit", "last stay", "profile", "spend", "portfolio", "invoice", "activity", "activities", "trip", "excursion", "when did they", "he ", "she ", "they ", "his ", "her ", "their "]) and not (slots.get("guest_id") or slots.get("guest_query")):
+            return {"ok": True, "intent": intent, "needs_clarification": True, "tools_used": [], "data": {"missing": "guest"},
+                    "answer": "Which guest do you mean? Please share a **guest ID** (e.g. `guest #3`) or a name/phone fragment so I can look them up in the real records."}
         if (("report" in tl) or tl.startswith("report")) and not slots.get("report_kind") and not rid:
-            return {"ok":True,"intent":intent,"needs_clarification":True,"tools_used":[],"data":{"missing":"report_kind"},
-                    "answer":"Which report would you like — **P&L, cash flow, VAT, payment methods, occupancy, or daily ops** — and for what date/range (e.g. `P&L last month` or `daily ops today`)?"}
-        return {"ok":True,"intent":intent,"needs_clarification":True,"tools_used":[],"data":{"missing":"context"},
-                "answer":"I want to make sure I get this right — could you rephrase with a bit more detail? I can help with briefings, property/ops stats, reports & comparisons, who owes money, inventory alerts, top sellers, expenses/sales, expiring batches and batch/lot lists, barcode/lot traceability (received/expiry/movements), guests (search/profile/full portfolio/last visit/orders/spend/activities), reservations/balances/pipeline, housekeeping, availability, activities, menus, rate plans, integrity/doctor/health diagnostics (including backup/restore readiness and batch-stock consistency), and app version/update status."}
+            return {"ok": True, "intent": intent, "needs_clarification": True, "tools_used": [], "data": {"missing": "report_kind"},
+                    "answer": "Which report would you like — **P&L, cash flow, VAT, payment methods, occupancy, or daily ops** — and for what date/range (e.g. `P&L last month` or `daily ops today`)?"}
+        return {"ok": True, "intent": intent, "needs_clarification": True, "tools_used": [], "data": {"missing": "context"},
+                "answer": "I want to make sure I get this right — could you rephrase with a bit more detail? I can help with briefings, property/ops stats, reports & comparisons, who owes money, inventory alerts, top sellers, expenses/sales, expiring batches and batch/lot lists, barcode/lot traceability (received/expiry/movements), guests (search/profile/full portfolio/last visit/orders/spend/activities), reservations/balances/pipeline, housekeeping, availability, activities, menus, rate plans, integrity/doctor/health diagnostics (including backup/restore readiness and batch-stock consistency), and app version/update status."}
 
-    if intent=="property_stats":
-        data=execute_tool("get_property_stats",{}); tools_used.append("get_property_stats")
+    # Simple read-only intent -> tool mappings (behavior-preserving consolidation)
+    if intent in ("property_stats", "today_ops", "outstanding_balances", "inventory_alerts", "reservation_pipeline",
+                  "housekeeping_summary", "menu_info", "rate_plans", "recent_activity", "list_activities",
+                  "activity_stats", "walkin_sales_summary"):
+        tool = {
+            "property_stats": "get_property_stats",
+            "today_ops": "get_today_ops",
+            "outstanding_balances": "get_outstanding_balances",
+            "inventory_alerts": "get_inventory_alerts",
+            "reservation_pipeline": "get_reservation_pipeline",
+            "housekeeping_summary": "get_housekeeping_summary",
+            "menu_info": "get_menu_info",
+            "rate_plans": "list_rate_plans",
+            "recent_activity": "get_recent_activity",
+            "list_activities": "list_activities",
+            "activity_stats": "get_activity_stats",
+            "walkin_sales_summary": "get_walkin_sales_summary",
+        }[intent]
+        data = execute_tool(tool, {}); tools_used.append(tool)
         return _answer(intent, tools_used, data)
-    if intent=="today_ops":
-        data=execute_tool("get_today_ops",{}); tools_used.append("get_today_ops")
+
+    if intent in ("business_partner_briefing", "decision_support", "compare_periods", "occupancy_summary",
+                  "expenses_summary", "sales_breakdown", "payments_summary"):
+        tool = {
+            "business_partner_briefing": "business_partner_briefing",
+            "decision_support": "get_decision_support",
+            "compare_periods": "compare_periods",
+            "occupancy_summary": "get_occupancy_summary",
+            "expenses_summary": "get_expenses_summary",
+            "sales_breakdown": "get_sales_breakdown",
+            "payments_summary": "get_payments_summary",
+        }[intent]
+        data = execute_tool(tool, {"start": start, "end": end}); tools_used.append(tool)
+        title = f"Decision support ({start} → {end})" if intent == "decision_support" else "Result"
+        return _answer(intent, tools_used, data, title=title)
+
+    if intent == "top_selling_items":
+        data = execute_tool("get_top_selling_items", {"start": start, "end": end, "limit": 10}); tools_used.append("get_top_selling_items")
         return _answer(intent, tools_used, data)
-    if intent=="business_partner_briefing":
-        data=execute_tool("business_partner_briefing",{"start":start,"end":end}); tools_used.append("business_partner_briefing")
+
+    if intent in ("report_pl", "report_cash_flow", "report_vat", "report_payment_methods", "report_occupancy", "report_daily_ops"):
+        kind = intent.replace("report_", "")
+        data = execute_tool("get_report", {"kind": kind, "start": start, "end": end}); tools_used.append("get_report")
         return _answer(intent, tools_used, data)
-    if intent=="decision_support":
-        data=execute_tool("get_decision_support",{"start":start,"end":end}); tools_used.append("get_decision_support")
-        return _answer(intent, tools_used, data, title=f"Decision support ({start} → {end})")
-    if intent=="compare_periods":
-        data=execute_tool("compare_periods",{"start":start,"end":end}); tools_used.append("compare_periods")
+
+    if intent == "room_availability":
+        a_start = slots.get("date_start") or start; a_end = slots.get("date_end") or end
+        data = execute_tool("get_room_availability", {"start": a_start, "end": a_end}); tools_used.append("get_room_availability")
         return _answer(intent, tools_used, data)
-    if intent=="outstanding_balances":
-        data=execute_tool("get_outstanding_balances",{}); tools_used.append("get_outstanding_balances")
-        return _answer(intent, tools_used, data)
-    if intent=="inventory_alerts":
-        data=execute_tool("get_inventory_alerts",{}); tools_used.append("get_inventory_alerts")
-        return _answer(intent, tools_used, data)
-    if intent in ("expiring_batches","get_expiring_batches"):
+
+    if intent in ("ledger_integrity", "health_diagnostics", "doctor_report"):
+        data = execute_tool("get_health_diagnostics", {}); tools_used.append("get_health_diagnostics")
+        out_intent = "ledger_integrity" if intent == "ledger_integrity" else "health_diagnostics"
+        return _answer(out_intent, tools_used, data)
+
+    if intent in ("expiring_batches", "get_expiring_batches"):
         days = slots.get("days") or slots.get("within_days")
         try:
             days = int(days) if days not in (None, "") else None
         except (TypeError, ValueError):
             logger.debug("assistant._execute_single: invalid within_days=%r", days, exc_info=True)
             days = None
-        data=execute_tool("get_expiring_batches",{"within_days": days, "include_expired": True}); tools_used.append("get_expiring_batches")
+        data = execute_tool("get_expiring_batches", {"within_days": days, "include_expired": True}); tools_used.append("get_expiring_batches")
         return _answer("expiring_batches", tools_used, data)
-    if intent in ("inventory_batches","list_inventory_batches"):
+
+    if intent in ("inventory_batches", "list_inventory_batches"):
         item_id = slots.get("item_id")
-        data=execute_tool("list_inventory_batches",{"item_id": item_id}); tools_used.append("list_inventory_batches")
+        data = execute_tool("list_inventory_batches", {"item_id": item_id}); tools_used.append("list_inventory_batches")
         return _answer("inventory_batches", tools_used, data)
-    if intent in ("trace_barcode","barcode_trace"):
+
+    if intent in ("trace_barcode", "barcode_trace"):
         code = slots.get("barcode") or slots.get("sku") or slots.get("code") or slots.get("lot_code") or slots.get("query") or slots.get("guest_query")
-        # try to extract code-like token from text
         if not code:
-            import re as _re
-            m = _re.search(r"(?:barcode|sku|lot|code|trace)\s*[:#]?\s*([A-Za-z0-9._\-]+)", text, _re.I)
+            m = re.search(r"(?:barcode|sku|lot|code|trace)\s*[:#]?\s*([A-Za-z0-9._\-]+)", text or "", re.I)
             if m: code = m.group(1)
         if not code:
-            # fallback: take last alnum token
-            import re as _re
-            toks = _re.findall(r"[A-Za-z0-9][A-Za-z0-9._\-]{2,}", text or "")
+            toks = re.findall(r"[A-Za-z0-9][A-Za-z0-9._\-]{2,}", text or "")
             if toks: code = toks[-1]
-        data=execute_tool("trace_barcode",{"code": code}); tools_used.append("trace_barcode")
+        data = execute_tool("trace_barcode", {"code": code}); tools_used.append("trace_barcode")
         return _answer("trace_barcode", tools_used, data)
-    if intent=="top_selling_items":
-        data=execute_tool("get_top_selling_items",{"start":start,"end":end,"limit":10}); tools_used.append("get_top_selling_items")
-        return _answer(intent, tools_used, data)
-    if intent=="expenses_summary":
-        data=execute_tool("get_expenses_summary",{"start":start,"end":end}); tools_used.append("get_expenses_summary")
-        return _answer(intent, tools_used, data)
-    if intent=="sales_breakdown":
-        data=execute_tool("get_sales_breakdown",{"start":start,"end":end}); tools_used.append("get_sales_breakdown")
-        return _answer(intent, tools_used, data)
-    if intent=="reservation_pipeline":
-        data=execute_tool("get_reservation_pipeline",{}); tools_used.append("get_reservation_pipeline")
-        return _answer(intent, tools_used, data)
-    if intent=="reservation_search":
+
+    if intent == "reservation_search":
         q = slots.get("guest_query") or slots.get("query") or ""
         if not q:
-            # try to extract query from text by stripping common words
             q = re.sub(r"(?i)\b(find|search|show|list|look up|reservation|reservations|booking|bookings|for|of)\b", " ", text)
             q = re.sub(r"\s+", " ", q).strip(" ?.,#:") or ""
-        data=execute_tool("search_reservations",{"query": q, "reservation_id": rid, "status": slots.get("status") or "", "start": start, "end": end})
+        data = execute_tool("search_reservations", {"query": q, "reservation_id": rid, "status": slots.get("status") or "", "start": start, "end": end})
         tools_used.append("search_reservations")
         return _answer(intent, tools_used, data)
-    if intent=="inventory_search":
+
+    if intent == "inventory_search":
         q = slots.get("query") or slots.get("guest_query") or ""
         if not q:
             q = re.sub(r"(?i)\b(search|find|list|show|inventory|product|products|item|items|stock|for|of)\b", " ", text)
             q = re.sub(r"\s+", " ", q).strip(" ?.,#:") or ""
-        data=execute_tool("search_inventory",{"query": q, "category": slots.get("category") or "", "stock_filter": slots.get("stock_filter") or ""})
+        data = execute_tool("search_inventory", {"query": q, "category": slots.get("category") or "", "stock_filter": slots.get("stock_filter") or ""})
         tools_used.append("search_inventory")
         return _answer(intent, tools_used, data)
-    if intent=="inventory_item_details":
+
+    if intent == "inventory_item_details":
         item_id = slots.get("item_id") or slots.get("inventory_item_id")
-        data=execute_tool("get_inventory_item",{"item_id": item_id})
+        data = execute_tool("get_inventory_item", {"item_id": item_id})
         tools_used.append("get_inventory_item")
-        return _answer(intent, tools_used, data)
-    if intent=="walkin_sales_summary":
-        data=execute_tool("get_walkin_sales_summary",{}); tools_used.append("get_walkin_sales_summary")
-        return _answer(intent, tools_used, data)
-    if intent=="payments_summary":
-        data=execute_tool("get_payments_summary",{"start":start,"end":end}); tools_used.append("get_payments_summary")
-        return _answer(intent, tools_used, data)
-    if intent=="housekeeping_summary":
-        data=execute_tool("get_housekeeping_summary",{}); tools_used.append("get_housekeeping_summary")
-        return _answer(intent, tools_used, data)
-    if intent=="room_availability":
-        a_start = slots.get("date_start") or start; a_end = slots.get("date_end") or end
-        data=execute_tool("get_room_availability",{"start":a_start,"end":a_end}); tools_used.append("get_room_availability")
-        return _answer(intent, tools_used, data)
-    if intent=="menu_info":
-        data=execute_tool("get_menu_info",{}); tools_used.append("get_menu_info")
-        return _answer(intent, tools_used, data)
-    if intent=="rate_plans":
-        data=execute_tool("list_rate_plans",{}); tools_used.append("list_rate_plans")
-        return _answer(intent, tools_used, data)
-    if intent=="ledger_integrity":
-        data=execute_tool("get_health_diagnostics",{}); tools_used.append("get_health_diagnostics")
-        return _answer("ledger_integrity", tools_used, data)
-    if intent in ("health_diagnostics","doctor_report"):
-        data=execute_tool("get_health_diagnostics",{}); tools_used.append("get_health_diagnostics")
-        return _answer("health_diagnostics", tools_used, data)
-    if intent=="recent_activity":
-        data=execute_tool("get_recent_activity",{}); tools_used.append("get_recent_activity")
-        return _answer(intent, tools_used, data)
-    if intent in ("report_pl","report_cash_flow","report_vat","report_payment_methods","report_occupancy","report_daily_ops"):
-        kind=intent.replace("report_","")
-        data=execute_tool("get_report",{"kind":kind,"start":start,"end":end}); tools_used.append("get_report")
-        return _answer(intent, tools_used, data)
-    if intent=="occupancy_summary":
-        data=execute_tool("get_occupancy_summary",{"start":start,"end":end}); tools_used.append("get_occupancy_summary")
-        return _answer(intent, tools_used, data)
-    if intent=="list_activities":
-        data=execute_tool("list_activities",{}); tools_used.append("list_activities")
-        return _answer(intent, tools_used, data)
-    if intent=="activity_stats":
-        data=execute_tool("get_activity_stats",{}); tools_used.append("get_activity_stats")
         return _answer(intent, tools_used, data)
 
     # reservations

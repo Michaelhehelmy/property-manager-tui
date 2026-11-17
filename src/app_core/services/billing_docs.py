@@ -11,6 +11,10 @@ def _invoice_dir():
     return paths.INVOICE_DIR
 
 
+def _default_traceability_text(**_kw):
+    return ""
+
+
 def _money_fmt(value, currency, usd_to_egp=1.0):
     factor = 1.0 if currency == "EGP" else (1.0 / float(usd_to_egp or 1.0))
     try:
@@ -20,11 +24,20 @@ def _money_fmt(value, currency, usd_to_egp=1.0):
     return f"{v:,.2f} {currency}"
 
 
+def _write_confined_invoice_file(filename: str, text):
+    invoice_dir = _invoice_dir()
+    invoice_dir.mkdir(exist_ok=True)
+    path = (invoice_dir / filename).resolve()
+    base = invoice_dir.resolve()
+    if base != path and base not in path.parents:
+        raise ValueError("Refusing to write file outside invoice directory.")
+    path.write_text(str(text or ""), encoding="utf-8")
+    return str(path)
+
+
 def build_invoice_text(reservation, nights, accom, pos_items, payments, *, currency="EGP", usd_to_egp=1.0,
                        display_name="Property Manager", address="", phone="", footer_text="", traceability_text_fn=None):
-    if traceability_text_fn is None:
-        def traceability_text_fn(**_kw):
-            return ""
+    traceability_text_fn = traceability_text_fn or _default_traceability_text
     W = 72
     m = lambda v: _money_fmt(v, currency, usd_to_egp)
     accom_net = round(float(accom.get("net") or 0), 2)
@@ -113,22 +126,15 @@ def build_invoice_text(reservation, nights, accom, pos_items, payments, *, curre
 
 
 def save_invoice_file(text, reservation_id, currency):
-    _invoice_dir().mkdir(exist_ok=True)
     suffix = "" if currency == "EGP" else f"_{str(currency).lower()}"
     rid = int(reservation_id)
-    path = (_invoice_dir() / f"invoice_Res{rid}_{datetime.now().strftime('%Y%m%d_%H%M%S')}{suffix}.txt").resolve()
-    base = _invoice_dir().resolve()
-    if base != path and base not in path.parents:
-        raise ValueError("Refusing to write invoice outside invoice directory.")
-    path.write_text(str(text or ""), encoding="utf-8")
-    return str(path)
+    filename = f"invoice_Res{rid}_{datetime.now().strftime('%Y%m%d_%H%M%S')}{suffix}.txt"
+    return _write_confined_invoice_file(filename, text)
 
 
 def build_walkin_receipt_text(receipt_items, total_gross, method, payment_id=None, when=None,
                               display_name="PROPERTY MANAGER", traceability_text_fn=None):
-    if traceability_text_fn is None:
-        def traceability_text_fn(**_kw):
-            return ""
+    traceability_text_fn = traceability_text_fn or _default_traceability_text
     W = 60
     when = when or datetime.now()
     ref = f"Payment #{payment_id}" if payment_id else "Walk-in"
@@ -171,11 +177,6 @@ def build_walkin_receipt_text(receipt_items, total_gross, method, payment_id=Non
 
 
 def save_walkin_receipt_file(text, payment_id):
-    _invoice_dir().mkdir(exist_ok=True)
     safe_id = int(payment_id) if payment_id else 0
-    path = (_invoice_dir() / f"walkin_receipt_Pay{safe_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt").resolve()
-    base = _invoice_dir().resolve()
-    if base != path and base not in path.parents:
-        raise ValueError("Refusing to write receipt outside invoice directory.")
-    path.write_text(str(text or ""), encoding="utf-8")
-    return str(path)
+    filename = f"walkin_receipt_Pay{safe_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+    return _write_confined_invoice_file(filename, text)

@@ -114,7 +114,7 @@ def exemplar_match(text: str, threshold: float = 0.70):
     return None
 
 # ── ML routers (optional, local/no external API) ─────────────────────────────
-_SKLEARN_CACHE = None; _SETFIT_CACHE = None; _LOCAL_LLM_CACHE = None
+_SKLEARN_CACHE = None; _SETFIT_CACHE = None
 def _load_sklearn_router():
     global _SKLEARN_CACHE
     if _SKLEARN_CACHE is not None: return _SKLEARN_CACHE

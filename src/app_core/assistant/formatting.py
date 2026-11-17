@@ -893,48 +893,67 @@ def _fmt_payments_summary(data: dict) -> str:
 
 
 
+_INTENT_FORMATTERS = {
+    "capabilities_help": _fmt_capabilities,
+    "property_stats": _fmt_stats,
+    "today_ops": _fmt_today_ops,
+    "business_partner_briefing": _fmt_partner_briefing,
+    "report_pl": _fmt_report,
+    "report_cash_flow": _fmt_report,
+    "report_vat": _fmt_report,
+    "report_payment_methods": _fmt_report,
+    "report_occupancy": _fmt_report,
+    "report_daily_ops": _fmt_report,
+    "occupancy_summary": _fmt_occupancy,
+    "decision_support": _fmt_decision_support,
+    "compare_periods": _fmt_compare,
+    "outstanding_balances": _fmt_outstanding,
+    "inventory_alerts": _fmt_inventory_alerts,
+    "expiring_batches": _fmt_expiring_batches,
+    "get_expiring_batches": _fmt_expiring_batches,
+    "inventory_batches": _fmt_inventory_batches,
+    "list_inventory_batches": _fmt_inventory_batches,
+    "trace_barcode": _fmt_trace_barcode,
+    "barcode_trace": _fmt_trace_barcode,
+    "app_update_status": _fmt_app_update_status,
+    "get_app_update_status": _fmt_app_update_status,
+    "app_version": _fmt_app_update_status,
+    "top_selling_items": _fmt_top_sellers,
+    "expenses_summary": _fmt_expenses,
+    "sales_breakdown": _fmt_sales_breakdown,
+    "reservation_pipeline": _fmt_pipeline,
+    "housekeeping_summary": _fmt_housekeeping,
+    "room_availability": _fmt_availability,
+    "menu_info": _fmt_menu,
+    "rate_plans": _fmt_rate_plans,
+    "ledger_integrity": _fmt_integrity,
+    "health_diagnostics": _fmt_health_diagnostics,
+    "doctor_report": _fmt_health_diagnostics,
+    "recent_activity": _fmt_recent_activity,
+    "list_activities": _fmt_activities_catalog,
+    "activity_stats": _fmt_activity_stats,
+    "guest_activity_bookings": _fmt_activity_bookings,
+    "reservation_search": _fmt_reservation_search,
+    "reservation_summary": _fmt_reservation,
+    "reservation_balance": _fmt_reservation,
+    "guest_search": _fmt_guest_search,
+    "guest_profile": _fmt_guest_profile,
+    "guest_portfolio": _fmt_guest_portfolio,
+    "guest_last_visit": _fmt_guest_last_visit,
+    "guest_top_items_last_visit": _fmt_guest_top_items,
+    "guest_last_visit_spend": _fmt_guest_last_visit_spend,
+    "inventory_search": _fmt_inventory_search,
+    "inventory_item_details": _fmt_inventory_item_details,
+    "walkin_sales_summary": _fmt_walkin_sales_summary,
+    "payments_summary": _fmt_payments_summary,
+}
+
+
 def _format_for_intent(intent: str, data: dict, fallback_title: str = "Result") -> str:
     try:
-        if intent == "capabilities_help": return _fmt_capabilities(data)
-        if intent == "property_stats": return _fmt_stats(data)
-        if intent == "today_ops": return _fmt_today_ops(data)
-        if intent == "business_partner_briefing": return _fmt_partner_briefing(data)
-        if intent in ("report_pl","report_cash_flow","report_vat","report_payment_methods","report_occupancy","report_daily_ops"): return _fmt_report(data)
-        if intent == "occupancy_summary": return _fmt_occupancy(data)
-        if intent == "decision_support": return _fmt_decision_support(data)
-        if intent == "compare_periods": return _fmt_compare(data)
-        if intent == "outstanding_balances": return _fmt_outstanding(data)
-        if intent == "inventory_alerts": return _fmt_inventory_alerts(data)
-        if intent in ("expiring_batches","get_expiring_batches"): return _fmt_expiring_batches(data)
-        if intent in ("inventory_batches","list_inventory_batches"): return _fmt_inventory_batches(data)
-        if intent in ("trace_barcode","barcode_trace"): return _fmt_trace_barcode(data)
-        if intent in ("app_update_status","get_app_update_status","app_version"): return _fmt_app_update_status(data)
-        if intent == "top_selling_items": return _fmt_top_sellers(data)
-        if intent == "expenses_summary": return _fmt_expenses(data)
-        if intent == "sales_breakdown": return _fmt_sales_breakdown(data)
-        if intent == "reservation_pipeline": return _fmt_pipeline(data)
-        if intent == "housekeeping_summary": return _fmt_housekeeping(data)
-        if intent == "room_availability": return _fmt_availability(data)
-        if intent == "menu_info": return _fmt_menu(data)
-        if intent == "rate_plans": return _fmt_rate_plans(data)
-        if intent == "ledger_integrity": return _fmt_integrity(data)
-        if intent in ("health_diagnostics", "doctor_report"): return _fmt_health_diagnostics(data)
-        if intent == "recent_activity": return _fmt_recent_activity(data)
-        if intent == "list_activities": return _fmt_activities_catalog(data)
-        if intent == "activity_stats": return _fmt_activity_stats(data)
-        if intent == "guest_activity_bookings": return _fmt_activity_bookings(data)
-        if intent == "reservation_search": return _fmt_reservation_search(data)
-        if intent in ("reservation_summary","reservation_balance"): return _fmt_reservation(data)
-        if intent == "guest_search": return _fmt_guest_search(data)
-        if intent == "guest_profile": return _fmt_guest_profile(data)
-        if intent == "guest_portfolio": return _fmt_guest_portfolio(data)
-        if intent == "guest_last_visit": return _fmt_guest_last_visit(data)
-        if intent == "guest_top_items_last_visit": return _fmt_guest_top_items(data)
-        if intent == "guest_last_visit_spend": return _fmt_guest_last_visit_spend(data)
-        if intent == "inventory_search": return _fmt_inventory_search(data)
-        if intent == "inventory_item_details": return _fmt_inventory_item_details(data)
-        if intent == "walkin_sales_summary": return _fmt_walkin_sales_summary(data)
-        if intent == "payments_summary": return _fmt_payments_summary(data)
+        formatter = _INTENT_FORMATTERS.get(intent)
+        if formatter:
+            return formatter(data)
     except Exception:
         logger.warning("assistant._format_for_intent: formatter failed intent=%r; falling back to raw data", intent, exc_info=True)
     return _format_data(fallback_title, data)
