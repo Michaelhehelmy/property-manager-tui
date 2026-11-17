@@ -1514,6 +1514,71 @@ def _nights(ci, co):
     return max(1, (d2 - d1).days)
 
 
+def list_room_blocks(room_id=None, status="active"):
+    q = """SELECT rb.*, rm.room_number, rm.room_type FROM room_blocks rb
+           LEFT JOIN rooms rm ON rm.id = rb.room_id WHERE 1=1"""
+    params = []
+    if room_id is not None:
+        q += " AND rb.room_id=?"; params.append(int(room_id))
+    if status:
+        q += " AND rb.status=?"; params.append(status)
+    q += " ORDER BY rb.start_date DESC, rb.id DESC"
+    return [dict(r) for r in db.connect().execute(q, params).fetchall()]
+
+
+def create_room_block(room_id, block_type, reason, start_date, end_date, notes="", password=None):
+    try:
+        room_id = int(room_id)
+        d1 = datetime.strptime(str(start_date), DATE_FMT)
+        d2 = datetime.strptime(str(end_date), DATE_FMT)
+    except Exception:
+        raise ValueError("Invalid room or dates (YYYY-MM-DD).")
+    if d2 <= d1:
+        raise ValueError("End date must be after start date.")
+    block_type = (block_type or "OOO").strip().upper()
+    if block_type not in ("OOO", "OOS"):
+        block_type = "OOO"
+    room = db.connect().execute("SELECT id FROM rooms WHERE id=?", (room_id,)).fetchone()
+    if not room:
+        raise ValueError("Room not found.")
+    with db.transaction() as conn:
+        cur = conn.execute(
+            """INSERT INTO room_blocks (room_id, block_type, reason, start_date, end_date, status, notes)
+               VALUES (?, ?, ?, ?, ?, 'active', ?)""",
+            (room_id, block_type, (reason or "").strip(), start_date, end_date, (notes or "").strip()),
+        )
+        bid = cur.lastrowid
+    _audit("room_block_create", "room_block", bid, f"room={room_id} {block_type} {start_date}->{end_date}")
+    return bid
+
+
+def resolve_room_block(block_id, password=None):
+    bid = int(block_id)
+    with db.transaction() as conn:
+        row = conn.execute("SELECT id, status FROM room_blocks WHERE id=?", (bid,)).fetchone()
+        if not row:
+            raise ValueError("Room block not found.")
+        conn.execute("UPDATE room_blocks SET status='resolved', resolved_at=datetime('now','localtime') WHERE id=?", (bid,))
+    _audit("room_block_resolve", "room_block", bid, "")
+    return bid
+
+
+def _room_has_active_block(room_id, ci, co, conn=None):
+    c = conn or db.connect()
+    try:
+        row = c.execute(
+            """SELECT 1 FROM room_blocks
+               WHERE room_id=? AND status='active'
+                 AND NOT (end_date <= ? OR start_date >= ?)
+               LIMIT 1""",
+            (int(room_id), ci, co),
+        ).fetchone()
+        return bool(row)
+    except Exception:
+        # table may not exist on very old DB before migration in edge cases
+        return False
+
+
 def check_room_availability(room_id, ci, co, exclude_res_id=None):
     q = """SELECT COUNT(*) FROM reservations WHERE room_id=?
            AND status IN ('Reserved','Checked In')
@@ -1522,7 +1587,11 @@ def check_room_availability(room_id, ci, co, exclude_res_id=None):
     if exclude_res_id is not None:
         q += " AND id != ?"
         p.append(exclude_res_id)
-    return db.connect().execute(q, p).fetchone()[0] == 0
+    if db.connect().execute(q, p).fetchone()[0] != 0:
+        return False
+    if _room_has_active_block(room_id, ci, co):
+        return False
+    return True
 
 
 def create_reservation(guest_name, source, room_id, rate_plan_id, agreed_nightly_rate,

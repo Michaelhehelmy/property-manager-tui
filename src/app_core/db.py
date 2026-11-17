@@ -16,7 +16,7 @@ from . import paths
 DATA_DIR = paths.DATA_DIR
 BASE_DIR = paths.BASE_DIR
 DB_PATH = paths.DB_PATH
-SCHEMA_VERSION = 13
+SCHEMA_VERSION = 14
 
 _conn = None
 _lock = threading.RLock()
@@ -523,6 +523,22 @@ CREATE TABLE reservation_discounts (
 );
 CREATE INDEX idx_res_discounts_res ON reservation_discounts(reservation_id);
 
+
+CREATE TABLE room_blocks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    room_id INTEGER NOT NULL,
+    block_type TEXT NOT NULL DEFAULT 'OOO',
+    reason TEXT NOT NULL DEFAULT '',
+    start_date TEXT NOT NULL,
+    end_date TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active',
+    notes TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    resolved_at TEXT,
+    FOREIGN KEY (room_id) REFERENCES rooms(id)
+);
+CREATE INDEX idx_room_blocks_room_dates ON room_blocks(room_id, start_date, end_date, status);
+
 CREATE TABLE operational_expenses (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     category_id INTEGER NOT NULL,
@@ -951,6 +967,28 @@ def _migrate_to_13(conn):
             pass
 
 
+
+def _migrate_to_14(conn):
+    # P3: room blocks / out-of-order (additive)
+    if not _table_exists(conn, "room_blocks"):
+        conn.executescript("""
+        CREATE TABLE IF NOT EXISTS room_blocks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            room_id INTEGER NOT NULL,
+            block_type TEXT NOT NULL DEFAULT 'OOO',
+            reason TEXT NOT NULL DEFAULT '',
+            start_date TEXT NOT NULL,
+            end_date TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'active',
+            notes TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            resolved_at TEXT,
+            FOREIGN KEY (room_id) REFERENCES rooms(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_room_blocks_room_dates ON room_blocks(room_id, start_date, end_date, status);
+        """)
+
+
 def migrate():
     """Create or upgrade schema to SCHEMA_VERSION.
 
@@ -1006,6 +1044,8 @@ def migrate():
                     _migrate_to_12(conn)
                 if version < 13:
                     _migrate_to_13(conn)
+                if version < 14:
+                    _migrate_to_14(conn)
                 conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
                 ensure_runtime_indexes(conn)
                 _record_migration_meta(conn, status="upgraded", from_version=from_version, to_version=SCHEMA_VERSION)
