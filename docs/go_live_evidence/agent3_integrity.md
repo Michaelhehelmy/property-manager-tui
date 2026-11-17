@@ -17,4 +17,5 @@
 - [ ] Produce reconciliation report (anonymized)
 
 ## Evidence/log
-- (to be filled with commands, datasets tested, expected vs actual)
+- 2026-11-17: `PYTHONPATH=src python3 -m app_core.doctor --json` -> ok=true, schema user_version=9 matches expected, sqlite integrity ok, foreign_key_check ok, batch_stock mismatch_count=0, data dirs writable.
+- 2026-11-17: `PYTHONPATH=src python3 -m app_core.doctor --backup --backup-to /data/data/com.termux/files/usr/tmp/opencode/pm_go_live_test_backup.db --json` -> backup created and verified ok (schema/integrity/consistency checks passed). Off-host retention and full restore drill on clean environment still required (Agent 5).

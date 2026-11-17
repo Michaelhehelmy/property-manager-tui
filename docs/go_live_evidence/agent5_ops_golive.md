@@ -18,4 +18,4 @@
 - [ ] Execute `docs/GO_LIVE_CHECKLIST.md`, pilot/UAT, smoke/reconciliation, hypercare, sign-off
 
 ## Evidence/log
-- (to be filled with configs sanitized, drill timings/results, checklist outcomes)
+- 2026-11-17 (local tooling validation): doctor health/readiness JSON OK; backup+verify helper succeeded to temp path (`pm_go_live_test_backup.db`, 311296 bytes, schema v9, integrity/consistency verified). This validates backup tooling only - **not** a substitute for automated off-host backups, full restore drill to clean environment, monitoring, HTTPS/VPN/proxy deployment, or pilot/UAT.
