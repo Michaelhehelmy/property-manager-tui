@@ -41,7 +41,11 @@
   <li><strong>Open a reservation:</strong> click its ID to view folio, add payments/POS, book activities, check-in/out, modify, cancel/no-show, or generate invoice.</li>
   <li><strong>Protected actions:</strong> refunds/voids, paid cancel/no-show, checkout override may require unlock/super password.</li>
 </ul></details>
-<div class="panel"><form method="get" class="row"><input type="hidden" name="tab" value="list"/><input name="q" value="{{q}}" title="Search by guest name, room, status, or ID" placeholder="Search guest / id / room"/><div style="flex:0"><button type="submit">Search</button></div></form></div>
+<div class="panel"><form method="get" class="row"><input type="hidden" name="tab" value="list"/>
+  <input name="q" value="{{q}}" title="Search by guest name, room, status, ID, source, or segment" placeholder="Search guest / id / room / source"/>
+  <input name="source" value="{{source or ''}}" placeholder="Source" style="max-width:160px"/>
+  <input name="segment" value="{{segment or ''}}" placeholder="Segment" style="max-width:160px"/>
+  <div style="flex:0"><button type="submit">Search</button></div></form></div>
 <div class="panel"><table>
   <tr><th>ID</th><th>Guest</th><th>Room</th><th>Dates</th><th>Status</th><th>Source / Segment</th><th>Plan</th></tr>
 {% for r in rows %}<tr>

@@ -372,7 +372,7 @@ def _execute_single(intent: str, text: str, slots: dict, ui_context=None):
         if not q:
             q = re.sub(r"(?i)\b(find|search|show|list|look up|reservation|reservations|booking|bookings|for|of)\b", " ", text)
             q = re.sub(r"\s+", " ", q).strip(" ?.,#:") or ""
-        data = execute_tool("search_reservations", {"query": q, "reservation_id": rid, "status": slots.get("status") or "", "start": start, "end": end})
+        data = execute_tool("search_reservations", {"query": q, "reservation_id": rid, "status": slots.get("status") or "", "source": slots.get("source") or "", "market_segment": slots.get("market_segment") or slots.get("segment") or "", "start": start, "end": end})
         tools_used.append("search_reservations")
         return _answer(intent, tools_used, data)
 

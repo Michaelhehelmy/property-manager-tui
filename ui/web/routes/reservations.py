@@ -53,20 +53,26 @@ def _rooms(): return connect().execute("SELECT id, room_number, room_type, base_
 def _plans(): return connect().execute("SELECT id, name, price_modifier FROM rate_plans ORDER BY name").fetchall()
 
 @router.get("/reservations")
-def list_res(request: Request, q: str = "", tab: str = "list"):
+def list_res(request: Request, q: str = "", source: str = "", segment: str = "", tab: str = "list"):
     ql = f"%{q}%" if q else "%"
+    sl = f"%{source}%" if source else "%"
+    ml = f"%{segment}%" if segment else "%"
     rows = connect().execute("""
         SELECT r.*, rm.room_number, rp.name as rate_plan_name
         FROM reservations r LEFT JOIN rooms rm ON r.room_id=rm.id
         LEFT JOIN rate_plans rp ON r.rate_plan_id=rp.id
-        WHERE r.status NOT IN ('Deleted') AND (r.guest_name LIKE ? OR r.id LIKE ? OR rm.room_number LIKE ?)
-        ORDER BY r.id DESC LIMIT 200""", (ql, ql, ql)).fetchall()
+        WHERE r.status NOT IN ('Deleted')
+          AND (? = '' OR r.guest_name LIKE ? OR CAST(r.id AS TEXT) LIKE ? OR rm.room_number LIKE ? OR COALESCE(r.source,'') LIKE ? OR COALESCE(r.source_detail,'') LIKE ? OR COALESCE(r.market_segment,'') LIKE ?)
+          AND (? = '' OR COALESCE(r.source,'') LIKE ?)
+          AND (? = '' OR COALESCE(r.market_segment,'') LIKE ?)
+        ORDER BY r.id DESC LIMIT 200""",
+        (q, ql, ql, ql, ql, ql, ql, source, sl, segment, ml)).fetchall()
     now = datetime.now()
     allowed = {"list","create"}
     tab = (tab or "list").strip().lower()
     if tab not in allowed: tab = "list"
-    if q: tab = "list"
-    return render(request, "reservations/list.html", {"title":"Reservations","rows":rows,"q":q,"rooms":_rooms(),"plans":_plans(),
+    if q or source or segment: tab = "list"
+    return render(request, "reservations/list.html", {"title":"Reservations","rows":rows,"q":q,"source":source,"segment":segment,"rooms":_rooms(),"plans":_plans(),
                   "today":now.strftime("%Y-%m-%d"), "tomorrow":(now+timedelta(days=1)).strftime("%Y-%m-%d"), "active_tab":tab})
 
 @router.post("/reservations/create")

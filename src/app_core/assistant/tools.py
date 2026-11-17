@@ -625,12 +625,14 @@ def tool_trace_barcode(args=None):
 
 
 def tool_search_reservations(args=None):
-    """Search/list reservations by guest name, status, id, or date range (read-only)."""
+    """Search/list reservations by guest name, status, id, source/segment, or date range (read-only)."""
     try:
         from ..db import connect
         args = args or {}
         q = (args.get("query") or args.get("q") or "").strip()
         status = (args.get("status") or "").strip()
+        source = (args.get("source") or "").strip()
+        market_segment = (args.get("market_segment") or args.get("segment") or "").strip()
         start = (args.get("start") or "").strip()
         end = (args.get("end") or "").strip()
         rid = _safe_int(args.get("reservation_id") or args.get("id"))
@@ -643,17 +645,22 @@ def tool_search_reservations(args=None):
             where.append("r.id = ?"); params.append(rid)
         if q:
             like = f"%{q}%"
-            where.append("(r.guest_name LIKE ? OR CAST(r.id AS TEXT) LIKE ? OR COALESCE(r.source,'') LIKE ? OR COALESCE(rm.room_number,'') LIKE ?)")
-            params.extend([like, like, like, like])
+            where.append("(r.guest_name LIKE ? OR CAST(r.id AS TEXT) LIKE ? OR COALESCE(r.source,'') LIKE ? OR COALESCE(r.source_detail,'') LIKE ? OR COALESCE(r.market_segment,'') LIKE ? OR COALESCE(rm.room_number,'') LIKE ?)")
+            params.extend([like, like, like, like, like, like])
         if status:
             where.append("r.status = ?"); params.append(status)
+        if source:
+            where.append("COALESCE(r.source,'') LIKE ?"); params.append(f"%{source}%")
+        if market_segment:
+            where.append("COALESCE(r.market_segment,'') LIKE ?"); params.append(f"%{market_segment}%")
         if start:
             where.append("date(r.check_in_date) >= date(?)"); params.append(start)
         if end:
             where.append("date(r.check_out_date) <= date(?)"); params.append(end)
         sql = f"""
             SELECT r.id, r.guest_name, r.status, r.check_in_date, r.check_out_date, r.agreed_nightly_rate,
-                   r.source, r.created_at, rm.room_number, rm.room_type
+                   r.source, COALESCE(r.source_detail,'') AS source_detail, COALESCE(r.market_segment,'') AS market_segment,
+                   r.created_at, rm.room_number, rm.room_type
             FROM reservations r
             LEFT JOIN rooms rm ON r.room_id = rm.id
             WHERE {' AND '.join(where)}
@@ -663,7 +670,7 @@ def tool_search_reservations(args=None):
         params.append(limit)
         rows = connect().execute(sql, tuple(params)).fetchall()
         out = [dict(r) for r in rows]
-        return {"reservations": out, "count": len(out), "filters": {"query": q, "status": status, "start": start, "end": end, "reservation_id": rid}}
+        return {"reservations": out, "count": len(out), "filters": {"query": q, "status": status, "source": source, "market_segment": market_segment, "start": start, "end": end, "reservation_id": rid}}
     except Exception as e:
         return {"error": str(e)}
 
@@ -845,7 +852,7 @@ TOOLS = {
     "trace_barcode": {"fn": tool_trace_barcode, "description": "Trace a barcode/SKU/lot code to the inventory item or batch (lot, received, expiry, remaining, movements).", "parameters": {"type":"object","properties":{"code":{"type":"string"},"barcode":{"type":"string"},"sku":{"type":"string"}},"additionalProperties":False}},
     "get_app_update_status": {"fn": tool_get_app_update_status, "description": "Get local app version/commit/update state and how to check/apply updates (data preserved).", "parameters": {"type":"object","properties":{},"additionalProperties":False}},
     "get_health_diagnostics": {"fn": tool_get_health_diagnostics, "description": "Read-only doctor/health diagnostics: schema/integrity, batch-stock consistency, printer/update readiness, and backup/restore guidance.", "parameters": {"type":"object","properties":{},"additionalProperties":False}},
-    "search_reservations": {"fn": tool_search_reservations, "description": "Search/list reservations by guest name, id, status, or date range (read-only).", "parameters": {"type":"object","properties":{"query":{"type":"string"},"reservation_id":{"type":"integer"},"status":{"type":"string"},"start":{"type":"string"},"end":{"type":"string"},"limit":{"type":"integer"}},"additionalProperties":False}},
+    "search_reservations": {"fn": tool_search_reservations, "description": "Search/list reservations by guest name, id, status, source/segment, or date range (read-only).", "parameters": {"type":"object","properties":{"query":{"type":"string"},"reservation_id":{"type":"integer"},"status":{"type":"string"},"source":{"type":"string"},"market_segment":{"type":"string"},"start":{"type":"string"},"end":{"type":"string"},"limit":{"type":"integer"}},"additionalProperties":False}},
     "search_inventory": {"fn": tool_search_inventory, "description": "Search/list inventory products with stock, pricing, SKU/barcode, and category.", "parameters": {"type":"object","properties":{"query":{"type":"string"},"category":{"type":"string"},"stock_filter":{"type":"string"},"limit":{"type":"integer"}},"additionalProperties":False}},
     "get_inventory_item": {"fn": tool_get_inventory_item, "description": "Get inventory item/product details and stock by item id.", "parameters": {"type":"object","properties":{"item_id":{"type":"integer"}},"required":["item_id"],"additionalProperties":False}},
     "get_walkin_sales_summary": {"fn": tool_get_walkin_sales_summary, "description": "Recent walk-in (non-reservation) POS sales and payments summary/totals; works without room reservations.", "parameters": {"type":"object","properties":{"limit_pos":{"type":"integer"},"limit_payments":{"type":"integer"},"limit":{"type":"integer"}},"additionalProperties":False}},

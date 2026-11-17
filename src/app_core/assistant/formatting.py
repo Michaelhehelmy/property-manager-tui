@@ -809,13 +809,18 @@ def _fmt_reservation_search(data: dict) -> str:
     if data.get("error"): return f"I couldn’t search reservations ({data.get('error')})."
     rows = data.get("reservations") or []
     if not rows:
-        return "I didn’t find reservations matching that (real records). Try a different guest name, reservation ID, status, or date range."
+        return "I didn’t find reservations matching that (real records). Try a different guest name, reservation ID, status, source/segment, or date range."
     lines = [f"Found **{len(rows)}** reservation(s) (showing up to requested limit):"]
     for r in rows[:20]:
         rid = r.get("id"); guest = r.get("guest_name") or "-"; st = r.get("status") or "-"
         ci = r.get("check_in_date") or "-"; co = r.get("check_out_date") or "-"
         room = r.get("room_number") or "-"; rtype = r.get("room_type") or ""
-        lines.append(f"- **#{rid}** {guest} — {st}, {ci} → {co}, room {room}{(' ('+rtype+')') if rtype else ''}, rate {_fmt_money(r.get('agreed_nightly_rate') or 0)}")
+        src = r.get("source") or ""
+        seg = r.get("market_segment") or ""
+        meta = []
+        if src: meta.append(f"source {src}")
+        if seg: meta.append(f"segment {seg}")
+        lines.append(f"- **#{rid}** {guest} — {st}, {ci} → {co}, room {room}{(' ('+rtype+')') if rtype else ''}, rate {_fmt_money(r.get('agreed_nightly_rate') or 0)}{(' · ' + ', '.join(meta)) if meta else ''}")
     if len(rows) > 20:
         lines.append(f"- …and {len(rows)-20} more.")
     lines.append("\nTip: ask for `reservation #<id> summary` or `reservation #<id> balance` for details.")

@@ -210,6 +210,19 @@ def extract_slots(text: str, history=None) -> dict:
             bad = {"id","number","#","the","a","someone","anyone","he","she","they","him","her","them","last","visit","most","ordered","me","us","today","yesterday","month","week"}
             if cand.lower() not in bad and not re.fullmatch(r"\d+", cand):
                 slots["guest_query"] = cand
+    # booking source / market segment hints (for reservation search/filtering)
+    m = re.search(r"(?:\bsource\b|\bchannel\b|\bfrom\b)\s*[:=]?\s*([A-Za-z][A-Za-z0-9 ._/-]{1,30})", t, re.IGNORECASE)
+    if m:
+        sv = m.group(1).strip(" ,.")
+        sv = re.split(r"\b(segment|status|guest|room|from\s+20\d{2}|between|for|on|in)\b", sv, flags=re.IGNORECASE)[0].strip(" ,.")
+        if sv and sv.lower() not in ("a", "the"):
+            slots["source"] = sv
+    m = re.search(r"(?:\bsegment\b|market\s+segment)\s*[:=]?\s*([A-Za-z][A-Za-z0-9 ._/-]{1,30})", t, re.IGNORECASE)
+    if m:
+        mv = m.group(1).strip(" ,.")
+        mv = re.split(r"\b(source|channel|status|guest|room|from\s+20\d{2}|between|for|on|in)\b", mv, flags=re.IGNORECASE)[0].strip(" ,.")
+        if mv and mv.lower() not in ("a", "the"):
+            slots["market_segment"] = mv
     ctx = _context_from_history(history)
     followup = any(k in tl for k in ["same guest", "that guest", "his ", "her ", "their ", "same reservation", "that reservation", "for him", "for her", "for them", "and for", "what about", "same period", "same range", "break that down", "show me more", "their portfolio", "his portfolio", "her portfolio"])
     if followup or (len(t.split()) <= 6 and not slots.get("guest_id") and not slots.get("reservation_id")):
