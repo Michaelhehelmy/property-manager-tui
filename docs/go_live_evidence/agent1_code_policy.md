@@ -31,13 +31,17 @@
 - Matrix discrepancies to fix: `POST /assistant/action/confirm`, `POST /assistant/action/cancel`, and `POST /setup` omitted from `docs/web_authz_matrix.md`; some handlers use `require_unlock+get_form` vs `require_unlocked_form` (document or normalize); proof/enforcement mismatches noted (e.g. delete/modify collect/pass password but service verification may be policy-only; several unlock-gated routes call services with no password params) - align UI/docs/service enforcement to avoid false assurance.
 - Agent 1 next code/doc actions: update matrix for completeness/accuracy, decide tighten-vs-accept for operational CSRF-only mutations, and resolve proof/enforcement mismatches (service-side enforcement or UI/doc correction) with tests.
 
+## Proof/enforcement alignment note (2026-11-17)
+- Reviewed `services.modify_reservation` and `services.delete_reservation` (`src/app_core/services/_monolith.py`): signatures accept `password=None` but current implementation enforces policy/state (status/payments/POS/availability) without password verification. Per approved easiest path, **kept behavior unchanged** and documented in `docs/web_authz_matrix.md` that routes may pass proof values while UI/docs must not imply service-password enforcement where service API does not require it. Tightening to require verified super-password is a policy change requiring service+UI+TUI+test updates.
+
 ## Remaining Agent 1 tasks
-- [ ] Stakeholder sign-off on RISK-1 policy; update `docs/web_authz_matrix.md` and `docs/SECURITY.md` accordingly.
-- [ ] Resolve matrix discrepancies and proof/enforcement mismatches identified above (incl. assistant action routes and `/setup`).
+- [x] Stakeholder sign-off on RISK-1 policy; update `docs/web_authz_matrix.md` and `docs/SECURITY.md` accordingly.
+- [x] Resolve matrix discrepancies for omitted routes (`/assistant/action/confirm`, `/assistant/action/cancel`, `/setup`) and document proof/enforcement nuances.
+- [ ] Optional (policy decision): enforce password verification in `modify_reservation`/`delete_reservation` and align any other proof-mismatch paths (service+UI+TUI+tests), or confirm doc/UI-alignment-only approach.
 - [ ] Parity sweep for web sub-tabs and TUI core flows (POS/inventory/batches/meals/activities/history, reservations/guests/accounting/reports/settings) including traceability fields in receipts/invoices/history/labels/exports.
 - [ ] Assistant/action safety and local-only/grounding review confirmation.
-- [ ] Docs sync pass (README, assistant.md, deployment/security/updates/troubleshooting/go-live checklist).
-- [ ] Targeted regression tests for any policy/behavior changes; confirm CI green on pushed branch/RC.
+- [ ] Docs sync pass (README, assistant.md, deployment/security/updates/troubleshooting/go-live checklist as needed).
+- [ ] Confirm CI green on pushed branch/RC.
 
 ## Handoff
-- G1 not yet complete (policy sign-off + matrix/proof alignment + final doc sync pending). Current HEAD: 0132a42.
+- G1 near-complete for approved policy/docs; pending optional proof-tightening decision, parity sweep, and pushed CI confirmation. Current HEAD: 56c05ef.

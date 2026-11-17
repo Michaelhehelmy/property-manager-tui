@@ -25,4 +25,7 @@
 - [ ] Flaky test triage and quality summary
 
 ## Evidence/log
-- 2026-11-16: Full suite baseline pass recorded (844 passed, 1 warning, 0 failed). CI workflow creation and E2E/stress/release gates still pending.
+- 2026-11-16: Full suite baseline pass recorded (844 passed, 1 warning, 0 failed).
+- 2026-11-17: `PYTHONPATH=src PM_WEB_SECRET_KEY=test-secret python3 -m pytest tests -q -m "authz or invariant"` -> 21 passed, 823 deselected, 1 warning.
+- 2026-11-17: `PYTHONPATH=src PM_WEB_SECRET_KEY=test-secret python3 -m pytest tests/web/test_p1_8_smoke_e2e.py tests/web/test_golive_web_integration.py tests/test_golive_invariants_migrations_contracts.py -q` -> 21 passed, 1 warning.
+- 2026-11-17: Ruff lint not runnable in this environment (`pip install ruff` failed building due to rustc/maturin toolchain requirements); CI workflow includes lint step. Remaining: enforced coverage ratchet, dedicated stress/perf stage, pinned-release install/rollback verification, constrained-platform matrix.
