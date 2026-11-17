@@ -1603,6 +1603,118 @@ def _void_pos_item_inner(cur, pos_row):
     cur.execute("UPDATE pos_tabs SET voided_at=datetime('now','localtime') WHERE id=?", (pid,))
 
 
+# ── Reservation edit policy / preview (groundwork, additive) ────────────────
+
+RESERVATION_EDIT_POLICY = {
+    "Reserved": {"editable": True, "fields": ["room", "dates", "rate", "source", "segment", "notes"], "reprices_accommodation": True},
+    "Checked In": {"editable": True, "fields": ["room", "dates", "rate", "source", "segment", "notes"], "reprices_accommodation": True, "notes": "In-house modification may affect charges/availability."},
+    "Checked Out": {"editable": False, "fields": [], "reprices_accommodation": False},
+    "Cancelled": {"editable": False, "fields": [], "reprices_accommodation": False},
+    "No-Show": {"editable": False, "fields": [], "reprices_accommodation": False},
+    "Deleted": {"editable": False, "fields": [], "reprices_accommodation": False},
+}
+
+
+def get_reservation_edit_policy(rid):
+    """Return allowed edits and policy context for a reservation (read-only, additive)."""
+    row = db.connect().execute(
+        """SELECT r.*, rm.room_number, rm.room_type, rp.name AS rate_plan_name
+           FROM reservations r
+           LEFT JOIN rooms rm ON r.room_id = rm.id
+           LEFT JOIN rate_plans rp ON r.rate_plan_id = rp.id
+           WHERE r.id=?""", (rid,)
+    ).fetchone()
+    if not row:
+        return {"found": False, "editable": False, "reason": "Reservation not found.", "reservation": None}
+    r = dict(row)
+    status = r.get("status")
+    pol = dict(RESERVATION_EDIT_POLICY.get(status, {"editable": False, "fields": [], "reprices_accommodation": False}))
+    reasons = []
+    if not pol.get("editable"):
+        reasons.append(f"Cannot modify a '{status}' reservation.")
+    bal = 0.0
+    try:
+        bal = float(calculate_guest_balance(rid) or 0)
+    except Exception:
+        bal = 0.0
+    return {
+        "found": True,
+        "reservation_id": rid,
+        "status": status,
+        "editable": bool(pol.get("editable")),
+        "editable_fields": pol.get("fields", []),
+        "reprices_accommodation": bool(pol.get("reprices_accommodation")),
+        "reasons": reasons,
+        "warnings": ([pol.get("notes")] if pol.get("notes") else []),
+        "balance_due": round(bal, 2),
+        "reservation": r,
+    }
+
+
+def preview_reservation_modification(rid, new_rate, new_ci, new_co, new_room_id,
+                                     source=None, source_detail=None, market_segment=None, booking_notes=None):
+    """Validate and compute modification impact without mutating data (read-only)."""
+    try:
+        new_rate = float(new_rate or 0)
+        new_room_id = int(new_room_id)
+    except Exception:
+        return {"ok": False, "error": "Invalid rate or room."}
+    try:
+        d1 = datetime.strptime(new_ci, DATE_FMT)
+        d2 = datetime.strptime(new_co, DATE_FMT)
+    except ValueError:
+        return {"ok": False, "error": "Dates must be YYYY-MM-DD."}
+    if d2 <= d1:
+        return {"ok": False, "error": "Check-out must be after check-in."}
+    if new_rate < 0:
+        return {"ok": False, "error": "Rate cannot be negative."}
+    nights = _nights(new_ci, new_co)
+    if nights < int(get_setting("min_nights", "1")):
+        return {"ok": False, "error": f"Below min nights ({get_setting('min_nights', '1')})."}
+    if nights > int(get_setting("max_nights", "365")):
+        return {"ok": False, "error": f"Above max nights ({get_setting('max_nights', '365')})."}
+    policy = get_reservation_edit_policy(rid)
+    if not policy.get("found"):
+        return {"ok": False, "error": "Reservation not found."}
+    if not policy.get("editable"):
+        return {"ok": False, "error": (policy.get("reasons") or ["Reservation is not editable."])[0], "policy": policy}
+    row = policy.get("reservation") or {}
+    allow_over = get_setting("allow_overbooking", "false") == "true"
+    available = True if allow_over else check_room_availability(new_room_id, new_ci, new_co, exclude_res_id=rid)
+    if not available:
+        return {"ok": False, "error": "Room not available.", "policy": policy}
+    new_tax = calculate_tax(new_rate * nights, nights)
+    new_tax_total = round(new_tax["service"] + new_tax["vat"] + new_tax["city_tax"], 2)
+    old_tax_total = round(float(row.get("tax_amount") or 0), 2)
+    old_nights = 0
+    try:
+        old_nights = _nights(str(row.get("check_in_date") or ""), str(row.get("check_out_date") or ""))
+    except Exception:
+        old_nights = 0
+    old_rate = float(row.get("agreed_nightly_rate") or 0)
+    old_accom = round((old_rate * old_nights) + old_tax_total, 2)
+    new_accom = round((new_rate * nights) + new_tax_total, 2)
+    changes = []
+    if int(row.get("room_id") or 0) != int(new_room_id): changes.append("room")
+    if str(row.get("check_in_date") or "") != str(new_ci) or str(row.get("check_out_date") or "") != str(new_co): changes.append("dates")
+    if abs(old_rate - float(new_rate)) > 1e-9: changes.append("rate")
+    if source is not None and str(row.get("source") or "") != str(source): changes.append("source")
+    if source_detail is not None and str(row.get("source_detail") or "") != str(source_detail): changes.append("source_detail")
+    if market_segment is not None and str(row.get("market_segment") or "") != str(market_segment): changes.append("market_segment")
+    if booking_notes is not None and str(row.get("booking_notes") or row.get("notes") or "") != str(booking_notes): changes.append("booking_notes")
+    return {
+        "ok": True,
+        "reservation_id": rid,
+        "status": row.get("status"),
+        "policy": policy,
+        "changes": changes,
+        "nights": {"before": old_nights, "after": nights},
+        "accommodation_total": {"before": old_accom, "after": new_accom, "delta": round(new_accom - old_accom, 2)},
+        "tax_breakdown_after": new_tax,
+        "room_available": available,
+        "note": "Preview only; modify revalidates and reposts accommodation charges in a transaction.",
+    }
+
 def modify_reservation(rid, new_rate, new_ci, new_co, new_room_id, password=None,
                        source=None, source_detail=None, market_segment=None, booking_notes=None):
     try:
@@ -1639,7 +1751,17 @@ def modify_reservation(rid, new_rate, new_ci, new_co, new_room_id, password=None
         new_booking_notes = (booking_notes or "")
     new_notes = new_booking_notes
     tax = calculate_tax(new_rate * nights, nights)
+    old_room_id = row["room_id"]
+    old_status = row["status"]
     with db.transaction() as conn:
+        # In-transaction revalidation (groundwork): prevent stale-state edits/races
+        cur_row = conn.execute(
+            "SELECT status, room_id, agreed_nightly_rate, tax_amount, check_in_date, check_out_date FROM reservations WHERE id=?",
+            (rid,)).fetchone()
+        if not cur_row:
+            raise ValueError("Reservation not found.")
+        if cur_row["status"] != old_status or cur_row["status"] not in ("Reserved", "Checked In"):
+            raise ValueError(f"Cannot modify a '{cur_row['status']}' reservation.")
         cur = conn.cursor()
         _reverse(cur, "RES", rid, entry_type_filter=("CHARGE",))
         _post(cur, "RES", rid, "CHARGE", "Accommodation",
@@ -1653,9 +1775,10 @@ def modify_reservation(rid, new_rate, new_ci, new_co, new_room_id, password=None
                       new_ci, new_co, new_room_id,
                       new_source, (new_source_detail or "").strip(), (new_market_segment or "").strip(),
                       (new_notes or "").strip(), (new_booking_notes or "").strip(), rid))
-        if row["room_id"] != new_room_id:
-            conn.execute("UPDATE rooms SET housekeeping_status='Dirty' WHERE id=?", (row["room_id"],))
-    _audit("reservation_modify", "reservation", rid, f"rate={new_rate} room={new_room_id}")
+        if old_room_id != new_room_id:
+            conn.execute("UPDATE rooms SET housekeeping_status='Dirty' WHERE id=?", (old_room_id,))
+    _audit("reservation_modify", "reservation", rid,
+           f"rate={new_rate} room={new_room_id} dates={new_ci}->{new_co} source={new_source} segment={new_market_segment}")
 
 
 def delete_reservation(rid, password=None):
