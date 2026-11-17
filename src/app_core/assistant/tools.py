@@ -22,10 +22,13 @@ def tool_list_capabilities(args=None):
         "Reports: P&L, cash flow, VAT, payment methods, occupancy, daily ops; compare periods",
         "Guests: search, profile, full 360° portfolio (all trips/stays, POS activity, payments, invoices, totals/stats), last visit, most-ordered items and spend on last visit, booked activities/trips",
         "Activities/Trips (excursions/experiences): registered catalog, booking/order stats, and guest/reservation bookings (booked like POS to folio/invoice)",
-        "Reservations: search/list, summary/details, balance, outstanding balances/AR, pipeline",
+        "Reservations: search/list, summary/details, balance, outstanding balances/AR, pipeline; reservation groups with member/folio totals",
         "POS & sales: walk-in sales summary (recent walk-in POS lines/payments/totals), sales breakdown, top sellers (works without room reservations)",
         "Inventory & products: search/list items, item details/stock/pricing, alerts (low/over/negative), expiring/expired batches and batch/lot lists, barcode/SKU/lot traceability (resolved item or lot with received/expiry/remaining and recent movements); menu/meals",
-        "Payments & finance: payment summary by period/method, expenses, and financial reports",
+        "Payments & finance: payment summary by period/method, expenses, cash shifts/register status and movements, and financial reports",
+        "Packages/bundles: list package definitions and items (read-only)",
+        "Housekeeping & rooms: housekeeping status summary, housekeeping tasks/workflow, and room blocks (OOO/OOS)",
+        "Night audit: advisory night-audit run snapshots/exceptions (read-only)",
         "Integrity, doctor & readiness: read-only ledger/data integrity checks and doctor/health diagnostics (schema, SQLite/FK integrity, batch-stock consistency, printer/update readiness, backup/restore readiness guidance)",
         "App version & updates: local app version/commit state and safe update guidance (in-app git-based fast-forward check/apply with changelog/details; runtime data DB/exports/invoices preserved, restart after apply)",
         "Expenses and sales breakdown; rate plans; room availability",
@@ -811,6 +814,117 @@ def tool_get_payments_summary(args=None):
 
 
 
+
+def tool_list_reservation_groups(args=None):
+    try:
+        status = (args or {}).get("status", "")
+        groups = services.list_reservation_groups(status=status) if hasattr(services, "list_reservation_groups") else []
+        # keep payload compact
+        out = []
+        for g in (groups or [])[:50]:
+            members = []
+            for m in (g.get("members") or [])[:20]:
+                members.append({
+                    "reservation_id": m.get("reservation_id"), "guest_name": m.get("guest_name"),
+                    "room_number": m.get("room_number"), "status": m.get("reservation_status"),
+                    "check_in_date": m.get("check_in_date"), "check_out_date": m.get("check_out_date"),
+                    "balance_due": m.get("balance_due"), "role": m.get("role"),
+                })
+            out.append({
+                "id": g.get("id"), "name": g.get("name"), "group_type": g.get("group_type"),
+                "status": g.get("status"), "member_count": g.get("member_count", len(members)),
+                "totals": g.get("totals") or {}, "members": members,
+                "contact_name": g.get("contact_name"),
+            })
+        return {"groups": out, "count": len(out), "status_filter": status}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def tool_list_packages(args=None):
+    try:
+        active_only = bool((args or {}).get("active_only", False))
+        pkgs = services.list_packages(active_only=active_only) if hasattr(services, "list_packages") else []
+        out = []
+        for p in (pkgs or [])[:50]:
+            items = []
+            for it in (p.get("items") or [])[:30]:
+                items.append({
+                    "id": it.get("id"), "description": it.get("description"),
+                    "service_name": it.get("service_name"), "quantity": it.get("quantity"),
+                    "unit_price": it.get("unit_price") if it.get("unit_price") is not None else it.get("service_unit_price"),
+                })
+            out.append({
+                "id": p.get("id"), "name": p.get("name"), "description": p.get("description"),
+                "active": p.get("active"), "estimated_total": p.get("estimated_total"),
+                "item_count": len(p.get("items") or []), "items": items,
+            })
+        return {"packages": out, "count": len(out), "active_only": active_only}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def tool_get_cash_shifts(args=None):
+    try:
+        if not hasattr(services, "list_cash_shifts"):
+            return {"error": "cash shift tools unavailable"}
+        open_shift = services.get_open_cash_shift() if hasattr(services, "get_open_cash_shift") else None
+        shifts = services.list_cash_shifts(limit=int((args or {}).get("limit") or 20))
+        movements = services.list_cash_movements(open_shift["id"]) if (open_shift and hasattr(services, "list_cash_movements")) else []
+        return {
+            "open_shift": open_shift,
+            "open_shift_movements": movements[:30],
+            "recent_shifts": (shifts or [])[:20],
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def tool_list_night_audit_runs(args=None):
+    try:
+        if not hasattr(services, "list_night_audit_runs"):
+            return {"error": "night audit tools unavailable"}
+        runs = services.list_night_audit_runs(limit=int((args or {}).get("limit") or 20))
+        # parse json fields for readability
+        out = []
+        for r in (runs or [])[:20]:
+            d = dict(r)
+            for k in ("summary_json", "exceptions_json"):
+                try:
+                    if isinstance(d.get(k), str): d[k] = json.loads(d[k])
+                except Exception:
+                    pass
+            out.append(d)
+        return {"night_audit_runs": out, "count": len(out)}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def tool_list_room_blocks(args=None):
+    try:
+        if not hasattr(services, "list_room_blocks"):
+            return {"error": "room block tools unavailable"}
+        room_id = _safe_int((args or {}).get("room_id"))
+        include_past = bool((args or {}).get("include_past", False))
+        blocks = services.list_room_blocks(room_id=room_id, include_past=include_past)
+        return {"room_blocks": (blocks or [])[:100], "count": len(blocks or [])}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def tool_list_housekeeping_tasks(args=None):
+    try:
+        if not hasattr(services, "list_housekeeping_tasks"):
+            return {"error": "housekeeping task tools unavailable"}
+        status = (args or {}).get("status") or ""
+        room_id = _safe_int((args or {}).get("room_id"))
+        tasks = services.list_housekeeping_tasks(status=status, room_id=room_id)
+        return {"housekeeping_tasks": (tasks or [])[:100], "count": len(tasks or []), "status_filter": status}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+
 TOOLS = {
     "list_capabilities": {"fn": tool_list_capabilities, "description": "List assistant capabilities.", "parameters": {"type":"object","properties":{},"additionalProperties":False}},
     "get_property_stats": {"fn": tool_get_property_stats, "description": "Property counts/stats (guests, rooms, reservations by status, in-house, arrivals/departures today).", "parameters": {"type":"object","properties":{},"additionalProperties":False}},
@@ -857,6 +971,12 @@ TOOLS = {
     "get_inventory_item": {"fn": tool_get_inventory_item, "description": "Get inventory item/product details and stock by item id.", "parameters": {"type":"object","properties":{"item_id":{"type":"integer"}},"required":["item_id"],"additionalProperties":False}},
     "get_walkin_sales_summary": {"fn": tool_get_walkin_sales_summary, "description": "Recent walk-in (non-reservation) POS sales and payments summary/totals; works without room reservations.", "parameters": {"type":"object","properties":{"limit_pos":{"type":"integer"},"limit_payments":{"type":"integer"},"limit":{"type":"integer"}},"additionalProperties":False}},
     "get_payments_summary": {"fn": tool_get_payments_summary, "description": "Payments summary for a period by method, including walk-in payment totals.", "parameters": {"type":"object","properties":{"start":{"type":"string"},"end":{"type":"string"},"range":{"type":"string"}},"additionalProperties":False}},
+    "list_reservation_groups": {"fn": tool_list_reservation_groups, "description": "List reservation groups with members and aggregated folio totals (read-only).", "parameters": {"type":"object","properties":{"status":{"type":"string"}},"additionalProperties":False}},
+    "list_packages": {"fn": tool_list_packages, "description": "List package/bundle definitions and items (read-only).", "parameters": {"type":"object","properties":{"active_only":{"type":"boolean"}},"additionalProperties":False}},
+    "get_cash_shifts": {"fn": tool_get_cash_shifts, "description": "Cash shift/register status: open shift, movements, and recent shifts (read-only).", "parameters": {"type":"object","properties":{"limit":{"type":"integer"}},"additionalProperties":False}},
+    "list_night_audit_runs": {"fn": tool_list_night_audit_runs, "description": "List advisory night-audit run snapshots and exceptions (read-only).", "parameters": {"type":"object","properties":{"limit":{"type":"integer"}},"additionalProperties":False}},
+    "list_room_blocks": {"fn": tool_list_room_blocks, "description": "List room blocks (OOO/OOS) affecting availability (read-only).", "parameters": {"type":"object","properties":{"room_id":{"type":"integer"},"include_past":{"type":"boolean"}},"additionalProperties":False}},
+    "list_housekeeping_tasks": {"fn": tool_list_housekeeping_tasks, "description": "List housekeeping tasks and workflow status (read-only).", "parameters": {"type":"object","properties":{"status":{"type":"string"},"room_id":{"type":"integer"}},"additionalProperties":False}},
 }
 
 def execute_tool(name: str, args: dict | None = None) -> dict:

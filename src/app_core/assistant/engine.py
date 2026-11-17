@@ -269,12 +269,13 @@ def _execute_single(intent: str, text: str, slots: dict, ui_context=None):
             return {"ok": True, "intent": intent, "needs_clarification": True, "tools_used": [], "data": {"missing": "report_kind"},
                     "answer": "Which report would you like — **P&L, cash flow, VAT, payment methods, occupancy, or daily ops** — and for what date/range (e.g. `P&L last month` or `daily ops today`)?"}
         return {"ok": True, "intent": intent, "needs_clarification": True, "tools_used": [], "data": {"missing": "context"},
-                "answer": "I want to make sure I get this right — could you rephrase with a bit more detail? I can help with briefings, property/ops stats, reports & comparisons, who owes money, inventory alerts, top sellers, expenses/sales, expiring batches and batch/lot lists, barcode/lot traceability (received/expiry/movements), guests (search/profile/full portfolio/last visit/orders/spend/activities), reservations/balances/pipeline, housekeeping, availability, activities, menus, rate plans, integrity/doctor/health diagnostics (including backup/restore readiness and batch-stock consistency), and app version/update status."}
+                "answer": "I want to make sure I get this right — could you rephrase with a bit more detail? I can help with briefings, property/ops stats, reports & comparisons, who owes money, inventory alerts, top sellers, expenses/sales, expiring batches and batch/lot lists, barcode/lot traceability (received/expiry/movements), guests (search/profile/full portfolio/last visit/orders/spend/activities), reservations/balances/pipeline/groups, packages/bundles, housekeeping/tasks/room blocks, availability, activities, menus, rate plans, cash shifts, night-audit runs, integrity/doctor/health diagnostics (including backup/restore readiness and batch-stock consistency), and app version/update status."}
 
     # Simple read-only intent -> tool mappings (behavior-preserving consolidation)
     if intent in ("property_stats", "today_ops", "outstanding_balances", "inventory_alerts", "reservation_pipeline",
                   "housekeeping_summary", "menu_info", "rate_plans", "recent_activity", "list_activities",
-                  "activity_stats", "walkin_sales_summary"):
+                  "activity_stats", "walkin_sales_summary", "reservation_groups", "packages_list", "cash_shifts",
+                  "night_audit_runs", "room_blocks", "housekeeping_tasks"):
         tool = {
             "property_stats": "get_property_stats",
             "today_ops": "get_today_ops",
@@ -288,8 +289,15 @@ def _execute_single(intent: str, text: str, slots: dict, ui_context=None):
             "list_activities": "list_activities",
             "activity_stats": "get_activity_stats",
             "walkin_sales_summary": "get_walkin_sales_summary",
+            "reservation_groups": "list_reservation_groups",
+            "packages_list": "list_packages",
+            "cash_shifts": "get_cash_shifts",
+            "night_audit_runs": "list_night_audit_runs",
+            "room_blocks": "list_room_blocks",
+            "housekeeping_tasks": "list_housekeeping_tasks",
         }[intent]
-        data = execute_tool(tool, {}); tools_used.append(tool)
+        args = {}
+        data = execute_tool(tool, args); tools_used.append(tool)
         return _answer(intent, tools_used, data)
 
     if intent in ("business_partner_briefing", "decision_support", "compare_periods", "occupancy_summary",

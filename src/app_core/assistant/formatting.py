@@ -39,11 +39,11 @@ def _fmt_capabilities(data: dict) -> str:
         for n in notes: lines.append(f"**Note:** {n}")
     lines.append("")
     lines.append("**How to use (examples you can ask)**")
-    lines.append("- **Business & ops:** `business partner briefing for this month`, `how are we doing?`, `today's ops`, `property stats`, `housekeeping status`, `reservation pipeline`, `available rooms tomorrow`")
-    lines.append("- **Money & reports:** `who owes money?`, `P&L last month`, `cash flow this month`, `VAT 2026-11-01 to 2026-11-30`, `payment methods this month`, `occupancy last month`, `compare this month vs last month`, `expenses breakdown last month`, `top selling items this month`, `sales breakdown this week`")
-    lines.append("- **Inventory & catalog:** `any low stock items?`, `top selling items`, `what expires soon?`, `expiring batches in 7 days`, `list inventory batches`, `trace barcode LOT-...` / `trace SKU ...` (lot received/expiry/movements), `menu`, `rate plans`, `list registered activities`, `activity booking statistics`")
+    lines.append("- **Business & ops:** `business partner briefing for this month`, `how are we doing?`, `today's ops`, `property stats`, `housekeeping status`, `housekeeping tasks`, `room blocks`, `reservation pipeline`, `reservation groups`, `available rooms tomorrow`")
+    lines.append("- **Money & reports:** `who owes money?`, `P&L last month`, `cash flow this month`, `VAT 2026-11-01 to 2026-11-30`, `payment methods this month`, `occupancy last month`, `compare this month vs last month`, `expenses breakdown last month`, `top selling items this month`, `sales breakdown this week`, `cash shifts`, `night audit runs`")
+    lines.append("- **Inventory & catalog:** `any low stock items?`, `top selling items`, `what expires soon?`, `expiring batches in 7 days`, `list inventory batches`, `trace barcode LOT-...` / `trace SKU ...` (lot received/expiry/movements), `menu`, `rate plans`, `list packages`, `list registered activities`, `activity booking statistics`")
     lines.append("- **Guests (360°):** `find guest Ahmed`, `guest #3 profile`, `show guest #3 full portfolio` (all stays, POS/orders, payments, invoices, totals), `when was guest #3 last visit?`, `what did guest #3 order most on last visit?`, `guest #3 last visit spend`, `what activities did guest #3 book?`")
-    lines.append("- **Reservations:** `reservation #12 summary`, `reservation #12 balance`")
+    lines.append("- **Reservations:** `reservation #12 summary`, `reservation #12 balance`, `reservation groups`")
     lines.append("- **Health, doctor & updates:** `ledger integrity check`, `doctor report` / `health check` / `backup restore readiness`, `batch stock mismatch`, `recent activity`, `check for updates` / `what app version`")
     lines.append("")
     lines.append("**Tips**")
@@ -914,6 +914,105 @@ def _fmt_payments_summary(data: dict) -> str:
 
 
 
+
+def _fmt_reservation_groups(data: dict) -> str:
+    if data.get("error"): return f"I couldn’t load reservation groups ({data.get('error')})."
+    groups = data.get("groups") or []
+    if not groups:
+        return "No reservation groups found (real records). You can create/manage groups from Reservations → Groups."
+    lines = [f"Reservation groups (grounded): **{len(groups)}** group(s)."]
+    for g in groups[:15]:
+        t = g.get("totals") or {}
+        lines.append(f"- **#{g.get('id')} {g.get('name')}** ({g.get('group_type')}, {g.get('status')}) — {g.get('member_count',0)} member(s); charges {_fmt_money(t.get('total_charges',0))}, paid {_fmt_money(t.get('total_paid',0))}, balance {_fmt_money(t.get('balance_due',0))}")
+        for m in (g.get("members") or [])[:5]:
+            lines.append(f"  • Res #{m.get('reservation_id')} {m.get('guest_name','')} (Rm {m.get('room_number') or '-'}, {m.get('status') or '-'}) due {_fmt_money(m.get('balance_due') or 0)}")
+        if len(g.get("members") or []) > 5:
+            lines.append(f"  • … and {len(g.get('members') or [])-5} more member(s).")
+    if len(groups) > 15:
+        lines.append(f"- …and {len(groups)-15} more groups.")
+    return "\n".join(lines)
+
+
+def _fmt_packages_list(data: dict) -> str:
+    if data.get("error"): return f"I couldn’t load packages ({data.get('error')})."
+    pkgs = data.get("packages") or []
+    if not pkgs:
+        return "No packages/bundles found. You can manage them in Settings → Packages & Bundles."
+    lines = [f"Packages/bundles (grounded): **{len(pkgs)}** package(s)."]
+    for p in pkgs[:20]:
+        status = "active" if p.get("active") else "inactive"
+        lines.append(f"- **#{p.get('id')} {p.get('name')}** ({status}) — {p.get('item_count', len(p.get('items') or []))} item(s), est {_fmt_money(p.get('estimated_total') or 0)}")
+        if p.get("description"):
+            lines.append(f"  • {_short(p.get('description'), 100)}")
+    if len(pkgs) > 20:
+        lines.append(f"- …and {len(pkgs)-20} more packages.")
+    return "\n".join(lines)
+
+
+def _fmt_cash_shifts(data: dict) -> str:
+    if data.get("error"): return f"I couldn’t load cash shifts ({data.get('error')})."
+    open_shift = data.get("open_shift")
+    shifts = data.get("recent_shifts") or []
+    lines = ["Cash shift/register status (grounded):"]
+    if open_shift:
+        lines.append(f"- Open shift: **#{open_shift.get('id')} {open_shift.get('name') or ''}** since {open_shift.get('opened_at')} · float {_fmt_money(open_shift.get('opening_float') or 0)} · expected {_fmt_money(open_shift.get('expected_cash') or 0)}")
+        movs = data.get("open_shift_movements") or []
+        if movs:
+            lines.append(f"- Recent movements (open shift): {len(movs)} shown")
+            for m in movs[:8]:
+                lines.append(f"  • #{m.get('id')} {m.get('movement_type')} {_fmt_money(m.get('amount') or 0)} ({m.get('method') or 'Cash'}) {m.get('reference') or ''}".rstrip())
+    else:
+        lines.append("- No open cash shift.")
+    if shifts:
+        lines.append("\n**Recent shifts**")
+        for s in shifts[:10]:
+            lines.append(f"- #{s.get('id')} {s.get('name') or ''} [{s.get('status')}] opened {s.get('opened_at')} · expected {_fmt_money(s.get('expected_cash') or 0)}" + (f" · counted {_fmt_money(s.get('counted_cash') or 0)} (var {_fmt_money(s.get('variance') or 0)})" if s.get('counted_cash') is not None else ""))
+    return "\n".join(lines)
+
+
+def _fmt_night_audit_runs(data: dict) -> str:
+    if data.get("error"): return f"I couldn’t load night audit runs ({data.get('error')})."
+    runs = data.get("night_audit_runs") or []
+    if not runs:
+        return "No night audit runs recorded yet (advisory snapshots). You can run one from Accounting → Night Audit."
+    lines = [f"Night audit runs (advisory, grounded): **{len(runs)}** shown."]
+    for r in runs[:10]:
+        exc = r.get("exceptions_json") or []
+        try:
+            exc_n = len(exc) if isinstance(exc, list) else 0
+        except Exception:
+            exc_n = 0
+        lines.append(f"- **#{r.get('id')}** {r.get('business_date')} [{r.get('status')}] completed {r.get('completed_at') or r.get('started_at')} · exceptions **{exc_n}**")
+    return "\n".join(lines)
+
+
+def _fmt_room_blocks(data: dict) -> str:
+    if data.get("error"): return f"I couldn’t load room blocks ({data.get('error')})."
+    blocks = data.get("room_blocks") or []
+    if not blocks:
+        return "No room blocks (OOO/OOS) found for the selected scope."
+    lines = [f"Room blocks (OOO/OOS, grounded): **{len(blocks)}** block(s)."]
+    for b in blocks[:25]:
+        lines.append(f"- **#{b.get('id')}** Room {b.get('room_number') or b.get('room_id')} [{b.get('block_type') or b.get('status') or 'block'}] {b.get('start_date')} → {b.get('end_date')} — {b.get('reason') or b.get('notes') or 'No reason'}")
+    if len(blocks) > 25:
+        lines.append(f"- …and {len(blocks)-25} more.")
+    return "\n".join(lines)
+
+
+def _fmt_housekeeping_tasks(data: dict) -> str:
+    if data.get("error"): return f"I couldn’t load housekeeping tasks ({data.get('error')})."
+    tasks = data.get("housekeeping_tasks") or []
+    if not tasks:
+        return "No housekeeping tasks found. Tasks and room blocks can be managed from Housekeeping."
+    lines = [f"Housekeeping tasks (grounded): **{len(tasks)}** task(s)."]
+    for t in tasks[:25]:
+        lines.append(f"- **#{t.get('id')}** Room {t.get('room_number') or t.get('room_id')} [{t.get('status')}] {t.get('task_type') or 'task'} — {t.get('notes') or t.get('description') or ''} ({t.get('scheduled_for') or t.get('created_at') or ''})".rstrip())
+    if len(tasks) > 25:
+        lines.append(f"- …and {len(tasks)-25} more.")
+    return "\n".join(lines)
+
+
+
 _INTENT_FORMATTERS = {
     "capabilities_help": _fmt_capabilities,
     "property_stats": _fmt_stats,
@@ -967,6 +1066,12 @@ _INTENT_FORMATTERS = {
     "inventory_item_details": _fmt_inventory_item_details,
     "walkin_sales_summary": _fmt_walkin_sales_summary,
     "payments_summary": _fmt_payments_summary,
+    "reservation_groups": _fmt_reservation_groups,
+    "packages_list": _fmt_packages_list,
+    "cash_shifts": _fmt_cash_shifts,
+    "night_audit_runs": _fmt_night_audit_runs,
+    "room_blocks": _fmt_room_blocks,
+    "housekeeping_tasks": _fmt_housekeeping_tasks,
     "front_desk_ops": lambda d: _fmt_today_ops({"date": (d or {}).get("date"), "ops": d, "front_desk": (d or {}).get("summary")}),
     "front_desk_arrivals": lambda d: ("\n".join([f"**Arrivals for {(d or {}).get('date') or _iso(_today())}** (grounded in real data): **{len((d or {}).get('arrivals') or [])}**"] + (["- None."] if not ((d or {}).get('arrivals') or []) else [f"- #{r.get('id')} **{r.get('guest_name','')}** [{r.get('status','')}]"+(f" · Room {r.get('room_number')}" if r.get('room_number') else "")+(f" · HK {r.get('housekeeping_status')}" if r.get('housekeeping_status') else "")+(f" · Due {_fmt_money(r.get('balance_due',0))}" if float(r.get('balance_due') or 0)>0 else "")+(f" · ⚠ {', '.join(r.get('exceptions') or [])}" if r.get('exceptions') else "") for r in ((d or {}).get('arrivals') or [])[:25]] + ([f"- … and {len((d or {}).get('arrivals') or [])-25} more."] if len((d or {}).get('arrivals') or [])>25 else []))) if not (d or {}).get('error') else f"I couldn’t retrieve arrivals ({(d or {}).get('error')})."),
     "front_desk_departures": lambda d: ("\n".join([f"**Departures for {(d or {}).get('date') or _iso(_today())}** (grounded in real data): **{len((d or {}).get('departures') or [])}**"] + (["- None."] if not ((d or {}).get('departures') or []) else [f"- #{r.get('id')} **{r.get('guest_name','')}** [{r.get('status','')}]"+(f" · Room {r.get('room_number')}" if r.get('room_number') else "")+(f" · HK {r.get('housekeeping_status')}" if r.get('housekeeping_status') else "")+(f" · Due {_fmt_money(r.get('balance_due',0))}" if float(r.get('balance_due') or 0)>0 else "")+(f" · ⚠ {', '.join(r.get('exceptions') or [])}" if r.get('exceptions') else "") for r in ((d or {}).get('departures') or [])[:25]] + ([f"- … and {len((d or {}).get('departures') or [])-25} more."] if len((d or {}).get('departures') or [])>25 else []))) if not (d or {}).get('error') else f"I couldn’t retrieve departures ({(d or {}).get('error')})."),
