@@ -1299,6 +1299,176 @@ def delete_rate_plan(plan_id, password):
     _audit("rate_plan_delete", "rate_plan", plan_id, "")
 
 
+
+# ═══════════════════════════════════════════════════════════════════════════
+# PRICING / RATE RULES / SNAPSHOTS (P2, additive, deterministic)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def list_rate_rules(active_only=False):
+    q = """SELECT rr.*, rp.name AS rate_plan_name FROM rate_rules rr
+           LEFT JOIN rate_plans rp ON rp.id = rr.rate_plan_id WHERE 1=1"""
+    if active_only:
+        q += " AND rr.active=1"
+    q += " ORDER BY rr.active DESC, rr.priority ASC, rr.id DESC"
+    return [dict(r) for r in db.connect().execute(q).fetchall()]
+
+
+def add_rate_rule(name, adjustment_type="amount", adjustment_value=0.0, rate_plan_id=None, room_type="", source="", market_segment="", start_date="", end_date="", min_nights=None, max_nights=None, priority=100, active=True):
+    name = (name or "").strip() or "Rate rule"
+    adjustment_type = (adjustment_type or "amount").strip().lower()
+    if adjustment_type not in ("amount", "percent", "fixed_night"):
+        adjustment_type = "amount"
+    with db.transaction() as conn:
+        cur = conn.execute(
+            """INSERT INTO rate_rules
+               (name, rate_plan_id, room_type, source, market_segment, start_date, end_date, min_nights, max_nights, adjustment_type, adjustment_value, priority, active)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (name, int(rate_plan_id) if rate_plan_id not in (None, "", 0, "0") else None,
+             (room_type or "").strip(), (source or "").strip(), (market_segment or "").strip(),
+             (start_date or "").strip(), (end_date or "").strip(),
+             int(min_nights) if min_nights not in (None, "") else None,
+             int(max_nights) if max_nights not in (None, "") else None,
+             adjustment_type, float(adjustment_value or 0), int(priority or 100), 1 if active else 0)
+        )
+        rid = cur.lastrowid
+    _audit("rate_rule_add", "rate_rule", rid, name)
+    return rid
+
+
+def update_rate_rule(rule_id, **fields):
+    rid = int(rule_id)
+    row = db.connect().execute("SELECT * FROM rate_rules WHERE id=?", (rid,)).fetchone()
+    if not row:
+        raise ValueError("Rate rule not found.")
+    allowed = {"name","rate_plan_id","room_type","source","market_segment","start_date","end_date","min_nights","max_nights","adjustment_type","adjustment_value","priority","active"}
+    vals = dict(row)
+    for k, v in fields.items():
+        if k in allowed:
+            vals[k] = v
+    if vals.get("adjustment_type") not in ("amount","percent","fixed_night"):
+        vals["adjustment_type"] = "amount"
+    with db.transaction() as conn:
+        conn.execute(
+            """UPDATE rate_rules SET name=?, rate_plan_id=?, room_type=?, source=?, market_segment=?, start_date=?, end_date=?, min_nights=?, max_nights=?, adjustment_type=?, adjustment_value=?, priority=?, active=?
+               WHERE id=?""",
+            ((vals.get("name") or "Rate rule"), vals.get("rate_plan_id"),
+             (vals.get("room_type") or ""), (vals.get("source") or ""), (vals.get("market_segment") or ""),
+             (vals.get("start_date") or ""), (vals.get("end_date") or ""),
+             vals.get("min_nights"), vals.get("max_nights"),
+             vals.get("adjustment_type"), float(vals.get("adjustment_value") or 0), int(vals.get("priority") or 100), 1 if vals.get("active") else 0, rid)
+        )
+    _audit("rate_rule_update", "rate_rule", rid, vals.get("name") or "")
+    return rid
+
+
+def _rate_rule_applies(rule, *, room_type="", rate_plan_id=None, source="", market_segment="", check_in="", check_out="", nights=1):
+    if not rule or not int(rule.get("active") or 0):
+        return False
+    rt = (room_type or "").strip().lower()
+    rrt = (rule.get("room_type") or "").strip().lower()
+    if rrt and rrt != rt:
+        return False
+    rp = rule.get("rate_plan_id")
+    if rp not in (None, "", 0, "0") and int(rp) != int(rate_plan_id or 0):
+        return False
+    rs = (rule.get("source") or "").strip().lower()
+    if rs and rs != (source or "").strip().lower():
+        return False
+    rms = (rule.get("market_segment") or "").strip().lower()
+    if rms and rms != (market_segment or "").strip().lower():
+        return False
+    sd = (rule.get("start_date") or "").strip()
+    ed = (rule.get("end_date") or "").strip()
+    ci = (check_in or "").strip()
+    if sd and ci and ci < sd:
+        return False
+    if ed and ci and ci > ed:
+        return False
+    mn = rule.get("min_nights")
+    mx = rule.get("max_nights")
+    try:
+        n = int(nights or 1)
+    except Exception:
+        n = 1
+    if mn not in (None, "") and n < int(mn):
+        return False
+    if mx not in (None, "") and n > int(mx):
+        return False
+    return True
+
+
+def resolve_reservation_pricing(room_id, rate_plan_id, check_in, check_out, agreed_nightly_rate,
+                                source="", market_segment="", apply_rules=True):
+    """Deterministic pricing resolution/snapshot. agreed_nightly_rate remains authoritative input; rules produce suggested/resolved context."""
+    try:
+        room_id = int(room_id)
+    except Exception:
+        room_id = 0
+    room = db.connect().execute("SELECT id, room_number, room_type, base_price FROM rooms WHERE id=?", (room_id,)).fetchone()
+    room_type = (room["room_type"] if room else "")
+    base_price = float(room["base_price"] or 0) if room else 0.0
+    plan = None
+    modifier = 0.0
+    if rate_plan_id not in (None, "", 0, "0"):
+        try:
+            plan = db.connect().execute("SELECT id, name, price_modifier FROM rate_plans WHERE id=?", (int(rate_plan_id),)).fetchone()
+            if plan:
+                modifier = float(plan["price_modifier"] or 0)
+        except Exception:
+            plan = None
+    try:
+        nights = _nights(check_in, check_out)
+    except Exception:
+        nights = 1
+    try:
+        agreed = round(float(agreed_nightly_rate or 0), 2)
+    except Exception:
+        agreed = 0.0
+    plan_suggested = round(base_price + modifier, 2) if room else agreed
+    resolved = plan_suggested
+    applied_rules = []
+    if apply_rules:
+        rules = db.connect().execute("SELECT * FROM rate_rules WHERE active=1 ORDER BY priority ASC, id ASC").fetchall()
+        for rr in rules:
+            r = dict(rr)
+            if not _rate_rule_applies(r, room_type=room_type, rate_plan_id=rate_plan_id, source=source, market_segment=market_segment, check_in=check_in, check_out=check_out, nights=nights):
+                continue
+            at = (r.get("adjustment_type") or "amount")
+            av = float(r.get("adjustment_value") or 0)
+            before = resolved
+            if at == "percent":
+                resolved = round(resolved * (1.0 + av / 100.0), 2)
+            elif at == "fixed_night":
+                resolved = round(av, 2)
+            else:
+                resolved = round(resolved + av, 2)
+            applied_rules.append({"id": r.get("id"), "name": r.get("name"), "type": at, "value": av, "before": before, "after": resolved})
+    tax = calculate_tax(agreed * nights, nights)
+    snapshot = {
+        "version": 1,
+        "inputs": {
+            "room_id": room_id, "room_type": room_type, "base_price": base_price,
+            "rate_plan_id": int(rate_plan_id) if rate_plan_id not in (None, "", 0, "0") else None,
+            "rate_plan_name": (plan["name"] if plan else None),
+            "rate_plan_modifier": modifier,
+            "source": (source or ""),
+            "market_segment": (market_segment or ""),
+            "check_in": check_in, "check_out": check_out, "nights": nights,
+        },
+        "pricing": {
+            "plan_suggested_nightly": plan_suggested,
+            "rule_resolved_nightly": resolved,
+            "agreed_nightly_rate": agreed,
+            "applied_rules": applied_rules,
+        },
+        "totals": {
+            "accommodation_net": round(agreed * nights, 2),
+            "tax": tax,
+            "accommodation_gross": round((agreed * nights) + tax["service"] + tax["vat"] + tax["city_tax"], 2),
+        },
+    }
+    return snapshot
+
 # ═══════════════════════════════════════════════════════════════════════════
 # RESERVATIONS
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1377,13 +1547,18 @@ def create_reservation(guest_name, source, room_id, rate_plan_id, agreed_nightly
     notes = (notes or booking_notes).strip()
 
     tax = calculate_tax(agreed_nightly_rate * nights, nights)
+    try:
+        pricing_snapshot = resolve_reservation_pricing(room_id, rate_plan_id, ci, co, agreed_nightly_rate, source=source, market_segment=market_segment)
+        pricing_snapshot_json = json.dumps(pricing_snapshot, ensure_ascii=False)
+    except Exception:
+        pricing_snapshot_json = "{}"
     with db.transaction() as conn:
         cur = conn.execute("""INSERT INTO reservations
             (guest_id, guest_name, source, source_detail, market_segment, room_id, rate_plan_id, agreed_nightly_rate, tax_amount,
-             check_in_date, check_out_date, status, notes, booking_notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Reserved', ?, ?)""",
+             check_in_date, check_out_date, status, notes, booking_notes, pricing_snapshot_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Reserved', ?, ?, ?)""",
             (gid, canon, source, source_detail, market_segment, room_id, rate_plan_id, agreed_nightly_rate,
-             tax["service"] + tax["vat"] + tax["city_tax"], ci, co, notes, booking_notes))
+             tax["service"] + tax["vat"] + tax["city_tax"], ci, co, notes, booking_notes, pricing_snapshot_json))
         rid = cur.lastrowid
         _post(cur, "RES", rid, "CHARGE", "Accommodation",
               tax["net"], tax["service"], tax["vat"], tax["city_tax"], "",
@@ -1770,6 +1945,11 @@ def modify_reservation(rid, new_rate, new_ci, new_co, new_room_id, password=None
         new_booking_notes = (booking_notes or "")
     new_notes = new_booking_notes
     tax = calculate_tax(new_rate * nights, nights)
+    try:
+        pricing_snapshot = resolve_reservation_pricing(new_room_id, None, new_ci, new_co, new_rate, source=new_source, market_segment=new_market_segment)
+        pricing_snapshot_json = json.dumps(pricing_snapshot, ensure_ascii=False)
+    except Exception:
+        pricing_snapshot_json = "{}"
     old_room_id = row["room_id"]
     old_status = row["status"]
     with db.transaction() as conn:
@@ -1788,12 +1968,12 @@ def modify_reservation(rid, new_rate, new_ci, new_co, new_room_id, password=None
               f"Modified accommodation Res #{rid}")
         conn.execute("""UPDATE reservations SET agreed_nightly_rate=?, tax_amount=?,
                         check_in_date=?, check_out_date=?, room_id=?,
-                        source=?, source_detail=?, market_segment=?, notes=?, booking_notes=?
+                        source=?, source_detail=?, market_segment=?, notes=?, booking_notes=?, pricing_snapshot_json=?
                         WHERE id=?""",
                      (new_rate, tax["service"] + tax["vat"] + tax["city_tax"],
                       new_ci, new_co, new_room_id,
                       new_source, (new_source_detail or "").strip(), (new_market_segment or "").strip(),
-                      (new_notes or "").strip(), (new_booking_notes or "").strip(), rid))
+                      (new_notes or "").strip(), (new_booking_notes or "").strip(), pricing_snapshot_json, rid))
         if old_room_id != new_room_id:
             conn.execute("UPDATE rooms SET housekeeping_status='Dirty' WHERE id=?", (old_room_id,))
     _audit("reservation_modify", "reservation", rid,

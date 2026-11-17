@@ -16,7 +16,7 @@ from . import paths
 DATA_DIR = paths.DATA_DIR
 BASE_DIR = paths.BASE_DIR
 DB_PATH = paths.DB_PATH
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 
 _conn = None
 _lock = threading.RLock()
@@ -253,6 +253,26 @@ CREATE TABLE rate_plans (
     price_modifier REAL NOT NULL DEFAULT 0
 );
 
+CREATE TABLE rate_rules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    rate_plan_id INTEGER,
+    room_type TEXT NOT NULL DEFAULT '',
+    source TEXT NOT NULL DEFAULT '',
+    market_segment TEXT NOT NULL DEFAULT '',
+    start_date TEXT NOT NULL DEFAULT '',
+    end_date TEXT NOT NULL DEFAULT '',
+    min_nights INTEGER,
+    max_nights INTEGER,
+    adjustment_type TEXT NOT NULL DEFAULT 'amount',
+    adjustment_value REAL NOT NULL DEFAULT 0,
+    priority INTEGER NOT NULL DEFAULT 100,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    FOREIGN KEY (rate_plan_id) REFERENCES rate_plans(id)
+);
+CREATE INDEX idx_rate_rules_active ON rate_rules(active, priority);
+
 CREATE TABLE guests (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     canonical_name TEXT NOT NULL,
@@ -281,6 +301,7 @@ CREATE TABLE reservations (
     status TEXT NOT NULL DEFAULT 'Reserved',
     notes TEXT NOT NULL DEFAULT '',
     booking_notes TEXT NOT NULL DEFAULT '',
+    pricing_snapshot_json TEXT NOT NULL DEFAULT '{}',
     created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
     FOREIGN KEY (guest_id) REFERENCES guests(id),
     FOREIGN KEY (room_id) REFERENCES rooms(id),
@@ -806,6 +827,36 @@ def _migrate_to_11(conn):
         CREATE INDEX IF NOT EXISTS idx_res_services_res ON reservation_services(reservation_id);
         CREATE INDEX IF NOT EXISTS idx_res_services_status ON reservation_services(status);
         """)
+
+def _migrate_to_12(conn):
+    # P2: pricing snapshots and rate rules (additive)
+    if _table_exists(conn, "reservations"):
+        cols = _table_columns(conn, "reservations")
+        _ensure_column(conn, "reservations", "pricing_snapshot_json", "TEXT NOT NULL DEFAULT '{}'", cols)
+    if not _table_exists(conn, "rate_rules"):
+        conn.executescript("""
+        CREATE TABLE IF NOT EXISTS rate_rules (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            rate_plan_id INTEGER,
+            room_type TEXT NOT NULL DEFAULT '',
+            source TEXT NOT NULL DEFAULT '',
+            market_segment TEXT NOT NULL DEFAULT '',
+            start_date TEXT NOT NULL DEFAULT '',
+            end_date TEXT NOT NULL DEFAULT '',
+            min_nights INTEGER,
+            max_nights INTEGER,
+            adjustment_type TEXT NOT NULL DEFAULT 'amount',
+            adjustment_value REAL NOT NULL DEFAULT 0,
+            priority INTEGER NOT NULL DEFAULT 100,
+            active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            FOREIGN KEY (rate_plan_id) REFERENCES rate_plans(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_rate_rules_active ON rate_rules(active, priority);
+        """)
+
+
 def migrate():
     """Create or upgrade schema to SCHEMA_VERSION.
 
@@ -857,6 +908,8 @@ def migrate():
                     _migrate_to_10(conn)
                 if version < 11:
                     _migrate_to_11(conn)
+                if version < 12:
+                    _migrate_to_12(conn)
                 conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
                 ensure_runtime_indexes(conn)
                 _record_migration_meta(conn, status="upgraded", from_version=from_version, to_version=SCHEMA_VERSION)
