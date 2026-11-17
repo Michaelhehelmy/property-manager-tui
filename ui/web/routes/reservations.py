@@ -20,7 +20,7 @@ def _enrich_pos_rows(rows):
     try:
         warn = int(services.get_setting("expiry_warn_days", "7") or 7)
     except Exception:
-        pass
+        logger.debug("web.reservations: failed to read expiry_warn_days, using default", exc_info=True)
     batch_ids = {r["batch_id"] for r in rows if r["batch_id"]}
     batch_map = {}
     if batch_ids:
@@ -102,10 +102,12 @@ def detail(rid: int, request: Request):
     try:
         inventory = services.get_inventory_items("")
     except Exception:
+        logger.exception("web.reservations: failed to load inventory items")
         inventory = []
     try:
         active_batches = services.list_inventory_batches(include_depleted=False)
     except Exception:
+        logger.exception("web.reservations: failed to load active batches")
         active_batches = []
     return render(request, "reservations/detail.html", {
         "title":f"Reservation #{rid}","r":res,"folio":folio,"pos":pos,"pays":pays,

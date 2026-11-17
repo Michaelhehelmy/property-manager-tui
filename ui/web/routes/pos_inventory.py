@@ -141,6 +141,7 @@ def pos(request: Request, q: str = "", scan: str = "", batch_item: str = "", tab
     try:
         meals = services.list_meals(active_only=False) if hasattr(services, 'list_meals') else []
     except Exception:
+        logger.exception("web.pos_inventory: failed to load meals")
         meals = []
     walkin_pos = connect().execute(
         """SELECT p.*, i.item_name AS inventory_item_name, a.name AS activity_name
@@ -170,6 +171,7 @@ def pos(request: Request, q: str = "", scan: str = "", batch_item: str = "", tab
     try:
         batches = services.list_inventory_batches(item_id=bi, include_depleted=False)
     except Exception:
+        logger.exception("web.pos_inventory: failed to load inventory batches")
         batches = []
     cart_lines, cart_total = _cart_view(cart)
     allowed_tabs = {"sell", "inventory", "batches", "meals", "activities", "history"}

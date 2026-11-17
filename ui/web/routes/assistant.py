@@ -344,9 +344,6 @@ async def assistant_action_confirm(request: Request):
 
     # Best-effort proof resolution: prefer explicit password, else session sentinel when unlocked.
     proof = fields.get("proof") or fields.get("proof_password") or None
-    if not proof and isinstance(form, dict):
-        # unlikely, but safe
-        pass
     if proof is None and form is not None:
         try:
             proof = deps.service_password(request, form, allow_session_sentinel=True)
