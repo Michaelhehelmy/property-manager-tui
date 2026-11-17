@@ -108,7 +108,7 @@ fi
 # Best-effort dependency check hint (non-fatal)
 if ! "$PYTHON" -c "import fastapi, uvicorn, jinja2" >/dev/null 2>&1; then
   warn "Web dependencies may be missing. Try: pip install -r requirements-web.txt (or pip install .[web])"
-  warn "If builds fail on constrained environments (e.g. pydantic-core/Rust wheels), use TUI mode instead (SKIP_WEB=1, launcher --tui) or install web deps on a supported host."
+  warn "If builds fail on constrained environments (e.g. pydantic-core/Rust wheels), install required build deps/Rust toolchain or install/run on a supported host with prebuilt wheels."
 fi
 
 log "Runtime data (DB/exports/invoices/PM_DATA_DIR) is preserved. Backup/verify: python3 scripts/backup_runtime.py --backup (and --verify/--restore-precheck as needed)."

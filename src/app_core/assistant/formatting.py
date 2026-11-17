@@ -776,7 +776,7 @@ def _fmt_app_update_status(data: dict) -> str:
     if local.get('data_dir'): lines.append(f"- Data directory (preserved on update/backup/restore): {local.get('data_dir')}")
     how = data.get('how_to_check') or "Use Settings → App updates to check for updates, view changelog, and apply safely (DB/exports/invoices preserved)."
     lines.append(f"- {how}")
-    lines.append("- In-app (Web & TUI, git-based installs): check for updates, review changelog/details, and apply a safe fast-forward update.")
+    lines.append("- In-app (Web UI, git-based installs): check for updates, review changelog/details, and apply a safe fast-forward update.")
     lines.append("- Runtime data (DB, exports, invoices, configured data dir) is preserved; restart after apply. For safety, verify backups before/after updates.")
     return "\n".join(lines)
 

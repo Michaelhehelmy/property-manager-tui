@@ -1,3 +1,3 @@
-# Runtime dependencies (TUI + core). For web UI also install requirements-web.txt.
-textual>=0.47
-# Web deps are in requirements-web.txt (fastapi, uvicorn, jinja2, python-multipart, itsdangerous)
+# Runtime/core dependencies (web-only app). For web UI install requirements-web.txt.
+# No mandatory third-party TUI dependencies.
+# (textual removed; legacy TUI has been deprecated/removed)

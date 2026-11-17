@@ -218,7 +218,7 @@ def auto_update_checks_enabled() -> bool:
 
 
 def get_cached_update_notice(force: bool = False, timeout: int = 8) -> dict[str, Any]:
-    """Cached update notification for TUI/Web. Checks git commits and/or latest release.
+    """Cached update notification for web UI. Checks git commits and/or latest release.
 
     Polling-based (no push infra): callers should invoke periodically/on startup when online.
     """

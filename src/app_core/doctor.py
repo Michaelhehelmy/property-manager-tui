@@ -315,7 +315,7 @@ def _backup_restore_guidance() -> dict[str, Any]:
             "verify_helper": "python3 -m app_core.doctor --verify-backup <path>",
             "precheck_helper": "python3 scripts/backup_runtime.py --restore-precheck <path>",
             "steps": [
-                "Stop TUI/Web processes (run web with --workers 1).",
+                "Stop web/app processes (run web with --workers 1).",
                 "Create a fresh safety backup of current runtime data if available.",
                 "Run restore precheck on candidate: python3 scripts/backup_runtime.py --restore-precheck <backup.db>",
                 "Copy verified backup over the target DB path (and keep exports/invoices/data dir).",

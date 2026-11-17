@@ -2012,7 +2012,7 @@ def get_inventory_item(item_id):
 
 
 def get_inventory_items(query="", category="", stock_filter="", include_inactive=False):
-    """Web/TUI-friendly inventory listing with barcode/SKU search."""
+    """Web-friendly inventory listing with barcode/SKU search."""
     from ..db import connect
     q = (query or "").strip() if isinstance(query, str) else ""
     cat = "" if not isinstance(category, str) or category == "All" else category

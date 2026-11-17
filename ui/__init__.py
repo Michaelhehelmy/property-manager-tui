@@ -1,1 +1,1 @@
-"""UI packages (TUI and web)."""
+"""UI packages (web)."""

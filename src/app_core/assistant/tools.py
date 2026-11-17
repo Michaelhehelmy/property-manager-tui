@@ -469,7 +469,7 @@ def tool_get_app_update_status(args=None):
         from .. import updater
         local = updater.get_local_state()
         notes = [
-            "Use Settings → App updates → Check for updates (web/TUI) to see available updates, changelog, and apply safely while preserving data (DB/exports/invoices).",
+            "Use Settings → App updates → Check for updates (web UI) to see available updates, changelog, and apply safely while preserving data (DB/exports/invoices).",
             "For git-based installs, apply uses fast-forward pull only; restart the app after a successful update.",
             "Create/verify a backup before applying updates in production-like environments; runtime data is preserved.",
         ]
