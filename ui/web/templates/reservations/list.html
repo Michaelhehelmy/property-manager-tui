@@ -13,24 +13,35 @@
 </div>
 
 {% if active_tab == 'create' %}
-<div class="subtab-help">Create a new reservation from real rooms, rates, and availability rules.</div>
+<div class="subtab-help">Create a new reservation from real rooms, rates, and availability rules. Use “Get pricing quote” to resolve suggested nightly rate from room/rate plan/rules before creating.</div>
 <details class="help-box" open><summary>How to create a reservation</summary>
 <ul>
-  <li>Fill guest, dates, room, rate and submit “Create reservation”. Availability and pricing come from real data.</li>
-  <li>After creation, open the reservation to manage check-in/out, folio, payments, POS, activities, and invoices.</li>
-  <li>Some later actions may require unlock/super password per policy.</li>
+  <li>Fill guest, dates, room, and pricing inputs. Click <strong>Get pricing quote</strong> to calculate suggested nightly rate and totals from real room/rate-plan/rule data (and apply it to the rate field).</li>
+  <li>Submit “Create reservation” to save; availability, pricing snapshot, and business rules are applied server-side.</li>
+  <li>After creation, open the reservation to manage check-in/out, folio, payments, POS, activities, packages, and invoices.</li>
 </ul></details>
+{% if quote_error %}<div class="flash flash-error">{{ quote_error }}</div>{% endif %}
+{% if quote %}<div class="panel" style="margin-bottom:12px;border-left:4px solid #4caf50"><h3>Pricing quote (suggested)</h3>
+  {% set qp = quote.pricing or {} %}{% set qt = quote.totals or {} %}{% set q = quote.quote or {} %}
+  <p><strong>Suggested nightly:</strong> {{ "%.2f"|format(q.suggested_nightly or qp.rule_resolved_nightly or qp.plan_suggested_nightly or 0) }} · <strong>Quoted nightly:</strong> {{ "%.2f"|format(q.quoted_nightly or 0) }} · <strong>Nights:</strong> {{ q.nights or (quote.inputs.nights if quote.inputs else 0) }}</p>
+  <p class="muted">Accommodation (quoted): net {{ "%.2f"|format(qt.accommodation_net or 0) }} · gross {{ "%.2f"|format(qt.accommodation_gross or 0) }}</p>
+  {% if qp.applied_rules %}<details><summary>Applied pricing rules ({{ qp.applied_rules|length }})</summary><ul>{% for rr in qp.applied_rules %}<li>#{{ rr.id }} {{ rr.name }} — {{ rr.type }} {{ rr.value }} ({{ "%.2f"|format(rr.before or 0) }} → {{ "%.2f"|format(rr.after or 0) }})</li>{% endfor %}</ul></details>{% endif %}
+  <details><summary>Full pricing snapshot</summary><pre style="white-space:pre-wrap;max-height:220px;overflow:auto">{{ quote | tojson(indent=2) }}</pre></details>
+</div>{% endif %}
 <div class="panel"><h3>Create reservation</h3>
   <form method="post" action="/reservations/create"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
-    <div class="row"><label>Guest<input name="guest_name" required/></label><label>Source<input name="source" value="Direct" list="res_sources"/></label></div>
-    <div class="row"><label>Source detail<input name="source_detail" placeholder="e.g. Phone, Walk-in desk, Agent name, Referral"/></label><label>Market segment<input name="market_segment" placeholder="e.g. Leisure, Corporate, Group, Repeat"/></label></div>
-    <div class="row"><label>Room<select name="room_id">{% for r in rooms %}<option value="{{r['id']}}">{{r['room_number']}} — {{r['room_type']}} ({{r['base_price']}})</option>{% endfor %}</select></label>
-    <label>Rate plan<select name="rate_plan_id"><option value="">(none)</option>{% for p in plans %}<option value="{{p['id']}}">{{p['name']}}</option>{% endfor %}</select></label></div>
-    <div class="row"><label>Check-in<input type="date" name="check_in" value="{{today}}" required/></label><label>Check-out<input type="date" name="check_out" value="{{tomorrow}}" required/></label><label>Nightly rate<input name="rate" type="number" step="0.01" required/></label></div>
-    <label>Deposit<input name="deposit" type="number" step="0.01" value="0"/></label>
-    <label>Booking notes<textarea name="booking_notes" rows="2" placeholder="Internal notes (requests, arrival info, etc.)"></textarea></label>
+    <div class="row"><label>Guest<input name="guest_name" value="{{ prefill.guest_name or '' }}" required/></label><label>Source<input name="source" value="{{ prefill.source or 'Direct' }}" list="res_sources"/></label></div>
+    <div class="row"><label>Source detail<input name="source_detail" value="{{ prefill.source_detail or '' }}" placeholder="e.g. Phone, Walk-in desk, Agent name, Referral"/></label><label>Market segment<input name="market_segment" value="{{ prefill.market_segment or '' }}" placeholder="e.g. Leisure, Corporate, Group, Repeat"/></label></div>
+    <div class="row"><label>Room<select name="room_id">{% for r in rooms %}<option value="{{r['id']}}" {% if (prefill.room_id|string)==(r['id']|string) %}selected{% endif %}>{{r['room_number']}} — {{r['room_type']}} ({{r['base_price']}})</option>{% endfor %}</select></label>
+    <label>Rate plan<select name="rate_plan_id"><option value="">(none)</option>{% for p in plans %}<option value="{{p['id']}}" {% if (prefill.rate_plan_id|string)==(p['id']|string) %}selected{% endif %}>{{p['name']}}</option>{% endfor %}</select></label></div>
+    <div class="row"><label>Check-in<input type="date" name="check_in" value="{{ prefill.check_in or today }}" required/></label><label>Check-out<input type="date" name="check_out" value="{{ prefill.check_out or tomorrow }}" required/></label><label>Nightly rate<input name="rate" type="number" step="0.01" value="{{ prefill.rate or '' }}" required/></label></div>
+    <label>Deposit<input name="deposit" type="number" step="0.01" value="{{ prefill.deposit or '0' }}"/></label>
+    <label>Booking notes<textarea name="booking_notes" rows="2" placeholder="Internal notes (requests, arrival info, etc.)">{{ prefill.booking_notes or '' }}</textarea></label>
     <datalist id="res_sources"><option value="Direct"/><option value="Walk-in"/><option value="Phone"/><option value="Email"/><option value="Website"/><option value="Agent"/><option value="Corporate"/><option value="Returning guest"/></datalist>
-    <button class="ok">Create reservation</button>
+    <div class="row" style="margin-top:8px">
+      <button class="ok" type="submit">Create reservation</button>
+      <button type="submit" formaction="/reservations/quote" formmethod="post" title="Calculate suggested nightly rate from room, rate plan, dates, source/segment, and active pricing rules">Get pricing quote</button>
+    </div>
   </form>
 </div>
 

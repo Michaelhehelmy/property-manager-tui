@@ -1,5 +1,6 @@
 from __future__ import annotations
 import logging
+import json
 from pathlib import Path
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Form, Request
@@ -72,8 +73,75 @@ def list_res(request: Request, q: str = "", source: str = "", segment: str = "",
     tab = (tab or "list").strip().lower()
     if tab not in allowed: tab = "list"
     if q or source or segment: tab = "list"
+    # pricing quote context (create tab)
+    quote = None
+    quote_error = None
+    if request.query_params.get("quote_error"):
+        quote_error = request.query_params.get("quote_error")
+    if request.query_params.get("quote") == "1":
+        try:
+            snap = json.loads(request.query_params.get("quote_json") or "{}")
+            if snap:
+                quote = snap
+        except Exception:
+            quote = None
+    prefill = {k: request.query_params.get(k, "") for k in ["guest_name","source","source_detail","market_segment","room_id","rate_plan_id","check_in","check_out","rate","deposit","booking_notes"]}
     return render(request, "reservations/list.html", {"title":"Reservations","rows":rows,"q":q,"source":source,"segment":segment,"rooms":_rooms(),"plans":_plans(),
-                  "today":now.strftime("%Y-%m-%d"), "tomorrow":(now+timedelta(days=1)).strftime("%Y-%m-%d"), "active_tab":tab})
+                  "today":now.strftime("%Y-%m-%d"), "tomorrow":(now+timedelta(days=1)).strftime("%Y-%m-%d"), "active_tab":tab,
+                  "quote": quote, "quote_error": quote_error, "prefill": prefill})
+
+
+
+@router.post("/reservations/quote")
+async def quote(request: Request):
+    form = await deps.get_form(request)
+    try:
+        room_id = int(form.get("room_id") or 0)
+        rate_plan_id = int(form["rate_plan_id"]) if form.get("rate_plan_id") else None
+        check_in = form.get("check_in", "")
+        check_out = form.get("check_out", "")
+        rate_in = form.get("rate")
+        rate = float(rate_in) if rate_in not in (None, "") else None
+        snap = services.quote_reservation_pricing(
+            room_id, rate_plan_id, check_in, check_out,
+            rate=rate, source=form.get("source", ""), market_segment=form.get("market_segment", ""),
+        )
+        params = {
+            "tab": "create",
+            "quote": "1",
+            "quote_json": json.dumps(snap, ensure_ascii=False, default=str),
+            "guest_name": form.get("guest_name", ""),
+            "source": form.get("source", "Direct"),
+            "source_detail": form.get("source_detail", ""),
+            "market_segment": form.get("market_segment", ""),
+            "room_id": str(room_id),
+            "rate_plan_id": str(rate_plan_id or ""),
+            "check_in": check_in,
+            "check_out": check_out,
+            "rate": str((snap.get("pricing") or {}).get("quoted_nightly_rate") or (snap.get("pricing") or {}).get("rule_resolved_nightly") or rate or ""),
+            "deposit": form.get("deposit", "0"),
+            "booking_notes": form.get("booking_notes", ""),
+        }
+        from urllib.parse import urlencode
+        return deps.redirect("/reservations?" + urlencode(params))
+    except Exception as e:
+        params = {
+            "tab": "create",
+            "quote_error": str(e),
+            "guest_name": form.get("guest_name", ""),
+            "source": form.get("source", "Direct"),
+            "source_detail": form.get("source_detail", ""),
+            "market_segment": form.get("market_segment", ""),
+            "room_id": form.get("room_id", ""),
+            "rate_plan_id": form.get("rate_plan_id", ""),
+            "check_in": form.get("check_in", ""),
+            "check_out": form.get("check_out", ""),
+            "rate": form.get("rate", ""),
+            "deposit": form.get("deposit", "0"),
+            "booking_notes": form.get("booking_notes", ""),
+        }
+        from urllib.parse import urlencode
+        return deps.redirect("/reservations?" + urlencode(params))
 
 @router.post("/reservations/create")
 async def create(request: Request):

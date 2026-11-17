@@ -1500,6 +1500,46 @@ def resolve_reservation_pricing(room_id, rate_plan_id, check_in, check_out, agre
     }
     return snapshot
 
+
+
+def quote_reservation_pricing(room_id, rate_plan_id, check_in, check_out, rate=None, source="", market_segment=""):
+    """Return pricing quote/suggestion for UI booking/edit flows (additive, read-only)."""
+    try:
+        room_id = int(room_id)
+    except Exception:
+        raise ValueError("Room is required for pricing quote.")
+    if not check_in or not check_out:
+        raise ValueError("Check-in and check-out dates are required for pricing quote.")
+    try:
+        nights = _nights(check_in, check_out)
+    except Exception as e:
+        raise ValueError(str(e))
+    # use provided rate if given, else plan-suggested baseline for tax/preview
+    try:
+        rate_val = float(rate) if rate not in (None, "") else None
+    except Exception:
+        rate_val = None
+    snap = resolve_reservation_pricing(room_id, rate_plan_id, check_in, check_out, rate_val if rate_val is not None else 0.0, source=source or "", market_segment=market_segment or "", apply_rules=True)
+    suggested = (snap.get("pricing") or {}).get("rule_resolved_nightly") or (snap.get("pricing") or {}).get("plan_suggested_nightly") or 0.0
+    if rate_val is None:
+        # recompute totals with suggested as prospective agreed rate
+        tax = calculate_tax(float(suggested or 0) * nights, nights)
+        snap["pricing"]["quoted_nightly_rate"] = round(float(suggested or 0), 2)
+        snap["totals"] = {
+            "accommodation_net": round(float(suggested or 0) * nights, 2),
+            "tax": tax,
+            "accommodation_gross": round((float(suggested or 0) * nights) + tax["service"] + tax["vat"] + tax["city_tax"], 2),
+        }
+    else:
+        snap["pricing"]["quoted_nightly_rate"] = round(float(rate_val), 2)
+    snap["quote"] = {
+        "nights": nights,
+        "suggested_nightly": round(float(suggested or 0), 2),
+        "quoted_nightly": snap["pricing"]["quoted_nightly_rate"],
+        "can_apply_suggested": True,
+    }
+    return snap
+
 # ═══════════════════════════════════════════════════════════════════════════
 # RESERVATIONS
 # ═══════════════════════════════════════════════════════════════════════════
