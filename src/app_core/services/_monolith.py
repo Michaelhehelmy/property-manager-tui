@@ -6122,3 +6122,153 @@ def safe_action(fn):
         except Exception as e:
             self.app.notify(str(e), severity="error")
     return wrapper
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# CASH SHIFTS / REGISTER & NIGHT AUDIT (P4 foundations, additive)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def get_open_cash_shift():
+    try:
+        row = db.connect().execute("SELECT * FROM cash_shifts WHERE status='open' ORDER BY id DESC LIMIT 1").fetchone()
+        return dict(row) if row else None
+    except Exception:
+        return None
+
+
+def list_cash_shifts(limit=100):
+    try:
+        rows = db.connect().execute("SELECT * FROM cash_shifts ORDER BY id DESC LIMIT ?", (int(limit or 100),)).fetchall()
+        return [dict(r) for r in rows]
+    except Exception:
+        return []
+
+
+def list_cash_movements(shift_id):
+    try:
+        rows = db.connect().execute("SELECT * FROM cash_movements WHERE shift_id=? ORDER BY id DESC", (int(shift_id),)).fetchall()
+        return [dict(r) for r in rows]
+    except Exception:
+        return []
+
+
+def open_cash_shift(name="", opening_float=0.0, notes="", opened_by=""):
+    if get_open_cash_shift():
+        raise ValueError("A cash shift is already open. Close it before opening a new one.")
+    try:
+        opening_float = round(float(opening_float or 0), 2)
+    except Exception:
+        opening_float = 0.0
+    with db.transaction() as conn:
+        cur = conn.execute(
+            """INSERT INTO cash_shifts (name, status, opening_float, expected_cash, notes, opened_by)
+               VALUES (?, 'open', ?, ?, ?, ?)""",
+            ((name or "").strip() or f"Shift {datetime.now().strftime('%Y-%m-%d %H:%M')}", opening_float, opening_float, (notes or "").strip(), (opened_by or "").strip())
+        )
+        sid = cur.lastrowid
+    _audit("cash_shift_open", "cash_shift", sid, f"float={opening_float}")
+    return sid
+
+
+def add_cash_movement(shift_id, movement_type, amount, method="Cash", reference="", notes=""):
+    sid = int(shift_id)
+    shift = db.connect().execute("SELECT * FROM cash_shifts WHERE id=?", (sid,)).fetchone()
+    if not shift:
+        raise ValueError("Cash shift not found.")
+    if shift["status"] != "open":
+        raise ValueError("Cash shift is not open.")
+    movement_type = (movement_type or "").strip().lower() or "adjustment"
+    try:
+        amount = round(float(amount or 0), 2)
+    except Exception:
+        raise ValueError("Invalid amount.")
+    if movement_type in ("cash_in", "float_in", "deposit") and amount < 0:
+        amount = abs(amount)
+    if movement_type in ("cash_out", "float_out", "drop", "expense") and amount > 0:
+        amount = -abs(amount)
+    with db.transaction() as conn:
+        conn.execute(
+            """INSERT INTO cash_movements (shift_id, movement_type, amount, method, reference, notes)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (sid, movement_type, amount, (method or "Cash"), (reference or "").strip(), (notes or "").strip())
+        )
+        conn.execute("UPDATE cash_shifts SET expected_cash = COALESCE(opening_float,0) + COALESCE((SELECT SUM(amount) FROM cash_movements WHERE shift_id=?),0) WHERE id=?", (sid, sid))
+    _audit("cash_movement_add", "cash_shift", sid, f"{movement_type} {amount}")
+    return sid
+
+
+def close_cash_shift(shift_id, counted_cash=None, notes="", closed_by=""):
+    sid = int(shift_id)
+    shift = db.connect().execute("SELECT * FROM cash_shifts WHERE id=?", (sid,)).fetchone()
+    if not shift:
+        raise ValueError("Cash shift not found.")
+    if shift["status"] != "open":
+        return sid
+    expected = db.connect().execute(
+        "SELECT COALESCE(opening_float,0) + COALESCE((SELECT SUM(amount) FROM cash_movements WHERE shift_id=?),0) AS expected FROM cash_shifts WHERE id=?",
+        (sid, sid)
+    ).fetchone()["expected"]
+    try:
+        expected = round(float(expected or 0), 2)
+    except Exception:
+        expected = round(float(shift["expected_cash"] or 0), 2)
+    counted = None
+    variance = None
+    if counted_cash not in (None, ""):
+        try:
+            counted = round(float(counted_cash), 2)
+            variance = round(counted - expected, 2)
+        except Exception:
+            counted = None
+            variance = None
+    with db.transaction() as conn:
+        conn.execute(
+            """UPDATE cash_shifts SET status='closed', closed_at=datetime('now','localtime'), expected_cash=?, counted_cash=?, variance=?, notes=TRIM(COALESCE(notes,'') || CASE WHEN ?<>'' AND COALESCE(notes,'')<>'' THEN char(10) ELSE '' END || ?), closed_by=?
+               WHERE id=?""",
+            (expected, counted, variance, (notes or "").strip(), (notes or "").strip(), (closed_by or "").strip(), sid)
+        )
+    _audit("cash_shift_close", "cash_shift", sid, f"expected={expected} counted={counted} variance={variance}")
+    return sid
+
+
+def list_night_audit_runs(limit=100):
+    try:
+        rows = db.connect().execute("SELECT * FROM night_audit_runs ORDER BY id DESC LIMIT ?", (int(limit or 100),)).fetchall()
+        return [dict(r) for r in rows]
+    except Exception:
+        return []
+
+
+def run_night_audit(business_date=None, notes="", run_by=""):
+    """Advisory night-audit snapshot (no hard locks)."""
+    if not business_date:
+        business_date = datetime.now().strftime(DATE_FMT)
+    try:
+        ops = get_front_desk_ops(business_date)
+    except Exception:
+        ops = {}
+    try:
+        ledger = get_general_ledger_summary()
+    except Exception:
+        ledger = {}
+    exceptions = []
+    try:
+        for e in (ops.get("exceptions") or []):
+            exceptions.append({"type": "front_desk", **(e if isinstance(e, dict) else {"detail": str(e)})})
+    except Exception:
+        pass
+    summary = {
+        "business_date": business_date,
+        "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "front_desk_counts": (ops.get("counts") or {}),
+        "ledger_summary": ledger,
+    }
+    with db.transaction() as conn:
+        cur = conn.execute(
+            """INSERT INTO night_audit_runs (business_date, status, completed_at, summary_json, exceptions_json, notes, run_by)
+               VALUES (?, 'completed', datetime('now','localtime'), ?, ?, ?, ?)""",
+            (business_date, json.dumps(summary, ensure_ascii=False, default=str), json.dumps(exceptions, ensure_ascii=False, default=str), (notes or "").strip(), (run_by or "").strip())
+        )
+        rid = cur.lastrowid
+    _audit("night_audit_run", "night_audit", rid, business_date)
+    return rid

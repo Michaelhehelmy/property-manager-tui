@@ -16,7 +16,7 @@ from . import paths
 DATA_DIR = paths.DATA_DIR
 BASE_DIR = paths.BASE_DIR
 DB_PATH = paths.DB_PATH
-SCHEMA_VERSION = 15
+SCHEMA_VERSION = 16
 
 _conn = None
 _lock = threading.RLock()
@@ -560,6 +560,49 @@ CREATE TABLE housekeeping_tasks (
 CREATE INDEX idx_housekeeping_tasks_room_status ON housekeeping_tasks(room_id, status);
 CREATE INDEX idx_housekeeping_tasks_due ON housekeeping_tasks(status, due_at);
 
+
+CREATE TABLE cash_shifts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'open',
+    opened_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    closed_at TEXT,
+    opening_float REAL NOT NULL DEFAULT 0,
+    expected_cash REAL NOT NULL DEFAULT 0,
+    counted_cash REAL,
+    variance REAL,
+    notes TEXT NOT NULL DEFAULT '',
+    opened_by TEXT NOT NULL DEFAULT '',
+    closed_by TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX idx_cash_shifts_status ON cash_shifts(status, opened_at);
+
+CREATE TABLE cash_movements (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    shift_id INTEGER NOT NULL,
+    movement_type TEXT NOT NULL,
+    amount REAL NOT NULL DEFAULT 0,
+    method TEXT NOT NULL DEFAULT 'Cash',
+    reference TEXT NOT NULL DEFAULT '',
+    notes TEXT NOT NULL DEFAULT '',
+    at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    FOREIGN KEY (shift_id) REFERENCES cash_shifts(id)
+);
+CREATE INDEX idx_cash_movements_shift ON cash_movements(shift_id, at);
+
+CREATE TABLE night_audit_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    business_date TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'open',
+    started_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    completed_at TEXT,
+    summary_json TEXT NOT NULL DEFAULT '{}',
+    exceptions_json TEXT NOT NULL DEFAULT '[]',
+    notes TEXT NOT NULL DEFAULT '',
+    run_by TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX idx_night_audit_date ON night_audit_runs(business_date, status);
+
 CREATE TABLE operational_expenses (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     category_id INTEGER NOT NULL,
@@ -1037,6 +1080,59 @@ def _migrate_to_15(conn):
         """)
 
 
+
+def _migrate_to_16(conn):
+    # P4: cash shifts/register and night audit advisory records (additive)
+    if not _table_exists(conn, "cash_shifts"):
+        conn.executescript("""
+        CREATE TABLE IF NOT EXISTS cash_shifts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'open',
+            opened_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            closed_at TEXT,
+            opening_float REAL NOT NULL DEFAULT 0,
+            expected_cash REAL NOT NULL DEFAULT 0,
+            counted_cash REAL,
+            variance REAL,
+            notes TEXT NOT NULL DEFAULT '',
+            opened_by TEXT NOT NULL DEFAULT '',
+            closed_by TEXT NOT NULL DEFAULT ''
+        );
+        CREATE INDEX IF NOT EXISTS idx_cash_shifts_status ON cash_shifts(status, opened_at);
+        """)
+    if not _table_exists(conn, "cash_movements"):
+        conn.executescript("""
+        CREATE TABLE IF NOT EXISTS cash_movements (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            shift_id INTEGER NOT NULL,
+            movement_type TEXT NOT NULL,
+            amount REAL NOT NULL DEFAULT 0,
+            method TEXT NOT NULL DEFAULT 'Cash',
+            reference TEXT NOT NULL DEFAULT '',
+            notes TEXT NOT NULL DEFAULT '',
+            at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            FOREIGN KEY (shift_id) REFERENCES cash_shifts(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_cash_movements_shift ON cash_movements(shift_id, at);
+        """)
+    if not _table_exists(conn, "night_audit_runs"):
+        conn.executescript("""
+        CREATE TABLE IF NOT EXISTS night_audit_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            business_date TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'open',
+            started_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            completed_at TEXT,
+            summary_json TEXT NOT NULL DEFAULT '{}',
+            exceptions_json TEXT NOT NULL DEFAULT '[]',
+            notes TEXT NOT NULL DEFAULT '',
+            run_by TEXT NOT NULL DEFAULT ''
+        );
+        CREATE INDEX IF NOT EXISTS idx_night_audit_date ON night_audit_runs(business_date, status);
+        """)
+
+
 def migrate():
     """Create or upgrade schema to SCHEMA_VERSION.
 
@@ -1096,6 +1192,8 @@ def migrate():
                     _migrate_to_14(conn)
                 if version < 15:
                     _migrate_to_15(conn)
+                if version < 16:
+                    _migrate_to_16(conn)
                 conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
                 ensure_runtime_indexes(conn)
                 _record_migration_meta(conn, status="upgraded", from_version=from_version, to_version=SCHEMA_VERSION)

@@ -14,10 +14,24 @@ def accounting(request: Request, tab: str = "overview"):
     ledger = services.get_recent_ledger(100)
     summary = services.get_general_ledger_summary()
     res = connect().execute("SELECT id, guest_name FROM reservations WHERE status IN ('Reserved','Checked In','Checked Out') ORDER BY id DESC LIMIT 100").fetchall()
-    allowed = {"overview","expenses","payments","ledger"}
+    try:
+        cash_shifts = services.list_cash_shifts(50)
+        open_shift = services.get_open_cash_shift()
+        shift_movements = services.list_cash_movements(open_shift["id"]) if open_shift else []
+    except Exception:
+        cash_shifts, open_shift, shift_movements = [], None, []
+    try:
+        night_audits = services.list_night_audit_runs(30)
+    except Exception:
+        night_audits = []
+    allowed = {"overview","expenses","payments","ledger","shifts","night_audit"}
     tab = (tab or "overview").strip().lower()
     if tab not in allowed: tab = "overview"
-    return render(request, "accounting/index.html", {"title":"Accounting","cats":cats,"expenses":expenses,"ledger":ledger,"summary":summary,"reservations":res,"active_tab":tab})
+    return render(request, "accounting/index.html", {
+        "title":"Accounting","cats":cats,"expenses":expenses,"ledger":ledger,"summary":summary,"reservations":res,
+        "cash_shifts":cash_shifts,"open_shift":open_shift,"shift_movements":shift_movements,"night_audits":night_audits,
+        "active_tab":tab
+    })
 
 @router.post("/accounting/expense")
 async def expense(request: Request):
@@ -74,3 +88,59 @@ async def refund(request: Request):
         return flash_redirect(request, "/accounting?tab=payments", "Refund recorded", "success")
     except Exception as e:
         return flash_redirect(request, "/accounting?tab=payments", str(e), "error")
+
+
+@router.post("/accounting/shifts/open")
+async def shift_open(request: Request):
+    form = await deps.get_form(request)
+    try:
+        services.open_cash_shift(
+            name=form.get("name", ""),
+            opening_float=float(form.get("opening_float") or 0),
+            notes=form.get("notes", ""),
+        )
+        return flash_redirect(request, "/accounting?tab=shifts", "Cash shift opened", "success")
+    except Exception as e:
+        return flash_redirect(request, "/accounting?tab=shifts", str(e), "error")
+
+
+@router.post("/accounting/shifts/{shift_id}/movement")
+async def shift_movement(shift_id: int, request: Request):
+    form = await deps.get_form(request)
+    try:
+        services.add_cash_movement(
+            shift_id,
+            form.get("movement_type", "adjustment"),
+            float(form.get("amount") or 0),
+            method=form.get("method", "Cash"),
+            reference=form.get("reference", ""),
+            notes=form.get("notes", ""),
+        )
+        return flash_redirect(request, "/accounting?tab=shifts", "Cash movement recorded", "success")
+    except Exception as e:
+        return flash_redirect(request, "/accounting?tab=shifts", str(e), "error")
+
+
+@router.post("/accounting/shifts/{shift_id}/close")
+async def shift_close(shift_id: int, request: Request):
+    form = await deps.get_form(request)
+    try:
+        counted = form.get("counted_cash")
+        services.close_cash_shift(
+            shift_id,
+            counted_cash=float(counted) if counted not in (None, "") else None,
+            notes=form.get("notes", ""),
+        )
+        return flash_redirect(request, "/accounting?tab=shifts", "Cash shift closed", "success")
+    except Exception as e:
+        return flash_redirect(request, "/accounting?tab=shifts", str(e), "error")
+
+
+@router.post("/accounting/night-audit/run")
+async def night_audit_run(request: Request):
+    form = await deps.get_form(request)
+    try:
+        services.run_night_audit(business_date=form.get("business_date") or None, notes=form.get("notes", ""))
+        return flash_redirect(request, "/accounting?tab=night_audit", "Night audit snapshot recorded (advisory)", "success")
+    except Exception as e:
+        return flash_redirect(request, "/accounting?tab=night_audit", str(e), "error")
