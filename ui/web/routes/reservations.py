@@ -125,9 +125,20 @@ def detail(rid: int, request: Request):
     except Exception:
         logger.exception("web.reservations: failed to load active batches")
         active_batches = []
+    try:
+        reservation_services = services.list_reservation_services(rid)
+    except Exception:
+        logger.exception("web.reservations: failed to load reservation services")
+        reservation_services = []
+    try:
+        service_catalog = services.list_service_catalog(active_only=True)
+    except Exception:
+        logger.exception("web.reservations: failed to load service catalog")
+        service_catalog = []
     return render(request, "reservations/detail.html", {
         "title":f"Reservation #{rid}","r":res,"folio":folio,"pos":pos,"pays":pays,
         "rooms":_rooms(),"activities":activities,"inventory":inventory,"active_batches":active_batches,
+        "reservation_services":reservation_services,"service_catalog":service_catalog,
         "today":datetime.now().strftime("%Y-%m-%d")
     })
 
@@ -247,6 +258,36 @@ async def book_activity(rid: int, request: Request):
         notes = (form.get("notes") or "").strip()
         res = services.book_activity(rid, act_id, qty, scheduled_at=scheduled_at, notes=notes)
         deps.add_flash(request, f"Activity/trip booked (POS #{res.get('pos_id')}) — added to reservation folio & invoice", "success")
+    except Exception as e:
+        deps.add_flash(request, str(e), "error")
+    r = deps.redirect(f"/reservations/{rid}"); deps.save_session(r, deps.get_session(request)); return r
+
+
+@router.post("/reservations/{rid}/services/add")
+async def add_service(rid: int, request: Request):
+    form = await deps.get_form(request)
+    try:
+        sid = form.get("service_id") or None
+        services.add_reservation_service(
+            rid,
+            service_id=int(sid) if sid not in (None, "", "0") else None,
+            description=(form.get("description") or "").strip() or None,
+            quantity=float(form.get("quantity") or 1),
+            unit_price=float(form.get("unit_price")) if form.get("unit_price") not in (None, "") else None,
+            notes=(form.get("notes") or "").strip(),
+        )
+        deps.add_flash(request, "Extra service added to folio", "success")
+    except Exception as e:
+        deps.add_flash(request, str(e), "error")
+    r = deps.redirect(f"/reservations/{rid}"); deps.save_session(r, deps.get_session(request)); return r
+
+
+@router.post("/reservations/{rid}/services/{service_line_id}/void")
+async def void_service(rid: int, service_line_id: int, request: Request):
+    form = await deps.require_unlocked_form(request)
+    try:
+        services.void_reservation_service(service_line_id, deps.service_password(request, form))
+        deps.add_flash(request, "Extra service voided", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
     r = deps.redirect(f"/reservations/{rid}"); deps.save_session(r, deps.get_session(request)); return r

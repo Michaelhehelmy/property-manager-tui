@@ -725,7 +725,7 @@ def _ledger_scalar(conn, expr, where, params=()):
 
 
 def _reservation_charge_net(conn, rid):
-    """Net accommodation + POS charge gross for a reservation (includes VOID_*)."""
+    """Net accommodation + POS + extra service charge gross for a reservation (includes VOID_*)."""
     types = _net_types(("CHARGE",))
     ph = ",".join("?" * len(types))
     accom = _ledger_scalar(
@@ -738,11 +738,16 @@ def _reservation_charge_net(conn, rid):
         f"ref_type='POS' AND ref_id IN (SELECT id FROM pos_tabs WHERE reservation_id=?) AND entry_type IN ({ph})",
         (rid, *types),
     )
-    return round((accom or 0) + (pos or 0), 2)
+    svc = _ledger_scalar(
+        conn, "SUM(gross)",
+        f"ref_type='RSVC' AND ref_id IN (SELECT id FROM reservation_services WHERE reservation_id=?) AND entry_type IN ({ph})",
+        (rid, *types),
+    )
+    return round((accom or 0) + (pos or 0) + (svc or 0), 2)
 
 
 def _reservation_charge_components(conn, rid):
-    """Net accommodation/POS components for a reservation (includes VOID_*)."""
+    """Net accommodation/POS/extra-service components for a reservation (includes VOID_*)."""
     types = _net_types(("CHARGE",))
     ph = ",".join("?" * len(types))
 
@@ -764,6 +769,16 @@ def _reservation_charge_components(conn, rid):
         "ref_type='POS' AND ref_id IN (SELECT id FROM pos_tabs WHERE reservation_id=?)",
         (rid,),
     )
+    svc_net = q(
+        "net",
+        "ref_type='RSVC' AND ref_id IN (SELECT id FROM reservation_services WHERE reservation_id=?)",
+        (rid,),
+    )
+    svc_gross = q(
+        "gross",
+        "ref_type='RSVC' AND ref_id IN (SELECT id FROM reservation_services WHERE reservation_id=?)",
+        (rid,),
+    )
     return {
         "accommodation_net": round(accom_net, 2),
         "accommodation_gross": round(accom_gross, 2),
@@ -771,7 +786,10 @@ def _reservation_charge_components(conn, rid):
         "pos_net": round(pos_net, 2),
         "pos_gross": round(pos_gross, 2),
         "pos_tax": round(pos_gross - pos_net, 2),
-        "total_charges": round(accom_gross + pos_gross, 2),
+        "services_net": round(svc_net, 2),
+        "services_gross": round(svc_gross, 2),
+        "services_tax": round(svc_gross - svc_net, 2),
+        "total_charges": round(accom_gross + pos_gross + svc_gross, 2),
     }
 
 
@@ -1480,6 +1498,7 @@ def _terminate_reservation_with_policy(rid, password, *, target_status, policy_s
         paid, refund = _cancellation_refund_amount(cur, rid, policy)
         _reverse_charges_for_reservation(cur, rid)
         _void_pos_for_reservation(cur, rid)
+        _reverse_reservation_services(cur, rid)
         if refund > 0:
             conn.execute("""INSERT INTO payments
                 (reservation_id, amount, method, payment_type, notes)
@@ -1793,8 +1812,11 @@ def delete_reservation(rid, password=None):
             raise ValueError("Cannot delete a reservation with payments. Cancel instead.")
         if conn.execute("SELECT 1 FROM pos_tabs WHERE reservation_id=? AND voided_at IS NULL", (rid,)).fetchone():
             raise ValueError("Cannot delete a reservation with POS items. Cancel instead.")
+        if conn.execute("SELECT 1 FROM reservation_services WHERE reservation_id=? AND voided_at IS NULL AND status='posted'", (rid,)).fetchone():
+            raise ValueError("Cannot delete a reservation with extra services. Cancel/void instead.")
         cur = conn.cursor()
         _reverse(cur, "RES", rid)
+        _reverse_reservation_services(cur, rid)
         conn.execute("UPDATE reservations SET status='Deleted' WHERE id=?", (rid,))
     _audit("reservation_delete", "reservation", rid, "")
 
@@ -1803,6 +1825,189 @@ def get_reservation(rid):
     return db.connect().execute("SELECT * FROM reservations WHERE id=?", (rid,)).fetchone()
 
 
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SERVICE CATALOG & RESERVATION EXTRA SERVICES (P2, additive)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _calc_service_line_tax(net, taxable=True):
+    net = round(float(net or 0), 2)
+    if not taxable:
+        return {"net": net, "vat": 0.0, "service": 0.0, "city_tax": 0.0, "gross": net}
+    try:
+        vat_rate = float(get_setting("vat_rate", "0.14") or 0.0)
+    except Exception:
+        vat_rate = 0.14
+    vat = round(net * vat_rate, 2)
+    return {"net": net, "vat": vat, "service": 0.0, "city_tax": 0.0, "gross": round(net + vat, 2)}
+
+
+def list_service_catalog(active_only=False):
+    q = "SELECT * FROM service_catalog"
+    if active_only:
+        q += " WHERE active=1"
+    q += " ORDER BY active DESC, category, name, id"
+    return [dict(r) for r in db.connect().execute(q).fetchall()]
+
+
+def get_service_catalog_item(service_id):
+    r = db.connect().execute("SELECT * FROM service_catalog WHERE id=?", (int(service_id),)).fetchone()
+    return dict(r) if r else None
+
+
+def create_service_catalog_item(name, category="Service", unit_price=0.0, description="", taxable=True, active=True):
+    name = (name or "").strip()
+    if not name:
+        raise ValueError("Service name is required.")
+    try:
+        unit_price = round(float(unit_price or 0), 2)
+    except Exception:
+        raise ValueError("Invalid unit price.")
+    if unit_price < 0:
+        raise ValueError("Unit price cannot be negative.")
+    with db.transaction() as conn:
+        try:
+            cur = conn.execute(
+                """INSERT INTO service_catalog (name, description, category, unit_price, taxable, active)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (name, (description or "").strip(), (category or "Service").strip() or "Service", unit_price, 1 if taxable else 0, 1 if active else 0),
+            )
+            sid = cur.lastrowid
+        except Exception as e:
+            if "UNIQUE" in str(e).upper():
+                raise ValueError("A service with this name already exists.")
+            raise
+    _audit("service_catalog_create", "service_catalog", sid, name)
+    return sid
+
+
+def update_service_catalog_item(service_id, name=None, category=None, unit_price=None, description=None, taxable=None, active=None):
+    sid = int(service_id)
+    row = db.connect().execute("SELECT * FROM service_catalog WHERE id=?", (sid,)).fetchone()
+    if not row:
+        raise ValueError("Service not found.")
+    vals = {
+        "name": (name if name is not None else row["name"]),
+        "description": (description if description is not None else row["description"]),
+        "category": (category if category is not None else row["category"]),
+        "unit_price": (unit_price if unit_price is not None else row["unit_price"]),
+        "taxable": (taxable if taxable is not None else row["taxable"]),
+        "active": (active if active is not None else row["active"]),
+    }
+    vals["name"] = (vals["name"] or "").strip()
+    if not vals["name"]:
+        raise ValueError("Service name is required.")
+    try:
+        vals["unit_price"] = round(float(vals["unit_price"] or 0), 2)
+    except Exception:
+        raise ValueError("Invalid unit price.")
+    if vals["unit_price"] < 0:
+        raise ValueError("Unit price cannot be negative.")
+    with db.transaction() as conn:
+        try:
+            conn.execute(
+                """UPDATE service_catalog SET name=?, description=?, category=?, unit_price=?, taxable=?, active=?, updated_at=datetime('now','localtime')
+                   WHERE id=?""",
+                (vals["name"], (vals["description"] or "").strip(), (vals["category"] or "Service").strip() or "Service",
+                 vals["unit_price"], 1 if vals["taxable"] else 0, 1 if vals["active"] else 0, sid),
+            )
+        except Exception as e:
+            if "UNIQUE" in str(e).upper():
+                raise ValueError("A service with this name already exists.")
+            raise
+    _audit("service_catalog_update", "service_catalog", sid, vals["name"])
+    return sid
+
+
+def list_reservation_services(reservation_id):
+    rid = int(reservation_id)
+    rows = db.connect().execute(
+        """SELECT rs.*, sc.name AS catalog_name, sc.category AS catalog_category
+           FROM reservation_services rs
+           LEFT JOIN service_catalog sc ON sc.id = rs.service_id
+           WHERE rs.reservation_id=?
+           ORDER BY rs.id DESC""", (rid,)
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def add_reservation_service(reservation_id, service_id=None, description=None, quantity=1, unit_price=None, taxable=True, notes="", password=None):
+    rid = int(reservation_id)
+    try:
+        qty = float(quantity or 1)
+    except Exception:
+        raise ValueError("Invalid quantity.")
+    if qty <= 0:
+        raise ValueError("Quantity must be greater than 0.")
+    res = db.connect().execute("SELECT id, status, guest_name FROM reservations WHERE id=?", (rid,)).fetchone()
+    if not res:
+        raise ValueError("Reservation not found.")
+    if res["status"] in ("Cancelled", "No-Show", "Deleted", "Checked Out"):
+        raise ValueError(f"Cannot add services to a '{res['status']}' reservation.")
+    svc = None
+    if service_id not in (None, "", 0, "0"):
+        svc = db.connect().execute("SELECT * FROM service_catalog WHERE id=?", (int(service_id),)).fetchone()
+        if not svc:
+            raise ValueError("Service not found.")
+        if not svc["active"]:
+            raise ValueError("Selected service is inactive.")
+    desc = (description or (svc["name"] if svc else "") or "").strip()
+    if not desc:
+        raise ValueError("Service description is required.")
+    if unit_price is None:
+        if not svc:
+            raise ValueError("Unit price is required.")
+        unit_price = float(svc["unit_price"] or 0)
+    try:
+        unit_price = round(float(unit_price or 0), 2)
+    except Exception:
+        raise ValueError("Invalid unit price.")
+    if unit_price < 0:
+        raise ValueError("Unit price cannot be negative.")
+    if svc is not None:
+        taxable = bool(svc["taxable"])
+    line_net = round(unit_price * qty, 2)
+    tax = _calc_service_line_tax(line_net, taxable=bool(taxable))
+    with db.transaction() as conn:
+        cur = conn.execute(
+            """INSERT INTO reservation_services
+               (reservation_id, service_id, description, quantity, unit_price, tax_amount, gross_amount, status, notes, posted_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 'posted', ?, datetime('now','localtime'))""",
+            (rid, int(svc["id"]) if svc else None, desc, qty, unit_price, tax["vat"], tax["gross"], (notes or "").strip()),
+        )
+        rsid = cur.lastrowid
+        _post(cur, "RSVC", rsid, "CHARGE", "Service",
+              tax["net"], tax["service"], tax["vat"], tax["city_tax"], "",
+              f"Extra service Res #{rid}: {desc} x{qty:g}")
+    _audit("reservation_service_add", "reservation_service", rsid, f"res={rid} amount={tax['gross']}")
+    return rsid
+
+
+def void_reservation_service(service_line_id, password=None):
+    _require_super_password(password)
+    rsid = int(service_line_id)
+    with db.transaction() as conn:
+        row = conn.execute("SELECT * FROM reservation_services WHERE id=?", (rsid,)).fetchone()
+        if not row:
+            raise ValueError("Service line not found.")
+        if row["voided_at"] or row["status"] == "voided":
+            return rsid
+        cur = conn.cursor()
+        _reverse(cur, "RSVC", rsid, entry_type_filter=("CHARGE",))
+        conn.execute("UPDATE reservation_services SET status='voided', voided_at=datetime('now','localtime') WHERE id=?", (rsid,))
+    _audit("reservation_service_void", "reservation_service", rsid, f"res={row['reservation_id']}")
+    return rsid
+
+
+def _reverse_reservation_services(cur, reservation_id):
+    rows = cur.execute(
+        "SELECT id FROM reservation_services WHERE reservation_id=? AND voided_at IS NULL AND status='posted'",
+        (int(reservation_id),),
+    ).fetchall()
+    for r in rows:
+        _reverse(cur, "RSVC", r["id"], entry_type_filter=("CHARGE",))
+        cur.execute("UPDATE reservation_services SET status='voided', voided_at=datetime('now','localtime') WHERE id=?", (r["id"],))
+    return len(rows)
 
 # ═══════════════════════════════════════════════════════════════════════════
 # BARCODES / BATCHES / TRACEABILITY
@@ -3283,7 +3488,8 @@ def get_balance_breakdown(rid):
     if r["status"] in ("Cancelled", "No-Show", "Deleted"):
         return {"total_charges": 0, "total_paid": 0, "balance_due": 0,
                 "nights": 0, "accommodation_net": 0, "accommodation_tax": 0,
-                "accommodation_gross": 0, "pos_net": 0, "pos_tax": 0, "pos_gross": 0}
+                "accommodation_gross": 0, "pos_net": 0, "pos_tax": 0, "pos_gross": 0,
+                "services_net": 0, "services_tax": 0, "services_gross": 0}
     comp = _reservation_charge_components(conn, rid)
     paid = conn.execute(
         "SELECT COALESCE(SUM(amount), 0) FROM payments WHERE reservation_id=? AND voided_at IS NULL",
@@ -3299,6 +3505,9 @@ def get_balance_breakdown(rid):
         "pos_net": comp["pos_net"],
         "pos_tax": comp["pos_tax"],
         "pos_gross": comp["pos_gross"],
+        "services_net": comp.get("services_net", 0),
+        "services_tax": comp.get("services_tax", 0),
+        "services_gross": comp.get("services_gross", 0),
     }
 
 

@@ -16,7 +16,7 @@ from . import paths
 DATA_DIR = paths.DATA_DIR
 BASE_DIR = paths.BASE_DIR
 DB_PATH = paths.DB_PATH
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 
 _conn = None
 _lock = threading.RLock()
@@ -428,6 +428,40 @@ CREATE INDEX idx_pos_res ON pos_tabs(reservation_id);
 CREATE INDEX idx_pos_activity ON pos_tabs(activity_id);
 CREATE INDEX idx_pos_batch ON pos_tabs(batch_id);
 
+
+CREATE TABLE service_catalog (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    description TEXT NOT NULL DEFAULT '',
+    category TEXT NOT NULL DEFAULT 'Service',
+    unit_price REAL NOT NULL DEFAULT 0,
+    taxable INTEGER NOT NULL DEFAULT 1,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX idx_service_catalog_active ON service_catalog(active);
+
+CREATE TABLE reservation_services (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    reservation_id INTEGER NOT NULL,
+    service_id INTEGER,
+    description TEXT NOT NULL,
+    quantity REAL NOT NULL DEFAULT 1,
+    unit_price REAL NOT NULL DEFAULT 0,
+    tax_amount REAL NOT NULL DEFAULT 0,
+    gross_amount REAL NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'posted',
+    voided_at TEXT,
+    notes TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    posted_at TEXT,
+    FOREIGN KEY (reservation_id) REFERENCES reservations(id),
+    FOREIGN KEY (service_id) REFERENCES service_catalog(id)
+);
+CREATE INDEX idx_res_services_res ON reservation_services(reservation_id);
+CREATE INDEX idx_res_services_status ON reservation_services(status);
+
 CREATE TABLE expense_categories (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     category_name TEXT NOT NULL UNIQUE
@@ -732,6 +766,46 @@ def _migrate_to_10(conn):
                 )
 
 
+
+def _migrate_to_11(conn):
+    # P2: extra services/add-ons catalog and reservation service lines (additive)
+    if not _table_exists(conn, "service_catalog"):
+        conn.executescript("""
+        CREATE TABLE IF NOT EXISTS service_catalog (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            description TEXT NOT NULL DEFAULT '',
+            category TEXT NOT NULL DEFAULT 'Service',
+            unit_price REAL NOT NULL DEFAULT 0,
+            taxable INTEGER NOT NULL DEFAULT 1,
+            active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_service_catalog_active ON service_catalog(active);
+        """)
+    if not _table_exists(conn, "reservation_services"):
+        conn.executescript("""
+        CREATE TABLE IF NOT EXISTS reservation_services (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            reservation_id INTEGER NOT NULL,
+            service_id INTEGER,
+            description TEXT NOT NULL,
+            quantity REAL NOT NULL DEFAULT 1,
+            unit_price REAL NOT NULL DEFAULT 0,
+            tax_amount REAL NOT NULL DEFAULT 0,
+            gross_amount REAL NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'posted',
+            voided_at TEXT,
+            notes TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            posted_at TEXT,
+            FOREIGN KEY (reservation_id) REFERENCES reservations(id),
+            FOREIGN KEY (service_id) REFERENCES service_catalog(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_res_services_res ON reservation_services(reservation_id);
+        CREATE INDEX IF NOT EXISTS idx_res_services_status ON reservation_services(status);
+        """)
 def migrate():
     """Create or upgrade schema to SCHEMA_VERSION.
 
@@ -781,6 +855,8 @@ def migrate():
                     _migrate_to_9(conn)
                 if version < 10:
                     _migrate_to_10(conn)
+                if version < 11:
+                    _migrate_to_11(conn)
                 conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
                 ensure_runtime_indexes(conn)
                 _record_migration_meta(conn, status="upgraded", from_version=from_version, to_version=SCHEMA_VERSION)

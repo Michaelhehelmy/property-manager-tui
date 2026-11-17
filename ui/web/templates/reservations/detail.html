@@ -34,6 +34,9 @@
   </div>
   <div class="panel"><h3>Folio</h3>
     <table>
+      <tr><th>Accommodation</th><td>{{ "%.2f"|format(folio.accommodation_gross or 0) }} <span class="muted">(net {{ "%.2f"|format(folio.accommodation_net or 0) }}, tax {{ "%.2f"|format(folio.accommodation_tax or 0) }})</span></td></tr>
+      <tr><th>POS / Activities</th><td>{{ "%.2f"|format(folio.pos_gross or 0) }} <span class="muted">(net {{ "%.2f"|format(folio.pos_net or 0) }}, tax {{ "%.2f"|format(folio.pos_tax or 0) }})</span></td></tr>
+      <tr><th>Extra services</th><td>{{ "%.2f"|format(folio.services_gross or 0) }} <span class="muted">(net {{ "%.2f"|format(folio.services_net or 0) }}, tax {{ "%.2f"|format(folio.services_tax or 0) }})</span></td></tr>
       <tr><th>Total charges</th><td>{{ "%.2f"|format(folio.total_charges or 0) }}</td></tr>
       <tr><th>Total paid</th><td>{{ "%.2f"|format(folio.total_paid or 0) }}</td></tr>
       <tr><th>Balance due</th><td><strong>{{ "%.2f"|format(folio.balance_due or 0) }}</strong></td></tr>
@@ -114,5 +117,25 @@
   <div class="panel"><h3>Payments</h3><div class="table-wrap"><table><tr><th>ID</th><th>Type</th><th>Amount</th><th>Method</th><th>Notes</th></tr>
   {% for p in pays %}{% if not p['voided_at'] %}<tr><td>{{p['id']}}</td><td>{{p['payment_type']}}</td><td>{{p['amount']}}</td><td>{{p['method']}}</td><td>{{p['notes']}}</td></tr>{% endif %}
   {% else %}<tr><td colspan="5" class="muted">None</td></tr>{% endfor %}</table></div></div>
+</div>
+<div class="panel" style="margin-top:16px"><h3>Extra services / add-ons</h3>
+  <p class="muted">Stay extras posted to the reservation folio (separate from POS inventory sales and activities). Voiding requires unlock + super password.</p>
+  <div class="table-wrap"><table><tr><th>ID</th><th>Description</th><th>Qty</th><th>Unit</th><th>Tax</th><th>Gross</th><th>Status</th><th>Action</th></tr>
+  {% for s in reservation_services or [] %}<tr>
+    <td>{{s['id']}}</td><td>{{s['description']}}{% if s['catalog_category'] %} <span class="muted">({{s['catalog_category']}})</span>{% endif %}</td>
+    <td>{{s['quantity']}}</td><td>{{"%.2f"|format(s['unit_price'] or 0)}}</td><td>{{"%.2f"|format(s['tax_amount'] or 0)}}</td><td>{{"%.2f"|format(s['gross_amount'] or 0)}}</td>
+    <td>{{s['status']}}</td>
+    <td>{% if s['status']=='posted' and not s['voided_at'] %}<form method="post" action="/reservations/{{r['id']}}/services/{{s['id']}}/void" class="inline"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><input type="password" name="password" placeholder="Pwd" style="width:90px;display:inline-block"/><button class="err" title="Void this extra service (requires super password)">Void</button></form>{% else %}—{% endif %}</td>
+  </tr>{% else %}<tr><td colspan="8" class="muted">No extra services</td></tr>{% endfor %}</table></div>
+  <details style="margin-top:10px"><summary><strong>Add extra service</strong></summary>
+    <form method="post" action="/reservations/{{r['id']}}/services/add"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+      <label>From catalog (optional)<select name="service_id"><option value="">— Custom / manual —</option>{% for c in service_catalog or [] %}<option value="{{c['id']}}" data-price="{{'%.2f'|format(c['unit_price'] or 0)}}" data-name="{{c['name']|e}}">{{c['name']}} ({{c['category']}}) — {{'%.2f'|format(c['unit_price'] or 0)}}{% if not c['taxable'] %} [non-taxable]{% endif %}</option>{% endfor %}</select></label>
+      <label>Description<input name="description" placeholder="Service description (auto-filled from catalog if empty)"/></label>
+      <div class="row"><label>Quantity<input name="quantity" type="number" min="0.01" step="0.01" value="1"/></label><label>Unit price (net)<input name="unit_price" type="number" step="0.01" placeholder="Use catalog price if blank"/></label></div>
+      <label>Notes<input name="notes"/></label>
+      <button class="ok" type="submit" title="Add extra service charge to folio">Add service</button>
+    </form>
+    {% if not service_catalog %}<p class="muted">No active service catalog items. Catalog can be managed via services/API (settings UI coming in later slices).</p>{% endif %}
+  </details>
 </div>
 {% endblock %}
