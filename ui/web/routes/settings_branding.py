@@ -190,7 +190,15 @@ def rate_plans(request: Request):
         except Exception:
             usage = None
         plans.append({"id": p["id"], "name": p["name"], "price_modifier": p["price_modifier"], "usage_count": usage})
-    return render(request, "settings/rate_plans.html", {"title": "Rate Plans", "plans": plans})
+    try:
+        rules = services.list_rate_rules(active_only=False)
+    except Exception:
+        rules = []
+    try:
+        room_types = sorted({(r["room_type"] or "").strip() for r in services.get_all_rooms()} - {""})
+    except Exception:
+        room_types = []
+    return render(request, "settings/rate_plans.html", {"title": "Rate Plans & Pricing Rules", "plans": plans, "rules": rules, "room_types": room_types})
 
 
 @router.post("/settings/rate-plans/add")
@@ -221,6 +229,57 @@ async def rate_plan_delete(request: Request, plan_id: int):
     try:
         services.delete_rate_plan(plan_id, deps.service_password(request, form))
         deps.add_flash(request, "Rate plan deleted.", "success")
+    except Exception as e:
+        deps.add_flash(request, str(e), "error")
+    r = deps.redirect("/settings/rate-plans"); deps.save_session(r, deps.get_session(request)); return r
+
+
+@router.post("/settings/rate-rules/add")
+async def rate_rule_add(request: Request):
+    form = await deps.require_unlocked_form(request)
+    try:
+        services.add_rate_rule(
+            name=form.get("name", "Rate rule"),
+            adjustment_type=form.get("adjustment_type", "amount"),
+            adjustment_value=float(form.get("adjustment_value") or 0),
+            rate_plan_id=int(form["rate_plan_id"]) if form.get("rate_plan_id") else None,
+            room_type=form.get("room_type", ""),
+            source=form.get("source", ""),
+            market_segment=form.get("market_segment", ""),
+            start_date=form.get("start_date", ""),
+            end_date=form.get("end_date", ""),
+            min_nights=int(form["min_nights"]) if form.get("min_nights") else None,
+            max_nights=int(form["max_nights"]) if form.get("max_nights") else None,
+            priority=int(form.get("priority") or 100),
+            active=bool(form.get("active")),
+        )
+        deps.add_flash(request, "Rate rule added.", "success")
+    except Exception as e:
+        deps.add_flash(request, str(e), "error")
+    r = deps.redirect("/settings/rate-plans"); deps.save_session(r, deps.get_session(request)); return r
+
+
+@router.post("/settings/rate-rules/{rule_id}/edit")
+async def rate_rule_edit(request: Request, rule_id: int):
+    form = await deps.require_unlocked_form(request)
+    try:
+        services.update_rate_rule(
+            rule_id,
+            name=form.get("name", "Rate rule"),
+            adjustment_type=form.get("adjustment_type", "amount"),
+            adjustment_value=float(form.get("adjustment_value") or 0),
+            rate_plan_id=int(form["rate_plan_id"]) if form.get("rate_plan_id") else None,
+            room_type=form.get("room_type", ""),
+            source=form.get("source", ""),
+            market_segment=form.get("market_segment", ""),
+            start_date=form.get("start_date", ""),
+            end_date=form.get("end_date", ""),
+            min_nights=int(form["min_nights"]) if form.get("min_nights") else None,
+            max_nights=int(form["max_nights"]) if form.get("max_nights") else None,
+            priority=int(form.get("priority") or 100),
+            active=bool(form.get("active")),
+        )
+        deps.add_flash(request, "Rate rule updated.", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
     r = deps.redirect("/settings/rate-plans"); deps.save_session(r, deps.get_session(request)); return r

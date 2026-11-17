@@ -7,6 +7,7 @@
   <div class="panel"><h3>Status: {{ r['status'] }}</h3>
     <p class="muted">Room {{ r['room_id'] }} · {{ r['check_in_date'] }} → {{ r['check_out_date'] }} · Rate {{ r['agreed_nightly_rate'] }} · Source {{ r['source'] }}{% if r['source_detail'] %} ({{ r['source_detail'] }}){% endif %}{% if r['market_segment'] %} · Segment {{ r['market_segment'] }}{% endif %}</p>
     {% if r['booking_notes'] or r['notes'] %}<p class="muted"><strong>Notes:</strong> {{ r['booking_notes'] or r['notes'] }}</p>{% endif %}
+    {% if r['pricing_snapshot_json'] and r['pricing_snapshot_json'] != '{}' %}<details><summary>Pricing snapshot</summary><pre style="white-space:pre-wrap;max-height:240px;overflow:auto">{{ r['pricing_snapshot_json'] }}</pre></details>{% endif %}
     <div class="row">
       <form method="post" action="/reservations/{{r['id']}}/checkin" class="inline"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><button class="ok" title="Mark reservation as Checked In (guest arrived)">Check in</button></form>
       <form method="post" action="/reservations/{{r['id']}}/checkout" class="inline"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><button class="warn" title="Mark reservation as Checked Out (may be blocked if unpaid balance requires override)">Check out</button></form>

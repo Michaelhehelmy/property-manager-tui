@@ -1,9 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
-<h2>Rate Plans</h2>
-<p class="muted">Define pricing plans/modifiers used by reservations.</p>
-<details class="help-box"><summary>How to use Rate Plans</summary><ul><li><strong>Create/edit:</strong> set name and price modifier; plans can be selected when creating reservations.</li><li><strong>Delete:</strong> a plan cannot be deleted if reservations reference it.</li><li><strong>Protected:</strong> changes may require unlock/super password depending on configuration.</li></ul></details>
-<p class="muted">Manage rate plans (real backend: <code>get_all_rate_plans</code>, <code>add/update/delete_rate_plan</code>, <code>count_reservations_using_plan</code>). Add/edit/delete require unlock + super password.</p>
+<h2>Rate Plans &amp; Pricing Rules</h2>
+<p class="muted">Manage base rate plans/modifiers and deterministic pricing rules (snapshots stored on reservations). Rule changes affect future pricing resolution/quotes, not historical snapshots.</p>
 
 <div class="grid grid-2">
   <div class="panel"><h3>Add rate plan</h3>
@@ -20,13 +18,10 @@
       <tr><th>ID</th><th>Name</th><th>Modifier</th><th>Usage</th><th>Actions</th></tr>
       {% for p in plans %}
       <tr>
-        <td>{{ p.id }}</td>
-        <td>{{ p.name }}</td>
-        <td>{{ "%+.2f"|format(p.price_modifier) }} EGP</td>
+        <td>{{ p.id }}</td><td>{{ p.name }}</td><td>{{ "%+.2f"|format(p.price_modifier) }} EGP</td>
         <td>{% if p.usage_count is none %}<span class="muted">?</span>{% elif p.usage_count > 0 %}<span class="warn">{{ p.usage_count }} reservation(s)</span>{% else %}<span class="muted">0</span>{% endif %}</td>
         <td>
-          <details>
-            <summary>Edit / Delete</summary>
+          <details><summary>Edit / Delete</summary>
             <form method="post" action="/settings/rate-plans/{{ p.id }}/edit" style="margin:8px 0">
               <input type="hidden" name="csrf" value="{{ csrf_token }}"/>
               <input name="name" value="{{ p.name }}" required/>
@@ -42,11 +37,53 @@
           </details>
         </td>
       </tr>
-      {% else %}
-      <tr><td colspan="5" class="muted">No rate plans.</td></tr>
-      {% endfor %}
+      {% else %}<tr><td colspan="5" class="muted">No rate plans.</td></tr>{% endfor %}
     </table>
   </div>
 </div>
-<p><a href="/settings">← Back to Settings</a></p>
+
+<div class="panel" style="margin-top:16px"><h3>Pricing rules</h3>
+  <p class="muted">Rules are evaluated deterministically by priority (ascending) when active and matching conditions. Snapshots are stored on create/modify.</p>
+  <details><summary><strong>Add pricing rule</strong> (requires unlock + super password)</summary>
+    <form method="post" action="/settings/rate-rules/add"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+      <div class="row"><label>Name<input name="name" value="New rule" required/></label><label>Priority<input name="priority" type="number" value="100"/></label><label><input type="checkbox" name="active" checked/> Active</label></div>
+      <div class="row"><label>Rate plan<select name="rate_plan_id"><option value="">Any</option>{% for p in plans %}<option value="{{p.id}}">{{p.name}}</option>{% endfor %}</select></label><label>Room type<select name="room_type"><option value="">Any</option>{% for rt in room_types %}<option value="{{rt}}">{{rt}}</option>{% endfor %}</select></label></div>
+      <div class="row"><label>Source<input name="source" placeholder="Any"/></label><label>Market segment<input name="market_segment" placeholder="Any"/></label></div>
+      <div class="row"><label>Start date<input type="date" name="start_date"/></label><label>End date<input type="date" name="end_date"/></label></div>
+      <div class="row"><label>Min nights<input type="number" name="min_nights"/></label><label>Max nights<input type="number" name="max_nights"/></label></div>
+      <div class="row"><label>Adjustment type<select name="adjustment_type"><option value="amount">amount (+/- per night)</option><option value="percent">percent</option><option value="fixed_night">fixed_night</option></select></label><label>Adjustment value<input type="number" step="0.01" name="adjustment_value" value="0"/></label></div>
+      <label>Super password<input type="password" name="password" required/></label>
+      <button type="submit">Add rule</button>
+    </form>
+  </details>
+  <div class="table-wrap" style="margin-top:10px"><table>
+    <tr><th>ID</th><th>Name</th><th>Scope</th><th>Dates/Nights</th><th>Adjustment</th><th>Pri</th><th>Active</th><th>Edit</th></tr>
+    {% for r in rules %}<tr>
+      <td>{{r.id}}</td><td>{{r.name}}</td>
+      <td><div>Plan: {{r.rate_plan_name or 'Any'}}</div><div>Room: {{r.room_type or 'Any'}}</div><div>Source: {{r.source or 'Any'}}</div><div>Segment: {{r.market_segment or 'Any'}}</div></td>
+      <td><div>{{r.start_date or '—'}} → {{r.end_date or '—'}}</div><div>Nights: {{r.min_nights if r.min_nights is not none else '—'}}–{{r.max_nights if r.max_nights is not none else '—'}}</div></td>
+      <td>{{r.adjustment_type}} {{r.adjustment_value}}</td><td>{{r.priority}}</td><td>{{'yes' if r.active else 'no'}}</td>
+      <td><details><summary>Edit</summary>
+        <form method="post" action="/settings/rate-rules/{{r.id}}/edit" style="margin:8px 0"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+          <label>Name<input name="name" value="{{r.name}}"/></label>
+          <label>Priority<input name="priority" type="number" value="{{r.priority}}"/></label>
+          <label><input type="checkbox" name="active" {% if r.active %}checked{% endif %}/> Active</label>
+          <label>Rate plan<select name="rate_plan_id"><option value="">Any</option>{% for p in plans %}<option value="{{p.id}}" {% if r.rate_plan_id==p.id %}selected{% endif %}>{{p.name}}</option>{% endfor %}</select></label>
+          <label>Room type<select name="room_type"><option value="">Any</option>{% for rt in room_types %}<option value="{{rt}}" {% if r.room_type==rt %}selected{% endif %}>{{rt}}</option>{% endfor %}</select></label>
+          <label>Source<input name="source" value="{{r.source or ''}}"/></label>
+          <label>Market segment<input name="market_segment" value="{{r.market_segment or ''}}"/></label>
+          <label>Start<input type="date" name="start_date" value="{{r.start_date or ''}}"/></label>
+          <label>End<input type="date" name="end_date" value="{{r.end_date or ''}}"/></label>
+          <label>Min nights<input type="number" name="min_nights" value="{{r.min_nights if r.min_nights is not none else ''}}"/></label>
+          <label>Max nights<input type="number" name="max_nights" value="{{r.max_nights if r.max_nights is not none else ''}}"/></label>
+          <label>Type<select name="adjustment_type"><option value="amount" {% if r.adjustment_type=='amount' %}selected{% endif %}>amount</option><option value="percent" {% if r.adjustment_type=='percent' %}selected{% endif %}>percent</option><option value="fixed_night" {% if r.adjustment_type=='fixed_night' %}selected{% endif %}>fixed_night</option></select></label>
+          <label>Value<input type="number" step="0.01" name="adjustment_value" value="{{r.adjustment_value}}"/></label>
+          <label>Super password<input type="password" name="password" required/></label>
+          <button type="submit">Save rule</button>
+        </form>
+      </details></td>
+    </tr>{% else %}<tr><td colspan="8" class="muted">No pricing rules.</td></tr>{% endfor %}
+  </table></div>
+</div>
+<p style="margin-top:12px"><a href="/settings">← Back to Settings</a></p>
 {% endblock %}
