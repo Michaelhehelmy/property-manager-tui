@@ -78,28 +78,44 @@ def _fmt_today_ops(data: dict) -> str:
     fd = data.get("front_desk") or {}
     hk = data.get("housekeeping") or {}
     ops = data.get("daily_ops")
-    lines = [f"Here’s today’s operations snapshot for **{date}** (grounded in real data):"]
+    ops_obj = data.get("ops") if isinstance(data.get("ops"), dict) else None
+    if ops_obj and not fd:
+        fd = ops_obj.get("summary") or {}
+    counts = (ops_obj or {}).get("counts") or {}
+    lines = [f"Here’s the front-desk operations snapshot for **{date}** (grounded in real data):"]
     if fd:
-        lines.append(f"- Front desk: arrivals **{fd.get('arrivals_today',0)}**, departures **{fd.get('departures_today',0)}**, in-house **{fd.get('in_house', fd.get('inhouse', 0))}**, occupancy **{fd.get('occupancy_pct',0)}%**")
+        arr_n = counts.get("arrivals", fd.get("arrivals_today", 0))
+        dep_n = counts.get("departures", fd.get("departures_today", 0))
+        inh_n = counts.get("in_house", fd.get("in_house", fd.get("inhouse", 0)))
+        lines.append(f"- Front desk: arrivals **{arr_n}**, departures **{dep_n}**, in-house **{inh_n}**, occupancy **{fd.get('occupancy_pct',0)}%**")
         lines.append(f"- Rooms readiness: clean **{fd.get('clean',0)}**, dirty **{fd.get('dirty',0)}**, maintenance **{fd.get('maint',0)}**")
+    if counts:
+        lines.append(f"- Exceptions: **{counts.get('exceptions',0)}** (unpaid **{counts.get('unpaid',0)}**, dirty/maint **{counts.get('dirty_rooms',0)}**, not checked in **{counts.get('not_checked_in',0)}**, not checked out **{counts.get('not_checked_out',0)}**)")
+    if ops_obj:
+        for key, label in (("arrivals","Arrivals"), ("in_house","In-house"), ("departures","Departures")):
+            rows = ops_obj.get(key) or []
+            if rows:
+                sample = ", ".join([f"#{r.get('id')} {r.get('guest_name','')}" + (f" (Rm {r.get('room_number')})" if r.get('room_number') else "") for r in rows[:5]])
+                more = f" (+{len(rows)-5} more)" if len(rows) > 5 else ""
+                lines.append(f"- {label}: **{len(rows)}** — {sample}{more}")
+            else:
+                lines.append(f"- {label}: **0**")
     if hk and hk.get("by_status"):
         parts = [f"{k}: {v}" for k,v in (hk.get("by_status") or {}).items()]
         lines.append(f"- Housekeeping: {', '.join(parts)} (total {hk.get('total_rooms',0)})")
     if isinstance(ops, dict):
-        # summarize common keys
         for k in ("arrivals","departures","in_house","stayovers"):
             v = ops.get(k)
             if v is not None and k not in ("",):
                 if isinstance(v, list): lines.append(f"- {k.replace('_',' ').title()}: **{len(v)}**")
                 elif isinstance(v, (int,float,str)): lines.append(f"- {k.replace('_',' ').title()}: **{v}**")
-    elif isinstance(ops, str) and ops.strip():
-        # include concise excerpt
+    elif isinstance(ops, str) and ops.strip() and not ops_obj:
         excerpt = "\n".join([ln for ln in ops.strip().splitlines() if ln.strip()][:12])
         lines.append("")
         lines.append("Ops details:")
         lines.append(excerpt)
-    if not fd and not hk and not ops:
-        lines.append("- No ops details were returned for today.")
+    if not fd and not hk and not ops and not ops_obj:
+        lines.append("- No ops details were returned for this date.")
     return "\n".join(lines)
 
 def _fmt_partner_briefing(data: dict) -> str:
@@ -946,6 +962,10 @@ _INTENT_FORMATTERS = {
     "inventory_item_details": _fmt_inventory_item_details,
     "walkin_sales_summary": _fmt_walkin_sales_summary,
     "payments_summary": _fmt_payments_summary,
+    "front_desk_ops": lambda d: _fmt_today_ops({"date": (d or {}).get("date"), "ops": d, "front_desk": (d or {}).get("summary")}),
+    "front_desk_arrivals": lambda d: ("\n".join([f"**Arrivals for {(d or {}).get('date') or _iso(_today())}** (grounded in real data): **{len((d or {}).get('arrivals') or [])}**"] + (["- None."] if not ((d or {}).get('arrivals') or []) else [f"- #{r.get('id')} **{r.get('guest_name','')}** [{r.get('status','')}]"+(f" · Room {r.get('room_number')}" if r.get('room_number') else "")+(f" · HK {r.get('housekeeping_status')}" if r.get('housekeeping_status') else "")+(f" · Due {_fmt_money(r.get('balance_due',0))}" if float(r.get('balance_due') or 0)>0 else "")+(f" · ⚠ {', '.join(r.get('exceptions') or [])}" if r.get('exceptions') else "") for r in ((d or {}).get('arrivals') or [])[:25]] + ([f"- … and {len((d or {}).get('arrivals') or [])-25} more."] if len((d or {}).get('arrivals') or [])>25 else []))) if not (d or {}).get('error') else f"I couldn’t retrieve arrivals ({(d or {}).get('error')})."),
+    "front_desk_departures": lambda d: ("\n".join([f"**Departures for {(d or {}).get('date') or _iso(_today())}** (grounded in real data): **{len((d or {}).get('departures') or [])}**"] + (["- None."] if not ((d or {}).get('departures') or []) else [f"- #{r.get('id')} **{r.get('guest_name','')}** [{r.get('status','')}]"+(f" · Room {r.get('room_number')}" if r.get('room_number') else "")+(f" · HK {r.get('housekeeping_status')}" if r.get('housekeeping_status') else "")+(f" · Due {_fmt_money(r.get('balance_due',0))}" if float(r.get('balance_due') or 0)>0 else "")+(f" · ⚠ {', '.join(r.get('exceptions') or [])}" if r.get('exceptions') else "") for r in ((d or {}).get('departures') or [])[:25]] + ([f"- … and {len((d or {}).get('departures') or [])-25} more."] if len((d or {}).get('departures') or [])>25 else []))) if not (d or {}).get('error') else f"I couldn’t retrieve departures ({(d or {}).get('error')})."),
+    "front_desk_in_house": lambda d: ("\n".join([f"**In-house / stayovers for {(d or {}).get('date') or _iso(_today())}** (grounded in real data): **{len((d or {}).get('in_house') or [])}**"] + (["- None."] if not ((d or {}).get('in_house') or []) else [f"- #{r.get('id')} **{r.get('guest_name','')}** [{r.get('status','')}] ({r.get('check_in_date') or r.get('check_in','')}→{r.get('check_out_date') or r.get('check_out','')})"+(f" · Room {r.get('room_number')}" if r.get('room_number') else "")+(f" · HK {r.get('housekeeping_status')}" if r.get('housekeeping_status') else "")+(f" · Due {_fmt_money(r.get('balance_due',0))}" if float(r.get('balance_due') or 0)>0 else "")+(f" · ⚠ {', '.join(r.get('exceptions') or [])}" if r.get('exceptions') else "") for r in ((d or {}).get('in_house') or [])[:25]] + ([f"- … and {len((d or {}).get('in_house') or [])-25} more."] if len((d or {}).get('in_house') or [])>25 else []))) if not (d or {}).get('error') else f"I couldn’t retrieve in-house list ({(d or {}).get('error')})."),
 }
 
 

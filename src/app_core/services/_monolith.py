@@ -3509,6 +3509,146 @@ def get_dashboard_day_snapshot(today=None):
     return {"date": day, "arrivals": arr, "departures": dep, "in_house": inh}
 
 
+def _front_desk_row(res_row, day, bucket):
+    """Build an additive front-desk ops row with room/HK/balance/exception flags."""
+    d = dict(res_row) if not isinstance(res_row, dict) else dict(res_row)
+    rid = d.get("id")
+    room_id = d.get("room_id")
+    try:
+        room = get_room_by_id(room_id) if room_id else None
+    except Exception:
+        room = None
+    if room:
+        d["room_number"] = room.get("room_number")
+        d["room_type"] = room.get("room_type")
+        d["housekeeping_status"] = room.get("housekeeping_status")
+    else:
+        d.setdefault("room_number", d.get("room_number"))
+        d.setdefault("housekeeping_status", None)
+    try:
+        bal = calculate_guest_balance(rid) if rid else 0.0
+    except Exception:
+        bal = 0.0
+    try:
+        bal = round(float(bal or 0), 2)
+    except Exception:
+        bal = 0.0
+    d["balance_due"] = bal
+    status = (d.get("status") or "").strip()
+    hk = (d.get("housekeeping_status") or "").strip()
+    exceptions = []
+    if bal > 0.005:
+        d["unpaid"] = True
+        exceptions.append(f"Unpaid balance {bal:.2f}")
+    else:
+        d["unpaid"] = False
+    if hk == "Dirty":
+        d["room_dirty"] = True
+        exceptions.append("Room dirty")
+    elif hk == "Maintenance":
+        d["room_maintenance"] = True
+        exceptions.append("Room maintenance")
+    if bucket == "arrivals" and status == "Reserved":
+        d["not_checked_in"] = True
+        exceptions.append("Not checked in")
+    if bucket == "departures" and status == "Checked In":
+        d["not_checked_out"] = True
+        exceptions.append("Not checked out")
+    d["exceptions"] = exceptions
+    # compatibility aliases for existing templates/UI consumers
+    if d.get("check_in_date") and not d.get("check_in"):
+        d["check_in"] = d.get("check_in_date")
+    if d.get("check_out_date") and not d.get("check_out"):
+        d["check_out"] = d.get("check_out_date")
+    return d
+
+
+def get_front_desk_arrivals(day=None, limit=200):
+    """Arrivals for a business day with room/HK/balance/exception fields (read-only)."""
+    day = str(day or datetime.now().strftime(DATE_FMT))
+    rows = db.connect().execute(
+        """SELECT r.id, r.guest_id, r.guest_name, r.room_id, r.check_in_date, r.check_out_date, r.status,
+                  rm.room_number, rm.room_type, rm.housekeeping_status
+           FROM reservations r
+           LEFT JOIN rooms rm ON rm.id = r.room_id
+           WHERE r.check_in_date=? AND r.status IN ('Reserved','Checked In')
+           ORDER BY rm.room_number, r.id""",
+        (day,),
+    ).fetchall()
+    return [_front_desk_row(r, day, "arrivals") for r in rows[: max(1, int(limit or 200))]]
+
+
+def get_front_desk_in_house(day=None, limit=200):
+    """In-house/stayover reservations for a business day with room/HK/balance/exception fields."""
+    day = str(day or datetime.now().strftime(DATE_FMT))
+    rows = db.connect().execute(
+        """SELECT r.id, r.guest_id, r.guest_name, r.room_id, r.check_in_date, r.check_out_date, r.status,
+                  rm.room_number, rm.room_type, rm.housekeeping_status
+           FROM reservations r
+           LEFT JOIN rooms rm ON rm.id = r.room_id
+           WHERE r.status='Checked In' AND r.check_in_date <= ? AND r.check_out_date > ?
+           ORDER BY rm.room_number, r.id""",
+        (day, day),
+    ).fetchall()
+    out = []
+    for r in rows[: max(1, int(limit or 200))]:
+        row = _front_desk_row(r, day, "in_house")
+        row["stayover"] = (row.get("check_out_date") or row.get("check_out")) != day
+        out.append(row)
+    return out
+
+
+def get_front_desk_departures(day=None, limit=200):
+    """Departures for a business day with room/HK/balance/exception fields (read-only)."""
+    day = str(day or datetime.now().strftime(DATE_FMT))
+    rows = db.connect().execute(
+        """SELECT r.id, r.guest_id, r.guest_name, r.room_id, r.check_in_date, r.check_out_date, r.status,
+                  rm.room_number, rm.room_type, rm.housekeeping_status
+           FROM reservations r
+           LEFT JOIN rooms rm ON rm.id = r.room_id
+           WHERE r.check_out_date=? AND r.status IN ('Reserved','Checked In','Checked Out')
+           ORDER BY rm.room_number, r.id""",
+        (day,),
+    ).fetchall()
+    return [_front_desk_row(r, day, "departures") for r in rows[: max(1, int(limit or 200))]]
+
+
+def get_front_desk_ops(day=None):
+    """Canonical front-desk operations snapshot for a day (arrivals/in-house/departures + exceptions)."""
+    day = str(day or datetime.now().strftime(DATE_FMT))
+    arrivals = get_front_desk_arrivals(day)
+    in_house = get_front_desk_in_house(day)
+    departures = get_front_desk_departures(day)
+    summary = get_front_desk_summary() if day == datetime.now().strftime(DATE_FMT) else None
+    exceptions = [r for r in (arrivals + in_house + departures) if r.get("exceptions")]
+    seen = set()
+    uniq_ex = []
+    for r in exceptions:
+        rid = r.get("id")
+        if rid in seen:
+            continue
+        seen.add(rid)
+        uniq_ex.append(r)
+    return {
+        "date": day,
+        "arrivals": arrivals,
+        "in_house": in_house,
+        "departures": departures,
+        "summary": summary,
+        "counts": {
+            "arrivals": len(arrivals),
+            "in_house": len(in_house),
+            "departures": len(departures),
+            "exceptions": len(uniq_ex),
+            "unpaid": sum(1 for r in uniq_ex if r.get("unpaid")),
+            "dirty_rooms": sum(1 for r in uniq_ex if r.get("room_dirty") or r.get("room_maintenance")),
+            "not_checked_in": sum(1 for r in arrivals if r.get("not_checked_in")),
+            "not_checked_out": sum(1 for r in departures if r.get("not_checked_out")),
+        },
+        "exceptions": uniq_ex,
+    }
+
+
 def get_rooms_available_between(ci, co):
     return db.connect().execute("""SELECT r.id, r.room_number, r.room_type, r.base_price, r.housekeeping_status
         FROM rooms r WHERE r.id NOT IN (
@@ -3753,21 +3893,69 @@ def report_occupancy(start, end):
 
 
 def report_daily_ops(date):
-    arr = db.connect().execute("SELECT id, guest_name FROM reservations WHERE check_in_date=? AND status IN ('Reserved','Checked In')",
-                            (date,)).fetchall()
-    dep = db.connect().execute("SELECT id, guest_name FROM reservations WHERE check_out_date=? AND status IN ('Reserved','Checked In')",
-                            (date,)).fetchall()
-    inh = db.connect().execute("""SELECT id, guest_name, check_in_date, check_out_date FROM reservations
-        WHERE status='Checked In' AND check_in_date <= ? AND check_out_date >= ?""", (date, date)).fetchall()
-    lines = [f"DAILY OPS   {date}", "=" * 60, f"ARRIVALS ({len(arr)}):"]
-    for r in arr:
-        lines.append(f"  #{r['id']}  {r['guest_name']}")
-    lines += ["", f"DEPARTURES ({len(dep)}):"]
-    for r in dep:
-        lines.append(f"  #{r['id']}  {r['guest_name']}")  # pragma: no cover
-    lines += ["", f"IN HOUSE ({len(inh)}):"]
-    for r in inh:
-        lines.append(f"  #{r['id']}  {r['guest_name']}  ({r['check_in_date']} -> {r['check_out_date']})")  # pragma: no cover
+    try:
+        ops = get_front_desk_ops(date)
+        arr = ops.get("arrivals", [])
+        dep = ops.get("departures", [])
+        inh = ops.get("in_house", [])
+        counts = ops.get("counts", {})
+        lines = [f"DAILY OPS   {date}", "=" * 60, f"ARRIVALS ({len(arr)}):"]
+        for r in arr:
+            room = f"  Room {r.get('room_number')}" if r.get("room_number") else ""
+            ex = f"  [{' | '.join(r.get('exceptions') or [])}]" if r.get("exceptions") else ""
+            lines.append(f"  #{r.get('id')}  {r.get('guest_name','')}{room}{ex}")
+        lines += ["", f"DEPARTURES ({len(dep)}):"]
+        for r in dep:
+            room = f"  Room {r.get('room_number')}" if r.get("room_number") else ""
+            ex = f"  [{' | '.join(r.get('exceptions') or [])}]" if r.get("exceptions") else ""
+            lines.append(f"  #{r.get('id')}  {r.get('guest_name','')}{room}{ex}")
+        lines += ["", f"IN HOUSE ({len(inh)}):"]
+        for r in inh:
+            room = f"  Room {r.get('room_number')}" if r.get("room_number") else ""
+            ex = f"  [{' | '.join(r.get('exceptions') or [])}]" if r.get("exceptions") else ""
+            lines.append(f"  #{r.get('id')}  {r.get('guest_name','')}  ({r.get('check_in_date')} -> {r.get('check_out_date')}){room}{ex}")
+        lines += ["", "EXCEPTIONS SUMMARY"]
+        lines.append(f"  Exceptions: {counts.get('exceptions', 0)}  Unpaid: {counts.get('unpaid', 0)}  Dirty/Maint: {counts.get('dirty_rooms', 0)}  Not checked in: {counts.get('not_checked_in', 0)}  Not checked out: {counts.get('not_checked_out', 0)}")
+        return "\n".join(lines)
+    except Exception:
+        arr = db.connect().execute("SELECT id, guest_name FROM reservations WHERE check_in_date=? AND status IN ('Reserved','Checked In')",
+                                (date,)).fetchall()
+        dep = db.connect().execute("SELECT id, guest_name FROM reservations WHERE check_out_date=? AND status IN ('Reserved','Checked In')",
+                                (date,)).fetchall()
+        inh = db.connect().execute("""SELECT id, guest_name, check_in_date, check_out_date FROM reservations
+            WHERE status='Checked In' AND check_in_date <= ? AND check_out_date >= ?""", (date, date)).fetchall()
+        lines = [f"DAILY OPS   {date}", "=" * 60, f"ARRIVALS ({len(arr)}):"]
+        for r in arr:
+            lines.append(f"  #{r['id']}  {r['guest_name']}")
+        lines += ["", f"DEPARTURES ({len(dep)}):"]
+        for r in dep:
+            lines.append(f"  #{r['id']}  {r['guest_name']}")
+        lines += ["", f"IN HOUSE ({len(inh)}):"]
+        for r in inh:
+            lines.append(f"  #{r['id']}  {r['guest_name']}  ({r['check_in_date']} -> {r['check_out_date']})")
+        return "\n".join(lines)
+
+
+def report_front_desk_summary(date=None):
+    """Canonical front-desk summary for a business day (additive, read-only)."""
+    ops = get_front_desk_ops(date or datetime.now().strftime(DATE_FMT))
+    day = ops.get("date")
+    counts = ops.get("counts", {})
+    lines = [f"FRONT DESK SUMMARY   {day}", "=" * 60,
+             f"Arrivals: {counts.get('arrivals', 0)}",
+             f"In-house: {counts.get('in_house', 0)}",
+             f"Departures: {counts.get('departures', 0)}",
+             f"Exceptions: {counts.get('exceptions', 0)}",
+             f"  Unpaid balances: {counts.get('unpaid', 0)}",
+             f"  Dirty/Maintenance rooms: {counts.get('dirty_rooms', 0)}",
+             f"  Due to arrive (not checked in): {counts.get('not_checked_in', 0)}",
+             f"  Due to depart (not checked out): {counts.get('not_checked_out', 0)}"]
+    ex = ops.get("exceptions") or []
+    if ex:
+        lines += ["", "EXCEPTIONS:"]
+        for r in ex[:50]:
+            room = f" room {r.get('room_number')}" if r.get("room_number") else ""
+            lines.append(f"  #{r.get('id')} {r.get('guest_name','')}{room} - {', '.join(r.get('exceptions') or [])}")
     return "\n".join(lines)
 
 

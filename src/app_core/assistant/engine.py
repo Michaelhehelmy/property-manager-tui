@@ -311,6 +311,21 @@ def _execute_single(intent: str, text: str, slots: dict, ui_context=None):
         data = execute_tool("get_top_selling_items", {"start": start, "end": end, "limit": 10}); tools_used.append("get_top_selling_items")
         return _answer(intent, tools_used, data)
 
+    if intent in ("front_desk_ops", "front_desk_arrivals", "front_desk_departures", "front_desk_in_house"):
+        day = slots.get("date_start") or slots.get("date_end") or end or start
+        tool = {
+            "front_desk_ops": "get_front_desk_ops",
+            "front_desk_arrivals": "get_front_desk_arrivals",
+            "front_desk_departures": "get_front_desk_departures",
+            "front_desk_in_house": "get_front_desk_in_house",
+        }[intent]
+        data = execute_tool(tool, {"date": day} if day else {})
+        tools_used.append(tool)
+        # reuse today_ops formatting for ops snapshot where helpful
+        if intent == "front_desk_ops":
+            return {"ok": not bool(data.get("error")), "intent": "today_ops", "tools_used": tools_used, "data": {"date": data.get("date"), "ops": data, "front_desk": data.get("summary"), "housekeeping": execute_tool("get_housekeeping_summary", {}).get("summary")}, "answer": _format_for_intent("today_ops", {"date": data.get("date"), "ops": data, "front_desk": data.get("summary"), "housekeeping": execute_tool("get_housekeeping_summary", {}).get("summary")})}
+        return _answer(intent, tools_used, data)
+
     if intent in ("report_pl", "report_cash_flow", "report_vat", "report_payment_methods", "report_occupancy", "report_daily_ops"):
         kind = intent.replace("report_", "")
         data = execute_tool("get_report", {"kind": kind, "start": start, "end": end}); tools_used.append("get_report")

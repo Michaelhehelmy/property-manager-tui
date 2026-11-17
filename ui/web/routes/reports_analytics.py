@@ -32,16 +32,25 @@ async def run_report(request: Request):
     kind = form.get("kind", "pl")
     start = form.get("start")
     end = form.get("end")
+    day = form.get("day") or end or start or datetime.now().strftime("%Y-%m-%d")
     try:
-        text = {
-            "pl": services.report_pl_statement,
-            "cash": services.report_cash_flow,
-            "vat": services.report_vat,
-            "payments": services.report_payment_methods,
-            "occupancy": services.report_occupancy,
-        }.get(kind, services.report_pl_statement)(start, end)
+        if kind == "daily_ops":
+            text = services.report_daily_ops(day)
+            label = day
+        elif kind == "front_desk":
+            text = services.report_front_desk_summary(day)
+            label = day
+        else:
+            text = {
+                "pl": services.report_pl_statement,
+                "cash": services.report_cash_flow,
+                "vat": services.report_vat,
+                "payments": services.report_payment_methods,
+                "occupancy": services.report_occupancy,
+            }.get(kind, services.report_pl_statement)(start, end)
+            label = f"{start} to {end}" if start and end else kind
         deps.add_flash(request, "Report generated", "success")
-        return render(request, "reports/view.html", {"title": f"Report: {kind}", "text": text, "kind": kind})
+        return render(request, "reports/view.html", {"title": f"Report: {kind}", "text": text, "kind": kind, "period": label})
     except Exception as e:
         return flash_redirect(request, "/reports?tab=generate", str(e), "error")
 

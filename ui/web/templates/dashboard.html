@@ -2,12 +2,16 @@
 {% block content %}
 <div class="page-header">
   <div>
-    <h2>Dashboard</h2>
-    <p class="page-subtitle">Real-time overview: occupancy, arrivals, departures and key financial figures.</p>
+    <h2>Front Desk / Today Ops</h2>
+    <p class="page-subtitle">Operational visibility for arrivals, in-house/stayovers, departures, and front-desk exceptions (read-only view, real data).</p>
   </div>
+  <form method="get" action="/" class="inline-form" style="gap:8px; align-items:flex-end;">
+    <label>Date<input type="date" name="day" value="{{ ops_day or ops.date }}"/></label>
+    <button type="submit">View</button>
+  </form>
 </div>
-<div class="subtabs" role="tablist"><a href="/" class="active">Overview</a></div>
-<div class="subtab-help">Live snapshot from front desk and ledger data.</div>
+<div class="subtabs" role="tablist"><a href="/" class="active">Overview</a><a href="/reports?tab=generate">Reports</a></div>
+<div class="subtab-help">Live snapshot from front desk and ledger data for {{ ops.date }}. Exceptions highlight unpaid balances, dirty/maintenance rooms, and due arrivals/departures not checked in/out.</div>
 
 <div class="grid grid-4">
   <div class="panel stat-card">
@@ -15,25 +19,77 @@
     <div class="stat accent">{{ '%.1f'|format(front.occupancy_pct or 0) }}%</div>
     <div class="muted">{{ front.occupied or 0 }}/{{ front.total or 0 }} rooms</div>
   </div>
-  <div class="panel stat-card"><div class="label">Arrivals today</div><div class="stat">{{ front.arrivals_today or 0 }}</div></div>
-  <div class="panel stat-card"><div class="label">Departures today</div><div class="stat">{{ front.departures_today or 0 }}</div></div>
+  <div class="panel stat-card"><div class="label">Arrivals</div><div class="stat">{{ ops.counts.arrivals if ops and ops.counts else (front.arrivals_today or 0) }}</div></div>
+  <div class="panel stat-card"><div class="label">Departures</div><div class="stat">{{ ops.counts.departures if ops and ops.counts else (front.departures_today or 0) }}</div></div>
   <div class="panel stat-card">
-    <div class="label">Net profit</div>
-    <div class="stat">{{ '%.2f'|format(ledger.net_profit or 0) }}</div>
-    <div class="muted">A/R {{ '%.2f'|format(ledger.accounts_receivable or 0) }}</div>
+    <div class="label">Exceptions</div>
+    <div class="stat">{{ ops.counts.exceptions if ops and ops.counts else 0 }}</div>
+    <div class="muted">Unpaid {{ ops.counts.unpaid if ops and ops.counts else 0 }} · Dirty/Maint {{ ops.counts.dirty_rooms if ops and ops.counts else 0 }}</div>
   </div>
+</div>
+
+<div class="panel" style="margin-bottom:16px;">
+  <div class="panel-header"><h3>Front-desk exceptions</h3></div>
+  <div class="table-wrap"><table>
+    <tr><th>Reservation</th><th>Guest</th><th>Room</th><th>Status</th><th>Balance</th><th>Issues</th></tr>
+    {% for r in ops.exceptions or [] %}
+    <tr>
+      <td><a href="/reservations/{{ r.id }}">#{{ r.id }}</a></td>
+      <td>{{ r.guest_name }}</td>
+      <td>{{ r.room_number or '-' }} {% if r.housekeeping_status %}<span class="badge muted">{{ r.housekeeping_status }}</span>{% endif %}</td>
+      <td><span class="badge muted">{{ r.status }}</span></td>
+      <td>{% if r.balance_due and r.balance_due > 0 %}<span class="badge muted">{{ '%.2f'|format(r.balance_due) }}</span>{% else %}<span class="muted">0.00</span>{% endif %}</td>
+      <td>{% for ex in r.exceptions or [] %}<span class="badge muted">{{ ex }}</span> {% else %}<span class="muted">-</span>{% endfor %}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" class="muted">No front-desk exceptions for this date.</td></tr>
+    {% endfor %}
+  </table></div>
 </div>
 
 <div class="grid grid-2">
   <div class="panel">
-    <div class="panel-header"><h3>Arrivals today</h3></div>
-    <div class="table-wrap"><table><tr><th>ID</th><th>Guest</th><th>Status</th><th>Dates</th></tr>
-    {% for r in arrivals %}<tr><td><a href="/reservations/{{ r.id }}">#{{ r.id }}</a></td><td>{{ r.guest_name }}</td><td><span class="badge muted">{{ r.status }}</span></td><td>{{ r.check_in }} → {{ r.check_out }}</td></tr>{% else %}<tr><td colspan="4" class="muted">No arrivals today.</td></tr>{% endfor %}</table></div>
+    <div class="panel-header"><h3>Arrivals ({{ ops.counts.arrivals if ops and ops.counts else arrivals|length }})</h3></div>
+    <div class="table-wrap"><table><tr><th>ID</th><th>Guest</th><th>Room / HK</th><th>Status</th><th>Balance</th><th>Notes</th></tr>
+    {% for r in arrivals %}<tr>
+      <td><a href="/reservations/{{ r.id }}">#{{ r.id }}</a></td>
+      <td>{{ r.guest_name }}</td>
+      <td>{{ r.room_number or '-' }} {% if r.housekeeping_status %}<span class="badge muted">{{ r.housekeeping_status }}</span>{% endif %}</td>
+      <td><span class="badge muted">{{ r.status }}</span></td>
+      <td>{% if r.balance_due and r.balance_due > 0 %}{{ '%.2f'|format(r.balance_due) }}{% else %}<span class="muted">0.00</span>{% endif %}</td>
+      <td>{% if r.not_checked_in %}<span class="badge muted">Not checked in</span>{% endif %} {% for ex in r.exceptions or [] %}{% if ex != 'Not checked in' %}<span class="badge muted">{{ ex }}</span>{% endif %}{% endfor %}</td>
+    </tr>{% else %}<tr><td colspan="6" class="muted">No arrivals for this date.</td></tr>{% endfor %}</table></div>
   </div>
   <div class="panel">
-    <div class="panel-header"><h3>In house</h3></div>
-    <div class="table-wrap"><table><tr><th>ID</th><th>Guest</th><th>Dates</th></tr>
-    {% for r in in_house %}<tr><td><a href="/reservations/{{ r.id }}">#{{ r.id }}</a></td><td>{{ r.guest_name }}</td><td>{{ r.check_in }} → {{ r.check_out }}</td></tr>{% else %}<tr><td colspan="3" class="muted">No in-house guests.</td></tr>{% endfor %}</table></div>
+    <div class="panel-header"><h3>Departures ({{ ops.counts.departures if ops and ops.counts else departures|length }})</h3></div>
+    <div class="table-wrap"><table><tr><th>ID</th><th>Guest</th><th>Room / HK</th><th>Status</th><th>Balance</th><th>Notes</th></tr>
+    {% for r in departures %}<tr>
+      <td><a href="/reservations/{{ r.id }}">#{{ r.id }}</a></td>
+      <td>{{ r.guest_name }}</td>
+      <td>{{ r.room_number or '-' }} {% if r.housekeeping_status %}<span class="badge muted">{{ r.housekeeping_status }}</span>{% endif %}</td>
+      <td><span class="badge muted">{{ r.status }}</span></td>
+      <td>{% if r.balance_due and r.balance_due > 0 %}{{ '%.2f'|format(r.balance_due) }}{% else %}<span class="muted">0.00</span>{% endif %}</td>
+      <td>{% if r.not_checked_out %}<span class="badge muted">Not checked out</span>{% endif %} {% for ex in r.exceptions or [] %}{% if ex != 'Not checked out' %}<span class="badge muted">{{ ex }}</span>{% endif %}{% endfor %}</td>
+    </tr>{% else %}<tr><td colspan="6" class="muted">No departures for this date.</td></tr>{% endfor %}</table></div>
   </div>
+</div>
+
+<div class="panel" style="margin-top:16px;">
+  <div class="panel-header"><h3>In-house / Stayovers ({{ ops.counts.in_house if ops and ops.counts else in_house|length }})</h3></div>
+  <div class="table-wrap"><table><tr><th>ID</th><th>Guest</th><th>Room / HK</th><th>Dates</th><th>Status</th><th>Balance</th><th>Notes</th></tr>
+  {% for r in in_house %}<tr>
+    <td><a href="/reservations/{{ r.id }}">#{{ r.id }}</a></td>
+    <td>{{ r.guest_name }}</td>
+    <td>{{ r.room_number or '-' }} {% if r.housekeeping_status %}<span class="badge muted">{{ r.housekeeping_status }}</span>{% endif %}</td>
+    <td>{{ r.check_in or r.check_in_date }} → {{ r.check_out or r.check_out_date }}</td>
+    <td><span class="badge muted">{{ r.status }}</span></td>
+    <td>{% if r.balance_due and r.balance_due > 0 %}{{ '%.2f'|format(r.balance_due) }}{% else %}<span class="muted">0.00</span>{% endif %}</td>
+    <td>{% if r.stayover %}<span class="badge muted">Stayover</span>{% endif %} {% for ex in r.exceptions or [] %}<span class="badge muted">{{ ex }}</span>{% endfor %}</td>
+  </tr>{% else %}<tr><td colspan="7" class="muted">No in-house guests for this date.</td></tr>{% endfor %}</table></div>
+</div>
+
+<div class="panel" style="margin-top:16px;">
+  <div class="panel-header"><h3>Financial snapshot</h3></div>
+  <div class="muted">Net profit: <strong>{{ '%.2f'|format(ledger.net_profit or 0) }}</strong> · Accounts receivable: <strong>{{ '%.2f'|format(ledger.accounts_receivable or 0) }}</strong></div>
 </div>
 {% endblock %}

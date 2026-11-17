@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 def tool_list_capabilities(args=None):
     return {"capabilities": [
         "Business partner briefing & decision support (KPIs, risks, opportunities, suggested actions)",
-        "Property/ops stats and today snapshot (guests, rooms, reservations, arrivals/departures, housekeeping)",
+        "Property/ops stats and front-desk operations (arrivals, in-house/stayovers, departures) with room/HK/balance and exception flags (unpaid, dirty, due to arrive/depart not checked in/out)",
         "Reports: P&L, cash flow, VAT, payment methods, occupancy, daily ops; compare periods",
         "Guests: search, profile, full 360° portfolio (all trips/stays, POS activity, payments, invoices, totals/stats), last visit, most-ordered items and spend on last visit, booked activities/trips",
         "Activities/Trips (excursions/experiences): registered catalog, booking/order stats, and guest/reservation bookings (booked like POS to folio/invoice)",
@@ -196,16 +196,77 @@ def tool_get_property_stats(args=None):
 
 def tool_get_today_ops(args=None):
     try:
-        today = _iso(_today())
-        ops = services.report_daily_ops(today)
-        fd = None
+        day = None
+        if isinstance(args, dict):
+            day = args.get("date") or args.get("day")
+        day = day or _iso(_today())
+        ops_obj = None
+        ops_text = None
         try:
-            fd = services.get_front_desk_summary()
+            if hasattr(services, "get_front_desk_ops"):
+                ops_obj = services.get_front_desk_ops(day)
         except Exception:
-            logger.debug("assistant.tool_get_today_ops: front desk summary unavailable", exc_info=True)
-            fd = None
+            logger.debug("assistant.tool_get_today_ops: front desk ops unavailable", exc_info=True)
+            ops_obj = None
+        try:
+            ops_text = services.report_daily_ops(day)
+        except Exception:
+            ops_text = None
+        fd = (ops_obj or {}).get("summary") if isinstance(ops_obj, dict) else None
+        if fd is None:
+            try:
+                fd = services.get_front_desk_summary()
+            except Exception:
+                fd = None
         hk = tool_get_housekeeping_summary({}).get("summary")
-        return {"date": today, "daily_ops": ops, "front_desk": fd, "housekeeping": hk}
+        return {"date": day, "daily_ops": ops_text, "ops": ops_obj, "front_desk": fd, "housekeeping": hk}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def tool_get_front_desk_ops(args=None):
+    try:
+        args = args or {}
+        day = args.get("date") or args.get("day") or _iso(_today())
+        if not hasattr(services, "get_front_desk_ops"):
+            return {"error": "Front desk ops not available"}
+        return services.get_front_desk_ops(day)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def tool_get_front_desk_arrivals(args=None):
+    try:
+        args = args or {}
+        day = args.get("date") or args.get("day") or _iso(_today())
+        if not hasattr(services, "get_front_desk_arrivals"):
+            return {"error": "Front desk arrivals not available"}
+        rows = services.get_front_desk_arrivals(day)
+        return {"date": day, "arrivals": rows, "count": len(rows)}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def tool_get_front_desk_in_house(args=None):
+    try:
+        args = args or {}
+        day = args.get("date") or args.get("day") or _iso(_today())
+        if not hasattr(services, "get_front_desk_in_house"):
+            return {"error": "Front desk in-house view not available"}
+        rows = services.get_front_desk_in_house(day)
+        return {"date": day, "in_house": rows, "count": len(rows)}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def tool_get_front_desk_departures(args=None):
+    try:
+        args = args or {}
+        day = args.get("date") or args.get("day") or _iso(_today())
+        if not hasattr(services, "get_front_desk_departures"):
+            return {"error": "Front desk departures not available"}
+        rows = services.get_front_desk_departures(day)
+        return {"date": day, "departures": rows, "count": len(rows)}
     except Exception as e:
         return {"error": str(e)}
 
@@ -746,7 +807,11 @@ def tool_get_payments_summary(args=None):
 TOOLS = {
     "list_capabilities": {"fn": tool_list_capabilities, "description": "List assistant capabilities.", "parameters": {"type":"object","properties":{},"additionalProperties":False}},
     "get_property_stats": {"fn": tool_get_property_stats, "description": "Property counts/stats (guests, rooms, reservations by status, in-house, arrivals/departures today).", "parameters": {"type":"object","properties":{},"additionalProperties":False}},
-    "get_today_ops": {"fn": tool_get_today_ops, "description": "Today's operations snapshot (arrivals/departures/in-house, front desk, housekeeping).", "parameters": {"type":"object","properties":{},"additionalProperties":False}},
+    "get_today_ops": {"fn": tool_get_today_ops, "description": "Operations snapshot for a day (arrivals/departures/in-house, front-desk exceptions, housekeeping).", "parameters": {"type":"object","properties":{"date":{"type":"string"},"day":{"type":"string"}},"additionalProperties":False}},
+    "get_front_desk_ops": {"fn": tool_get_front_desk_ops, "description": "Front-desk operations for a day with arrivals/in-house/departures, room/HK, balances, and exception flags (unpaid, dirty, due to arrive/depart not checked in/out).", "parameters": {"type":"object","properties":{"date":{"type":"string"},"day":{"type":"string"}},"additionalProperties":False}},
+    "get_front_desk_arrivals": {"fn": tool_get_front_desk_arrivals, "description": "Arrivals list for a business day with room/HK/balance/exception details.", "parameters": {"type":"object","properties":{"date":{"type":"string"},"day":{"type":"string"}},"additionalProperties":False}},
+    "get_front_desk_in_house": {"fn": tool_get_front_desk_in_house, "description": "In-house/stayovers list for a business day with room/HK/balance/exception details.", "parameters": {"type":"object","properties":{"date":{"type":"string"},"day":{"type":"string"}},"additionalProperties":False}},
+    "get_front_desk_departures": {"fn": tool_get_front_desk_departures, "description": "Departures list for a business day with room/HK/balance/exception details.", "parameters": {"type":"object","properties":{"date":{"type":"string"},"day":{"type":"string"}},"additionalProperties":False}},
     "business_partner_briefing": {"fn": tool_business_partner_briefing, "description": "Business-partner briefing: KPIs, risks, opportunities, suggested actions for a period.", "parameters": {"type":"object","properties":{"start":{"type":"string"},"end":{"type":"string"},"range":{"type":"string"}},"additionalProperties":False}},
     "get_decision_support": {"fn": tool_get_decision_support, "description": "Decision-support KPIs/signals + financial summary.", "parameters": {"type":"object","properties":{"start":{"type":"string"},"end":{"type":"string"},"range":{"type":"string"}},"additionalProperties":False}},
     "get_report": {"fn": tool_get_report, "description": "Run report: pl, cash_flow, vat, payment_methods, occupancy, daily_ops.", "parameters": {"type":"object","properties":{"kind":{"type":"string"},"start":{"type":"string"},"end":{"type":"string"},"range":{"type":"string"}},"required":["kind"],"additionalProperties":False}},

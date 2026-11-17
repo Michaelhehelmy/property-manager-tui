@@ -13,7 +13,16 @@
   <div class="panel"><h3>Run report</h3>
     <form method="post" action="/reports/run"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
       <div class="row"><label>From<input type="date" name="start" value="{{start}}"/></label><label>To<input type="date" name="end" value="{{end}}"/></label></div>
-      <label>Report<select name="kind"><option value="pl">P&amp;L</option><option value="cash">Cash Flow</option><option value="vat">VAT</option><option value="payments">Payment Methods</option><option value="occupancy">Occupancy</option></select></label>
+      <label>Day (for Daily Ops / Front Desk)<input type="date" name="day" value="{{end}}"/></label>
+      <label>Report<select name="kind">
+        <option value="pl">P&amp;L</option>
+        <option value="cash">Cash Flow</option>
+        <option value="vat">VAT</option>
+        <option value="payments">Payment Methods</option>
+        <option value="occupancy">Occupancy</option>
+        <option value="daily_ops">Daily Ops (Front Desk)</option>
+        <option value="front_desk">Front Desk Summary</option>
+      </select></label>
       <button type="submit">Generate</button>
     </form>
   </div>
