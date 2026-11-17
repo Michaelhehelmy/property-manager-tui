@@ -163,18 +163,6 @@ def _parse_date_range(text: str):
     start = today.replace(day=1)
     return _iso(start), _iso(today)
 
-def _prev_period(start, end):
-    try:
-        d1 = datetime.strptime(start, DATE_FMT).date()
-        d2 = datetime.strptime(end, DATE_FMT).date()
-        days = (d2 - d1).days + 1
-        p2 = d1 - timedelta(days=1)
-        p1 = p2 - timedelta(days=days - 1)
-        return _iso(p1), _iso(p2)
-    except (TypeError, ValueError, AttributeError):
-        logger.debug("assistant._prev_period: failed to compute previous period start=%r end=%r", start, end, exc_info=True)
-        return start, end
-
 # ── Slot extraction & context carryover ──────────────────────────────────────
 
 def _context_from_history(history):

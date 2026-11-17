@@ -378,7 +378,6 @@ def _execute_single(intent: str, text: str, slots: dict, ui_context=None):
     if intent in ("health_diagnostics","doctor_report"):
         data=execute_tool("get_health_diagnostics",{}); tools_used.append("get_health_diagnostics")
         return _answer("health_diagnostics", tools_used, data)
-        return _answer(intent, tools_used, data)
     if intent=="recent_activity":
         data=execute_tool("get_recent_activity",{}); tools_used.append("get_recent_activity")
         return _answer(intent, tools_used, data)

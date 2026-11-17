@@ -632,10 +632,13 @@ def _validate_setting(key, raw):
     except ValueError:
         return None, f"{label} has invalid value"
 
+def _require_super_password(password):
+    """Validate super password or session proof; raise PermissionError on failure."""
+    _require_super_password(password)
+
 
 def save_settings(changes, password):
-    if not verify_password(password):
-        raise PermissionError("Invalid super password.")
+    _require_super_password(password)
     errors = []
     normalized = {}
     for key, val in changes.items():
@@ -657,8 +660,7 @@ def save_settings(changes, password):
 
 
 def reset_to_defaults(password):
-    if not verify_password(password):
-        raise PermissionError("Invalid super password.")
+    _require_super_password(password)
     from ..db import transaction
     with transaction() as conn:
         for key, spec in SETTINGS_CATALOG.items():
@@ -678,8 +680,7 @@ def export_settings_to_json():
 
 
 def import_settings_from_json(filepath, password):
-    if not verify_password(password):
-        raise PermissionError("Invalid super password.")  # pragma: no cover
+    _require_super_password(password)  # pragma: no cover
     p = Path(filepath)
     if not p.exists():
         raise ValueError(f"File not found: {filepath}")
@@ -842,8 +843,7 @@ def change_password(current, new, confirm):
 
 
 def generate_recovery_codes(password):
-    if not verify_password(password):
-        raise PermissionError("Invalid super password.")
+    _require_super_password(password)
     from ..db import transaction
     codes = []
     with transaction() as conn:
@@ -1268,8 +1268,7 @@ def assistant_reservation_summary(reservation_id):
 
 
 def update_guest(guest_id, name, phone, email, notes, password):
-    if not verify_password(password):
-        raise PermissionError("Invalid super password.")
+    _require_super_password(password)
     if not name or not name.strip():
         raise ValueError("Name is required.")
     from ..db import transaction
@@ -1307,8 +1306,7 @@ def get_duplicate_suggestions():
 
 
 def merge_guests(winner_id, loser_id, password):
-    if not verify_password(password):
-        raise PermissionError("Invalid super password.")
+    _require_super_password(password)
     if winner_id == loser_id:
         raise ValueError("Cannot merge into self.")
     w = get_guest_by_id(winner_id)
@@ -1491,8 +1489,7 @@ def update_housekeeping_status(room_id, status):
 
 
 def update_room_price(room_id, new_price, password):
-    if not verify_password(password):
-        raise PermissionError("Invalid super password.")
+    _require_super_password(password)
     if new_price < 0:
         raise ValueError("Price cannot be negative.")
     from ..db import transaction
@@ -1502,8 +1499,7 @@ def update_room_price(room_id, new_price, password):
 
 
 def update_room_type(room_id, new_type, password):
-    if not verify_password(password):
-        raise PermissionError("Invalid super password.")
+    _require_super_password(password)
     if not new_type or not new_type.strip():
         raise ValueError("Type cannot be empty.")
     from ..db import transaction
@@ -1522,8 +1518,7 @@ def get_all_rate_plans():
 
 
 def add_rate_plan(name, modifier, password):
-    if not verify_password(password):
-        raise PermissionError("Invalid super password.")
+    _require_super_password(password)
     if not name or not name.strip():
         raise ValueError("Name is required.")
     from ..db import connect, transaction
@@ -1538,8 +1533,7 @@ def add_rate_plan(name, modifier, password):
 
 
 def update_rate_plan(plan_id, name, modifier, password):
-    if not verify_password(password):
-        raise PermissionError("Invalid super password.")
+    _require_super_password(password)
     if not name or not name.strip():
         raise ValueError("Name is required.")
     from ..db import connect, transaction
@@ -1555,8 +1549,7 @@ def update_rate_plan(plan_id, name, modifier, password):
 
 
 def delete_rate_plan(plan_id, password):
-    if not verify_password(password):
-        raise PermissionError("Invalid super password.")
+    _require_super_password(password)
     from ..db import connect, transaction
 
 
@@ -2725,8 +2718,7 @@ def get_pos_items(reservation_id):
 
 
 def void_pos_item(pos_id, password):
-    if not verify_password(password):
-        raise PermissionError("Invalid super password.")
+    _require_super_password(password)
     from ..db import connect, transaction
 
 
@@ -2786,8 +2778,7 @@ def get_recent_inventory_logs(limit=20):
 
 def add_inventory_item(name, category, unit, stock, unit_cost, selling_price, low, over, password,
                         sku="", barcode="", barcode_type="code128", track_batches=0, shelf_life_days=None, default_supplier=""):
-    if not verify_password(password):
-        raise PermissionError("Invalid super password.")
+    _require_super_password(password)
     if not name or not name.strip():
         raise ValueError("Name is required.")
     sku = (sku or "").strip() or None
@@ -2849,8 +2840,7 @@ def add_inventory_item(name, category, unit, stock, unit_cost, selling_price, lo
 
 def update_inventory_item(item_id, name, category, unit, selling_price, low, over, password,
                            sku=None, barcode=None, barcode_type=None, track_batches=None, shelf_life_days=None, default_supplier=None):
-    if not verify_password(password):
-        raise PermissionError("Invalid super password.")
+    _require_super_password(password)
     if not name or not name.strip():
         raise ValueError("Name is required.")
     from ..db import transaction
@@ -2880,8 +2870,7 @@ def update_inventory_item(item_id, name, category, unit, selling_price, low, ove
 
 
 def delete_inventory_item(item_id, password):
-    if not verify_password(password):
-        raise PermissionError("Invalid super password.")
+    _require_super_password(password)
     from ..db import connect, transaction
 
 
@@ -2912,8 +2901,7 @@ def get_recipe_components(menu_item_id):
 
 def set_recipe_components(menu_item_id, components, password):
     """Replace recipe components for a menu item. components=[{ingredient_item_id, qty_per_sale}]."""
-    if not verify_password(password):
-        raise PermissionError("Invalid super password.")
+    _require_super_password(password)
     from ..db import connect, transaction
 
 
@@ -2951,8 +2939,7 @@ def set_recipe_components(menu_item_id, components, password):
 
 
 def clear_recipe_components(menu_item_id, password):
-    if not verify_password(password):
-        raise PermissionError("Invalid super password.")
+    _require_super_password(password)
     from ..db import transaction
     with transaction() as conn:
         conn.execute("DELETE FROM recipe_components WHERE menu_item_id=?", (menu_item_id,))
@@ -3033,8 +3020,7 @@ def _sync_meal_to_inventory(conn, meal_id, name, category, selling_price, ingred
 
 
 def create_meal(name, description, preparation, selling_price, ingredients, password, category="Meals"):
-    if not verify_password(password):
-        raise PermissionError("Invalid super password.")
+    _require_super_password(password)
     if not name or not str(name).strip():
         raise ValueError("Meal name is required.")
     try:
@@ -3068,8 +3054,7 @@ def create_meal(name, description, preparation, selling_price, ingredients, pass
 
 
 def update_meal(meal_id, name, description, preparation, selling_price, ingredients, password, category="Meals", active=1):
-    if not verify_password(password):
-        raise PermissionError("Invalid super password.")
+    _require_super_password(password)
     if not name or not str(name).strip():
         raise ValueError("Meal name is required.")
     try:
@@ -3132,8 +3117,7 @@ def get_meal(meal_id):
 
 
 def delete_meal(meal_id, password):
-    if not verify_password(password):
-        raise PermissionError("Invalid super password.")
+    _require_super_password(password)
     from ..db import connect, transaction
 
 
@@ -3208,8 +3192,7 @@ def record_payment(reservation_id, amount, method, notes="", payment_type="Payme
 
 
 def record_refund(reservation_id, amount, method, notes, password):
-    if not verify_password(password):
-        raise PermissionError("Invalid super password.")
+    _require_super_password(password)
     if amount <= 0:
         raise ValueError("Refund amount must be positive.")
     from ..db import transaction
@@ -3261,8 +3244,7 @@ def record_operational_expense(cat_id, param, amount, tax_amount=0.0, notes="", 
 
 
 def void_expense(expense_id, password):
-    if not verify_password(password):
-        raise PermissionError("Invalid super password.")
+    _require_super_password(password)
     from ..db import connect, transaction
 
 
@@ -4667,8 +4649,7 @@ def list_demo_data_presets():
 
 def apply_demo_data_preset(name, password, confirm_text, allow_existing=False):
     """Guarded demo data loader for analysis/prototyping and easier business-data seeding. Never silent."""
-    if not verify_password(password):
-        raise PermissionError("Invalid super password.")
+    _require_super_password(password)
     if name not in DEMO_DATA_PRESETS:
         raise ValueError(f"Unknown demo preset: {name}")
     if str(confirm_text).strip().upper() != "APPLY DEMO DATA":
@@ -5032,8 +5013,7 @@ def import_seed_config(filepath, password, confirm_text):
     For inventory CSV uploads, current non-inventory master data (rooms/rate plans/categories/meals/activities)
     is preserved and only inventory is replaced from the CSV (pre-operational DBs only).
     """
-    if not verify_password(password):
-        raise PermissionError("Invalid super password.")
+    _require_super_password(password)
     if str(confirm_text).strip().upper() != "APPLY SEED CONFIG":
         raise ValueError("Confirmation text must be exactly: APPLY SEED CONFIG")
     if has_operational_data():
