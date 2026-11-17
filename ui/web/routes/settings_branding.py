@@ -292,6 +292,54 @@ def settings_health(request: Request):
     return render(request, "settings/health.html", {"title": "Health Check", "result": result})
 
 
+@router.get("/settings/users")
+def settings_users(request: Request):
+    deps.require_unlock(request)
+    try:
+        users = services.list_users(active_only=False)
+    except Exception:
+        users = []
+    try:
+        roles = services.list_roles()
+    except Exception:
+        roles = []
+    return render(request, "settings/users.html", {"title": "Users & Roles", "users": users, "roles": roles})
+
+
+@router.post("/settings/users/add")
+async def settings_users_add(request: Request):
+    form = await deps.require_unlocked_form(request)
+    try:
+        services.create_user(
+            form.get("username", ""),
+            display_name=form.get("display_name", ""),
+            role=form.get("role", "staff"),
+            password=form.get("new_password", ""),
+            active=bool(form.get("active")),
+        )
+        deps.add_flash(request, "User created (RBAC groundwork; existing unlock flow unchanged).", "success")
+    except Exception as e:
+        deps.add_flash(request, str(e), "error")
+    r = deps.redirect("/settings/users"); deps.save_session(r, deps.get_session(request)); return r
+
+
+@router.post("/settings/users/{user_id}/edit")
+async def settings_users_edit(request: Request, user_id: int):
+    form = await deps.require_unlocked_form(request)
+    try:
+        services.update_user(
+            user_id,
+            display_name=form.get("display_name"),
+            role=form.get("role"),
+            active=bool(form.get("active")),
+            password=(form.get("new_password") or None),
+        )
+        deps.add_flash(request, "User updated.", "success")
+    except Exception as e:
+        deps.add_flash(request, str(e), "error")
+    r = deps.redirect("/settings/users"); deps.save_session(r, deps.get_session(request)); return r
+
+
 
 @router.post("/settings/seed/export")
 async def seed_export(request: Request):

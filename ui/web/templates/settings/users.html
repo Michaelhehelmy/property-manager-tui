@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Users &amp; Roles (RBAC groundwork)</h2>
+<p class="muted">Foundational local user/role records and audit actor attribution scaffolding. Existing super-password/unlock flow remains active; login/session enforcement is not yet enabled by default.</p>
+
+<div class="grid grid-2">
+  <div class="panel"><h3>Add user</h3>
+    <form method="post" action="/settings/users/add"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+      <label>Username<input name="username" required/></label>
+      <label>Display name<input name="display_name"/></label>
+      <label>Role<select name="role">{% for r in roles %}<option value="{{r.name}}">{{r.name}}</option>{% else %}<option value="staff">staff</option><option value="manager">manager</option><option value="admin">admin</option>{% endfor %}</select></label>
+      <label>Password (optional)<input type="password" name="new_password" placeholder="Set local user password"/></label>
+      <label><input type="checkbox" name="active" checked/> Active</label>
+      <label>Super password (unlock/proof)<input type="password" name="password" required/></label>
+      <button class="ok" type="submit">Create user</button>
+    </form>
+  </div>
+  <div class="panel"><h3>Roles (seeded/defaults)</h3>
+    <table><tr><th>Name</th><th>Description</th><th>Permissions</th></tr>
+    {% for r in roles %}<tr><td>{{r.name}}</td><td>{{r.description}}</td><td><code>{{r.permissions_json}}</code></td></tr>
+    {% else %}<tr><td colspan="3" class="muted">No roles found</td></tr>{% endfor %}</table>
+  </div>
+</div>
+
+<div class="panel" style="margin-top:16px"><h3>Users</h3>
+  <table><tr><th>ID</th><th>Username</th><th>Display name</th><th>Role</th><th>Active</th><th>Edit</th></tr>
+  {% for u in users %}<tr>
+    <td>{{u.id}}</td><td>{{u.username}}</td><td>{{u.display_name}}</td><td>{{u.role}}</td><td>{{'yes' if u.active else 'no'}}</td>
+    <td><details><summary>Edit</summary>
+      <form method="post" action="/settings/users/{{u.id}}/edit" style="margin:8px 0"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+        <label>Display name<input name="display_name" value="{{u.display_name}}"/></label>
+        <label>Role<select name="role">{% for r in roles %}<option value="{{r.name}}" {% if u.role==r.name %}selected{% endif %}>{{r.name}}</option>{% endfor %}</select></label>
+        <label><input type="checkbox" name="active" {% if u.active %}checked{% endif %}/> Active</label>
+        <label>New password (optional)<input type="password" name="new_password" placeholder="Leave blank to keep"/></label>
+        <label>Super password (unlock/proof)<input type="password" name="password" required/></label>
+        <button type="submit">Save</button>
+      </form>
+    </details></td>
+  </tr>{% else %}<tr><td colspan="6" class="muted">No users yet</td></tr>{% endfor %}</table>
+</div>
+<p style="margin-top:12px"><a href="/settings">← Back to Settings</a></p>
+{% endblock %}
