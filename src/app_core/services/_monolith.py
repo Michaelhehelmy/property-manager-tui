@@ -1319,7 +1319,8 @@ def check_room_availability(room_id, ci, co, exclude_res_id=None):
 
 
 def create_reservation(guest_name, source, room_id, rate_plan_id, agreed_nightly_rate,
-                       ci, co, deposit_amount=0.0, guest_id=None):
+                       ci, co, deposit_amount=0.0, guest_id=None,
+                       source_detail="", market_segment="", booking_notes="", notes=None):
     if not guest_name or not guest_name.strip():
         raise ValueError("Guest name is required.")
     if not isinstance(room_id, int) or room_id <= 0:
@@ -1350,14 +1351,21 @@ def create_reservation(guest_name, source, room_id, rate_plan_id, agreed_nightly
     if deposit_amount < 0:
         raise ValueError("Deposit cannot be negative.")
 
+    source_detail = (source_detail or "").strip()
+    market_segment = (market_segment or "").strip()
+    if notes is None:
+        notes = booking_notes or ""
+    booking_notes = (booking_notes or notes or "").strip()
+    notes = (notes or booking_notes).strip()
+
     tax = calculate_tax(agreed_nightly_rate * nights, nights)
     with db.transaction() as conn:
         cur = conn.execute("""INSERT INTO reservations
-            (guest_id, guest_name, source, room_id, rate_plan_id, agreed_nightly_rate, tax_amount,
-             check_in_date, check_out_date, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Reserved')""",
-            (gid, canon, source, room_id, rate_plan_id, agreed_nightly_rate,
-             tax["service"] + tax["vat"] + tax["city_tax"], ci, co))
+            (guest_id, guest_name, source, source_detail, market_segment, room_id, rate_plan_id, agreed_nightly_rate, tax_amount,
+             check_in_date, check_out_date, status, notes, booking_notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Reserved', ?, ?)""",
+            (gid, canon, source, source_detail, market_segment, room_id, rate_plan_id, agreed_nightly_rate,
+             tax["service"] + tax["vat"] + tax["city_tax"], ci, co, notes, booking_notes))
         rid = cur.lastrowid
         _post(cur, "RES", rid, "CHARGE", "Accommodation",
               tax["net"], tax["service"], tax["vat"], tax["city_tax"], "",
@@ -1595,7 +1603,8 @@ def _void_pos_item_inner(cur, pos_row):
     cur.execute("UPDATE pos_tabs SET voided_at=datetime('now','localtime') WHERE id=?", (pid,))
 
 
-def modify_reservation(rid, new_rate, new_ci, new_co, new_room_id, password=None):
+def modify_reservation(rid, new_rate, new_ci, new_co, new_room_id, password=None,
+                       source=None, source_detail=None, market_segment=None, booking_notes=None):
     try:
         d1 = datetime.strptime(new_ci, DATE_FMT)
         d2 = datetime.strptime(new_co, DATE_FMT)
@@ -1614,12 +1623,21 @@ def modify_reservation(rid, new_rate, new_ci, new_co, new_room_id, password=None
     if not allow_over and not check_room_availability(new_room_id, new_ci, new_co, exclude_res_id=rid):
         raise ValueError("Room not available.")
     row = db.connect().execute(
-        "SELECT status, room_id, agreed_nightly_rate, tax_amount FROM reservations WHERE id=?",
+        "SELECT status, room_id, agreed_nightly_rate, tax_amount, source, source_detail, market_segment, notes, booking_notes FROM reservations WHERE id=?",
         (rid,)).fetchone()
     if not row:
         raise ValueError("Reservation not found.")
     if row["status"] not in ("Reserved", "Checked In"):
         raise ValueError(f"Cannot modify a '{row['status']}' reservation.")
+    # Preserve existing meta fields when not provided (backward compatible)
+    new_source = (source if source is not None else row["source"])
+    new_source_detail = (source_detail if source_detail is not None else (row["source_detail"] or ""))
+    new_market_segment = (market_segment if market_segment is not None else (row["market_segment"] or ""))
+    if booking_notes is None:
+        new_booking_notes = (row["booking_notes"] or row["notes"] or "")
+    else:
+        new_booking_notes = (booking_notes or "")
+    new_notes = new_booking_notes
     tax = calculate_tax(new_rate * nights, nights)
     with db.transaction() as conn:
         cur = conn.cursor()
@@ -1628,9 +1646,13 @@ def modify_reservation(rid, new_rate, new_ci, new_co, new_room_id, password=None
               tax["net"], tax["service"], tax["vat"], tax["city_tax"], "",
               f"Modified accommodation Res #{rid}")
         conn.execute("""UPDATE reservations SET agreed_nightly_rate=?, tax_amount=?,
-                        check_in_date=?, check_out_date=?, room_id=? WHERE id=?""",
+                        check_in_date=?, check_out_date=?, room_id=?,
+                        source=?, source_detail=?, market_segment=?, notes=?, booking_notes=?
+                        WHERE id=?""",
                      (new_rate, tax["service"] + tax["vat"] + tax["city_tax"],
-                      new_ci, new_co, new_room_id, rid))
+                      new_ci, new_co, new_room_id,
+                      new_source, (new_source_detail or "").strip(), (new_market_segment or "").strip(),
+                      (new_notes or "").strip(), (new_booking_notes or "").strip(), rid))
         if row["room_id"] != new_room_id:
             conn.execute("UPDATE rooms SET housekeeping_status='Dirty' WHERE id=?", (row["room_id"],))
     _audit("reservation_modify", "reservation", rid, f"rate={new_rate} room={new_room_id}")

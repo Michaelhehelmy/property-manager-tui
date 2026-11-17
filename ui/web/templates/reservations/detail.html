@@ -5,7 +5,8 @@
 <details class="help-box"><summary>How to use this reservation</summary><ul><li><strong>Status:</strong> Check in / Check out (override may require password if unpaid per policy).</li><li><strong>Modify:</strong> change room/dates/rate (subject to availability and rules).</li><li><strong>Folio & payments:</strong> record payments/refunds; refund requires unlock + super password. Generate invoice from folio data.</li><li><strong>POS / Activities:</strong> charges posted to the folio/invoice; book registered activities/trips to add them like POS. Voiding items requires password.</li><li><strong>Cancel/No-show/Delete:</strong> follow policy; paid/partially paid cancel/no-show requires super password, delete allowed only when permitted (no payments/POS).</li></ul></details>
 <div class="grid grid-2">
   <div class="panel"><h3>Status: {{ r['status'] }}</h3>
-    <p class="muted">Room {{ r['room_id'] }} · {{ r['check_in_date'] }} → {{ r['check_out_date'] }} · Rate {{ r['agreed_nightly_rate'] }} · Source {{ r['source'] }}</p>
+    <p class="muted">Room {{ r['room_id'] }} · {{ r['check_in_date'] }} → {{ r['check_out_date'] }} · Rate {{ r['agreed_nightly_rate'] }} · Source {{ r['source'] }}{% if r['source_detail'] %} ({{ r['source_detail'] }}){% endif %}{% if r['market_segment'] %} · Segment {{ r['market_segment'] }}{% endif %}</p>
+    {% if r['booking_notes'] or r['notes'] %}<p class="muted"><strong>Notes:</strong> {{ r['booking_notes'] or r['notes'] }}</p>{% endif %}
     <div class="row">
       <form method="post" action="/reservations/{{r['id']}}/checkin" class="inline"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><button class="ok" title="Mark reservation as Checked In (guest arrived)">Check in</button></form>
       <form method="post" action="/reservations/{{r['id']}}/checkout" class="inline"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><button class="warn" title="Mark reservation as Checked Out (may be blocked if unpaid balance requires override)">Check out</button></form>
@@ -17,8 +18,11 @@
       <form method="post" action="/reservations/{{r['id']}}/modify"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
         <label>Room<select name="room_id">{% for rm in rooms %}<option value="{{rm['id']}}" {% if rm['id']==r['room_id'] %}selected{% endif %}>{{rm['room_number']}}</option>{% endfor %}</select></label>
         <div class="row"><label>Check-in<input type="date" name="check_in" value="{{r['check_in_date']}}"/></label><label>Check-out<input type="date" name="check_out" value="{{r['check_out_date']}}"/></label><label>Rate<input name="rate" value="{{r['agreed_nightly_rate']}}"/></label></div>
+        <div class="row"><label>Source<input name="source" value="{{r['source'] or 'Direct'}}"/></label><label>Source detail<input name="source_detail" value="{{r['source_detail'] or ''}}" placeholder="Phone, Walk-in, Agent, Referral"/></label></div>
+        <div class="row"><label>Market segment<input name="market_segment" value="{{r['market_segment'] or ''}}" placeholder="Leisure, Corporate, Group, Repeat"/></label></div>
+        <label>Booking notes<textarea name="booking_notes" rows="2">{{r['booking_notes'] or r['notes'] or ''}}</textarea></label>
         <label>Super password (if required by policy/service)<input type="password" name="password" placeholder="Super password"/></label>
-        <button title="Save changes to room, dates, or rate (availability/rules apply)">Modify</button>
+        <button title="Save changes to room, dates, rate, source/segment/notes (availability/rules apply)">Modify</button>
       </form>
     </details>
     <details><summary>Cancel / No-show / Delete</summary>

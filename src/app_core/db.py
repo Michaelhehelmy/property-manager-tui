@@ -16,7 +16,7 @@ from . import paths
 DATA_DIR = paths.DATA_DIR
 BASE_DIR = paths.BASE_DIR
 DB_PATH = paths.DB_PATH
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 
 _conn = None
 _lock = threading.RLock()
@@ -270,6 +270,8 @@ CREATE TABLE reservations (
     guest_id INTEGER,
     guest_name TEXT NOT NULL,
     source TEXT NOT NULL DEFAULT 'Direct',
+    source_detail TEXT NOT NULL DEFAULT '',
+    market_segment TEXT NOT NULL DEFAULT '',
     room_id INTEGER NOT NULL,
     rate_plan_id INTEGER,
     agreed_nightly_rate REAL NOT NULL,
@@ -278,6 +280,7 @@ CREATE TABLE reservations (
     check_out_date TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'Reserved',
     notes TEXT NOT NULL DEFAULT '',
+    booking_notes TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
     FOREIGN KEY (guest_id) REFERENCES guests(id),
     FOREIGN KEY (room_id) REFERENCES rooms(id),
@@ -287,6 +290,7 @@ CREATE INDEX idx_res_guest ON reservations(guest_id);
 CREATE INDEX idx_res_status ON reservations(status);
 CREATE INDEX idx_res_dates ON reservations(check_in_date, check_out_date);
 CREATE INDEX idx_res_room ON reservations(room_id);
+CREATE INDEX idx_res_source_segment ON reservations(source, market_segment);
 
 CREATE TABLE inventory (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -619,6 +623,27 @@ def _migrate_to_9(conn):
         conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_inventory_sku ON inventory(sku) WHERE sku IS NOT NULL AND sku <> ''")
         conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_inventory_barcode ON inventory(barcode) WHERE barcode IS NOT NULL AND barcode <> ''")
 
+
+def _migrate_to_10(conn):
+    # Phase 1 additive fields for reservation source/segment/notes (front-desk & reporting)
+    if _table_exists(conn, "reservations"):
+        cols = _table_columns(conn, "reservations")
+        for col, decl in (
+            ("source_detail", "TEXT NOT NULL DEFAULT ''"),
+            ("market_segment", "TEXT NOT NULL DEFAULT ''"),
+            ("booking_notes", "TEXT NOT NULL DEFAULT ''"),
+        ):
+            _ensure_column(conn, "reservations", col, decl, cols)
+        try:
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_res_source_segment ON reservations(source, market_segment)")
+        except Exception:
+            pass
+        # Backfill booking_notes from legacy notes where empty (idempotent, additive)
+        try:
+            conn.execute("UPDATE reservations SET booking_notes = COALESCE(notes,'') WHERE (booking_notes IS NULL OR booking_notes = '') AND COALESCE(notes,'') <> ''")
+        except Exception:
+            pass
+
     conn.executescript("""
     CREATE TABLE IF NOT EXISTS inventory_batches (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -754,6 +779,8 @@ def migrate():
                     _migrate_to_8(conn)
                 if version < 9:
                     _migrate_to_9(conn)
+                if version < 10:
+                    _migrate_to_10(conn)
                 conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
                 ensure_runtime_indexes(conn)
                 _record_migration_meta(conn, status="upgraded", from_version=from_version, to_version=SCHEMA_VERSION)

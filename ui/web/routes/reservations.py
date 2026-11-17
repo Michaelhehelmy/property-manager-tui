@@ -73,9 +73,19 @@ def list_res(request: Request, q: str = "", tab: str = "list"):
 async def create(request: Request):
     form = await deps.get_form(request)
     try:
-        rid = services.create_reservation(form.get("guest_name",""), form.get("source","Direct"), int(form.get("room_id")),
-              int(form["rate_plan_id"]) if form.get("rate_plan_id") else None, float(form.get("rate") or 0),
-              form.get("check_in",""), form.get("check_out",""), float(form.get("deposit") or 0))
+        rid = services.create_reservation(
+            form.get("guest_name", ""),
+            form.get("source", "Direct"),
+            int(form.get("room_id")),
+            int(form["rate_plan_id"]) if form.get("rate_plan_id") else None,
+            float(form.get("rate") or 0),
+            form.get("check_in", ""),
+            form.get("check_out", ""),
+            float(form.get("deposit") or 0),
+            source_detail=form.get("source_detail", ""),
+            market_segment=form.get("market_segment", ""),
+            booking_notes=form.get("booking_notes", ""),
+        )
         return flash_redirect(request, "/reservations?tab=list", f"Reservation #{rid} created", "success")
     except Exception as e:
         return flash_redirect(request, "/reservations?tab=create", str(e), "error")
@@ -173,10 +183,22 @@ async def delete(rid: int, request: Request):
 async def modify(rid: int, request: Request):
     form = await deps.require_unlocked_form(request)
     try:
-        services.modify_reservation(rid, float(form.get("rate") or 0), form.get("check_in",""), form.get("check_out",""), int(form.get("room_id")), deps.service_password(request, form))
-        deps.add_flash(request,"Reservation modified","success")
-    except Exception as e: deps.add_flash(request,str(e),"error")
-    r=deps.redirect(f"/reservations/{rid}"); deps.save_session(r, deps.get_session(request)); return r
+        services.modify_reservation(
+            rid,
+            float(form.get("rate") or 0),
+            form.get("check_in", ""),
+            form.get("check_out", ""),
+            int(form.get("room_id")),
+            deps.service_password(request, form),
+            source=form.get("source"),
+            source_detail=form.get("source_detail"),
+            market_segment=form.get("market_segment"),
+            booking_notes=form.get("booking_notes"),
+        )
+        deps.add_flash(request, "Reservation modified", "success")
+    except Exception as e:
+        deps.add_flash(request, str(e), "error")
+    r = deps.redirect(f"/reservations/{rid}"); deps.save_session(r, deps.get_session(request)); return r
 
 @router.post("/reservations/{rid}/pay")
 async def pay(rid: int, request: Request):
