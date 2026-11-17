@@ -70,7 +70,10 @@
   <div class="panel"><h3>Open / current shift</h3>
     {% if open_shift %}
       <p><strong>Open shift #{{ open_shift.id }}</strong> — {{ open_shift.name or '' }}</p>
-      <p class="muted">Opened {{ open_shift.opened_at }} · Float {{ "%.2f"|format(open_shift.opening_float or 0) }} · Expected {{ "%.2f"|format(open_shift.expected_cash or 0) }}</p>
+      <p class="muted">Opened {{ open_shift.opened_at }} · Float {{ "%.2f"|format(open_shift.opening_float or 0) }} · Expected (base) {{ "%.2f"|format(open_shift.expected_cash or 0) }}</p>
+      {% if open_shift_recon %}
+      <p class="muted">Linked cash payments net {{ "%.2f"|format(open_shift_recon.linked_net or 0) }} (in {{ "%.2f"|format(open_shift_recon.linked_cash_in or 0) }}, out {{ "%.2f"|format(open_shift_recon.linked_cash_out or 0) }}) · Reconciled expected {{ "%.2f"|format(open_shift_recon.reconciled_expected_cash or 0) }}</p>
+      {% endif %}
       <form method="post" action="/accounting/shifts/{{ open_shift.id }}/movement"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
         <div class="row"><label>Type<select name="movement_type"><option value="cash_in">cash_in</option><option value="cash_out">cash_out</option><option value="float_in">float_in</option><option value="float_out">float_out</option><option value="drop">drop</option><option value="adjustment">adjustment</option></select></label><label>Amount<input name="amount" type="number" step="0.01" required/></label></div>
         <div class="row"><label>Method<input name="method" value="Cash"/></label><label>Reference<input name="reference"/></label></div>

@@ -16,7 +16,7 @@ from . import paths
 DATA_DIR = paths.DATA_DIR
 BASE_DIR = paths.BASE_DIR
 DB_PATH = paths.DB_PATH
-SCHEMA_VERSION = 19
+SCHEMA_VERSION = 20
 
 _conn = None
 _lock = threading.RLock()
@@ -706,12 +706,15 @@ CREATE TABLE payments (
     idempotency_key TEXT NOT NULL DEFAULT '',
     allocation_json TEXT NOT NULL DEFAULT '{}',
     reference TEXT NOT NULL DEFAULT '',
+    shift_id INTEGER,
     voided_at TEXT,
     at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-    FOREIGN KEY (reservation_id) REFERENCES reservations(id)
+    FOREIGN KEY (reservation_id) REFERENCES reservations(id),
+    FOREIGN KEY (shift_id) REFERENCES cash_shifts(id)
 );
 CREATE INDEX IF NOT EXISTS idx_payments_idempotency ON payments(idempotency_key);
 CREATE INDEX idx_payments_res ON payments(reservation_id);
+CREATE INDEX idx_payments_shift ON payments(shift_id);
 
 CREATE TABLE general_ledger (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1381,6 +1384,18 @@ def _migrate_to_19(conn):
         """)
 
 
+
+def _migrate_to_20(conn):
+    # P4: link payments/refunds to cash shifts (additive)
+    if _table_exists(conn, "payments"):
+        cols = _table_columns(conn, "payments")
+        _ensure_column(conn, "payments", "shift_id", "INTEGER", cols)
+        try:
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_payments_shift ON payments(shift_id)")
+        except Exception:
+            pass
+
+
 def migrate():
     """Create or upgrade schema to SCHEMA_VERSION.
 
@@ -1448,6 +1463,8 @@ def migrate():
                     _migrate_to_18(conn)
                 if version < 19:
                     _migrate_to_19(conn)
+                if version < 20:
+                    _migrate_to_20(conn)
                 conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
                 ensure_runtime_indexes(conn)
                 _record_migration_meta(conn, status="upgraded", from_version=from_version, to_version=SCHEMA_VERSION)

@@ -18,8 +18,9 @@ def accounting(request: Request, tab: str = "overview"):
         cash_shifts = services.list_cash_shifts(50)
         open_shift = services.get_open_cash_shift()
         shift_movements = services.list_cash_movements(open_shift["id"]) if open_shift else []
+        open_shift_recon = services.get_cash_shift_reconciliation(open_shift["id"]) if open_shift and hasattr(services, "get_cash_shift_reconciliation") else None
     except Exception:
-        cash_shifts, open_shift, shift_movements = [], None, []
+        cash_shifts, open_shift, shift_movements, open_shift_recon = [], None, [], None
     try:
         night_audits = services.list_night_audit_runs(30)
     except Exception:
@@ -29,7 +30,7 @@ def accounting(request: Request, tab: str = "overview"):
     if tab not in allowed: tab = "overview"
     return render(request, "accounting/index.html", {
         "title":"Accounting","cats":cats,"expenses":expenses,"ledger":ledger,"summary":summary,"reservations":res,
-        "cash_shifts":cash_shifts,"open_shift":open_shift,"shift_movements":shift_movements,"night_audits":night_audits,
+        "cash_shifts":cash_shifts,"open_shift":open_shift,"open_shift_recon":open_shift_recon,"shift_movements":shift_movements,"night_audits":night_audits,
         "active_tab":tab
     })
 

@@ -3761,7 +3761,7 @@ def restock_inventory(item_id, qty, unit_cost=0.0, password=""):
 # PAYMENTS
 # ═══════════════════════════════════════════════════════════════════════════
 
-def record_payment(reservation_id, amount, method, notes="", payment_type="Payment", idempotency_key="", reference="", allocation_json="{}"):
+def record_payment(reservation_id, amount, method, notes="", payment_type="Payment", idempotency_key="", reference="", allocation_json="{}", shift_id=None):
     if amount <= 0:
         raise ValueError("Payment amount must be positive.")
     if reservation_id is not None and not isinstance(reservation_id, int):
@@ -3769,6 +3769,17 @@ def record_payment(reservation_id, amount, method, notes="", payment_type="Payme
     idempotency_key = (idempotency_key or "").strip()
     reference = (reference or "").strip()
     allocation_json = allocation_json if isinstance(allocation_json, str) else json.dumps(allocation_json or {}, ensure_ascii=False)
+    # P4 groundwork: auto-link to open cash shift for cash payments when not specified
+    if shift_id in ("", 0):
+        shift_id = None
+    if shift_id is None:
+        try:
+            if str(method or "").strip().lower() == "cash":
+                s = get_open_cash_shift()
+                if s:
+                    shift_id = int(s["id"])
+        except Exception:
+            shift_id = None
     with db.transaction() as conn:
         cur = conn.cursor()
         if idempotency_key:
@@ -3785,15 +3796,15 @@ def record_payment(reservation_id, amount, method, notes="", payment_type="Payme
             if r["status"] in ("Cancelled", "No-Show", "Deleted", "Checked Out"):
                 raise ValueError(f"Cannot record payment on a '{r['status']}' reservation.")
         conn.execute("""INSERT INTO payments
-            (reservation_id, amount, method, payment_type, notes, idempotency_key, allocation_json, reference)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (reservation_id, amount, method, payment_type, notes, idempotency_key, allocation_json, reference))
+            (reservation_id, amount, method, payment_type, notes, idempotency_key, allocation_json, reference, shift_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (reservation_id, amount, method, payment_type, notes, idempotency_key, allocation_json, reference, shift_id))
         pid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
         ref_type = "PAY" if reservation_id else "WALKIN_PAY"
         _post(cur, ref_type, pid, "PAYMENT", "", 0, 0, 0, 0, method,
               f"{payment_type} via {method}" + (f" Res #{reservation_id}" if reservation_id else " (walk-in)"),
               gross_override=amount)
-    _audit("payment_record", "payment", pid, f"{amount} via {method}")
+    _audit("payment_record", "payment", pid, f"{amount} via {method}" + (f" shift={shift_id}" if shift_id else ""))
     return pid
 
 
@@ -3817,13 +3828,23 @@ def get_reservation_payment_summary(reservation_id):
         "balance": bd,
     }
 
-def record_refund(reservation_id, amount, method, notes, password, idempotency_key="", reference="", allocation_json="{}"):
+def record_refund(reservation_id, amount, method, notes, password, idempotency_key="", reference="", allocation_json="{}", shift_id=None):
     _require_super_password(password)
     if amount <= 0:
         raise ValueError("Refund amount must be positive.")
     idempotency_key = (idempotency_key or "").strip()
     reference = (reference or "").strip()
     allocation_json = allocation_json if isinstance(allocation_json, str) else json.dumps(allocation_json or {}, ensure_ascii=False)
+    if shift_id in ("", 0):
+        shift_id = None
+    if shift_id is None:
+        try:
+            if str(method or "").strip().lower() == "cash":
+                s = get_open_cash_shift()
+                if s:
+                    shift_id = int(s["id"])
+        except Exception:
+            shift_id = None
     with db.transaction() as conn:
         cur = conn.cursor()
         if idempotency_key:
@@ -3839,14 +3860,14 @@ def record_refund(reservation_id, amount, method, notes, password, idempotency_k
         if amount > paid:
             raise ValueError(f"Refund exceeds paid amount ({paid:.2f}).")
         conn.execute("""INSERT INTO payments
-            (reservation_id, amount, method, payment_type, notes, idempotency_key, allocation_json, reference)
-            VALUES (?, ?, ?, 'Refund', ?, ?, ?, ?)""",
-            (reservation_id, -amount, method, notes, idempotency_key, allocation_json, reference))
+            (reservation_id, amount, method, payment_type, notes, idempotency_key, allocation_json, reference, shift_id)
+            VALUES (?, ?, ?, 'Refund', ?, ?, ?, ?, ?)""",
+            (reservation_id, -amount, method, notes, idempotency_key, allocation_json, reference, shift_id))
         pid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
         _post(cur, "PAY", pid, "REFUND", "", 0, 0, 0, 0, method,
               f"Refund via {method} Res #{reservation_id}: {notes}",
               gross_override=-amount)
-    _audit("refund", "payment", pid, f"{amount} via {method}")
+    _audit("refund", "payment", pid, f"{amount} via {method}" + (f" shift={shift_id}" if shift_id else ""))
     return pid
 
 
@@ -4902,6 +4923,84 @@ def report_daily_ops(date):
             lines.append(f"  #{r['id']}  {r['guest_name']}  ({r['check_in_date']} -> {r['check_out_date']})")
         return "\n".join(lines)
 
+
+
+
+def report_reservation_groups():
+    groups = list_reservation_groups(status="") or []
+    lines = ["RESERVATION GROUPS SUMMARY", f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}", "="*40]
+    if not groups:
+        lines.append("No reservation groups found.")
+        return "\n".join(lines)
+    for g in groups:
+        t = g.get("totals") or {}
+        lines.append(f"#{g.get('id')} {g.get('name')} [{g.get('status')}] ({g.get('group_type')}) members={g.get('member_count',0)}")
+        lines.append(f"  Charges: {t.get('total_charges',0):.2f} | Paid: {t.get('total_paid',0):.2f} | Balance: {t.get('balance_due',0):.2f}")
+        for m in (g.get("members") or []):
+            lines.append(f"  - Res #{m.get('reservation_id')} {m.get('guest_name','')} Rm {m.get('room_number') or '-'} [{m.get('reservation_status')}] Bal {float(m.get('balance_due') or 0):.2f}")
+        lines.append("")
+    return "\n".join(lines).rstrip()
+
+
+def report_packages_summary():
+    pkgs = list_packages(active_only=False) or []
+    lines = ["PACKAGES / BUNDLES SUMMARY", f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}", "="*40]
+    if not pkgs:
+        lines.append("No packages found.")
+        return "\n".join(lines)
+    for p in pkgs:
+        lines.append(f"#{p.get('id')} {p.get('name')} [{'active' if p.get('active') else 'inactive'}] items={len(p.get('items') or [])} est={float(p.get('estimated_total') or 0):.2f}")
+        if p.get("description"):
+            lines.append(f"  {p.get('description')}")
+        for it in (p.get("items") or []):
+            price = it.get("unit_price") if it.get("unit_price") is not None else it.get("service_unit_price")
+            lines.append(f"  - {it.get('description')} x{it.get('quantity')} @ {float(price or 0):.2f}")
+        lines.append("")
+    return "\n".join(lines).rstrip()
+
+
+def report_cash_shifts_summary(limit=50):
+    shifts = list_cash_shifts(limit=limit) or []
+    lines = ["CASH SHIFTS SUMMARY", f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}", "="*40]
+    if not shifts:
+        lines.append("No cash shifts found.")
+        return "\n".join(lines)
+    for s in shifts:
+        try:
+            rec = get_cash_shift_reconciliation(s["id"])
+        except Exception:
+            rec = dict(s)
+            rec["linked_net"] = 0.0
+            rec["reconciled_expected_cash"] = rec.get("expected_cash") or 0.0
+        lines.append(f"#{s.get('id')} {s.get('name') or ''} [{s.get('status')}] opened={s.get('opened_at')} closed={s.get('closed_at') or '-'}")
+        lines.append(f"  Float: {float(s.get('opening_float') or 0):.2f} | Movements+linked expected: {float(rec.get('reconciled_expected_cash') or 0):.2f} | Counted: {('%.2f' % s.get('counted_cash')) if s.get('counted_cash') is not None else '-'} | Variance: {('%.2f' % s.get('variance')) if s.get('variance') is not None else '-'}")
+        lines.append(f"  Linked cash payments net: {float(rec.get('linked_net') or 0):.2f} (in {float(rec.get('linked_cash_in') or 0):.2f}, out {float(rec.get('linked_cash_out') or 0):.2f})")
+        lines.append("")
+    return "\n".join(lines).rstrip()
+
+
+def report_night_audit_summary(limit=30):
+    runs = list_night_audit_runs(limit=limit) or []
+    lines = ["NIGHT AUDIT RUNS (ADVISORY)", f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}", "="*40]
+    if not runs:
+        lines.append("No night audit runs found.")
+        return "\n".join(lines)
+    for r in runs:
+        lines.append(f"#{r.get('id')} {r.get('business_date')} [{r.get('status')}] completed={r.get('completed_at') or r.get('started_at')}")
+        exc = r.get("exceptions_json") or "[]"
+        try:
+            if isinstance(exc, str):
+                import json as _json
+                exc_obj = _json.loads(exc)
+            else:
+                exc_obj = exc
+            lines.append(f"  Exceptions: {len(exc_obj) if isinstance(exc_obj, list) else 0}")
+        except Exception:
+            lines.append("  Exceptions: (unavailable)")
+        if r.get("notes"):
+            lines.append(f"  Notes: {r.get('notes')}")
+        lines.append("")
+    return "\n".join(lines).rstrip()
 
 def report_front_desk_summary(date=None):
     """Canonical front-desk summary for a business day (additive, read-only)."""
@@ -6241,6 +6340,36 @@ def close_cash_shift(shift_id, counted_cash=None, notes="", closed_by=""):
         )
     _audit("cash_shift_close", "cash_shift", sid, f"expected={expected} counted={counted} variance={variance}")
     return sid
+
+
+
+def get_cash_shift_reconciliation(shift_id):
+    sid = int(shift_id)
+    shift = db.connect().execute("SELECT * FROM cash_shifts WHERE id=?", (sid,)).fetchone()
+    if not shift:
+        raise ValueError("Cash shift not found.")
+    d = dict(shift)
+    try:
+        movs = db.connect().execute("SELECT COALESCE(SUM(amount),0) AS total FROM cash_movements WHERE shift_id=?", (sid,)).fetchone()
+        d["movements_total"] = round(float(movs["total"] or 0), 2)
+    except Exception:
+        d["movements_total"] = 0.0
+    try:
+        rows = db.connect().execute(
+            """SELECT id, reservation_id, amount, method, payment_type, at, reference, notes
+               FROM payments WHERE shift_id=? AND voided_at IS NULL ORDER BY id""", (sid,)
+        ).fetchall()
+        pays = [dict(r) for r in rows]
+        cash_in = round(sum(float(p.get("amount") or 0) for p in pays if float(p.get("amount") or 0) > 0), 2)
+        cash_out = round(sum(float(p.get("amount") or 0) for p in pays if float(p.get("amount") or 0) < 0), 2)
+        d["linked_payments"] = pays
+        d["linked_cash_in"] = cash_in
+        d["linked_cash_out"] = cash_out
+        d["linked_net"] = round(cash_in + cash_out, 2)
+    except Exception:
+        d["linked_payments"] = []; d["linked_cash_in"] = 0.0; d["linked_cash_out"] = 0.0; d["linked_net"] = 0.0
+    d["reconciled_expected_cash"] = round(float(d.get("opening_float") or 0) + float(d.get("movements_total") or 0) + float(d.get("linked_net") or 0), 2)
+    return d
 
 
 def list_night_audit_runs(limit=100):
