@@ -37,6 +37,7 @@
       <tr><th>Accommodation</th><td>{{ "%.2f"|format(folio.accommodation_gross or 0) }} <span class="muted">(net {{ "%.2f"|format(folio.accommodation_net or 0) }}, tax {{ "%.2f"|format(folio.accommodation_tax or 0) }})</span></td></tr>
       <tr><th>POS / Activities</th><td>{{ "%.2f"|format(folio.pos_gross or 0) }} <span class="muted">(net {{ "%.2f"|format(folio.pos_net or 0) }}, tax {{ "%.2f"|format(folio.pos_tax or 0) }})</span></td></tr>
       <tr><th>Extra services</th><td>{{ "%.2f"|format(folio.services_gross or 0) }} <span class="muted">(net {{ "%.2f"|format(folio.services_net or 0) }}, tax {{ "%.2f"|format(folio.services_tax or 0) }})</span></td></tr>
+      <tr><th>Discounts</th><td>{{ "%.2f"|format(folio.discounts_gross or 0) }} <span class="muted">(adjustment)</span></td></tr>
       <tr><th>Total charges</th><td>{{ "%.2f"|format(folio.total_charges or 0) }}</td></tr>
       <tr><th>Total paid</th><td>{{ "%.2f"|format(folio.total_paid or 0) }}</td></tr>
       <tr><th>Balance due</th><td><strong>{{ "%.2f"|format(folio.balance_due or 0) }}</strong></td></tr>
@@ -138,4 +139,24 @@
     {% if not service_catalog %}<p class="muted">No active service catalog items. Catalog can be managed via services/API (settings UI coming in later slices).</p>{% endif %}
   </details>
 </div>
+
+<div class="panel" style="margin-top:16px"><h3>Discounts / vouchers</h3>
+  <p class="muted">Discount adjustments reduce the folio balance (posted as ledger adjustments). Voiding requires unlock + super password.</p>
+  <div class="table-wrap"><table><tr><th>ID</th><th>Description</th><th>Type</th><th>Value</th><th>Amount</th><th>Status</th><th>Action</th></tr>
+  {% for d in reservation_discounts or [] %}<tr>
+    <td>{{d['id']}}</td><td>{{d['description']}}{% if d['voucher_code'] %} <span class="muted">({{d['voucher_code']}})</span>{% endif %}</td>
+    <td>{{d['discount_type']}}</td><td>{{d['value']}}</td><td>{{"%.2f"|format(d['amount'] or 0)}}</td><td>{{d['status']}}</td>
+    <td>{% if d['status']=='applied' and not d['voided_at'] %}<form method="post" action="/reservations/{{r['id']}}/discounts/{{d['id']}}/void" class="inline"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><input type="password" name="password" placeholder="Pwd" style="width:90px;display:inline-block"/><button class="err" title="Void discount (requires super password)">Void</button></form>{% else %}—{% endif %}</td>
+  </tr>{% else %}<tr><td colspan="7" class="muted">No discounts applied</td></tr>{% endfor %}</table></div>
+  <details style="margin-top:10px"><summary><strong>Apply discount / voucher</strong></summary>
+    <form method="post" action="/reservations/{{r['id']}}/discounts/apply"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+      <label>Voucher code (optional)<input name="voucher_code" placeholder="Code (if using a voucher)"/></label>
+      <div class="row"><label>Type<select name="discount_type"><option value="amount">Amount</option><option value="percent">Percent</option></select></label><label>Value<input name="value" type="number" step="0.01" placeholder="Amount or %"/></label></div>
+      <label>Description<input name="description" placeholder="Reason / description"/></label>
+      <label>Notes<input name="notes"/></label>
+      <button class="ok" type="submit" title="Apply discount to folio">Apply discount</button>
+    </form>
+  </details>
+</div>
+
 {% endblock %}
