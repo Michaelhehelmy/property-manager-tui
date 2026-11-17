@@ -199,12 +199,13 @@ def create_app(*, init_db: bool = True, run_startup: bool = True) -> FastAPI:
             logger.debug("web_request_log_failed", exc_info=True)
         return response
 
-    from ui.web.routes import accounting, assistant, dashboard, files, guests, pos_inventory, reports_analytics, reservations, settings_branding, support
+    from ui.web.routes import accounting, assistant, dashboard, files, guests, housekeeping, pos_inventory, reports_analytics, reservations, settings_branding, support
 
     app.include_router(dashboard.router)
     app.include_router(reservations.router)
     app.include_router(guests.router)
     app.include_router(pos_inventory.router)
+    app.include_router(housekeeping.router)
     app.include_router(accounting.router)
     app.include_router(reports_analytics.router)
     app.include_router(assistant.router)

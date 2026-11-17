@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h2>Housekeeping</h2>
+    <p class="page-subtitle">Manage room readiness: cleaning tasks, statuses, and out-of-order/service blocks (blocks affect availability).</p>
+  </div>
+</div>
+
+<div class="grid grid-2">
+  <div class="panel">
+    <h3>Tasks</h3>
+    <form method="get" class="row" style="margin-bottom:10px">
+      <select name="status">
+        <option value="" {% if not status_filter %}selected{% endif %}>All statuses</option>
+        {% for s in ['pending','in_progress','done','inspected','cancelled'] %}<option value="{{s}}" {% if status_filter==s %}selected{% endif %}>{{s}}</option>{% endfor %}
+      </select>
+      <div style="flex:0"><button type="submit">Filter</button></div>
+    </form>
+    <div class="table-wrap"><table>
+      <tr><th>ID</th><th>Room</th><th>Type</th><th>Status</th><th>Priority</th><th>Assignee</th><th>Due</th><th>Notes</th><th>Action</th></tr>
+      {% for t in tasks %}<tr>
+        <td>{{t['id']}}</td>
+        <td>{{t['room_number'] or t['room_id']}} <span class="muted">{{t['room_type'] or ''}}</span><div class="muted">Room: {{t['room_housekeeping_status'] or ''}}</div></td>
+        <td>{{t['task_type']}}</td><td>{{t['status']}}</td><td>{{t['priority']}}</td><td>{{t['assignee'] or ''}}</td><td>{{t['due_at'] or ''}}</td><td>{{t['notes'] or ''}}</td>
+        <td>
+          <form method="post" action="/housekeeping/tasks/{{t['id']}}/status" class="inline"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+            <select name="status" style="min-width:120px">{% for s in ['pending','in_progress','done','inspected','cancelled'] %}<option value="{{s}}" {% if t['status']==s %}selected{% endif %}>{{s}}</option>{% endfor %}</select>
+            <button type="submit">Update</button>
+          </form>
+        </td>
+      </tr>{% else %}<tr><td colspan="9" class="muted">No tasks</td></tr>{% endfor %}
+    </table></div>
+    <details style="margin-top:10px"><summary><strong>Create task</strong></summary>
+      <form method="post" action="/housekeeping/tasks/create"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+        <label>Room<select name="room_id" required>{% for r in rooms %}<option value="{{r['id']}}">{{r['room_number']}} — {{r['room_type']}} ({{r['housekeeping_status']}})</option>{% endfor %}</select></label>
+        <div class="row"><label>Type<input name="task_type" value="cleaning"/></label><label>Priority<select name="priority"><option>normal</option><option>high</option><option>urgent</option><option>low</option></select></label></div>
+        <div class="row"><label>Assignee<input name="assignee"/></label><label>Due<input name="due_at" placeholder="YYYY-MM-DD or YYYY-MM-DD HH:MM"/></label></div>
+        <label>Reservation ID (optional)<input name="reservation_id"/></label>
+        <label>Notes<textarea name="notes" rows="2"></textarea></label>
+        <button class="ok" type="submit">Create task</button>
+      </form>
+    </details>
+    <form method="post" action="/housekeeping/tasks/generate" style="margin-top:10px" class="inline"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+      <input name="due_at" placeholder="Due (optional)" style="max-width:180px;display:inline-block"/>
+      <button type="submit">Generate tasks for dirty rooms</button>
+    </form>
+  </div>
+
+  <div class="panel">
+    <h3>Active room blocks (OOO/OOS)</h3>
+    <p class="muted">Active blocks prevent room availability for overlapping dates.</p>
+    <div class="table-wrap"><table>
+      <tr><th>ID</th><th>Room</th><th>Type</th><th>Dates</th><th>Reason</th><th>Action</th></tr>
+      {% for b in blocks %}<tr>
+        <td>{{b['id']}}</td><td>{{b['room_number'] or b['room_id']}}</td><td>{{b['block_type']}}</td>
+        <td>{{b['start_date']}} → {{b['end_date']}}</td><td>{{b['reason'] or b['notes'] or ''}}</td>
+        <td><form method="post" action="/housekeeping/blocks/{{b['id']}}/resolve" class="inline"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><input type="password" name="password" placeholder="Pwd" style="width:90px;display:inline-block"/><button class="ok" title="Resolve/unblock (requires unlock)">Resolve</button></form></td>
+      </tr>{% else %}<tr><td colspan="6" class="muted">No active blocks</td></tr>{% endfor %}
+    </table></div>
+    <details style="margin-top:10px"><summary><strong>Create room block</strong> (requires unlock + password)</summary>
+      <form method="post" action="/housekeeping/blocks/create"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+        <label>Room<select name="room_id" required>{% for r in rooms %}<option value="{{r['id']}}">{{r['room_number']}} — {{r['room_type']}}</option>{% endfor %}</select></label>
+        <div class="row"><label>Type<select name="block_type"><option value="OOO">Out of Order (OOO)</option><option value="OOS">Out of Service (OOS)</option></select></label></div>
+        <div class="row"><label>Start<input type="date" name="start_date" required/></label><label>End<input type="date" name="end_date" required/></label></div>
+        <label>Reason<input name="reason" placeholder="Maintenance reason"/></label>
+        <label>Notes<textarea name="notes" rows="2"></textarea></label>
+        <label>Super password<input type="password" name="password" placeholder="Super password (required)"/></label>
+        <button class="ok" type="submit">Create block</button>
+      </form>
+    </details>
+  </div>
+</div>
+{% endblock %}

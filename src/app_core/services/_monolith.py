@@ -1594,6 +1594,109 @@ def check_room_availability(room_id, ci, co, exclude_res_id=None):
     return True
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# HOUSEKEEPING TASKS (P3, additive)
+# ═══════════════════════════════════════════════════════════════════════════
+
+HK_TASK_STATUSES = {"pending", "in_progress", "done", "inspected", "cancelled"}
+
+
+def list_housekeeping_tasks(status="", room_id=None, limit=300):
+    q = """SELECT ht.*, rm.room_number, rm.room_type, rm.housekeeping_status AS room_housekeeping_status,
+                  r.guest_name, r.check_in_date, r.check_out_date, r.status AS reservation_status
+           FROM housekeeping_tasks ht
+           LEFT JOIN rooms rm ON rm.id = ht.room_id
+           LEFT JOIN reservations r ON r.id = ht.reservation_id
+           WHERE 1=1"""
+    params = []
+    if status:
+        q += " AND ht.status=?"; params.append(status)
+    if room_id is not None:
+        q += " AND ht.room_id=?"; params.append(int(room_id))
+    q += " ORDER BY CASE ht.status WHEN 'pending' THEN 1 WHEN 'in_progress' THEN 2 WHEN 'done' THEN 3 WHEN 'inspected' THEN 4 ELSE 5 END, ht.priority DESC, ht.due_at ASC, ht.id DESC LIMIT ?"
+    params.append(int(limit or 300))
+    try:
+        return [dict(r) for r in db.connect().execute(q, params).fetchall()]
+    except Exception:
+        return []
+
+
+def create_housekeeping_task(room_id, task_type="cleaning", priority="normal", assignee="", due_at="", notes="", reservation_id=None):
+    room_id = int(room_id)
+    room = db.connect().execute("SELECT id, housekeeping_status FROM rooms WHERE id=?", (room_id,)).fetchone()
+    if not room:
+        raise ValueError("Room not found.")
+    task_type = (task_type or "cleaning").strip() or "cleaning"
+    priority = (priority or "normal").strip() or "normal"
+    with db.transaction() as conn:
+        cur = conn.execute(
+            """INSERT INTO housekeeping_tasks (room_id, reservation_id, task_type, priority, status, assignee, due_at, notes)
+               VALUES (?, ?, ?, ?, 'pending', ?, ?, ?)""",
+            (room_id, int(reservation_id) if reservation_id not in (None, "", 0, "0") else None, task_type, priority, (assignee or "").strip(), (due_at or "").strip(), (notes or "").strip()),
+        )
+        tid = cur.lastrowid
+        # if creating a cleaning/turnover task, reflect room as Dirty unless already Out of Order
+        if room["housekeeping_status"] not in ("Out of Order",):
+            try:
+                conn.execute("UPDATE rooms SET housekeeping_status='Dirty' WHERE id=?", (room_id,))
+            except Exception:
+                pass
+    _audit("housekeeping_task_create", "housekeeping_task", tid, f"room={room_id} {task_type}")
+    return tid
+
+
+def update_housekeeping_task_status(task_id, status, notes_append=""):
+    tid = int(task_id)
+    status = (status or "").strip().lower()
+    if status not in HK_TASK_STATUSES:
+        raise ValueError("Invalid task status.")
+    with db.transaction() as conn:
+        row = conn.execute("SELECT ht.*, rm.housekeeping_status FROM housekeeping_tasks ht LEFT JOIN rooms rm ON rm.id=ht.room_id WHERE ht.id=?", (tid,)).fetchone()
+        if not row:
+            raise ValueError("Task not found.")
+        updates = ["status=?"]
+        params = [status]
+        now_expr = "datetime('now','localtime')"
+        if status == "in_progress":
+            updates.append("started_at=COALESCE(started_at, datetime('now','localtime'))")
+        elif status == "done":
+            updates.append("completed_at=COALESCE(completed_at, datetime('now','localtime'))")
+        elif status == "inspected":
+            updates.append("completed_at=COALESCE(completed_at, datetime('now','localtime'))")
+            updates.append("inspected_at=COALESCE(inspected_at, datetime('now','localtime'))")
+        if notes_append:
+            updates.append("notes=TRIM(COALESCE(notes,'') || CASE WHEN COALESCE(notes,'')<>'' THEN char(10) ELSE '' END || ?)")
+            params.append(str(notes_append))
+        params.append(tid)
+        conn.execute(f"UPDATE housekeeping_tasks SET {', '.join(updates)} WHERE id=?", params)
+        # reflect room status
+        if status == "done":
+            conn.execute("UPDATE rooms SET housekeeping_status='Clean' WHERE id=?", (row["room_id"],))
+        elif status == "inspected":
+            conn.execute("UPDATE rooms SET housekeeping_status='Inspected' WHERE id=?", (row["room_id"],))
+        elif status == "in_progress":
+            conn.execute("UPDATE rooms SET housekeeping_status='Dirty' WHERE id=?", (row["room_id"],))
+    _audit("housekeeping_task_status", "housekeeping_task", tid, status)
+    return tid
+
+
+def generate_housekeeping_tasks_for_dirty_rooms(due_at=""):
+    """Create pending cleaning tasks for dirty rooms that have no open task (idempotent-ish)."""
+    created = 0
+    rooms = db.connect().execute("SELECT id, room_number FROM rooms WHERE housekeeping_status='Dirty'").fetchall()
+    for rm in rooms:
+        existing = db.connect().execute(
+            "SELECT 1 FROM housekeeping_tasks WHERE room_id=? AND status IN ('pending','in_progress') LIMIT 1",
+            (rm["id"],),
+        ).fetchone()
+        if existing:
+            continue
+        create_housekeeping_task(rm["id"], task_type="cleaning", priority="normal", assignee="", due_at=due_at or "", notes=f"Auto-generated for dirty room {rm['room_number']}")
+        created += 1
+    return created
+
+
+
 def create_reservation(guest_name, source, room_id, rate_plan_id, agreed_nightly_rate,
                        ci, co, deposit_amount=0.0, guest_id=None,
                        source_detail="", market_segment="", booking_notes="", notes=None):

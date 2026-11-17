@@ -16,7 +16,7 @@ from . import paths
 DATA_DIR = paths.DATA_DIR
 BASE_DIR = paths.BASE_DIR
 DB_PATH = paths.DB_PATH
-SCHEMA_VERSION = 14
+SCHEMA_VERSION = 15
 
 _conn = None
 _lock = threading.RLock()
@@ -539,6 +539,27 @@ CREATE TABLE room_blocks (
 );
 CREATE INDEX idx_room_blocks_room_dates ON room_blocks(room_id, start_date, end_date, status);
 
+
+CREATE TABLE housekeeping_tasks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    room_id INTEGER NOT NULL,
+    reservation_id INTEGER,
+    task_type TEXT NOT NULL DEFAULT 'cleaning',
+    priority TEXT NOT NULL DEFAULT 'normal',
+    status TEXT NOT NULL DEFAULT 'pending',
+    assignee TEXT NOT NULL DEFAULT '',
+    due_at TEXT NOT NULL DEFAULT '',
+    notes TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    started_at TEXT,
+    completed_at TEXT,
+    inspected_at TEXT,
+    FOREIGN KEY (room_id) REFERENCES rooms(id),
+    FOREIGN KEY (reservation_id) REFERENCES reservations(id)
+);
+CREATE INDEX idx_housekeeping_tasks_room_status ON housekeeping_tasks(room_id, status);
+CREATE INDEX idx_housekeeping_tasks_due ON housekeeping_tasks(status, due_at);
+
 CREATE TABLE operational_expenses (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     category_id INTEGER NOT NULL,
@@ -989,6 +1010,33 @@ def _migrate_to_14(conn):
         """)
 
 
+
+def _migrate_to_15(conn):
+    # P3: housekeeping tasks (additive)
+    if not _table_exists(conn, "housekeeping_tasks"):
+        conn.executescript("""
+        CREATE TABLE IF NOT EXISTS housekeeping_tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            room_id INTEGER NOT NULL,
+            reservation_id INTEGER,
+            task_type TEXT NOT NULL DEFAULT 'cleaning',
+            priority TEXT NOT NULL DEFAULT 'normal',
+            status TEXT NOT NULL DEFAULT 'pending',
+            assignee TEXT NOT NULL DEFAULT '',
+            due_at TEXT NOT NULL DEFAULT '',
+            notes TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            started_at TEXT,
+            completed_at TEXT,
+            inspected_at TEXT,
+            FOREIGN KEY (room_id) REFERENCES rooms(id),
+            FOREIGN KEY (reservation_id) REFERENCES reservations(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_housekeeping_tasks_room_status ON housekeeping_tasks(room_id, status);
+        CREATE INDEX IF NOT EXISTS idx_housekeeping_tasks_due ON housekeeping_tasks(status, due_at);
+        """)
+
+
 def migrate():
     """Create or upgrade schema to SCHEMA_VERSION.
 
@@ -1046,6 +1094,8 @@ def migrate():
                     _migrate_to_13(conn)
                 if version < 14:
                     _migrate_to_14(conn)
+                if version < 15:
+                    _migrate_to_15(conn)
                 conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
                 ensure_runtime_indexes(conn)
                 _record_migration_meta(conn, status="upgraded", from_version=from_version, to_version=SCHEMA_VERSION)
