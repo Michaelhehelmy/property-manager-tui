@@ -16,7 +16,7 @@ from . import paths
 DATA_DIR = paths.DATA_DIR
 BASE_DIR = paths.BASE_DIR
 DB_PATH = paths.DB_PATH
-SCHEMA_VERSION = 16
+SCHEMA_VERSION = 17
 
 _conn = None
 _lock = threading.RLock()
@@ -660,10 +660,32 @@ CREATE TABLE audit_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
     actor TEXT NOT NULL DEFAULT 'manager',
+    actor_user_id INTEGER,
+    actor_role TEXT NOT NULL DEFAULT '',
     action TEXT NOT NULL,
     target_type TEXT NOT NULL DEFAULT '',
     target_id TEXT NOT NULL DEFAULT '',
     details TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL UNIQUE,
+    display_name TEXT NOT NULL DEFAULT '',
+    role TEXT NOT NULL DEFAULT 'staff',
+    active INTEGER NOT NULL DEFAULT 1,
+    password_salt TEXT NOT NULL DEFAULT '',
+    password_hash TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX idx_users_active ON users(active, role);
+
+CREATE TABLE roles (
+    name TEXT PRIMARY KEY,
+    description TEXT NOT NULL DEFAULT '',
+    permissions_json TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
 
 CREATE TABLE app_metadata (
@@ -1133,6 +1155,52 @@ def _migrate_to_16(conn):
         """)
 
 
+
+def _migrate_to_17(conn):
+    # P4: RBAC/user groundwork and actor attribution (additive, non-breaking)
+    if _table_exists(conn, "audit_log"):
+        cols = _table_columns(conn, "audit_log")
+        _ensure_column(conn, "audit_log", "actor_user_id", "INTEGER", cols)
+        _ensure_column(conn, "audit_log", "actor_role", "TEXT NOT NULL DEFAULT ''", cols)
+    if not _table_exists(conn, "users"):
+        conn.executescript("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL UNIQUE,
+            display_name TEXT NOT NULL DEFAULT '',
+            role TEXT NOT NULL DEFAULT 'staff',
+            active INTEGER NOT NULL DEFAULT 1,
+            password_salt TEXT NOT NULL DEFAULT '',
+            password_hash TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_users_active ON users(active, role);
+        """)
+    if not _table_exists(conn, "roles"):
+        conn.executescript("""
+        CREATE TABLE IF NOT EXISTS roles (
+            name TEXT PRIMARY KEY,
+            description TEXT NOT NULL DEFAULT '',
+            permissions_json TEXT NOT NULL DEFAULT '[]',
+            created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+        );
+        """)
+        # seed default roles (idempotent)
+        try:
+            defaults = [
+                ("admin", "Full access (maps to existing unlock/super-password authority)", '["*"]'),
+                ("manager", "Operational management", '["reservations.*","pos.*","inventory.*","housekeeping.*","reports.read","accounting.*"]'),
+                ("front_desk", "Front desk and reservations operations", '["reservations.*","guests.*","housekeeping.read","reports.read"]'),
+                ("housekeeping", "Housekeeping and room readiness", '["housekeeping.*","reservations.read"]'),
+                ("accounting", "Accounting, payments, and reports", '["accounting.*","reports.read","reservations.read"]'),
+            ]
+            for name, desc, perms in defaults:
+                conn.execute("INSERT OR IGNORE INTO roles (name, description, permissions_json) VALUES (?, ?, ?)", (name, desc, perms))
+        except Exception:
+            pass
+
+
 def migrate():
     """Create or upgrade schema to SCHEMA_VERSION.
 
@@ -1194,6 +1262,8 @@ def migrate():
                     _migrate_to_15(conn)
                 if version < 16:
                     _migrate_to_16(conn)
+                if version < 17:
+                    _migrate_to_17(conn)
                 conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
                 ensure_runtime_indexes(conn)
                 _record_migration_meta(conn, status="upgraded", from_version=from_version, to_version=SCHEMA_VERSION)

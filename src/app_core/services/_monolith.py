@@ -484,20 +484,32 @@ def calculate_tax(net, nights):
 # AUDIT LOG
 # ═══════════════════════════════════════════════════════════════════════════
 
-def _audit(action, target_type="", target_id="", details=""):
+def _audit(action, target_type="", target_id="", details="", actor="manager", actor_user_id=None, actor_role=""):
     try:
         with db.transaction() as conn:
             conn.execute(
-                "INSERT INTO audit_log (action, target_type, target_id, details) VALUES (?, ?, ?, ?)",
-                (action, target_type, str(target_id), details))
-    except Exception:  # pragma: no cover
-        pass  # pragma: no cover — audit must never crash
+                "INSERT INTO audit_log (action, target_type, target_id, details, actor, actor_user_id, actor_role) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (action, target_type, str(target_id), details, actor or "manager", actor_user_id, actor_role or ""))
+    except Exception:
+        # fallback for legacy schema/edge cases
+        try:
+            with db.transaction() as conn:
+                conn.execute(
+                    "INSERT INTO audit_log (action, target_type, target_id, details) VALUES (?, ?, ?, ?)",
+                    (action, target_type, str(target_id), details))
+        except Exception:  # pragma: no cover
+            pass  # pragma: no cover — audit must never crash
 
 
 def get_audit_log(limit=200):
-    return db.connect().execute(
-        "SELECT id, at, actor, action, target_type, target_id, details FROM audit_log ORDER BY id DESC LIMIT ?",
-        (limit,)).fetchall()
+    try:
+        return db.connect().execute(
+            "SELECT id, at, actor, actor_user_id, actor_role, action, target_type, target_id, details FROM audit_log ORDER BY id DESC LIMIT ?",
+            (limit,)).fetchall()
+    except Exception:
+        return db.connect().execute(
+            "SELECT id, at, actor, action, target_type, target_id, details FROM audit_log ORDER BY id DESC LIMIT ?",
+            (limit,)).fetchall()
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -6272,3 +6284,102 @@ def run_night_audit(business_date=None, notes="", run_by=""):
         rid = cur.lastrowid
     _audit("night_audit_run", "night_audit", rid, business_date)
     return rid
+
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# USERS / ROLES / RBAC (P4 groundwork, additive, non-enforcing by default)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def list_roles():
+    try:
+        rows = db.connect().execute("SELECT name, description, permissions_json, created_at FROM roles ORDER BY name").fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            try:
+                d["permissions"] = json.loads(d.get("permissions_json") or "[]")
+            except Exception:
+                d["permissions"] = []
+            out.append(d)
+        return out
+    except Exception:
+        return []
+
+
+def list_users(active_only=False):
+    try:
+        q = "SELECT id, username, display_name, role, active, created_at, updated_at FROM users"
+        if active_only:
+            q += " WHERE active=1"
+        q += " ORDER BY id DESC"
+        return [dict(r) for r in db.connect().execute(q).fetchall()]
+    except Exception:
+        return []
+
+
+def create_user(username, display_name="", role="staff", password="", active=True):
+    username = (username or "").strip()
+    if not username:
+        raise ValueError("Username is required.")
+    display_name = (display_name or "").strip() or username
+    role = (role or "staff").strip() or "staff"
+    salt = secrets.token_hex(16)
+    pw_hash = _scrypt_hash(password, salt) if password else ""
+    with db.transaction() as conn:
+        try:
+            cur = conn.execute(
+                """INSERT INTO users (username, display_name, role, active, password_salt, password_hash)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (username, display_name, role, 1 if active else 0, salt, pw_hash)
+            )
+            uid = cur.lastrowid
+        except Exception as e:
+            if "UNIQUE" in str(e).upper():
+                raise ValueError("A user with this username already exists.")
+            raise
+    _audit("user_create", "user", uid, username, actor_role="admin")
+    return uid
+
+
+def update_user(user_id, display_name=None, role=None, active=None, password=None):
+    uid = int(user_id)
+    row = db.connect().execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
+    if not row:
+        raise ValueError("User not found.")
+    vals = {
+        "display_name": (display_name if display_name is not None else row["display_name"]),
+        "role": (role if role is not None else row["role"]),
+        "active": (active if active is not None else row["active"]),
+        "password_salt": row["password_salt"],
+        "password_hash": row["password_hash"],
+    }
+    if password not in (None, ""):
+        salt = secrets.token_hex(16)
+        vals["password_salt"] = salt
+        vals["password_hash"] = _scrypt_hash(password, salt)
+    with db.transaction() as conn:
+        conn.execute(
+            """UPDATE users SET display_name=?, role=?, active=?, password_salt=?, password_hash=?, updated_at=datetime('now','localtime')
+               WHERE id=?""",
+            ((vals["display_name"] or "").strip(), (vals["role"] or "staff").strip() or "staff", 1 if vals["active"] else 0, vals["password_salt"], vals["password_hash"], uid)
+        )
+    _audit("user_update", "user", uid, str(vals.get("display_name") or ""), actor_role="admin")
+    return uid
+
+
+def verify_user_password(username, password):
+    row = db.connect().execute("SELECT * FROM users WHERE username=? AND active=1", ((username or "").strip(),)).fetchone()
+    if not row or not password:
+        return None
+    salt = row["password_salt"] or ""
+    stored = row["password_hash"] or ""
+    if not salt or not stored:
+        return None
+    try:
+        actual = _scrypt_hash(password, salt)
+        if secrets.compare_digest(actual, stored):
+            return {"id": row["id"], "username": row["username"], "display_name": row["display_name"], "role": row["role"]}
+    except Exception:
+        return None
+    return None
