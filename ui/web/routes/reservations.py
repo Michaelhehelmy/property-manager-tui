@@ -148,12 +148,17 @@ def detail(rid: int, request: Request):
         reservation_packages = services.list_reservation_packages(rid)
     except Exception:
         reservation_packages = []
+    try:
+        reservation_group = services.get_reservation_group_membership(rid)
+    except Exception:
+        reservation_group = None
     return render(request, "reservations/detail.html", {
         "title":f"Reservation #{rid}","r":res,"folio":folio,"pos":pos,"pays":pays,
         "rooms":_rooms(),"activities":activities,"inventory":inventory,"active_batches":active_batches,
         "reservation_services":reservation_services,"service_catalog":service_catalog,
         "reservation_discounts":reservation_discounts,
         "packages":packages,"reservation_packages":reservation_packages,
+        "reservation_group":reservation_group,
         "today":datetime.now().strftime("%Y-%m-%d")
     })
 

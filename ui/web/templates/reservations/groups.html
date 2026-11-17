@@ -33,12 +33,15 @@
   {% for g in groups %}
     <details style="margin-bottom:10px" {% if loop.first %}open{% endif %}><summary><strong>#{{g.id}} {{g.name}}</strong> — {{g.group_type}} · {{g.status}} · {{g.member_count or 0}} reservation(s){% if g.contact_name %} · {{g.contact_name}}{% endif %}</summary>
       {% if g.notes %}<p class="muted">{{g.notes}}</p>{% endif %}
-      <table><tr><th>Res</th><th>Guest</th><th>Room</th><th>Dates</th><th>Status</th><th>Role</th><th></th></tr>
+      {% set t = g.totals or {} %}
+      <div class="muted" style="margin:6px 0 10px 0"><strong>Group totals (folio):</strong> Charges {{'%.2f'|format(t.total_charges or 0)}} · Paid {{'%.2f'|format(t.total_paid or 0)}} · Balance {{'%.2f'|format(t.balance_due or 0)}}</div>
+      <table><tr><th>Res</th><th>Guest</th><th>Room</th><th>Dates</th><th>Status</th><th>Charges</th><th>Paid</th><th>Balance</th><th>Role</th><th></th></tr>
       {% for m in g.members %}<tr>
         <td><a href="/reservations/{{m.reservation_id}}">#{{m.reservation_id}}</a></td><td>{{m.guest_name}}</td><td>{{m.room_number or ''}}</td>
-        <td>{{m.check_in_date}} → {{m.check_out_date}}</td><td>{{m.reservation_status}}</td><td>{{m.role}}</td>
+        <td>{{m.check_in_date}} → {{m.check_out_date}}</td><td>{{m.reservation_status}}</td>
+        <td>{{'%.2f'|format(m.total_charges or 0)}}</td><td>{{'%.2f'|format(m.total_paid or 0)}}</td><td>{{'%.2f'|format(m.balance_due or 0)}}</td><td>{{m.role}}</td>
         <td><form method="post" action="/reservations/groups/{{g.id}}/remove/{{m.reservation_id}}" style="margin:0"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><button class="small danger" type="submit">Remove</button></form></td>
-      </tr>{% else %}<tr><td colspan="7" class="muted">No members</td></tr>{% endfor %}</table>
+      </tr>{% else %}<tr><td colspan="10" class="muted">No members</td></tr>{% endfor %}</table>
     </details>
   {% else %}
     <p class="muted">No reservation groups yet.</p>

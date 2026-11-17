@@ -6407,10 +6407,29 @@ def list_reservation_groups(status="active"):
                        LEFT JOIN rooms rm ON rm.id = r.room_id
                        WHERE rgm.group_id=? ORDER BY r.check_in_date, r.id""", (g["id"],)
                 ).fetchall()
-                g["members"] = [dict(x) for x in rows]
-                g["member_count"] = len(g["members"])
+                members = []
+                totals = {"total_charges": 0.0, "total_paid": 0.0, "balance_due": 0.0}
+                for x in rows:
+                    m = dict(x)
+                    try:
+                        bd = get_balance_breakdown(m["reservation_id"]) or {}
+                    except Exception:
+                        bd = {}
+                    tc = float(bd.get("total_charges") or 0)
+                    tp = float(bd.get("total_paid") or 0)
+                    bal = float(bd.get("balance_due") if bd.get("balance_due") is not None else (tc - tp))
+                    m["total_charges"] = round(tc, 2)
+                    m["total_paid"] = round(tp, 2)
+                    m["balance_due"] = round(bal, 2)
+                    totals["total_charges"] += tc
+                    totals["total_paid"] += tp
+                    totals["balance_due"] += bal
+                    members.append(m)
+                g["members"] = members
+                g["member_count"] = len(members)
+                g["totals"] = {k: round(v, 2) for k, v in totals.items()}
             except Exception:
-                g["members"] = []; g["member_count"] = 0
+                g["members"] = []; g["member_count"] = 0; g["totals"] = {"total_charges": 0.0, "total_paid": 0.0, "balance_due": 0.0}
         return groups
     except Exception:
         return []
@@ -6457,6 +6476,19 @@ def remove_reservation_from_group(group_id, reservation_id):
         conn.execute("DELETE FROM reservation_group_members WHERE group_id=? AND reservation_id=?", (int(group_id), int(reservation_id)))
     _audit("reservation_group_remove_member", "reservation_group", group_id, f"res={reservation_id}")
     return group_id
+
+
+def get_reservation_group_membership(reservation_id):
+    try:
+        row = db.connect().execute(
+            """SELECT g.id, g.name, g.group_type, g.status, m.role
+               FROM reservation_group_members m
+               JOIN reservation_groups g ON g.id = m.group_id
+               WHERE m.reservation_id=?""", (int(reservation_id),)
+        ).fetchone()
+        return dict(row) if row else None
+    except Exception:
+        return None
 
 
 
