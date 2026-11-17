@@ -2206,15 +2206,25 @@ def get_reservation(rid):
 # ═══════════════════════════════════════════════════════════════════════════
 
 def _calc_service_line_tax(net, taxable=True):
-    net = round(float(net or 0), 2)
-    if not taxable:
-        return {"net": net, "vat": 0.0, "service": 0.0, "city_tax": 0.0, "gross": net}
+    return calculate_charge_tax("service", net, nights=0, taxable=taxable)
+
+
+def calculate_charge_tax(charge_type, net, nights=0, taxable=True):
+    """Unified per-charge-type tax breakdown (additive). Accommodation keeps existing service+vat+city logic."""
     try:
-        vat_rate = float(get_setting("vat_rate", "0.14") or 0.0)
+        net = round(float(net or 0), 2)
     except Exception:
-        vat_rate = 0.14
-    vat = round(net * vat_rate, 2)
-    return {"net": net, "vat": vat, "service": 0.0, "city_tax": 0.0, "gross": round(net + vat, 2)}
+        net = 0.0
+    charge_type = (charge_type or "").strip().lower()
+    if not taxable:
+        return {"net": net, "service": 0.0, "vat": 0.0, "city_tax": 0.0, "gross": net, "charge_type": charge_type}
+    if charge_type in ("accommodation", "room", "stay"):
+        t = calculate_tax(net, nights or 0)
+        t["charge_type"] = charge_type
+        return t
+    cfg = get_tax_config()
+    vat = round(net * cfg["vat_rate"], 2)
+    return {"net": net, "service": 0.0, "vat": vat, "city_tax": 0.0, "gross": round(net + vat, 2), "charge_type": charge_type}
 
 
 def list_service_catalog(active_only=False):
@@ -3775,6 +3785,26 @@ def record_payment(reservation_id, amount, method, notes="", payment_type="Payme
     return pid
 
 
+
+
+def get_reservation_payment_summary(reservation_id):
+    rid = int(reservation_id)
+    conn = db.connect()
+    rows = conn.execute(
+        """SELECT id, reservation_id, amount, method, payment_type, notes, reference, idempotency_key, allocation_json, voided_at, at
+           FROM payments WHERE reservation_id=? ORDER BY id DESC""", (rid,)
+    ).fetchall()
+    pays = [dict(r) for r in rows]
+    bd = get_balance_breakdown(rid) or {}
+    total_paid = sum(float(p.get("amount") or 0) for p in pays if not p.get("voided_at"))
+    return {
+        "reservation_id": rid,
+        "payments": pays,
+        "count": len(pays),
+        "total_paid_active": round(total_paid, 2),
+        "balance": bd,
+    }
+
 def record_refund(reservation_id, amount, method, notes, password, idempotency_key="", reference="", allocation_json="{}"):
     _require_super_password(password)
     if amount <= 0:
@@ -4050,13 +4080,22 @@ def get_balance_breakdown(rid):
                 "services_net": 0, "services_tax": 0, "services_gross": 0,
                 "discounts_net": 0, "discounts_tax": 0, "discounts_gross": 0}
     comp = _reservation_charge_components(conn, rid)
-    paid = conn.execute(
-        "SELECT COALESCE(SUM(amount), 0) FROM payments WHERE reservation_id=? AND voided_at IS NULL",
-        (rid,)).fetchone()[0] or 0
+    pay_row = conn.execute(
+        """SELECT COALESCE(SUM(amount), 0) AS total_paid,
+                  COALESCE(SUM(CASE WHEN payment_type='Deposit' THEN amount ELSE 0 END), 0) AS deposits,
+                  COALESCE(SUM(CASE WHEN payment_type='Refund' THEN amount ELSE 0 END), 0) AS refunds
+           FROM payments WHERE reservation_id=? AND voided_at IS NULL""",
+        (rid,)).fetchone()
+    paid = (pay_row["total_paid"] if pay_row else 0) or 0
+    deposits = (pay_row["deposits"] if pay_row else 0) or 0
+    refunds = (pay_row["refunds"] if pay_row else 0) or 0
     total_charges = comp["total_charges"]
     return {
         "total_charges": round(total_charges, 2),
         "total_paid": round(paid, 2),
+        "deposits": round(deposits, 2),
+        "refunds": round(refunds, 2),
+        "net_paid": round(paid, 2),
         "balance_due": round(total_charges - paid, 2),
         "accommodation_net": comp["accommodation_net"],
         "accommodation_tax": comp["accommodation_tax"],
