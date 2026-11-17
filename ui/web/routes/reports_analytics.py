@@ -40,6 +40,9 @@ async def run_report(request: Request):
         elif kind == "front_desk":
             text = services.report_front_desk_summary(day)
             label = day
+        elif kind == "housekeeping_ops":
+            text = services.report_housekeeping_ops()
+            label = "current"
         elif kind == "groups":
             text = services.report_reservation_groups()
             label = "current"

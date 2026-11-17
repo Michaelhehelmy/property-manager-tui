@@ -1778,6 +1778,34 @@ def create_reservation(guest_name, source, room_id, rate_plan_id, agreed_nightly
     return rid
 
 
+
+def _ensure_checkout_housekeeping_task(reservation_id, room_id):
+    """P3 automation: ensure a pending cleaning task exists after checkout (idempotent-ish)."""
+    try:
+        if not room_id:
+            return None
+        # avoid duplicate open cleaning task for same reservation/room
+        row = db.connect().execute(
+            """SELECT id FROM housekeeping_tasks
+               WHERE room_id=? AND status IN ('pending','in_progress')
+                 AND (reservation_id=? OR (reservation_id IS NULL AND task_type='cleaning'))
+               ORDER BY id DESC LIMIT 1""",
+            (int(room_id), int(reservation_id) if reservation_id else None)
+        ).fetchone()
+        if row:
+            return row["id"]
+        # create cleaning task (best-effort)
+        return create_housekeeping_task(
+            room_id=int(room_id),
+            task_type="cleaning",
+            priority="normal",
+            notes=f"Auto-created after checkout (reservation #{reservation_id})" if reservation_id else "Auto-created after checkout",
+            reservation_id=int(reservation_id) if reservation_id else None,
+        )
+    except Exception:
+        return None
+
+
 def update_reservation_status(rid, new_status):
     row = db.connect().execute("SELECT status, room_id FROM reservations WHERE id=?", (rid,)).fetchone()
     if not row:
@@ -1790,6 +1818,12 @@ def update_reservation_status(rid, new_status):
         if new_status in ("Checked Out", "Cancelled", "No-Show"):
             conn.execute("UPDATE rooms SET housekeeping_status='Dirty' WHERE id=?", (row["room_id"],))
     _audit("reservation_status", "reservation", rid, f"{current} -> {new_status}")
+    # P3 lifecycle automation: auto-create cleaning task after checkout
+    try:
+        if new_status == "Checked Out":
+            _ensure_checkout_housekeeping_task(rid, row["room_id"])
+    except Exception:
+        pass
 
 
 def checkout_requires_override(rid):
@@ -4925,6 +4959,49 @@ def report_daily_ops(date):
 
 
 
+
+
+
+def report_housekeeping_ops():
+    conn = db.connect()
+    lines = ["HOUSEKEEPING OPS SUMMARY", f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}", "="*40]
+    try:
+        rows = conn.execute("SELECT housekeeping_status, COUNT(*) AS n FROM rooms GROUP BY housekeeping_status").fetchall()
+        lines.append("Rooms by status:")
+        for r in rows:
+            lines.append(f"  - {r['housekeeping_status']}: {r['n']}")
+    except Exception:
+        lines.append("Rooms by status: unavailable")
+    try:
+        trows = conn.execute("SELECT status, COUNT(*) AS n FROM housekeeping_tasks GROUP BY status").fetchall()
+        lines.append("\nTasks by status:")
+        for r in trows:
+            lines.append(f"  - {r['status']}: {r['n']}")
+        open_tasks = conn.execute(
+            """SELECT ht.id, ht.status, ht.task_type, ht.priority, ht.due_at, rm.room_number
+               FROM housekeeping_tasks ht LEFT JOIN rooms rm ON rm.id=ht.room_id
+               WHERE ht.status IN ('pending','in_progress') ORDER BY ht.priority DESC, ht.id DESC LIMIT 30"""
+        ).fetchall()
+        lines.append(f"\nOpen tasks (up to 30): {len(open_tasks)}")
+        for t in open_tasks:
+            lines.append(f"  - #{t['id']} Rm {t['room_number'] or '-'} [{t['status']}] {t['task_type']} pri={t['priority']} due={t['due_at'] or '-'}")
+    except Exception:
+        lines.append("\nTasks: unavailable")
+    try:
+        if hasattr(__import__('sys').modules.get('app_core.services'), 'list_room_blocks') or 'list_room_blocks' in globals():
+            blocks = list_room_blocks(status="active") if 'list_room_blocks' in globals() else []
+        else:
+            blocks = []
+        # fallback direct query
+        if not blocks:
+            rows = conn.execute("SELECT rb.*, rm.room_number FROM room_blocks rb LEFT JOIN rooms rm ON rm.id=rb.room_id WHERE rb.status='active' ORDER BY rb.start_date, rb.id").fetchall()
+            blocks = [dict(r) for r in rows]
+        lines.append(f"\nActive room blocks (OOO/OOS): {len(blocks)}")
+        for b in blocks[:30]:
+            lines.append(f"  - #{b.get('id')} Rm {b.get('room_number') or b.get('room_id')} [{b.get('block_type')}] {b.get('start_date')}->{b.get('end_date')} {b.get('reason') or ''}")
+    except Exception:
+        lines.append("\nRoom blocks: unavailable")
+    return "\n".join(lines)
 
 def report_reservation_groups():
     groups = list_reservation_groups(status="") or []
