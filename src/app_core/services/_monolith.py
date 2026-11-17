@@ -6383,3 +6383,77 @@ def verify_user_password(username, password):
     except Exception:
         return None
     return None
+
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# RESERVATION GROUPS (P5 foundation, additive)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def list_reservation_groups(status="active"):
+    try:
+        q = "SELECT * FROM reservation_groups WHERE 1=1"
+        params = []
+        if status:
+            q += " AND status=?"; params.append(status)
+        q += " ORDER BY id DESC"
+        groups = [dict(r) for r in db.connect().execute(q, params).fetchall()]
+        for g in groups:
+            try:
+                rows = db.connect().execute(
+                    """SELECT rgm.*, r.guest_name, r.check_in_date, r.check_out_date, r.status AS reservation_status, rm.room_number
+                       FROM reservation_group_members rgm
+                       JOIN reservations r ON r.id = rgm.reservation_id
+                       LEFT JOIN rooms rm ON rm.id = r.room_id
+                       WHERE rgm.group_id=? ORDER BY r.check_in_date, r.id""", (g["id"],)
+                ).fetchall()
+                g["members"] = [dict(x) for x in rows]
+                g["member_count"] = len(g["members"])
+            except Exception:
+                g["members"] = []; g["member_count"] = 0
+        return groups
+    except Exception:
+        return []
+
+
+def create_reservation_group(name, group_type="group", contact_name="", contact_phone="", contact_email="", notes=""):
+    name = (name or "").strip()
+    if not name:
+        raise ValueError("Group name is required.")
+    with db.transaction() as conn:
+        cur = conn.execute(
+            """INSERT INTO reservation_groups (name, group_type, contact_name, contact_phone, contact_email, notes)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (name, (group_type or "group").strip() or "group", (contact_name or "").strip(), (contact_phone or "").strip(), (contact_email or "").strip(), (notes or "").strip())
+        )
+        gid = cur.lastrowid
+    _audit("reservation_group_create", "reservation_group", gid, name)
+    return gid
+
+
+def add_reservation_to_group(group_id, reservation_id, role="member", notes=""):
+    gid = int(group_id); rid = int(reservation_id)
+    conn = db.connect()
+    if not conn.execute("SELECT 1 FROM reservation_groups WHERE id=?", (gid,)).fetchone():
+        raise ValueError("Reservation group not found.")
+    if not conn.execute("SELECT 1 FROM reservations WHERE id=?", (rid,)).fetchone():
+        raise ValueError("Reservation not found.")
+    with db.transaction() as c2:
+        try:
+            c2.execute(
+                "INSERT INTO reservation_group_members (group_id, reservation_id, role, notes) VALUES (?, ?, ?, ?)",
+                (gid, rid, (role or "member").strip() or "member", (notes or "").strip())
+            )
+        except Exception as e:
+            if "UNIQUE" in str(e).upper():
+                raise ValueError("Reservation is already in a group.")
+            raise
+    _audit("reservation_group_add_member", "reservation_group", gid, f"res={rid}")
+    return gid
+
+
+def remove_reservation_from_group(group_id, reservation_id):
+    with db.transaction() as conn:
+        conn.execute("DELETE FROM reservation_group_members WHERE group_id=? AND reservation_id=?", (int(group_id), int(reservation_id)))
+    _audit("reservation_group_remove_member", "reservation_group", group_id, f"res={reservation_id}")
+    return group_id

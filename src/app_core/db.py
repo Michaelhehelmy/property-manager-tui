@@ -16,7 +16,7 @@ from . import paths
 DATA_DIR = paths.DATA_DIR
 BASE_DIR = paths.BASE_DIR
 DB_PATH = paths.DB_PATH
-SCHEMA_VERSION = 17
+SCHEMA_VERSION = 18
 
 _conn = None
 _lock = threading.RLock()
@@ -602,6 +602,32 @@ CREATE TABLE night_audit_runs (
     run_by TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX idx_night_audit_date ON night_audit_runs(business_date, status);
+
+
+CREATE TABLE reservation_groups (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    group_type TEXT NOT NULL DEFAULT 'group',
+    contact_name TEXT NOT NULL DEFAULT '',
+    contact_phone TEXT NOT NULL DEFAULT '',
+    contact_email TEXT NOT NULL DEFAULT '',
+    notes TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX idx_reservation_groups_status ON reservation_groups(status);
+
+CREATE TABLE reservation_group_members (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    group_id INTEGER NOT NULL,
+    reservation_id INTEGER NOT NULL UNIQUE,
+    role TEXT NOT NULL DEFAULT 'member',
+    notes TEXT NOT NULL DEFAULT '',
+    added_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    FOREIGN KEY (group_id) REFERENCES reservation_groups(id),
+    FOREIGN KEY (reservation_id) REFERENCES reservations(id)
+);
+CREATE INDEX idx_res_group_members_group ON reservation_group_members(group_id);
 
 CREATE TABLE operational_expenses (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1201,6 +1227,40 @@ def _migrate_to_17(conn):
             pass
 
 
+
+def _migrate_to_18(conn):
+    # P5: reservation groups (additive)
+    if not _table_exists(conn, "reservation_groups"):
+        conn.executescript("""
+        CREATE TABLE IF NOT EXISTS reservation_groups (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            group_type TEXT NOT NULL DEFAULT 'group',
+            contact_name TEXT NOT NULL DEFAULT '',
+            contact_phone TEXT NOT NULL DEFAULT '',
+            contact_email TEXT NOT NULL DEFAULT '',
+            notes TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'active',
+            created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_reservation_groups_status ON reservation_groups(status);
+        """)
+    if not _table_exists(conn, "reservation_group_members"):
+        conn.executescript("""
+        CREATE TABLE IF NOT EXISTS reservation_group_members (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            group_id INTEGER NOT NULL,
+            reservation_id INTEGER NOT NULL UNIQUE,
+            role TEXT NOT NULL DEFAULT 'member',
+            notes TEXT NOT NULL DEFAULT '',
+            added_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            FOREIGN KEY (group_id) REFERENCES reservation_groups(id),
+            FOREIGN KEY (reservation_id) REFERENCES reservations(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_res_group_members_group ON reservation_group_members(group_id);
+        """)
+
+
 def migrate():
     """Create or upgrade schema to SCHEMA_VERSION.
 
@@ -1264,6 +1324,8 @@ def migrate():
                     _migrate_to_16(conn)
                 if version < 17:
                     _migrate_to_17(conn)
+                if version < 18:
+                    _migrate_to_18(conn)
                 conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
                 ensure_runtime_indexes(conn)
                 _record_migration_meta(conn, status="upgraded", from_version=from_version, to_version=SCHEMA_VERSION)
