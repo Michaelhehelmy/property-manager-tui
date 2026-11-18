@@ -220,6 +220,14 @@ def detail(rid: int, request: Request):
         reservation_group = services.get_reservation_group_membership(rid)
     except Exception:
         reservation_group = None
+    modify_quote = None
+    modify_quote_error = request.query_params.get("modify_quote_error")
+    if request.query_params.get("modify_quote") == "1":
+        try:
+            modify_quote = json.loads(request.query_params.get("modify_quote_json") or "{}") or None
+        except Exception:
+            modify_quote = None
+    modify_prefill = {k: request.query_params.get("m_" + k, "") for k in ["room_id","check_in","check_out","rate","source","source_detail","market_segment","booking_notes"]}
     return render(request, "reservations/detail.html", {
         "title":f"Reservation #{rid}","r":res,"folio":folio,"pos":pos,"pays":pays,
         "rooms":_rooms(),"activities":activities,"inventory":inventory,"active_batches":active_batches,
@@ -227,6 +235,7 @@ def detail(rid: int, request: Request):
         "reservation_discounts":reservation_discounts,
         "packages":packages,"reservation_packages":reservation_packages,
         "reservation_group":reservation_group,
+        "modify_quote": modify_quote, "modify_quote_error": modify_quote_error, "modify_prefill": modify_prefill,
         "today":datetime.now().strftime("%Y-%m-%d")
     })
 
@@ -283,6 +292,61 @@ async def delete(rid: int, request: Request):
     try: services.delete_reservation(rid, deps.service_password(request, form)); deps.add_flash(request,"Deleted","success"); dest="/reservations?tab=list"
     except Exception as e: deps.add_flash(request,str(e),"error"); dest=f"/reservations/{rid}"
     r=deps.redirect(dest); deps.save_session(r, deps.get_session(request)); return r
+
+
+
+@router.post("/reservations/{rid}/quote-modify")
+async def quote_modify(rid: int, request: Request):
+    form = await deps.get_form(request)
+    try:
+        room_id = int(form.get("room_id") or 0)
+        check_in = form.get("check_in", "")
+        check_out = form.get("check_out", "")
+        rate_in = form.get("rate")
+        rate = float(rate_in) if rate_in not in (None, "") else None
+        # use existing reservation rate_plan if available
+        try:
+            res = services.get_reservation(rid)
+        except Exception:
+            res = None
+        rate_plan_id = None
+        try:
+            if res is not None:
+                rate_plan_id = res["rate_plan_id"]
+        except Exception:
+            rate_plan_id = None
+        snap = services.quote_reservation_pricing(
+            room_id, rate_plan_id, check_in, check_out,
+            rate=rate, source=form.get("source", ""), market_segment=form.get("market_segment", ""),
+        )
+        from urllib.parse import urlencode
+        params = {
+            "modify_quote": "1",
+            "modify_quote_json": json.dumps(snap, ensure_ascii=False, default=str),
+            "m_room_id": str(room_id),
+            "m_check_in": check_in,
+            "m_check_out": check_out,
+            "m_rate": str((snap.get("pricing") or {}).get("quoted_nightly_rate") or (snap.get("pricing") or {}).get("rule_resolved_nightly") or rate or ""),
+            "m_source": form.get("source", ""),
+            "m_source_detail": form.get("source_detail", ""),
+            "m_market_segment": form.get("market_segment", ""),
+            "m_booking_notes": form.get("booking_notes", ""),
+        }
+        return deps.redirect(f"/reservations/{rid}?" + urlencode(params))
+    except Exception as e:
+        from urllib.parse import urlencode
+        params = {
+            "modify_quote_error": str(e),
+            "m_room_id": form.get("room_id", ""),
+            "m_check_in": form.get("check_in", ""),
+            "m_check_out": form.get("check_out", ""),
+            "m_rate": form.get("rate", ""),
+            "m_source": form.get("source", ""),
+            "m_source_detail": form.get("source_detail", ""),
+            "m_market_segment": form.get("market_segment", ""),
+            "m_booking_notes": form.get("booking_notes", ""),
+        }
+        return deps.redirect(f"/reservations/{rid}?" + urlencode(params))
 
 @router.post("/reservations/{rid}/modify")
 async def modify(rid: int, request: Request):

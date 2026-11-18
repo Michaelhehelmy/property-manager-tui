@@ -15,15 +15,33 @@
     <details><summary>Checkout override (password)</summary>
       <form method="post" action="/reservations/{{r['id']}}/checkout-override"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><input type="password" name="password" placeholder="Super password"/><button class="warn" title="Force checkout despite unpaid balance (requires super password, audited)">Override checkout</button></form>
     </details>
-    <details><summary>Modify</summary>
+    <details {% if modify_quote or modify_quote_error %}open{% endif %}><summary>Modify</summary>
+      {% if modify_quote_error %}<div class="flash flash-error" style="margin-top:8px">{{ modify_quote_error }}</div>{% endif %}
+      {% if modify_quote %}<div class="panel" style="margin:8px 0;border-left:4px solid #4caf50"><h4 style="margin:0 0 6px 0">Pricing quote (suggested)</h4>
+        {% set qp = modify_quote.pricing or {} %}{% set qt = modify_quote.totals or {} %}{% set q = modify_quote.quote or {} %}
+        <p class="muted">Suggested nightly: <strong>{{ "%.2f"|format(q.suggested_nightly or qp.rule_resolved_nightly or qp.plan_suggested_nightly or 0) }}</strong> · Quoted nightly: <strong>{{ "%.2f"|format(q.quoted_nightly or 0) }}</strong> · Nights: {{ q.nights or (modify_quote.inputs.nights if modify_quote.inputs else 0) }}</p>
+        <p class="muted">Accommodation (quoted): net {{ "%.2f"|format(qt.accommodation_net or 0) }} · gross {{ "%.2f"|format(qt.accommodation_gross or 0) }}</p>
+        {% if qp.applied_rules %}<details><summary>Applied pricing rules ({{ qp.applied_rules|length }})</summary><ul>{% for rr in qp.applied_rules %}<li>#{{ rr.id }} {{ rr.name }} — {{ rr.type }} {{ rr.value }} ({{ "%.2f"|format(rr.before or 0) }} → {{ "%.2f"|format(rr.after or 0) }})</li>{% endfor %}</ul></details>{% endif %}
+      </div>{% endif %}
+      {% set mrid = (modify_prefill.room_id if modify_prefill and modify_prefill.room_id else r['room_id']) %}
+      {% set mci = (modify_prefill.check_in if modify_prefill and modify_prefill.check_in else r['check_in_date']) %}
+      {% set mco = (modify_prefill.check_out if modify_prefill and modify_prefill.check_out else r['check_out_date']) %}
+      {% set mrate = (modify_prefill.rate if modify_prefill and modify_prefill.rate else r['agreed_nightly_rate']) %}
+      {% set msrc = (modify_prefill.source if modify_prefill and modify_prefill.source else (r['source'] or 'Direct')) %}
+      {% set msd = (modify_prefill.source_detail if modify_prefill and modify_prefill.source_detail else (r['source_detail'] or '')) %}
+      {% set mseg = (modify_prefill.market_segment if modify_prefill and modify_prefill.market_segment else (r['market_segment'] or '')) %}
+      {% set mnotes = (modify_prefill.booking_notes if modify_prefill and modify_prefill.booking_notes else (r['booking_notes'] or r['notes'] or '')) %}
       <form method="post" action="/reservations/{{r['id']}}/modify"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
-        <label>Room<select name="room_id">{% for rm in rooms %}<option value="{{rm['id']}}" {% if rm['id']==r['room_id'] %}selected{% endif %}>{{rm['room_number']}}</option>{% endfor %}</select></label>
-        <div class="row"><label>Check-in<input type="date" name="check_in" value="{{r['check_in_date']}}"/></label><label>Check-out<input type="date" name="check_out" value="{{r['check_out_date']}}"/></label><label>Rate<input name="rate" value="{{r['agreed_nightly_rate']}}"/></label></div>
-        <div class="row"><label>Source<input name="source" value="{{r['source'] or 'Direct'}}"/></label><label>Source detail<input name="source_detail" value="{{r['source_detail'] or ''}}" placeholder="Phone, Walk-in, Agent, Referral"/></label></div>
-        <div class="row"><label>Market segment<input name="market_segment" value="{{r['market_segment'] or ''}}" placeholder="Leisure, Corporate, Group, Repeat"/></label></div>
-        <label>Booking notes<textarea name="booking_notes" rows="2">{{r['booking_notes'] or r['notes'] or ''}}</textarea></label>
+        <label>Room<select name="room_id">{% for rm in rooms %}<option value="{{rm['id']}}" {% if (rm['id']|string)==(mrid|string) %}selected{% endif %}>{{rm['room_number']}}</option>{% endfor %}</select></label>
+        <div class="row"><label>Check-in<input type="date" name="check_in" value="{{mci}}"/></label><label>Check-out<input type="date" name="check_out" value="{{mco}}"/></label><label>Rate<input name="rate" value="{{mrate}}"/></label></div>
+        <div class="row"><label>Source<input name="source" value="{{msrc}}"/></label><label>Source detail<input name="source_detail" value="{{msd}}" placeholder="Phone, Walk-in, Agent, Referral"/></label></div>
+        <div class="row"><label>Market segment<input name="market_segment" value="{{mseg}}" placeholder="Leisure, Corporate, Group, Repeat"/></label></div>
+        <label>Booking notes<textarea name="booking_notes" rows="2">{{mnotes}}</textarea></label>
         <label>Super password (if required by policy/service)<input type="password" name="password" placeholder="Super password"/></label>
-        <button title="Save changes to room, dates, rate, source/segment/notes (availability/rules apply)">Modify</button>
+        <div class="row" style="margin-top:8px">
+          <button title="Save changes to room, dates, rate, source/segment/notes (availability/rules apply)">Modify</button>
+          <button type="submit" formaction="/reservations/{{r['id']}}/quote-modify" formmethod="post" title="Calculate suggested nightly rate for proposed changes (room/dates/source/segment/rules)">Get pricing quote</button>
+        </div>
       </form>
     </details>
     <details><summary>Cancel / No-show / Delete</summary>
