@@ -545,3 +545,37 @@ async def groups_remove(gid: int, rid: int, request: Request):
         return flash_redirect(request, "/reservations/groups", "Reservation removed from group", "success")
     except Exception as e:
         return flash_redirect(request, "/reservations/groups", str(e), "error")
+
+
+
+@router.post("/reservations/groups/{gid}/update")
+async def groups_update(gid: int, request: Request):
+    form = await deps.get_form(request)
+    try:
+        services.update_reservation_group(
+            gid,
+            name=form.get("name"),
+            group_type=form.get("group_type"),
+            contact_name=form.get("contact_name"),
+            contact_phone=form.get("contact_phone"),
+            contact_email=form.get("contact_email"),
+            notes=form.get("notes"),
+            status=form.get("status"),
+        )
+        return flash_redirect(request, "/reservations/groups", "Group updated", "success")
+    except Exception as e:
+        return flash_redirect(request, "/reservations/groups", str(e), "error")
+
+
+@router.get("/reservations/groups/{gid}/folio")
+def group_folio(gid: int, request: Request):
+    try:
+        g = services.get_reservation_group(gid)
+        if not g:
+            deps.add_flash(request, "Group not found", "error")
+            return deps.redirect("/reservations/groups")
+        text = services.report_reservation_group_folio(gid)
+        return render(request, "reports/view.html", {"title": f"Group Folio #{gid} - {g.get('name')}", "text": text, "kind": "group_folio", "period": "current"})
+    except Exception as e:
+        deps.add_flash(request, str(e), "error")
+        return deps.redirect("/reservations/groups")

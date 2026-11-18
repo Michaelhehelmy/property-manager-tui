@@ -6841,6 +6841,82 @@ def remove_reservation_from_group(group_id, reservation_id):
     return group_id
 
 
+
+def get_reservation_group(group_id):
+    gid = int(group_id)
+    groups = list_reservation_groups(status="")
+    for g in groups:
+        if int(g.get("id") or 0) == gid:
+            return g
+    try:
+        row = db.connect().execute("SELECT * FROM reservation_groups WHERE id=?", (gid,)).fetchone()
+        return dict(row) if row else None
+    except Exception:
+        return None
+
+
+def update_reservation_group(group_id, name=None, group_type=None, contact_name=None, contact_phone=None, contact_email=None, notes=None, status=None):
+    gid = int(group_id)
+    row = db.connect().execute("SELECT * FROM reservation_groups WHERE id=?", (gid,)).fetchone()
+    if not row:
+        raise ValueError("Reservation group not found.")
+    vals = {
+        "name": (name if name is not None else row["name"]),
+        "group_type": (group_type if group_type is not None else row["group_type"]),
+        "contact_name": (contact_name if contact_name is not None else row["contact_name"]),
+        "contact_phone": (contact_phone if contact_phone is not None else row["contact_phone"]),
+        "contact_email": (contact_email if contact_email is not None else row["contact_email"]),
+        "notes": (notes if notes is not None else row["notes"]),
+        "status": (status if status is not None else row["status"]),
+    }
+    vals["name"] = (vals["name"] or "").strip()
+    if not vals["name"]:
+        raise ValueError("Group name is required.")
+    vals["group_type"] = (vals["group_type"] or "group").strip() or "group"
+    vals["status"] = (vals["status"] or "active").strip() or "active"
+    with db.transaction() as conn:
+        conn.execute(
+            """UPDATE reservation_groups SET name=?, group_type=?, contact_name=?, contact_phone=?, contact_email=?, notes=?, status=?
+               WHERE id=?""",
+            (vals["name"], vals["group_type"], (vals["contact_name"] or "").strip(), (vals["contact_phone"] or "").strip(),
+             (vals["contact_email"] or "").strip(), (vals["notes"] or "").strip(), vals["status"], gid)
+        )
+    _audit("reservation_group_update", "reservation_group", gid, vals["name"])
+    return gid
+
+
+def report_reservation_group_folio(group_id):
+    g = get_reservation_group(group_id)
+    if not g:
+        raise ValueError("Reservation group not found.")
+    lines = [f"GROUP FOLIO SUMMARY  #{g.get('id')} {g.get('name')}", "=" * 60]
+    lines.append(f"Type: {g.get('group_type')}   Status: {g.get('status')}")
+    contact = " / ".join([x for x in [g.get('contact_name'), g.get('contact_phone'), g.get('contact_email')] if x])
+    if contact:
+        lines.append(f"Contact: {contact}")
+    if g.get('notes'):
+        lines.append(f"Notes: {g.get('notes')}")
+    t = g.get('totals') or {}
+    lines.append("")
+    lines.append(f"TOTALS  Charges: {float(t.get('total_charges') or 0):.2f}   Paid: {float(t.get('total_paid') or 0):.2f}   Balance: {float(t.get('balance_due') or 0):.2f}")
+    lines.append("")
+    lines.append("MEMBERS")
+    lines.append("-" * 60)
+    for m in (g.get("members") or []):
+        rid = m.get("reservation_id")
+        lines.append(f"Res #{rid}  {m.get('guest_name','')}  Room {m.get('room_number') or '-'}  [{m.get('reservation_status')}]  {m.get('check_in_date')} -> {m.get('check_out_date')}  Role: {m.get('role')}")
+        try:
+            bd = get_balance_breakdown(rid) or {}
+            lines.append(f"  Accommodation: {float(bd.get('accommodation_gross') or 0):.2f}  POS: {float(bd.get('pos_gross') or 0):.2f}  Services: {float(bd.get('services_gross') or 0):.2f}  Discounts: {float(bd.get('discounts_gross') or 0):.2f}")
+            lines.append(f"  Charges: {float(bd.get('total_charges') or 0):.2f}  Paid: {float(bd.get('total_paid') or 0):.2f}  Balance: {float(bd.get('balance_due') or 0):.2f}")
+        except Exception:
+            lines.append(f"  Charges: {float(m.get('total_charges') or 0):.2f}  Paid: {float(m.get('total_paid') or 0):.2f}  Balance: {float(m.get('balance_due') or 0):.2f}")
+        lines.append("")
+    if not (g.get("members") or []):
+        lines.append("(No members)")
+    return "\n".join(lines).rstrip()
+
+
 def get_reservation_group_membership(reservation_id):
     try:
         row = db.connect().execute(
