@@ -67,6 +67,33 @@ async def update_task_status(task_id: int, request: Request):
     r = deps.redirect("/housekeeping"); deps.save_session(r, deps.get_session(request)); return r
 
 
+@router.post("/housekeeping/tasks/{task_id}/edit")
+async def edit_task(task_id: int, request: Request):
+    form = await deps.get_form(request)
+    try:
+        rid = form.get("reservation_id")
+        services.update_housekeeping_task(
+            task_id,
+            task_type=form.get("task_type"),
+            priority=form.get("priority"),
+            assignee=form.get("assignee"),
+            due_at=form.get("due_at"),
+            notes=form.get("notes"),
+            reservation_id=rid if rid is not None and rid != "" else ("" if rid == "" else None),
+        )
+        deps.add_flash(request, "Task details updated", "success")
+    except Exception as e:
+        deps.add_flash(request, str(e), "error")
+    status = form.get("status_filter", "")
+    block_status = form.get("block_status_filter", "active")
+    url = "/housekeeping"
+    params = []
+    if status: params.append(f"status={status}")
+    if block_status: params.append(f"block_status={block_status}")
+    if params: url += "?" + "&".join(params)
+    r = deps.redirect(url); deps.save_session(r, deps.get_session(request)); return r
+
+
 @router.post("/housekeeping/tasks/generate")
 async def generate_tasks(request: Request):
     form = await deps.get_form(request)

@@ -18,16 +18,27 @@
       <div style="flex:0"><button type="submit">Filter</button></div>
     </form>
     <div class="table-wrap"><table>
-      <tr><th>ID</th><th>Room</th><th>Type</th><th>Status</th><th>Priority</th><th>Assignee</th><th>Due</th><th>Notes</th><th>Action</th></tr>
+      <tr><th>ID</th><th>Room</th><th>Type</th><th>Status</th><th>Priority</th><th>Assignee</th><th>Due</th><th>Notes</th><th>Actions</th></tr>
       {% for t in tasks %}<tr>
         <td>{{t['id']}}</td>
         <td>{{t['room_number'] or t['room_id']}} <span class="muted">{{t['room_type'] or ''}}</span><div class="muted">Room: {{t['room_housekeeping_status'] or ''}}</div>{% if t['reservation_id'] %}<div class="muted">Res #{{t['reservation_id']}} {{t['guest_name'] or ''}}</div>{% endif %}</td>
-        <td>{{t['task_type']}}</td><td>{{t['status']}}</td><td>{{t['priority']}}</td><td>{{t['assignee'] or ''}}</td><td>{{t['due_at'] or ''}}</td><td>{{t['notes'] or ''}}</td>
+        <td>{{t['task_type']}}</td><td>{{t['status']}}</td><td>{{t['priority']}}</td><td>{{t['assignee'] or ''}}</td><td>{{t['due_at'] or ''}}</td><td style="max-width:220px;white-space:pre-wrap">{{t['notes'] or ''}}</td>
         <td>
-          <form method="post" action="/housekeeping/tasks/{{t['id']}}/status" class="inline"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+          <form method="post" action="/housekeeping/tasks/{{t['id']}}/status" class="inline" style="margin-bottom:6px"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
             <select name="status" style="min-width:120px">{% for s in ['pending','in_progress','done','inspected','cancelled'] %}<option value="{{s}}" {% if t['status']==s %}selected{% endif %}>{{s}}</option>{% endfor %}</select>
-            <button type="submit">Update</button>
+            <button type="submit">Update status</button>
           </form>
+          <details><summary class="muted">Edit details</summary>
+            <form method="post" action="/housekeeping/tasks/{{t['id']}}/edit" style="margin-top:6px"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+              <input type="hidden" name="status_filter" value="{{ status_filter }}"/>
+              <input type="hidden" name="block_status_filter" value="{{ block_status_filter }}"/>
+              <div class="row"><label>Type<input name="task_type" value="{{t['task_type']}}"/></label><label>Priority<select name="priority">{% for p in ['low','normal','high','urgent'] %}<option value="{{p}}" {% if t['priority']==p %}selected{% endif %}>{{p}}</option>{% endfor %}</select></label></div>
+              <div class="row"><label>Assignee<input name="assignee" value="{{t['assignee'] or ''}}"/></label><label>Due<input name="due_at" value="{{t['due_at'] or ''}}" placeholder="YYYY-MM-DD HH:MM"/></label></div>
+              <label>Reservation ID<input name="reservation_id" value="{{t['reservation_id'] or ''}}" placeholder="(blank to clear)"/></label>
+              <label>Notes<textarea name="notes" rows="2">{{t['notes'] or ''}}</textarea></label>
+              <button type="submit">Save details</button>
+            </form>
+          </details>
         </td>
       </tr>{% else %}<tr><td colspan="9" class="muted">No tasks</td></tr>{% endfor %}
     </table></div>

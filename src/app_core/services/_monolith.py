@@ -1777,6 +1777,43 @@ def update_housekeeping_task_status(task_id, status, notes_append=""):
     return tid
 
 
+
+def update_housekeeping_task(task_id, task_type=None, priority=None, assignee=None, due_at=None, notes=None, reservation_id=None):
+    tid = int(task_id)
+    with db.transaction() as conn:
+        row = conn.execute("SELECT * FROM housekeeping_tasks WHERE id=?", (tid,)).fetchone()
+        if not row:
+            raise ValueError("Housekeeping task not found.")
+        updates = []
+        params = []
+        if task_type is not None:
+            updates.append("task_type=?"); params.append((task_type or "cleaning").strip() or "cleaning")
+        if priority is not None:
+            updates.append("priority=?"); params.append((priority or "normal").strip() or "normal")
+        if assignee is not None:
+            updates.append("assignee=?"); params.append((assignee or "").strip())
+        if due_at is not None:
+            updates.append("due_at=?"); params.append((due_at or "").strip())
+        if notes is not None:
+            updates.append("notes=?"); params.append(str(notes))
+        if reservation_id is not None:
+            if reservation_id in ("", 0, "0"):
+                rid = None
+            else:
+                rid = int(reservation_id)
+                # validate reservation exists if provided
+                r = conn.execute("SELECT id FROM reservations WHERE id=?", (rid,)).fetchone()
+                if not r:
+                    raise ValueError("Reservation not found.")
+            updates.append("reservation_id=?"); params.append(rid)
+        if not updates:
+            return tid
+        params.append(tid)
+        conn.execute(f"UPDATE housekeeping_tasks SET {', '.join(updates)} WHERE id=?", params)
+    _audit("housekeeping_task_update", "housekeeping_task", tid, "fields_updated")
+    return tid
+
+
 def generate_housekeeping_tasks_for_dirty_rooms(due_at=""):
     """Create pending cleaning tasks for dirty rooms that have no open task (idempotent-ish)."""
     created = 0
