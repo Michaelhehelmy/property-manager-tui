@@ -22,7 +22,7 @@ REPO_URL="${REPO_URL:-https://github.com/Michaelhehelmy/property-manager-tui.git
 INSTALL_DIR="${INSTALL_DIR:-$HOME/property-manager-tui}"
 BRANCH="${BRANCH:-main}"
 GIT_REF="${GIT_REF:-${TAG:-${COMMIT:-$BRANCH}}}"
-MODE="${MODE:-auto}"                # auto|web (legacy tui/both map to web)
+MODE="${MODE:-auto}"                # web (legacy values map to web)
 ACTION="${ACTION:-setup}"           # auto|setup|run|deploy
 SKIP_WEB="${SKIP_WEB:-auto}"        # auto|0|1
 INSTALL_DEV="${INSTALL_DEV:-0}"
@@ -76,7 +76,7 @@ detect_env() {
   if command -v brew >/dev/null 2>&1 && [ "$PMGR" = "" ]; then PMGR="brew"; fi
 
   if [ "$SKIP_WEB" = "auto" ]; then SKIP_WEB=0; fi
-  # Legacy modes mapped to web-only (TUI deprecated/removed)
+  # Legacy mode values mapped to web-only
   case "$MODE" in auto|web|tui|both|"") MODE="web" ;; esac
   log "Environment: OS=$OS ARCH=$ARCH pkg=$PMGR ish=$IS_ISH alpine=$IS_ALPINE termux=$IS_TERMUX debian=$IS_DEBIAN mac=$IS_MAC"
   log "Selected: MODE=$MODE ACTION=$ACTION SKIP_WEB=$SKIP_WEB HOST=$HOST PORT=$PORT ref=$GIT_REF"
@@ -193,7 +193,7 @@ setup_venv_and_deps() {
   if [ -f requirements.txt ]; then
     python -m pip install -r requirements.txt
   else
-    warn "requirements.txt not found; continuing without legacy TUI dependency install (web-only app)."
+    warn "requirements.txt not found; continuing (web-only app)."
   fi
 
   if [ "$SKIP_WEB" = "1" ]; then
@@ -283,7 +283,7 @@ run_deploy() {
       exec python3 -m uvicorn ui.web.server:app --host "$HOST" --port "$PORT" --workers 1
       ;;
     *)
-      err "Unknown MODE=$MODE (supported: web; legacy tui/both map to web)"
+      err "Unknown MODE=$MODE (supported: web)"
       exit 1
       ;;
   esac

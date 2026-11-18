@@ -57,7 +57,7 @@ def test_restock_and_receive_batch_accept_session_sentinel(temp_db):
     services.set_super_password("secret123")
     assert services.unlock_session("secret123") is True
 
-    # C1 regression: TUI passes __session__
+    # C1 regression: unlocked UI/session flows may pass __session__
     services.restock_inventory(item_id, 10, unit_cost=2.0, password="__session__")
     item = db.connect().execute("SELECT stock_qty FROM inventory WHERE id=?", (item_id,)).fetchone()
     assert float(item["stock_qty"]) == 10.0

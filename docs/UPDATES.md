@@ -131,7 +131,7 @@ git pull --ff-only
 
 # refresh dependencies/environment if needed
 # Unix/Termux:
-MODE=<auto|web (legacy tui/both map to web)> ACTION=setup sh scripts/setup.sh
+MODE=web ACTION=setup sh scripts/setup.sh
 # Windows:
 powershell -ExecutionPolicy Bypass -File scripts\setup_windows.ps1 -Action setup
 

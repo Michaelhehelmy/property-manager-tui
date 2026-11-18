@@ -1,3 +1,2 @@
-# Runtime/core dependencies (web-only app). For web UI install requirements-web.txt.
-# No mandatory third-party TUI dependencies.
-# (textual removed; legacy TUI has been deprecated/removed)
+# Runtime/core dependencies (web-only app).
+# Web UI dependencies are in requirements-web.txt.

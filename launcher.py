@@ -262,8 +262,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--no-browser", action="store_true", help="Do not auto-open browser for web mode")
     args = parser.parse_args(argv)
 
-    # Web-only app: any launch request starts web (compat with old flags/modes)
-    if args.web or (args.mode and args.mode.lower() in {"web", "tui", "1", "2", "w", "t"}):
+    # Web-only app: direct launch for web/legacy mode args (backward-compatible)
+    if args.web or (args.mode and args.mode.lower() in {"web", "1", "w", "tui", "t", "2"}):
         return run_web(host=args.host, port=args.port, open_browser=not args.no_browser)
     return menu_loop(default_host=args.host, default_port=args.port)
 

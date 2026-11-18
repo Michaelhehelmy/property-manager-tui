@@ -19,7 +19,7 @@
 #
 # Env vars: REPO_URL, INSTALL_DIR, BRANCH, GIT_REF, TAG, COMMIT, MODE, ACTION, SKIP_WEB,
 #           HOST, PORT, REPAIR/FORCE_RESET, INSTALL_DEV, RUN_TESTS, PYTHON, PM_DATA_DIR, PM_WEB_SECRET_KEY
-# ACTION: auto|setup|run|deploy (default: auto). MODE: auto|web (legacy tui/both map to web).
+# ACTION: auto|setup|run|deploy (default: auto). MODE: web (legacy values map to web).
 set -eu
 
 REPO_URL="${REPO_URL:-https://github.com/Michaelhehelmy/property-manager-tui.git}"

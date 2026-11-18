@@ -1,23 +1,23 @@
 # Deployment Guide (Local, LAN, Remote)
 
-This guide covers practical deployment for the **terminal/CLI** and **Web UI** (FastAPI/HTMX) with the shared `app_core` backend and SQLite datastore.
+This guide covers practical deployment for the **Web UI** (FastAPI/HTMX) with the shared `app_core` backend and SQLite datastore.
 
 ## 1) Deployment model and constraints
 
-- **Shared backend:** `src/app_core/` is the source of business logic/data access for both UIs.
+- **Shared backend:** `src/app_core/` is the source of business logic/data access.
 - **SQLite:** local-first, single-file database in the configured data directory.
 - **Web server constraint:** always run with **`--workers 1`**. Do **not** increase workers (SQLite/shared state).
 - **Runtime data:** DB, exports, invoices, and configured data dir (`PM_DATA_DIR` or defaults/legacy locations) are preserved across source/app updates. Migrations run on startup (additive where applicable).
-- **Entry points:** `python launcher.py [--web|--web]`, `python main.py` (terminal/CLI), or `python -m uvicorn ui.web.server:app --host <HOST> --port <PORT> --workers 1`.
+- **Entry points:** `python launcher.py --web`, `python main.py`, or `python -m uvicorn ui.web.server:app --host <HOST> --port <PORT> --workers 1`.
 
 ## 2) Choose a topology
 
 | Topology | Use when | Bind/transport | Notes |
 |---|---|---|---|
-| **Local workstation/server (terminal)** | Single operator on same machine | terminal/CLI, or Web on `127.0.0.1` | Lowest exposure; easiest ops |
+| **Local workstation/server** | Single operator on same machine | Web on `127.0.0.1` | Lowest exposure; easiest ops |
 | **LAN (trusted network)** | Phones/tablets/desktops on same network | Web on `0.0.0.0:<PORT>` | Set `PM_WEB_SECRET_KEY`; restrict firewall to trusted subnets; prefer HTTPS reverse proxy if possible |
 | **Remote (internet)** | Off-site access | Web on `127.0.0.1` behind **HTTPS** reverse proxy / VPN / Tailscale | Never expose plain HTTP publicly; enforce strong secrets and access controls |
-| **Constrained devices (e.g. iSH)** | Limited toolchain/resources | terminal/CLI preferred (`SKIP_WEB=1`) | Web deps/builds may be impractical |
+| **Constrained devices (e.g. iSH)** | Limited toolchain/resources | Web on a supported host (recommended) or local if web deps/toolchain work | Web dependency builds may be impractical on-device |
 
 ## 3) Prerequisites
 
@@ -33,33 +33,32 @@ This guide covers practical deployment for the **terminal/CLI** and **Web UI** (
 Use the OS-appropriate one-liner from `README.md` (Unix `scripts/install.sh`, Windows `scripts/install_windows.ps1`/`.cmd`). Intended for first install and re-runs:
 - **Automated:** prerequisite bootstrap where supported (package manager/winget as available), clone or fast-forward update, venv + dependency refresh, runtime-data preservation, and launch/run per mode.
 - **Pinned/reproducible installs:** pass `GIT_REF=<tag|commit|branch>` (or `TAG`/`COMMIT`; Windows: `-GitRef` / `$env:GIT_REF`) and, for reproducible installer behavior, fetch the bootstrap script from the same raw ref (e.g. `.../raw/<tag-or-commit>/scripts/install.sh` or `install_windows.ps1`).
-- **Dependency/install robustness:** if web deps fail to build/install on constrained environments (e.g. `pydantic-core`/Rust wheel issues on iSH/Termux/limited toolchains), fallback to terminal/CLI-only (`SKIP_WEB=1 MODE=web` or `-SkipWeb 1 -Mode web`) or run web on a fuller host.
+- **Dependency/install robustness:** if web deps fail to build/install on constrained environments (e.g. `pydantic-core`/Rust wheel issues on iSH/Termux/limited toolchains), install required build deps/toolchain or run the Web UI on a supported host.
 - **Operational:** provide correct env vars (`PM_WEB_SECRET_KEY`, `PM_DATA_DIR`, `HOST`, `PORT`, network/firewall/TLS decisions). Keep web on `--workers 1` and use HTTPS reverse proxy/VPN for shared/non-local access. Runtime data (DB/exports/invoices/`PM_DATA_DIR`) is preserved.
 
 ### 4.2 Setup scripts (from checkout)
-- **Unix-like:** `sh scripts/setup.sh` (alias `scripts/setup_ish_alpine.sh`)
-  - `MODE=auto|web (legacy tui/both map to web)`, `ACTION=auto|setup|run|deploy`, `SKIP_WEB=auto|0|1`
+- **Unix-like:** `sh scripts/setup.sh` (compatibility wrapper: `scripts/setup_ish_alpine.sh`)
+  - `MODE=web` (legacy values map to web), `ACTION=auto|setup|run|deploy`, `SKIP_WEB=auto|0|1`
   - Examples:
-    - `MODE=web ACTION=deploy SKIP_WEB=1 sh scripts/setup.sh`
+    - `MODE=web ACTION=deploy sh scripts/setup.sh`
     - `MODE=web HOST=127.0.0.1 PORT=8000 ACTION=deploy sh scripts/setup.sh`
     - `MODE=web HOST=0.0.0.0 PORT=8000 ACTION=deploy sh scripts/setup.sh` (LAN; set secret)
 - **Windows:** `scripts/install_windows.ps1` or `scripts/setup_windows.ps1` / `.cmd`
-  - `-Action setup|run|deploy`, `-Mode auto|web (legacy tui/both map to web)`, `-BindHost`, `-Port`, `-SkipWeb`, `-InstallDev`, `-RunTests`
+  - `-Action setup|run|deploy`, `-Mode web` (legacy values map to web), `-BindHost`, `-Port`, `-SkipWeb`, `-InstallDev`, `-RunTests`
   - Example: `powershell -ExecutionPolicy Bypass -File scripts\setup_windows.ps1 -Action deploy -Mode web -BindHost 127.0.0.1 -Port 8000`
 
 ### 4.3 Manual run
 ```bash
-# terminal/CLI
-PYTHONPATH=src python3 main.py
-# or
-python3 launcher.py --web
-
-# Web (ALWAYS --workers 1)
+# Web UI (ALWAYS --workers 1)
 export PM_WEB_SECRET_KEY='replace-with-strong-random-secret'
+python3 launcher.py --web --host 127.0.0.1 --port 8000
+# or
+python3 main.py --host 127.0.0.1 --port 8000
+# or
 PYTHONPATH=src python3 -m uvicorn ui.web.server:app --host 127.0.0.1 --port 8000 --workers 1
 ```
 
-Helper: `scripts/update_and_run_web.sh` (git fast-forward if repo, activates venv, sets `PYTHONPATH`, warns/defaults secret for local dev, runs uvicorn `--workers 1`).
+Helper: `scripts/update_and_run_web.sh` (git fast-forward if repo, activates venv, sets `PYTHONPATH`, applies secret guidance, runs uvicorn `--workers 1`).
 
 ## 5) Web deployment details
 
@@ -152,7 +151,7 @@ Commands: `systemctl daemon-reload && systemctl enable --now property-manager-we
 - Configure restart-on-failure and log capture per tool.
 
 ### 6.3 macOS (launchd) / generic supervisor
-- Use `launchd`, `supervisord`, or equivalent to run the same uvicorn command with `--workers 1`, correct working dir, env vars, and restart policy.
+- Use `launchd`, `supervisord`, or equivalent to run the same uvicorn command with `--workers 1`, correct working directory, env vars, and restart policy.
 
 ## 7) Containers / Docker (guidance)
 
@@ -171,27 +170,25 @@ CMD ["python", "-m", "uvicorn", "ui.web.server:app", "--host", "0.0.0.0", "--por
 ```
 Run: `docker run -d --restart unless-stopped -p 127.0.0.1:8000:8000 -v pmdata:/data -e PM_WEB_SECRET_KEY=... property-manager`
 - Keep **`--workers 1`**.
-- Mount persistent volume for `PM_DATA_DIR` (DB/exports/invoices) and back it up.
-- Prefer publishing on localhost and fronting with TLS reverse proxy; if exposed directly, ensure network controls and HTTPS termination strategy are appropriate.
+- Mount a persistent volume for `PM_DATA_DIR` (DB/exports/invoices) and back it up.
+- Prefer publishing on localhost and fronting with a TLS reverse proxy.
 
 ## 8) LAN / client access notes
 
 - `127.0.0.1`: local machine only.
 - `0.0.0.0`: all interfaces; open firewall deliberately for trusted clients only.
 - Mobile browsers can "Add to Home Screen" against the web URL (use HTTPS/VPN for non-local networks where possible).
-- terminal/CLI remote access alternative: SSH into host and run terminal/CLI.
+- For remote administration, prefer SSH/VPN to the host and access the Web UI over a secure channel.
 
 ## 9) App icon and launch shortcuts (platform guidance)
 
-This is a Python app (terminal/CLI + web UI), so icons/shortcuts are provided by the OS/browser or added as assets; no bundled native installer icon package is included by default.
+This is a Python web app, so icons/shortcuts are provided by the OS/browser or added as assets; no bundled native installer icon package is included by default.
 
-- **Web UI (browser tab / installable shortcut):** for "Add to Home Screen" / install prompt, add icons (e.g. 192/512 PNG, favicon) under `ui/web/static/` and a `manifest.webmanifest` (name, `start_url` `/`, `display` `standalone`, icons), then link `<link rel="manifest" ...>` and favicon/theme meta in `ui/web/templates/base.html`. Serve over **HTTPS** for best installability on non-localhost. Optional service worker is not required for an icon/shortcut.
-- **Windows:** create a shortcut (`.lnk`) to the install venv Python/launcher (e.g. `.venv\Scripts\python.exe launcher.py --web|--web`) with **Start in** set to the install root and a custom `.ico`. Pin to Start/Taskbar or place in Startup; Task Scheduler/NSSM can auto-start services (keep web `--workers 1`, set `PM_WEB_SECRET_KEY`).
-- **Linux:** create a `.desktop` entry in `~/.local/share/applications/` with `Exec`, `Path`/working dir, and `Icon` (PNG/SVG path or theme name). Use `Terminal=true` for terminal/CLI or `Terminal=false` for web launch wrappers.
+- **Web UI (browser tab / installable shortcut):** for "Add to Home Screen" / install prompt, add icons (e.g. 192/512 PNG, favicon) under `ui/web/static/` and a `manifest.webmanifest` (name, `start_url` `/`, `display` `standalone`, icons), then link `<link rel="manifest" ...>` and favicon/theme meta in `ui/web/templates/base.html`. Serve over **HTTPS** for best installability on non-localhost.
+- **Windows:** create a shortcut (`.lnk`) to the install venv Python/launcher (e.g. `.venv\Scripts\python.exe launcher.py --web`) with **Start in** set to the install root and a custom `.ico`. Pin to Start/Taskbar or place in Startup; Task Scheduler/NSSM can auto-start services (keep web `--workers 1`, set `PM_WEB_SECRET_KEY`).
+- **Linux:** create a `.desktop` entry in `~/.local/share/applications/` with `Exec`, `Path`/working dir, and `Icon` (PNG/SVG path or theme name). Use `Terminal=false` for web launch wrappers (or `Terminal=true` only if you want a visible console).
 - **Android (Termux):** use browser **Add to Home screen** for the web UI (recommended icon experience), or Termux:Widget/home-screen script shortcuts to launch venv commands. Termux:Boot/cron can automate starts/checks with safeguards.
-- **iOS/iPadOS:** host web UI on a reachable server and use Safari **Share → Add to Home Screen** (provide web manifest/apple-touch-icon if desired). terminal/CLI via terminal apps (e.g. iSH) is possible but more constrained.
-
-## 10) Post-deploy verification (automated checks available)
+- **iOS/iPadOS:** host the Web UI on a reachable server and use Safari **Share → Add to Home Screen** (provide web manifest/apple-touch-icon if desired).
 
 ## 10) Post-deploy verification (automated checks available)
 

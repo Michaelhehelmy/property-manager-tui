@@ -18,7 +18,7 @@ echo "==> Installing runtime dependencies (requirements.txt)..."
 if [[ -f requirements.txt ]]; then
   $PIP install -r requirements.txt
 else
-  echo "requirements.txt not found; skipping legacy TUI dependency install (web-only app)."
+  echo "requirements.txt not found; skipping (web-only app)."
 fi
 
 echo ""

@@ -58,7 +58,7 @@ def _run_git(args: list[str], cwd: Path | None = None, timeout: int = 20) -> tup
     cwd = cwd or _project_root()
     t = _clamp_int(timeout, 20, 1, 300)
     env = os.environ.copy()
-    # non-interactive, no prompts/pagers; avoids hangs in TUI/web contexts
+    # non-interactive, no prompts/pagers; avoids hangs in web/CLI contexts
     env.setdefault("GIT_TERMINAL_PROMPT", "0")
     env.setdefault("GIT_PAGER", "cat")
     try:

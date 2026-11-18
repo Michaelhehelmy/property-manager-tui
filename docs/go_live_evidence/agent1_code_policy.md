@@ -38,7 +38,7 @@
 - [x] Stakeholder sign-off on RISK-1 policy; update `docs/web_authz_matrix.md` and `docs/SECURITY.md` accordingly.
 - [x] Resolve matrix discrepancies for omitted routes (`/assistant/action/confirm`, `/assistant/action/cancel`, `/setup`) and document proof/enforcement nuances.
 - [ ] Optional (policy decision): enforce password verification in `modify_reservation`/`delete_reservation` and align any other proof-mismatch paths (service+UI+tests), or confirm doc/UI-alignment-only approach.
-- [ ] Parity/traceability sweep for web flows (POS/inventory/batches/meals/activities/history, reservations/guests/accounting/reports/settings) including fields in receipts/invoices/history/labels/exports (legacy TUI removed).
+- [ ] Parity/traceability sweep for web flows (POS/inventory/batches/meals/activities/history, reservations/guests/accounting/reports/settings) including fields in receipts/invoices/history/labels/exports (web-only).
 - [ ] Assistant/action safety and local-only/grounding review confirmation.
 - [ ] Docs sync pass (README, assistant.md, deployment/security/updates/troubleshooting/go-live checklist as needed).
 - [ ] Confirm CI green on pushed branch/RC.

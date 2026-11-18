@@ -10,7 +10,7 @@ Property Manager is a **local-first** application with:
 - **Datastore:** SQLite (local file under `PM_DATA_DIR`/defaults). **Web must run with `--workers 1`.**
 - **Landing page:** static `index.html` (+ `wrangler.toml`) for download/install guidance and release-asset auto-detection (deployable via Cloudflare Worker/Pages).
 
-Design intent: keep business rules and data access centralized in `app_core` so UI behavior stays consistent and maintainable. (Legacy TUI has been removed; the app is web-only.)
+Design intent: keep business rules and data access centralized in `app_core` so UI behavior stays consistent and maintainable. The application is web-only.
 
 ## Repository layout (developer map)
 

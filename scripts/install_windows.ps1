@@ -86,7 +86,7 @@ function Checkout-RequestedRef {
 }
 
 try {
-  # Legacy modes mapped to web-only (TUI deprecated/removed)
+  # Legacy mode values mapped to web-only
   if ($Mode -eq 'tui' -or $Mode -eq 'both' -or $Mode -eq 'auto' -or -not $Mode) { $Mode = 'web' }
 
   Log "Property Manager Windows bootstrap (web-only, Action=$Action Mode=$Mode Ref=$GitRef InstallDir=$InstallDir)"

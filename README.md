@@ -51,10 +51,10 @@ tests/                       # pytest suite
 
 | Goal | Recommended mode |
 |---|---|
-| Local use on a PC/server terminal | Web on `127.0.0.1` (`python launcher.py` / `python main.py`) |
+| Local use on a PC/server | Web UI on `127.0.0.1` (`python launcher.py` / `python main.py`) |
 | Access from phone/tablet browser on same LAN | **Web** bound to `0.0.0.0` behind trusted LAN/VPN and with `PM_WEB_SECRET_KEY`; prefer HTTPS reverse proxy if feasible |
 | Remote access over internet | **Web** behind **HTTPS** reverse proxy / VPN / Tailscale (never plain HTTP public exposure) |
-| iSH (iOS/Alpine, constrained) | Run Web UI on a fuller host if web deps/toolchain are unavailable; constrained local installs may require dependency/toolchain workarounds |
+| iSH (iOS/Alpine, constrained) | Run the Web UI on a supported host when web dependencies/toolchains are unavailable on-device |
 | Android (Termux) | **Web** (`--workers 1`) |
 | Windows desktop/server | `scripts/install_windows.ps1` / `scripts/setup_windows.ps1` or manual venv |
 
@@ -71,7 +71,7 @@ These commands are intended for **first-time install and later re-runs** on git-
 | **Windows (PowerShell, bootstrap)** | `irm https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install_windows.ps1 \| iex` | Uses winget when available to install Python/Git if missing, then clones/updates and runs setup/deploy. Customize via `$env:ACTION/$env:MODE/$env:HOST/$env:PORT/$env:PM_WEB_SECRET_KEY`. |
 | **Windows (CMD bootstrap)** | `curl -fsSL -o install_windows.cmd https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install_windows.cmd && install_windows.cmd -Action deploy -Mode auto` | Downloads/runs bootstrap wrapper (uses PowerShell script). |
 
-**Common env vars / parameters (Unix installer/setup):** `INSTALL_DIR`, `REPO_URL`, `BRANCH`, `GIT_REF`/`TAG`/`COMMIT` (pinned ref), `MODE` (`auto|web (legacy tui/both map to web)`), `ACTION` (`auto|setup|run|deploy`), `SKIP_WEB` (`auto|0|1`), `HOST`, `PORT`, `PYTHON`, `INSTALL_DEV`, `RUN_TESTS`, `PM_DATA_DIR`, `PM_WEB_SECRET_KEY`. **Windows:** pass `-GitRef`/`-Action`/`-Mode`/`-BindHost`/`-Port` or set corresponding env vars (`GIT_REF`/`TAG`/`COMMIT`, etc.).
+**Common env vars / parameters (Unix installer/setup):** `INSTALL_DIR`, `REPO_URL`, `BRANCH`, `GIT_REF`/`TAG`/`COMMIT` (pinned ref), `MODE` (`web`; legacy values map to web), `ACTION` (`auto|setup|run|deploy`), `SKIP_WEB` (`auto|0|1`), `HOST`, `PORT`, `PYTHON`, `INSTALL_DEV`, `RUN_TESTS`, `PM_DATA_DIR`, `PM_WEB_SECRET_KEY`. **Windows:** pass `-GitRef`/`-Action`/`-Mode`/`-BindHost`/`-Port` or set corresponding env vars (`GIT_REF`/`TAG`/`COMMIT`, etc.).
 
 - `ACTION=auto` (default): full install+launch if missing, else update deps/code and launch.
 - `ACTION=setup`: install/update/prepare only. `ACTION=run`: run existing install. `ACTION=deploy`: setup + run.
@@ -87,8 +87,8 @@ These commands are intended for **first-time install and later re-runs** on git-
 ### Dependency/install robustness (constrained environments)
 
 - **Web dependency/toolchain issues:** if web dependency installation/build fails (e.g. `pydantic-core`/Rust wheel issues on constrained environments), install/upgrade Python/build tools or a compatible prebuilt wheel, or run the web app on a fuller host.
-- **`pydantic-core` / Rust wheel issues:** on iSH/Termux/older CPU architectures or limited toolchains, some web deps may require Rust/cargo/build tools or a prebuilt wheel matching your Python version/architecture. If unavailable, upgrade Python/toolchain, install build deps, or run the web UI on a fuller host.
-- **SQLite web safety:** always run web with `--workers 1`. Use `PM_WEB_SECRET_KEY` and HTTPS reverse proxy/VPN for non-local/shared access. Runtime data (`PM_DATA_DIR`, DB, exports, invoices) is preserved across setup/update runs.
+- **`pydantic-core` / Rust wheel issues:** on iSH/Termux/older CPU architectures or limited toolchains, some web deps may require Rust/cargo/build tools or a prebuilt wheel matching your Python version/architecture. If unavailable, upgrade Python/toolchain, install build deps, or run the Web UI on a supported host.
+- **SQLite web safety:** always run the web server with `--workers 1`. Use `PM_WEB_SECRET_KEY` and HTTPS reverse proxy/VPN for non-local/shared access. Runtime data (`PM_DATA_DIR`, DB, exports, invoices) is preserved across setup/update runs.
 
 ## Platform-specific setup
 
@@ -109,6 +109,7 @@ curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui
 apk add --no-cache curl
 curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh | MODE=web sh
 ```
+If web dependencies cannot be built on-device, run the Web UI on a supported host and access it from the browser.
 
 ### iOS/iPadOS as web client
 Run the server on a capable host (Mac/Linux/Windows/Termux/RPi/VPS) and open from Safari (`http://<host>:8000` on LAN or `https://...` via reverse proxy/Tailscale/VPN). Add to Home Screen for app-like use.

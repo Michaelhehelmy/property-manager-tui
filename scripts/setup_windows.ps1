@@ -13,7 +13,7 @@ Web mode is SQLite-safe only with --workers 1.
 auto | setup | run | deploy  (deploy = setup + run). Default: setup
 
 .PARAMETER Mode
-auto | web. Default: auto (legacy tui/both map to web)
+web (default). Legacy values map to web
 
 .PARAMETER SkipWeb
 auto | 0 | 1. Default: auto (0 on Windows)
@@ -258,7 +258,7 @@ function Ensure-Venv-And-Deps([string]$py) {
     & $venvPy -m pip install -r requirements.txt
     if ($LASTEXITCODE -ne 0) { throw "Failed to install requirements.txt" }
   } else {
-    Warn "requirements.txt not found; continuing without legacy TUI dependency install (web-only app)."
+    Warn "requirements.txt not found; continuing (web-only app)."
   }
 
   $doWeb = $true
@@ -351,7 +351,7 @@ function Run-Deploy {
 # --- main ---
 try {
   if ($SkipWeb -eq 'auto') { $SkipWeb = '0' }
-  # Legacy modes mapped to web-only (TUI deprecated/removed)
+  # Legacy mode values mapped to web-only
   if ($Mode -eq 'auto' -or $Mode -eq 'web' -or $Mode -eq 'tui' -or $Mode -eq 'both' -or -not $Mode) { $Mode = 'web' }
   $script:SkipWeb = $SkipWeb
   $script:Mode = $Mode
