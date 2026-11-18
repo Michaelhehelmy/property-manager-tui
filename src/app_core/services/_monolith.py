@@ -1889,13 +1889,22 @@ def create_reservation(guest_name, source, room_id, rate_plan_id, agreed_nightly
               tax["net"], tax["service"], tax["vat"], tax["city_tax"], "",
               f"Accommodation Res #{rid} - {canon}")
         if deposit_amount > 0:
+            # consistent deposit posting/allocation metadata (best-effort, within reservation transaction)
+            dep_alloc = _normalize_payment_allocation({"accommodation": round(float(deposit_amount), 2)}, deposit_amount, allow_empty=True)
+            dep_shift_id = None
+            try:
+                s = get_open_cash_shift()
+                if s and str((s.get("status") if isinstance(s, dict) else "") or "open").lower() == "open":
+                    dep_shift_id = int(s.get("id")) if isinstance(s, dict) else int(s["id"])
+            except Exception:
+                dep_shift_id = None
             conn.execute("""INSERT INTO payments
-                (reservation_id, amount, method, payment_type, notes)
-                VALUES (?, ?, 'Cash', 'Deposit', 'Deposit at booking')""",
-                (rid, deposit_amount))
+                (reservation_id, amount, method, payment_type, notes, idempotency_key, allocation_json, reference, shift_id)
+                VALUES (?, ?, 'Cash', 'Deposit', 'Deposit at booking', '', ?, '', ?)""",
+                (rid, deposit_amount, dep_alloc, dep_shift_id))
             pid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
             _post(cur, "PAY", pid, "PAYMENT", "", 0, 0, 0, 0, "Cash",
-                  f"Deposit Res #{rid}", )
+                  f"Deposit Res #{rid}", gross_override=deposit_amount)
     _audit("reservation_create", "reservation", rid, canon)
     return rid
 
