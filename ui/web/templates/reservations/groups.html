@@ -35,7 +35,7 @@
       <p style="margin:6px 0"><a class="button-like" href="/reservations/groups/{{g.id}}/folio" target="_blank">View group folio/report</a></p>
       {% if g.notes %}<p class="muted">{{g.notes}}</p>{% endif %}
       {% set t = g.totals or {} %}
-      <div class="muted" style="margin:6px 0 10px 0"><strong>Group totals (folio):</strong> Charges {{'%.2f'|format(t.total_charges or 0)}} · Paid {{'%.2f'|format(t.total_paid or 0)}} · Balance {{'%.2f'|format(t.balance_due or 0)}}</div>
+      <div class="muted" style="margin:6px 0 10px 0"><strong>Group totals (folio):</strong> Charges {{'%.2f'|format(t.total_charges or 0)}} · Paid {{'%.2f'|format(t.total_paid or 0)}} · <strong>Balance {{'%.2f'|format(t.balance_due or 0)}}</strong>{% if (t.balance_due or 0)|float > 0 %} <span class="badge warn">outstanding</span>{% endif %} · <a href="/reservations/groups/{{g.id}}/folio" target="_blank">Open group folio report</a></div>
       <details style="margin:8px 0"><summary>Edit group details/status</summary>
         <form method="post" action="/reservations/groups/{{g.id}}/update" style="margin-top:8px"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
           <label>Name<input name="name" value="{{g.name}}" required/></label>
@@ -47,11 +47,15 @@
         </form>
       </details>
       <table><tr><th>Res</th><th>Guest</th><th>Room</th><th>Dates</th><th>Status</th><th>Charges</th><th>Paid</th><th>Balance</th><th>Role</th><th></th></tr>
-      {% for m in g.members %}<tr>
+      {% for m in g.members %}<tr{% if (m.balance_due or 0)|float > 0 %} style="background:#fff7ed"{% endif %}>
         <td><a href="/reservations/{{m.reservation_id}}">#{{m.reservation_id}}</a></td><td>{{m.guest_name}}</td><td>{{m.room_number or ''}}</td>
         <td>{{m.check_in_date}} → {{m.check_out_date}}</td><td>{{m.reservation_status}}</td>
-        <td>{{'%.2f'|format(m.total_charges or 0)}}</td><td>{{'%.2f'|format(m.total_paid or 0)}}</td><td>{{'%.2f'|format(m.balance_due or 0)}}</td><td>{{m.role}}</td>
-        <td><form method="post" action="/reservations/groups/{{g.id}}/remove/{{m.reservation_id}}" style="margin:0"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><button class="small danger" type="submit">Remove</button></form></td>
+        <td>{{'%.2f'|format(m.total_charges or 0)}}</td><td>{{'%.2f'|format(m.total_paid or 0)}}</td><td><strong>{{'%.2f'|format(m.balance_due or 0)}}</strong>{% if (m.balance_due or 0)|float > 0 %} <span class="badge warn">due</span>{% endif %}</td><td>{{m.role}}</td>
+        <td style="white-space:nowrap">
+          <a class="button-like small" href="/reservations/{{m.reservation_id}}#payments" title="Open reservation and record payment">Pay</a>
+          <a class="button-like small" href="/reservations/{{m.reservation_id}}#services" title="Open services/packages/discounts">Services</a>
+          <form method="post" action="/reservations/groups/{{g.id}}/remove/{{m.reservation_id}}" style="display:inline;margin:0"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><button class="small danger" type="submit">Remove</button></form>
+        </td>
       </tr>{% else %}<tr><td colspan="10" class="muted">No members</td></tr>{% endfor %}</table>
     </details>
   {% else %}

@@ -146,7 +146,7 @@
   </tr>{% else %}<tr><td colspan="8" class="muted">None</td></tr>{% endfor %}</table></div>
   <p class="muted">Net paid: {{ "%.2f"|format(folio.total_paid or 0) }}{% if folio.deposits is not none or folio.refunds is not none %} (deposits {{ "%.2f"|format(folio.deposits or 0) }}, refunds {{ "%.2f"|format(folio.refunds or 0) }}){% endif %}. Cash payments/refunds may be auto-linked to the open cash shift when applicable.</p></div>
 </div>
-<div class="panel" style="margin-top:16px"><h3>Extra services / add-ons</h3>
+<div class="panel" style="margin-top:16px" id="services"><h3>Extra services / add-ons</h3>
   <p class="muted">Stay extras posted to the reservation folio (separate from POS inventory sales and activities). Voiding requires unlock + super password.</p>
   <div class="table-wrap"><table><tr><th>ID</th><th>Description</th><th>Qty</th><th>Unit</th><th>Tax</th><th>Gross</th><th>Status</th><th>Action</th></tr>
   {% for s in reservation_services or [] %}<tr>
@@ -167,7 +167,7 @@
   </details>
 </div>
 
-<div class="panel" style="margin-top:16px"><h3>Discounts / vouchers</h3>
+<div class="panel" style="margin-top:16px" id="discounts"><h3>Discounts / vouchers</h3>
   <p class="muted">Discount adjustments reduce the folio balance (posted as ledger adjustments). Voiding requires unlock + super password.</p>
   <div class="table-wrap"><table><tr><th>ID</th><th>Description</th><th>Type</th><th>Value</th><th>Amount</th><th>Status</th><th>Action</th></tr>
   {% for d in reservation_discounts or [] %}<tr>
@@ -187,7 +187,7 @@
 </div>
 
 
-<div class="panel" style="margin-top:16px"><h3>Packages / bundles</h3>
+<div class="panel" style="margin-top:16px" id="packages"><h3>Packages / bundles</h3>
   <p class="muted">Apply predefined packages to post bundled service/folio lines with allocation snapshots. Voiding an applied package reverses its posted service lines (requires unlock + super password).</p>
   <div class="table-wrap"><table><tr><th>ID</th><th>Package</th><th>Gross (net/tax)</th><th>Status</th><th>Applied</th><th>Action</th></tr>
   {% for rp in reservation_packages or [] %}<tr>
