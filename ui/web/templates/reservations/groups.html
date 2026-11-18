@@ -36,6 +36,26 @@
       {% if g.notes %}<p class="muted">{{g.notes}}</p>{% endif %}
       {% set t = g.totals or {} %}
       <div class="muted" style="margin:6px 0 10px 0"><strong>Group totals (folio):</strong> Charges {{'%.2f'|format(t.total_charges or 0)}} · Paid {{'%.2f'|format(t.total_paid or 0)}} · <strong>Balance {{'%.2f'|format(t.balance_due or 0)}}</strong>{% if (t.balance_due or 0)|float > 0 %} <span class="badge warn">outstanding</span>{% endif %} · <a href="/reservations/groups/{{g.id}}/folio" target="_blank">Open group folio report</a></div>
+      {% if g.members %}
+      <details style="margin:8px 0"><summary><strong>Record payment for a member</strong> (coordinated group billing)</summary>
+        <form method="post" action="/reservations/groups/{{g.id}}/payment" style="margin-top:8px"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+          <div class="row">
+            <label>Member reservation<select name="reservation_id" required>{% for m in g.members %}<option value="{{m.reservation_id}}">#{{m.reservation_id}} — {{m.guest_name}} (bal {{'%.2f'|format(m.balance_due or 0)}})</option>{% endfor %}</select></label>
+            <label>Amount<input name="amount" type="number" step="0.01" min="0.01" required/></label>
+          </div>
+          <div class="row">
+            <label>Method<select name="method"><option>Cash</option><option>Card</option><option>OTA</option><option>Bank Transfer</option></select></label>
+            <label>Type<select name="payment_type"><option>Payment</option><option>Deposit</option></select></label>
+          </div>
+          <label>Reference<input name="reference" placeholder="Optional reference/idempotency context"/></label>
+          <label>Notes<input name="notes" placeholder="Optional notes"/></label>
+          <label>Super password (if required by policy)<input type="password" name="password" placeholder="Unlock/session proof if required"/></label>
+          <button class="ok" type="submit">Record payment</button>
+        </form>
+        <p class="muted">Posts to the selected reservation folio with normal validation/shift-linking rules. For allocation/refund workflows use the reservation detail page.</p>
+      </details>
+      {% endif %}
+
       <details style="margin:8px 0"><summary>Edit group details/status</summary>
         <form method="post" action="/reservations/groups/{{g.id}}/update" style="margin-top:8px"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
           <label>Name<input name="name" value="{{g.name}}" required/></label>

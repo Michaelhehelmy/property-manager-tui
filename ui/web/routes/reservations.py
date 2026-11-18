@@ -567,6 +567,33 @@ async def groups_update(gid: int, request: Request):
         return flash_redirect(request, "/reservations/groups", str(e), "error")
 
 
+@router.post("/reservations/groups/{gid}/payment")
+async def group_record_payment(gid: int, request: Request):
+    form = await deps.require_unlocked_form(request, permission="payments.record")
+    try:
+        rid = int(form.get("reservation_id") or 0)
+        if not rid:
+            raise ValueError("Select a group member reservation.")
+        amount = float(form.get("amount") or 0)
+        method = form.get("method", "Cash")
+        payment_type = form.get("payment_type", "Payment")
+        notes = form.get("notes", "")
+        reference = (form.get("reference") or "").strip()
+        # ensure member belongs to group (coordinated action safety)
+        g = services.get_reservation_group(gid)
+        if not g:
+            raise ValueError("Reservation group not found.")
+        member_ids = {int(m.get("reservation_id")) for m in (g.get("members") or []) if m.get("reservation_id") is not None}
+        if rid not in member_ids:
+            raise ValueError("Selected reservation is not a member of this group.")
+        pid = services.record_payment(rid, amount, method, notes, payment_type=payment_type, reference=reference)
+        deps.add_flash(request, f"Payment recorded for reservation #{rid} (payment #{pid}).", "success")
+    except Exception as e:
+        deps.add_flash(request, str(e), "error")
+    r = deps.redirect("/reservations/groups"); deps.save_session(r, deps.get_session(request)); return r
+
+
+
 @router.get("/reservations/groups/{gid}/folio")
 def group_folio(gid: int, request: Request):
     try:
