@@ -49,6 +49,9 @@
           </div>
           <label>Reference<input name="reference" placeholder="Optional reference/idempotency context"/></label>
           <label>Notes<input name="notes" placeholder="Optional notes"/></label>
+          <details style="margin-top:6px"><summary class="muted">Allocation (optional, advanced)</summary>
+            <label>Allocation JSON<textarea name="allocation_json" rows="2" placeholder='e.g. {"accommodation": 100.00}'></textarea></label>
+          </details>
           <label>Super password (if required by policy)<input type="password" name="password" placeholder="Unlock/session proof if required"/></label>
           <button class="ok" type="submit">Record payment</button>
         </form>
