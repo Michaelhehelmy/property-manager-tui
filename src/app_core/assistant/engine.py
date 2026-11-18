@@ -287,9 +287,20 @@ def _execute_single(intent: str, text: str, slots: dict, ui_context=None):
         data = execute_tool("list_reservation_packages", {"reservation_id": ridq}); tools_used.append("list_reservation_packages")
         return _answer(intent, tools_used, data)
 
+    if intent == "approval_detail":
+        aid = _coerce_int(slots.get("approval_id") or slots.get("id") or slots.get("context", {}).get("approval_id"))
+        if not aid:
+            m = re.search(r"approval\s*#?\s*(\d+)", text or "", re.I)
+            if m:
+                try: aid = int(m.group(1))
+                except Exception: aid = None
+        if not aid:
+            return _need("Which approval ID should I look up?", intent, slots, missing=["approval_id"])
+        return intent, "get_approval", {"approval_id": aid}, "Providing grounded approval request details."
+
     # Simple read-only intent -> tool mappings (behavior-preserving consolidation)
     if intent in ("property_stats", "today_ops", "outstanding_balances", "inventory_alerts", "reservation_pipeline",
-                  "housekeeping_summary", "menu_info", "rate_plans", "rate_rules_list", "service_catalog_list", "discount_vouchers_list", "recent_activity", "list_activities",
+                  "housekeeping_summary", "menu_info", "rate_plans", "rate_rules_list", "service_catalog_list", "discount_vouchers_list", "approvals_list", "recent_activity", "list_activities",
                   "activity_stats", "walkin_sales_summary", "reservation_groups", "packages_list", "cash_shifts",
                   "night_audit_runs", "room_blocks", "housekeeping_tasks", "housekeeping_ops_report"):
         tool = {
@@ -304,6 +315,7 @@ def _execute_single(intent: str, text: str, slots: dict, ui_context=None):
             "rate_rules_list": "list_rate_rules",
             "service_catalog_list": "list_service_catalog",
             "discount_vouchers_list": "list_discount_vouchers",
+            "approvals_list": "list_approvals",
             "recent_activity": "get_recent_activity",
             "list_activities": "list_activities",
             "activity_stats": "get_activity_stats",
