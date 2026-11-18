@@ -7133,9 +7133,22 @@ def report_reservation_group_folio(group_id):
         try:
             bd = get_balance_breakdown(rid) or {}
             lines.append(f"  Accommodation: {float(bd.get('accommodation_gross') or 0):.2f}  POS: {float(bd.get('pos_gross') or 0):.2f}  Services: {float(bd.get('services_gross') or 0):.2f}  Discounts: {float(bd.get('discounts_gross') or 0):.2f}")
-            lines.append(f"  Charges: {float(bd.get('total_charges') or 0):.2f}  Paid: {float(bd.get('total_paid') or 0):.2f}  Balance: {float(bd.get('balance_due') or 0):.2f}")
+            dep = float(bd.get('deposits') or 0); ref = float(bd.get('refunds') or 0)
+            pay_bits = f"  Charges: {float(bd.get('total_charges') or 0):.2f}  Net paid: {float(bd.get('total_paid') or 0):.2f}"
+            if dep or ref:
+                pay_bits += f" (deposits {dep:.2f}, refunds {ref:.2f})"
+            pay_bits += f"  Balance: {float(bd.get('balance_due') or 0):.2f}"
+            lines.append(pay_bits)
         except Exception:
             lines.append(f"  Charges: {float(m.get('total_charges') or 0):.2f}  Paid: {float(m.get('total_paid') or 0):.2f}  Balance: {float(m.get('balance_due') or 0):.2f}")
+        # package summary (best-effort)
+        try:
+            pkgs = list_reservation_packages(rid) or []
+            applied = [p for p in pkgs if (p.get('status') or '').lower() == 'applied']
+            if applied:
+                lines.append(f"  Packages: {len(applied)} applied (gross {sum(float(p.get('total_gross') or 0) for p in applied):.2f})")
+        except Exception:
+            pass
         lines.append("")
     if not (g.get("members") or []):
         lines.append("(No members)")
