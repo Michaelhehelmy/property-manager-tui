@@ -5768,6 +5768,25 @@ def verify_ledger_integrity():
 
     _integrity_check_inventory_batches(conn, issues, warnings)
 
+    # sampled reservation financial invariant checks (B1)
+    try:
+        sample_ids = [r[0] for r in conn.execute(
+            "SELECT id FROM reservations WHERE status IN ('Reserved','Checked In','Checked Out') ORDER BY id DESC LIMIT 50"
+        ).fetchall()]
+        res_issues = []
+        for sid in sample_ids:
+            try:
+                chk = verify_reservation_financials(sid)
+                if not chk.get("ok"):
+                    res_issues.append({"reservation_id": sid, "issues": (chk.get("issues") or [])[:5], "warnings": (chk.get("warnings") or [])[:3]})
+            except Exception:
+                pass
+        stats["reservation_financials_sampled"] = len(sample_ids)
+        if res_issues:
+            _integrity_append_issue(issues, "reservation_financial_invariant_sample", res_issues[:20])
+    except Exception as e:
+        warnings.append(f"reservation financial sample: {e}")
+
     return {
         "ok": len(issues) == 0,
         "issues": issues,
