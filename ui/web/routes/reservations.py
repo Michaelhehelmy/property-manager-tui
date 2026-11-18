@@ -373,7 +373,7 @@ async def modify(rid: int, request: Request):
 async def pay(rid: int, request: Request):
     form = await deps.get_form(request)
     try:
-        services.record_payment(rid, float(form.get("amount") or 0), form.get("method","Cash"), form.get("notes",""), form.get("payment_type","Payment"))
+        services.record_payment(rid, float(form.get("amount") or 0), form.get("method","Cash"), form.get("notes",""), form.get("payment_type","Payment"), reference=(form.get("reference") or "").strip())
         deps.add_flash(request,"Payment recorded","success")
     except Exception as e: deps.add_flash(request,str(e),"error")
     r=deps.redirect(f"/reservations/{rid}"); deps.save_session(r, deps.get_session(request)); return r
@@ -382,7 +382,7 @@ async def pay(rid: int, request: Request):
 async def refund(rid: int, request: Request):
     form = await deps.require_unlocked_form(request)
     try:
-        services.record_refund(rid, float(form.get("amount") or 0), form.get("method","Cash"), form.get("notes",""), deps.service_password(request, form))
+        services.record_refund(rid, float(form.get("amount") or 0), form.get("method","Cash"), form.get("notes",""), deps.service_password(request, form), reference=(form.get("reference") or "").strip())
         deps.add_flash(request,"Refund recorded","success")
     except Exception as e: deps.add_flash(request,str(e),"error")
     r=deps.redirect(f"/reservations/{rid}"); deps.save_session(r, deps.get_session(request)); return r

@@ -85,6 +85,7 @@ async def payment(request: Request):
             form.get("method", "Cash"),
             form.get("notes", ""),
             form.get("payment_type", "Payment"),
+            reference=(form.get("reference") or "").strip(),
         )
         return flash_redirect(request, "/accounting?tab=payments", "Payment recorded", "success")
     except Exception as e:
@@ -100,6 +101,7 @@ async def refund(request: Request):
             form.get("method", "Cash"),
             form.get("notes", ""),
             deps.service_password(request, form),
+            reference=(form.get("reference") or "").strip(),
         )
         return flash_redirect(request, "/accounting?tab=payments", "Refund recorded", "success")
     except Exception as e:
