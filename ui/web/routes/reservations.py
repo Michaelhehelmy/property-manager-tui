@@ -373,7 +373,7 @@ async def modify(rid: int, request: Request):
 async def pay(rid: int, request: Request):
     form = await deps.get_form(request)
     try:
-        services.record_payment(rid, float(form.get("amount") or 0), form.get("method","Cash"), form.get("notes",""), form.get("payment_type","Payment"), reference=(form.get("reference") or "").strip(), allocation_json=(form.get("allocation_json") or "{}"))
+        services.record_payment(rid, float(form.get("amount") or 0), form.get("method","Cash"), form.get("notes",""), form.get("payment_type","Payment"), idempotency_key=(form.get("idempotency_key") or "").strip(), reference=(form.get("reference") or "").strip(), allocation_json=(form.get("allocation_json") or "{}"))
         deps.add_flash(request,"Payment recorded","success")
     except Exception as e: deps.add_flash(request,str(e),"error")
     r=deps.redirect(f"/reservations/{rid}"); deps.save_session(r, deps.get_session(request)); return r
@@ -400,7 +400,7 @@ async def void_payment_route(rid: int, payment_id: int, request: Request):
 async def refund(rid: int, request: Request):
     form = await deps.require_unlocked_form(request, permission="payments.manage")
     try:
-        services.record_refund(rid, float(form.get("amount") or 0), form.get("method","Cash"), form.get("notes",""), deps.service_password(request, form), reference=(form.get("reference") or "").strip(), allocation_json=(form.get("allocation_json") or "{}"))
+        services.record_refund(rid, float(form.get("amount") or 0), form.get("method","Cash"), form.get("notes",""), deps.service_password(request, form), idempotency_key=(form.get("idempotency_key") or "").strip(), reference=(form.get("reference") or "").strip(), allocation_json=(form.get("allocation_json") or "{}"))
         deps.add_flash(request,"Refund recorded","success")
     except Exception as e: deps.add_flash(request,str(e),"error")
     r=deps.redirect(f"/reservations/{rid}"); deps.save_session(r, deps.get_session(request)); return r
@@ -604,7 +604,7 @@ async def group_record_payment(gid: int, request: Request):
         member_ids = {int(m.get("reservation_id")) for m in (g.get("members") or []) if m.get("reservation_id") is not None}
         if rid not in member_ids:
             raise ValueError("Selected reservation is not a member of this group.")
-        pid = services.record_payment(rid, amount, method, notes, payment_type=payment_type, reference=reference, allocation_json=(form.get("allocation_json") or "{}"))
+        pid = services.record_payment(rid, amount, method, notes, payment_type=payment_type, idempotency_key=(form.get("idempotency_key") or "").strip(), reference=reference, allocation_json=(form.get("allocation_json") or "{}"))
         deps.add_flash(request, f"Payment recorded for reservation #{rid} (payment #{pid}).", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")

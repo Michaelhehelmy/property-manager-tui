@@ -85,6 +85,7 @@ async def payment(request: Request):
             form.get("method", "Cash"),
             form.get("notes", ""),
             form.get("payment_type", "Payment"),
+            idempotency_key=(form.get("idempotency_key") or "").strip(),
             reference=(form.get("reference") or "").strip(),
             allocation_json=(form.get("allocation_json") or "{}"),
         )
@@ -102,6 +103,7 @@ async def refund(request: Request):
             form.get("method", "Cash"),
             form.get("notes", ""),
             deps.service_password(request, form),
+            idempotency_key=(form.get("idempotency_key") or "").strip(),
             reference=(form.get("reference") or "").strip(),
             allocation_json=(form.get("allocation_json") or "{}"),
         )
