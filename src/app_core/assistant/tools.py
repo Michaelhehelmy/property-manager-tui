@@ -5,7 +5,6 @@ import json
 import logging
 from datetime import timedelta
 
-from . import common
 from .common import (
     _fmt_money, _iso, _parse_date_range, _prev_period, _safe_int, _today,
 )

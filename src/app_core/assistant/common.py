@@ -4,10 +4,8 @@ from __future__ import annotations
 import difflib
 import json
 import logging
-import os
 import re
 import unicodedata
-from collections import Counter, defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any

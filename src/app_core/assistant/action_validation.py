@@ -11,7 +11,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any, Mapping
 
-from .common import _iso, _parse_iso, _safe_int, _today
+from .common import _parse_iso, _safe_int
 from .. import services
 
 logger = logging.getLogger(__name__)

@@ -5,14 +5,12 @@ import os
 import platform
 import subprocess
 import socket
-import unicodedata
 import re
 import difflib
 import json
 import sqlite3
 import contextvars
 import csv
-import shutil
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -258,7 +256,6 @@ def apply_branding_settings(display_name, tagline="", animation="reveal", sync_p
 
 
 def _seed_defaults():
-    now_s = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with db.transaction() as conn:
         for key, spec in SETTINGS_CATALOG.items():
             conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (key, spec[2]))
@@ -1754,7 +1751,6 @@ def update_housekeeping_task_status(task_id, status, notes_append=""):
             raise ValueError("Task not found.")
         updates = ["status=?"]
         params = [status]
-        now_expr = "datetime('now','localtime')"
         if status == "in_progress":
             updates.append("started_at=COALESCE(started_at, datetime('now','localtime'))")
         elif status == "done":
@@ -2039,7 +2035,7 @@ def _terminate_reservation_with_policy(rid, password, *, target_status, policy_s
     policy = get_setting(policy_setting_key, policy_default)
     with db.transaction() as conn:
         cur = conn.cursor()
-        paid, refund = _cancellation_refund_amount(cur, rid, policy)
+        _paid, refund = _cancellation_refund_amount(cur, rid, policy)
         _reverse_charges_for_reservation(cur, rid)
         _void_pos_for_reservation(cur, rid)
         _reverse_reservation_services(cur, rid)
@@ -6327,16 +6323,12 @@ def apply_demo_data_preset(name, password, confirm_text, allow_existing=False):
 
         # payments: deposit/full/partial depending on timing
         try:
-            status_row = db.connect().execute("SELECT status FROM reservations WHERE id=?", (rid,)).fetchone()
-            status = status_row["status"] if status_row else "Reserved"
             total_est = round(rate * stay * 1.24, 2)  # rough
-            paid = False
             if co_dt < today - timedelta(days=1):
                 # past stay: likely fully paid
                 amt = max(10.0, round(total_est * (0.9 if i % 4 == 0 else 1.0), 2))
                 record_payment(rid, amt, "Card" if i % 2 == 0 else "Cash", "Demo settlement")
                 created["payments"] += 1
-                paid = True
             elif ci_dt <= today <= co_dt:
                 # in-house: deposit/partial
                 amt = round(max(20.0, total_est * 0.5), 2)

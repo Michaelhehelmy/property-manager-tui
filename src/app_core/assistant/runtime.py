@@ -36,7 +36,7 @@ def _llm_config():
         provider = "auto"
     local_available = False
     try:
-        import llama_cpp  # type: ignore
+        import llama_cpp  # type: ignore  # noqa: F401
         if model_path and Path(model_path).expanduser().exists():
             local_available = True
     except Exception:
@@ -203,7 +203,6 @@ def _ui_guidance(message: str, ui_context=None):
     tl = t.lower()
     path, tab, title, recent = _ui_where(ui_context)
     actions = []
-    answer_parts = []
 
     def nav(url, label=None):
         actions.append({"type": "navigate", "url": url})
@@ -334,7 +333,7 @@ def chat(message: str, history: list[dict] | None = None, ui_context: dict | Non
     except Exception:
         logger.debug("assistant.chat: ui guidance failed", exc_info=True)
 
-    config=_pkg()._llm_config(); mode=config.get("response_mode") or "talking"; provider=config.get("provider") or "auto"
+    config=_pkg()._llm_config(); mode=config.get("response_mode") or "talking"
 
     if mode=="full_llm":
         res=llm_route(message, history=history, config=config)

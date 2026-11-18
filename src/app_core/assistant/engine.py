@@ -5,10 +5,10 @@ import logging
 import re
 
 from .common import (
-    _norm_text, _parse_date_range, extract_slots, resolve_guest, _safe_int,
+    _norm_text, _parse_date_range, resolve_guest, _safe_int,
 )
 from .formatting import _apply_proactive, _fmt_capabilities, _format_for_intent
-from .nlu import _has_any, classify_intent, rule_classify
+from .nlu import _has_any
 from .tools import execute_tool
 
 logger = logging.getLogger(__name__)
@@ -467,7 +467,6 @@ def _execute_single(intent: str, text: str, slots: dict, ui_context=None):
                     "answer":f"I couldn’t find **guest #{explicit_id}** in the real records. Want to try a name/phone search instead?"}
         if len(guests)==1 or (explicit_id and len(guests)==1):
             g=guests[0]; gid=g["id"] if isinstance(g,dict) else explicit_id
-            gname=(g.get("name") or g.get("canonical_name") or "") if isinstance(g,dict) else ""
             if intent=="guest_top_items_last_visit":
                 data=execute_tool("get_guest_top_items_last_visit",{"guest_id":gid,"limit":5}); tools_used.append("get_guest_top_items_last_visit")
             elif intent=="guest_last_visit_spend":

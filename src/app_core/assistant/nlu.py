@@ -1,7 +1,6 @@
 """Intent routing/classification helpers (deterministic + optional local ML)."""
 from __future__ import annotations
 
-import difflib
 import logging
 import re
 from collections import defaultdict

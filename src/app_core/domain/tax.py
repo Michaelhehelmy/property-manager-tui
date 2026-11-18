@@ -7,7 +7,7 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any
 
-from .money import ZERO, money_mul, percent_of, quantize_money, to_decimal
+from .money import ZERO, percent_of, quantize_money, to_decimal
 
 
 def tax_amount(net_amount: Any, rate_percent: Any) -> Decimal:
