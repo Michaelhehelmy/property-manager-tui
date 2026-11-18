@@ -106,6 +106,41 @@ def _install_web_deps_hint() -> str:
     return f"{sys.executable} -m pip install 'fastapi>=0.110' 'uvicorn[standard]>=0.27' jinja2 python-multipart itsdangerous"
 
 
+def _is_frozen_build() -> bool:
+    try:
+        return bool(getattr(sys, "frozen", False)) or "__compiled__" in globals() or hasattr(sys, "_MEIPASS")
+    except Exception:
+        return False
+
+
+def _serve_web_foreground(host: str = "127.0.0.1", port: int = 8000) -> int:
+    """Run uvicorn in-process (used by packaged builds and internal server mode)."""
+    try:
+        host = _validate_host(host)
+        port = _validate_port(port)
+    except Exception as e:
+        print(f"\nInvalid web target: {e}")
+        return 2
+    try:
+        import uvicorn
+        from ui.web.server import app as web_app
+    except Exception as e:
+        print("\nWeb dependencies/server are not available.")
+        print(f"Details: {e}")
+        if not _is_frozen_build():
+            print(f"Install: {_install_web_deps_hint()}")
+        return 1
+    try:
+        uvicorn.run(web_app, host=host, port=port, workers=1)
+        return 0
+    except KeyboardInterrupt:
+        print("\nWeb server stopped.")
+        return 130
+    except Exception as e:
+        print(f"\nFailed to start Web UI: {e}")
+        return 1
+
+
 def run_web(host: str = "127.0.0.1", port: int = 8000, open_browser: bool = True) -> int:
     try:
         host = _validate_host(host)
@@ -152,12 +187,17 @@ def run_web(host: str = "127.0.0.1", port: int = 8000, open_browser: bool = True
         except Exception:
             pass
 
-    cmd = [
-        sys.executable, "-m", "uvicorn", "ui.web.server:app",
-        "--host", host,
-        "--port", str(port),
-        "--workers", "1",
-    ]
+    frozen = _is_frozen_build()
+    if frozen:
+        # Re-exec the packaged binary in server mode so the launcher can keep menu/process semantics.
+        cmd = [sys.executable, "--serve-web", "--host", host, "--port", str(port)]
+    else:
+        cmd = [
+            sys.executable, "-m", "uvicorn", "ui.web.server:app",
+            "--host", host,
+            "--port", str(port),
+            "--workers", "1",
+        ]
     try:
         proc = subprocess.Popen(cmd, cwd=str(ROOT), env=_env())
         return proc.wait()
@@ -173,12 +213,16 @@ def run_web(host: str = "127.0.0.1", port: int = 8000, open_browser: bool = True
         print("\nWeb server stopped.")
         return 130
     except FileNotFoundError:
-        print("\nuvicorn is not available in this Python environment.")
-        print(f"Install: {_install_web_deps_hint()}")
+        if frozen:
+            print("\nFailed to start packaged web server process.")
+        else:
+            print("\nuvicorn is not available in this Python environment.")
+            print(f"Install: {_install_web_deps_hint()}")
         return 1
     except Exception as e:
         print(f"\nFailed to start Web UI: {e}")
-        print(f"Try: {sys.executable} -m uvicorn ui.web.server:app --host {host} --port {port} --workers 1")
+        if not frozen:
+            print(f"Try: {sys.executable} -m uvicorn ui.web.server:app --host {host} --port {port} --workers 1")
         return 1
 
 
@@ -259,8 +303,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--host", default=os.environ.get("HOST", "127.0.0.1"), help="Web host (default: 127.0.0.1)")
     parser.add_argument("--port", type=int, default=int(os.environ.get("PORT", "8000")), help="Web port (default: 8000)")
     parser.add_argument("--no-browser", action="store_true", help="Do not auto-open browser for web mode")
+    parser.add_argument("--serve-web", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
 
+    # Internal mode for packaged/frozen builds (re-exec target).
+    if args.serve_web:
+        return _serve_web_foreground(args.host, args.port)
     # Web-only app: direct launch for web/legacy mode args (backward-compatible)
     if args.web or (args.mode and args.mode.lower() in {"web", "1", "w", "tui", "t", "2"}):
         return run_web(host=args.host, port=args.port, open_browser=not args.no_browser)

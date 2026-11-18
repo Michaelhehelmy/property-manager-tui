@@ -10,8 +10,25 @@ import re
 from pathlib import Path
 
 
+def _is_frozen_runtime() -> bool:
+    try:
+        import sys
+        return bool(getattr(sys, "frozen", False)) or "__compiled__" in globals()
+    except Exception:
+        return False
+
+
 def _detect_project_root() -> Path:
-    # .../repo/src/app_core/paths.py -> repo
+    # Source/dev layout: .../repo/src/app_core/paths.py -> repo
+    # Frozen/native packaged builds: keep runtime data discoverable relative to the executable.
+    try:
+        import sys
+        if bool(getattr(sys, "frozen", False)) or "__compiled__" in globals():
+            exe = Path(getattr(sys, "executable", "") or "").resolve()
+            if str(exe):
+                return exe.parent
+    except Exception:
+        pass
     return Path(__file__).resolve().parents[2]
 
 

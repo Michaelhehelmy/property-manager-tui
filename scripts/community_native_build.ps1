@@ -42,12 +42,12 @@ try { if ($Py -eq 'py -3') { $nuitkaVer = (py -3 -m nuitka --version | Select-Ob
 $buildStatus = 'failed'
 $artifactPath = ''
 $checksum = ''
-$buildCmd = "python -m nuitka --standalone --assume-yes-for-downloads --enable-plugin=anti-bloat --include-package=app_core --include-package=ui --include-data-dir=ui/web/templates=ui/web/templates --include-data-dir=ui/web/static=ui/web/static --include-data-files=pyproject.toml=pyproject.toml --output-dir=dist/nuitka-community launcher.py"
+$buildCmd = "python -m nuitka --standalone --assume-yes-for-downloads --enable-plugin=anti-bloat --include-package=app_core --include-package=ui --include-package=uvicorn --include-package=fastapi --include-package=starlette --include-package=anyio --include-package=jinja2 --include-data-dir=ui/web/templates=ui/web/templates --include-data-dir=ui/web/static=ui/web/static --include-data-files=pyproject.toml=pyproject.toml --output-dir=dist/nuitka-community launcher.py"
 
 if (Test-Path $nuitkaOut) { Remove-Item -Recurse -Force $nuitkaOut -ErrorAction SilentlyContinue }
 Log 'Building with Nuitka (standalone)...'
 try {
-  $nuitkaArgs = @('-m','nuitka','--standalone','--assume-yes-for-downloads','--enable-plugin=anti-bloat','--include-package=app_core','--include-package=ui','--include-data-dir=ui/web/templates=ui/web/templates','--include-data-dir=ui/web/static=ui/web/static','--include-data-files=pyproject.toml=pyproject.toml',"--output-dir=$nuitkaOut",'launcher.py')
+  $nuitkaArgs = @('-m','nuitka','--standalone','--assume-yes-for-downloads','--enable-plugin=anti-bloat','--include-package=app_core','--include-package=ui','--include-package=uvicorn','--include-package=fastapi','--include-package=starlette','--include-package=anyio','--include-package=jinja2','--include-data-dir=ui/web/templates=ui/web/templates','--include-data-dir=ui/web/static=ui/web/static','--include-data-files=pyproject.toml=pyproject.toml',"--output-dir=$nuitkaOut",'launcher.py')
   if ($Py -eq 'py -3') { & py -3 @nuitkaArgs *>&1 | Tee-Object -FilePath $logFile }
   elseif ($Py -eq 'py') { & py @nuitkaArgs *>&1 | Tee-Object -FilePath $logFile }
   else { & $Py @nuitkaArgs *>&1 | Tee-Object -FilePath $logFile }

@@ -29,8 +29,9 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         import uvicorn
+        from ui.web.server import app as web_app
     except Exception:
-        print("Web dependencies are not installed (uvicorn missing).")
+        print("Web dependencies are not installed (uvicorn/server import failed).")
         print(f"Install: {sys.executable} -m pip install -r requirements-web.txt")
         return 1
 
@@ -39,7 +40,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Starting Property Manager Web UI at http://{host}:{port} (--workers 1)")
     print("Note: this project is now web-only. Use launcher.py or uvicorn directly for more options.")
     try:
-        uvicorn.run("ui.web.server:app", host=host, port=port, workers=1)
+        uvicorn.run(web_app, host=host, port=port, workers=1)
         return 0
     except KeyboardInterrupt:
         return 130

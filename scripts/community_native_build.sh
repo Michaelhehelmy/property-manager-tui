@@ -50,7 +50,7 @@ NUITKA_VER="$($PY -m nuitka --version 2>/dev/null | head -n1 || echo '')"
 BUILD_STATUS=failed
 ARTIFACT_PATH=""
 CHECKSUM=""
-BUILD_CMD="$PY -m nuitka --standalone --assume-yes-for-downloads --enable-plugin=anti-bloat --include-package=app_core --include-package=ui --include-data-dir=ui/web/templates=ui/web/templates --include-data-dir=ui/web/static=ui/web/static --include-data-files=pyproject.toml=pyproject.toml --output-dir=dist/nuitka-community launcher.py"
+BUILD_CMD="$PY -m nuitka --standalone --assume-yes-for-downloads --enable-plugin=anti-bloat --include-package=app_core --include-package=ui --include-package=uvicorn --include-package=fastapi --include-package=starlette --include-package=anyio --include-package=jinja2 --include-data-dir=ui/web/templates=ui/web/templates --include-data-dir=ui/web/static=ui/web/static --include-data-files=pyproject.toml=pyproject.toml --output-dir=dist/nuitka-community launcher.py"
 
 set +e
 log "Building with Nuitka (standalone)..."
@@ -62,6 +62,11 @@ $PY -m nuitka \
   --enable-plugin=anti-bloat \
   --include-package=app_core \
   --include-package=ui \
+  --include-package=uvicorn \
+  --include-package=fastapi \
+  --include-package=starlette \
+  --include-package=anyio \
+  --include-package=jinja2 \
   --include-data-dir=ui/web/templates=ui/web/templates \
   --include-data-dir=ui/web/static=ui/web/static \
   --include-data-files=pyproject.toml=pyproject.toml \
