@@ -224,6 +224,93 @@ def service_password(request: Request, form, *, allow_session_sentinel: bool = F
     return pw
 
 
+
+_WEB_USER_KEY = "auth_user"
+
+
+def get_current_user(request: Request) -> dict[str, Any] | None:
+    """Optional local user identity (RBAC groundwork). Independent from unlock gate."""
+    try:
+        sess = get_session(request)
+        u = sess.get(_WEB_USER_KEY)
+        if isinstance(u, dict) and u.get("id") and u.get("username"):
+            # normalize minimal shape
+            return {
+                "id": u.get("id"),
+                "username": u.get("username"),
+                "display_name": u.get("display_name") or u.get("username"),
+                "role": u.get("role") or "staff",
+            }
+    except Exception:
+        return None
+    return None
+
+
+def set_current_user(request: Request, user: dict[str, Any]) -> None:
+    sess = get_session(request)
+    sess[_WEB_USER_KEY] = {
+        "id": user.get("id"),
+        "username": user.get("username"),
+        "display_name": user.get("display_name") or user.get("username"),
+        "role": user.get("role") or "staff",
+    }
+
+
+def clear_current_user(request: Request) -> None:
+    try:
+        sess = get_session(request)
+        sess.pop(_WEB_USER_KEY, None)
+    except Exception:
+        pass
+
+
+def current_actor(request: Request) -> dict[str, Any]:
+    u = get_current_user(request)
+    if u:
+        return {
+            "actor": (u.get("username") or "user"),
+            "actor_user_id": u.get("id"),
+            "actor_role": u.get("role") or "",
+            "display_name": u.get("display_name") or u.get("username"),
+        }
+    # preserve existing behavior: unlocked/admin-equivalent manager context
+    return {
+        "actor": "manager",
+        "actor_user_id": None,
+        "actor_role": "admin" if is_unlocked(request) else "",
+        "display_name": "Manager",
+    }
+
+
+def has_permission(request: Request, permission: str) -> bool:
+    """RBAC scaffold (non-enforcing by default). Preserves existing unlock behavior.
+    - If unlocked and no user context, allow (legacy admin-equivalent).
+    - If user context present, allow admin/* roles broadly for now; otherwise permissive scaffold.
+    Strict enforcement can be enabled later per-route without breaking current flows.
+    """
+    try:
+        if is_unlocked(request) and not get_current_user(request):
+            return True
+        u = get_current_user(request)
+        if not u:
+            # no explicit user; rely on existing unlock gates elsewhere
+            return True
+        role = (u.get("role") or "").lower()
+        if role in ("admin", "owner", "manager"):
+            return True
+        # permissive groundwork: allow unless explicitly denied in future
+        return True
+    except Exception:
+        return True
+
+
+def require_permission(request: Request, permission: str) -> None:
+    # groundwork: keep behavior compatible; only block if future strict checks deny
+    if not has_permission(request, permission):
+        raise HTTPException(status_code=403, detail="Permission denied")
+
+
+
 def _session_timeout_minutes() -> int:
     try:
         timeout = int(services.get_setting("session_timeout_min", "5"))

@@ -34,7 +34,9 @@ def render(request: Request, name: str, ctx: dict | None = None, status: int = 2
     context = {"request": request, "services": services, "paths": paths, "csrf_token": deps.csrf_token(request),
                "flashes": deps.pop_flashes(request), "unlocked": deps.is_unlocked(request),
                "brand_name": services.get_app_display_name(), "gift": services.get_gift_attribution(),
-               "update_notice": update_notice}
+               "update_notice": update_notice,
+               "current_user": deps.get_current_user(request) if hasattr(deps, "get_current_user") else None,
+               "current_actor": deps.current_actor(request) if hasattr(deps, "current_actor") else None}
     if ctx:
         context.update(ctx)
     context = _to_template_data(context)

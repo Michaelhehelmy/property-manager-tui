@@ -105,6 +105,16 @@ def create_app(*, init_db: bool = True, run_startup: bool = True) -> FastAPI:
         if deps.is_unlocked(request):
             deps.touch_web_unlock(request)
             deps.sync_backend_session_if_possible()
+        # RBAC groundwork: propagate request actor into service context for auditing (best-effort)
+        _actor_token = None
+        try:
+            actor = deps.current_actor(request)
+            if hasattr(services, "set_current_actor"):
+                _actor_token = services.set_current_actor(actor.get("actor"), actor.get("actor_user_id"), actor.get("actor_role"))
+            request.state.current_user = deps.get_current_user(request)
+            request.state.current_actor = actor
+        except Exception:
+            _actor_token = None
         # Enforce CSRF for state-changing requests. Form posts must include a form token
         # (or header fallback); JSON/unsafe API-style requests must include x-csrf-token.
         if request.method.upper() in ("POST", "PUT", "PATCH", "DELETE"):
@@ -131,52 +141,59 @@ def create_app(*, init_db: bool = True, run_startup: bool = True) -> FastAPI:
                     deps.save_session(resp, deps.get_session(request))
                     return resp
         try:
-            response = await call_next(request)
-        except HTTPException as e:
-            logger.info(
-                "web_http_exception method=%s path=%s status=%s detail=%s",
-                request.method,
-                request.url.path,
-                e.status_code,
-                _safe_detail(getattr(e, "detail", "")),
-            )
-            raise
-        except Exception as exc:
-            error_ref = f"err-{int(time.time())}"
-            err_type = type(exc).__name__
             try:
-                err_msg = _safe_detail(paths.redact_sensitive(exc, max_len=240) if hasattr(paths, "redact_sensitive") else str(exc))
-            except Exception:
-                err_msg = "Unhandled exception"
-            logger.exception(
-                "web_unhandled_exception ref=%s method=%s path=%s error_type=%s",
-                error_ref,
-                request.method,
-                request.url.path,
-                err_type,
-            )
-            session = deps.get_session(request)
-            session["last_error_report"] = {
-                "ref": error_ref,
-                "method": request.method,
-                "path": request.url.path,
-                "error_type": err_type,
-                "error_message": err_msg,
-                "time": int(time.time()),
-            }
-            accept = (request.headers.get("accept") or "").lower()
-            wants_html = "text/html" in accept and "application/json" not in accept.split(",")[0]
-            if wants_html:
+                response = await call_next(request)
+            except HTTPException as e:
+                logger.info(
+                    "web_http_exception method=%s path=%s status=%s detail=%s",
+                    request.method,
+                    request.url.path,
+                    e.status_code,
+                    _safe_detail(getattr(e, "detail", "")),
+                )
+                raise
+            except Exception as exc:
+                error_ref = f"err-{int(time.time())}"
+                err_type = type(exc).__name__
                 try:
-                    from ui.web.rendering import render
-                    hint = f"ref: {error_ref}\nmethod: {request.method}\npath: {request.url.path}\nerror: {err_type}: {err_msg}"
-                    resp = render(request, "errors/500.html", {"title": "Error", "error_hint": hint, "error_ref": error_ref}, status=500)
+                    err_msg = _safe_detail(paths.redact_sensitive(exc, max_len=240) if hasattr(paths, "redact_sensitive") else str(exc))
                 except Exception:
+                    err_msg = "Unhandled exception"
+                logger.exception(
+                    "web_unhandled_exception ref=%s method=%s path=%s error_type=%s",
+                    error_ref,
+                    request.method,
+                    request.url.path,
+                    err_type,
+                )
+                session = deps.get_session(request)
+                session["last_error_report"] = {
+                    "ref": error_ref,
+                    "method": request.method,
+                    "path": request.url.path,
+                    "error_type": err_type,
+                    "error_message": err_msg,
+                    "time": int(time.time()),
+                }
+                accept = (request.headers.get("accept") or "").lower()
+                wants_html = "text/html" in accept and "application/json" not in accept.split(",")[0]
+                if wants_html:
+                    try:
+                        from ui.web.rendering import render
+                        hint = f"ref: {error_ref}\nmethod: {request.method}\npath: {request.url.path}\nerror: {err_type}: {err_msg}"
+                        resp = render(request, "errors/500.html", {"title": "Error", "error_hint": hint, "error_ref": error_ref}, status=500)
+                    except Exception:
+                        resp = JSONResponse({"detail": "Internal Server Error", "error_ref": error_ref}, status_code=500)
+                else:
                     resp = JSONResponse({"detail": "Internal Server Error", "error_ref": error_ref}, status_code=500)
-            else:
-                resp = JSONResponse({"detail": "Internal Server Error", "error_ref": error_ref}, status_code=500)
-            deps.save_session(resp, session)
-            return resp
+                deps.save_session(resp, session)
+                return resp
+        finally:
+            try:
+                if _actor_token is not None and hasattr(services, "reset_current_actor"):
+                    services.reset_current_actor(_actor_token)
+            except Exception:
+                pass
         # Avoid duplicating session cookie if endpoint/earlier handler already set it.
         has_session_cookie = any(
             k.lower() == b"set-cookie" and v.startswith((deps.SESSION_COOKIE + "=").encode())

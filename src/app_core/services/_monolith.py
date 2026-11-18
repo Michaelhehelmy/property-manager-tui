@@ -10,6 +10,7 @@ import re
 import difflib
 import json
 import sqlite3
+import contextvars
 import csv
 import shutil
 from datetime import datetime, timedelta
@@ -484,8 +485,34 @@ def calculate_tax(net, nights):
 # AUDIT LOG
 # ═══════════════════════════════════════════════════════════════════════════
 
+_CURRENT_ACTOR = contextvars.ContextVar("pm_current_actor", default=None)
+
+
+def set_current_actor(actor=None, actor_user_id=None, actor_role=""):
+    return _CURRENT_ACTOR.set({"actor": actor or "manager", "actor_user_id": actor_user_id, "actor_role": actor_role or ""})
+
+
+def reset_current_actor(token):
+    try:
+        _CURRENT_ACTOR.reset(token)
+    except Exception:
+        pass
+
+
+def get_current_actor():
+    try:
+        return _CURRENT_ACTOR.get() or {}
+    except Exception:
+        return {}
+
 def _audit(action, target_type="", target_id="", details="", actor="manager", actor_user_id=None, actor_role=""):
     try:
+        ctx = get_current_actor() or {}
+        # prefer explicit non-default actor context, else fall back to request/context actor
+        if (actor in (None, "", "manager")) and (actor_user_id is None) and (not actor_role) and ctx:
+            actor = ctx.get("actor") or actor or "manager"
+            actor_user_id = ctx.get("actor_user_id") if ctx.get("actor_user_id") is not None else actor_user_id
+            actor_role = ctx.get("actor_role") or actor_role or ""
         with db.transaction() as conn:
             conn.execute(
                 "INSERT INTO audit_log (action, target_type, target_id, details, actor, actor_user_id, actor_role) VALUES (?, ?, ?, ?, ?, ?, ?)",

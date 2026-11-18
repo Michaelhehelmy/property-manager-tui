@@ -285,6 +285,43 @@ async def rate_rule_edit(request: Request, rule_id: int):
     r = deps.redirect("/settings/rate-plans"); deps.save_session(r, deps.get_session(request)); return r
 
 
+
+@router.post("/settings/users/login")
+async def settings_users_login(request: Request):
+    form = await deps.require_csrf_form(request)
+    try:
+        user = services.verify_user_password(form.get("username", ""), form.get("user_password", ""))
+        if not user:
+            deps.add_flash(request, "Invalid user credentials or inactive user.", "error")
+        else:
+            deps.set_current_user(request, user)
+            try:
+                services._audit("user_session_login", "user", user.get("id"), user.get("username"), actor=user.get("username"), actor_user_id=user.get("id"), actor_role=user.get("role") or "")
+            except Exception:
+                pass
+            deps.add_flash(request, f"Logged in as {user.get('display_name') or user.get('username')} ({user.get('role')}). Audit actor context updated for this session.", "success")
+    except Exception as e:
+        deps.add_flash(request, str(e), "error")
+    r = deps.redirect("/settings/users"); deps.save_session(r, deps.get_session(request)); return r
+
+
+@router.post("/settings/users/logout")
+async def settings_users_logout(request: Request):
+    form = await deps.require_csrf_form(request)
+    try:
+        u = deps.get_current_user(request)
+        deps.clear_current_user(request)
+        if u:
+            try:
+                services._audit("user_session_logout", "user", u.get("id"), u.get("username"), actor=u.get("username"), actor_user_id=u.get("id"), actor_role=u.get("role") or "")
+            except Exception:
+                pass
+        deps.add_flash(request, "User session cleared. Existing unlock flow unchanged.", "success")
+    except Exception as e:
+        deps.add_flash(request, str(e), "error")
+    r = deps.redirect("/settings/users"); deps.save_session(r, deps.get_session(request)); return r
+
+
 @router.get("/settings/health")
 def settings_health(request: Request):
     deps.require_unlock(request)
