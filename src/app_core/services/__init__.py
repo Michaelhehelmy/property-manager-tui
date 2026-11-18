@@ -32,5 +32,5 @@ try:
         globals()['_print_raw'] = _m._print_raw
     elif '_print_raw' not in globals() and hasattr(_m, '_print_raw_socket'):
         globals()['_print_raw'] = _m._print_raw_socket
-except Exception:
+except Exception:  # pragma: no cover - defensive alias setup
     logger.debug("services facade: failed to set compatibility aliases", exc_info=True)

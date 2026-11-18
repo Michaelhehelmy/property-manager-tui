@@ -195,6 +195,21 @@ def _answer(intent: str, tools_used, data, title="Result", ok=True, **extra):
     res.update(extra)
     return res
 
+
+def _need(answer, intent, slots=None, missing=None, tools_used=None, data=None):
+    d = dict(data or {})
+    if missing is not None and "missing" not in d:
+        d["missing"] = missing
+    return {
+        "ok": True,
+        "intent": intent,
+        "needs_clarification": True,
+        "tools_used": tools_used or [],
+        "data": d,
+        "answer": answer,
+    }
+
+
 def _execute_single(intent: str, text: str, slots: dict, ui_context=None):
     tools_used=[]; start,end = slots.get("date_start"), slots.get("date_end")
     if not start or not end: start,end = _parse_date_range(text)
