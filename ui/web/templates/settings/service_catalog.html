@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Service Catalog</h2>
+<p class="muted">Manage extra services/add-ons used on reservations and in packages. Changes apply to future postings; existing posted lines and package snapshots retain their recorded values.</p>
+
+<div class="grid grid-2">
+  <div class="panel"><h3>Add service</h3>
+    <form method="post" action="/settings/service-catalog/add"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+      <label>Name<input name="name" required placeholder="e.g. Airport pickup, Laundry"/></label>
+      <div class="row"><label>Category<input name="category" value="Service"/></label><label>Unit price<input name="unit_price" type="number" step="0.01" value="0.00"/></label></div>
+      <label>Description<input name="description" placeholder="Optional description"/></label>
+      <label><input type="checkbox" name="taxable" checked/> Taxable</label>
+      <label><input type="checkbox" name="active" checked/> Active</label>
+      <label>Super password<input type="password" name="password" required/></label>
+      <button class="ok" type="submit">Create service</button>
+    </form>
+  </div>
+  <div class="panel"><h3>Usage</h3>
+    <ul>
+      <li>Active services can be added to reservations as extra service lines (folio/ledger posted).</li>
+      <li>Packages may reference catalog services or use custom item prices/descriptions.</li>
+      <li>Deactivate services to hide them from new selections without deleting history.</li>
+    </ul>
+    <p><a href="/settings/packages">Packages &amp; Bundles</a> · <a href="/settings?tab=rooms">Settings</a></p>
+  </div>
+</div>
+
+<div class="panel" style="margin-top:16px"><h3>Catalog items</h3>
+  <div class="table-wrap"><table>
+    <tr><th>ID</th><th>Name</th><th>Category</th><th>Unit price</th><th>Taxable</th><th>Active</th><th>Edit</th></tr>
+    {% for it in items %}<tr>
+      <td>{{it.id}}</td>
+      <td><strong>{{it.name}}</strong>{% if it.description %}<div class="muted">{{it.description}}</div>{% endif %}</td>
+      <td>{{it.category}}</td>
+      <td>{{"%.2f"|format(it.unit_price or 0)}}</td>
+      <td>{{'yes' if it.taxable else 'no'}}</td>
+      <td>{{'yes' if it.active else 'no'}}</td>
+      <td>
+        <details><summary>Edit</summary>
+          <form method="post" action="/settings/service-catalog/{{it.id}}/edit" style="margin-top:6px"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+            <label>Name<input name="name" value="{{it.name}}" required/></label>
+            <div class="row"><label>Category<input name="category" value="{{it.category}}"/></label><label>Unit price<input name="unit_price" type="number" step="0.01" value="{{'%.2f'|format(it.unit_price or 0)}}"/></label></div>
+            <label>Description<input name="description" value="{{it.description or ''}}"/></label>
+            <label><input type="checkbox" name="taxable" {% if it.taxable %}checked{% endif %}/> Taxable</label>
+            <label><input type="checkbox" name="active" {% if it.active %}checked{% endif %}/> Active</label>
+            <label>Super password<input type="password" name="password" required/></label>
+            <button type="submit">Save</button>
+          </form>
+        </details>
+      </td>
+    </tr>{% else %}<tr><td colspan="7" class="muted">No service catalog items yet.</td></tr>{% endfor %}
+  </table></div>
+</div>
+
+<p style="margin-top:12px"><a href="/settings">← Back to Settings</a></p>
+{% endblock %}

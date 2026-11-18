@@ -532,6 +532,54 @@ async def updates_apply(request: Request):
 
 
 
+
+@router.get("/settings/service-catalog")
+def service_catalog(request: Request):
+    try:
+        items = services.list_service_catalog(active_only=False)
+    except Exception:
+        items = []
+    return render(request, "settings/service_catalog.html", {"title": "Service Catalog", "items": items})
+
+
+@router.post("/settings/service-catalog/add")
+async def service_catalog_add(request: Request):
+    form = await deps.require_unlocked_form(request)
+    try:
+        services.create_service_catalog_item(
+            form.get("name", ""),
+            category=form.get("category", "Service"),
+            unit_price=float(form.get("unit_price") or 0),
+            description=form.get("description", ""),
+            taxable=bool(form.get("taxable")),
+            active=bool(form.get("active")),
+        )
+        deps.add_flash(request, "Service catalog item created.", "success")
+    except Exception as e:
+        deps.add_flash(request, str(e), "error")
+    r = deps.redirect("/settings/service-catalog"); deps.save_session(r, deps.get_session(request)); return r
+
+
+@router.post("/settings/service-catalog/{item_id}/edit")
+async def service_catalog_edit(request: Request, item_id: int):
+    form = await deps.require_unlocked_form(request)
+    try:
+        services.update_service_catalog_item(
+            item_id,
+            name=form.get("name"),
+            category=form.get("category"),
+            unit_price=float(form.get("unit_price") or 0),
+            description=form.get("description"),
+            taxable=("taxable" in form),
+            active=("active" in form),
+        )
+        deps.add_flash(request, "Service catalog item updated.", "success")
+    except Exception as e:
+        deps.add_flash(request, str(e), "error")
+    r = deps.redirect("/settings/service-catalog"); deps.save_session(r, deps.get_session(request)); return r
+
+
+
 @router.get("/settings/packages")
 def packages(request: Request):
     try:
