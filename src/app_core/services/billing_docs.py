@@ -36,18 +36,24 @@ def _write_confined_invoice_file(filename: str, text):
 
 
 def build_invoice_text(reservation, nights, accom, pos_items, payments, *, currency="EGP", usd_to_egp=1.0,
-                       display_name="Property Manager", address="", phone="", footer_text="", traceability_text_fn=None):
+                       display_name="Property Manager", address="", phone="", footer_text="", traceability_text_fn=None,
+                       services=None, discounts=None):
     traceability_text_fn = traceability_text_fn or _default_traceability_text
     W = 72
     m = lambda v: _money_fmt(v, currency, usd_to_egp)
+    services = services or []
+    discounts = discounts or []
     accom_net = round(float(accom.get("net") or 0), 2)
     accom_service = round(float(accom.get("service") or 0), 2)
     accom_vat = round(float(accom.get("vat") or 0), 2)
     accom_city = round(float(accom.get("city_tax") or 0), 2)
     accom_gross = round(float(accom.get("gross") or 0), 2)
     pos_gross = round(sum(float(p.get("gross") or 0) for p in pos_items), 2)
+    services_gross = round(sum(float(s.get("gross_amount") or s.get("gross") or 0) for s in services), 2)
+    discounts_gross = round(sum(float(d.get("amount") or d.get("gross") or 0) for d in discounts), 2)
     total_paid = round(sum(float(p.get("amount") or 0) for p in payments), 2)
-    balance = round(accom_gross + pos_gross - total_paid, 2)
+    total_charges = round(accom_gross + pos_gross + services_gross - discounts_gross, 2)
+    balance = round(total_charges - total_paid, 2)
 
     lines = ["=" * W, str(display_name).center(W), "INVOICE / RECEIPT".center(W), "=" * W]
     if address:
@@ -100,6 +106,27 @@ def build_invoice_text(reservation, nights, accom, pos_items, payments, *, curre
     else:
         lines.append("  (none)")
 
+    lines += ["-" * W, "EXTRA SERVICES / PACKAGES"]
+    if services:
+        for s in services:
+            desc = s.get("description") or "Service"
+            qty = float(s.get("quantity") or 1)
+            gross = float(s.get("gross_amount") or s.get("gross") or 0)
+            net = float(s.get("net_amount") or (float(s.get("unit_price") or 0) * qty))
+            tax = float(s.get("tax_amount") or max(0.0, gross - net))
+            lines.append(f"  {desc} x{qty:g} @ {m(s.get('unit_price') or 0)} = {m(gross)} (tax {m(tax)})")
+    else:
+        lines.append("  (none)")
+
+    lines += ["-" * W, "DISCOUNTS / ADJUSTMENTS"]
+    if discounts:
+        for d in discounts:
+            desc = d.get("description") or "Discount"
+            amt = float(d.get("amount") or d.get("gross") or 0)
+            lines.append(f"  {desc}: -{m(abs(amt))}")
+    else:
+        lines.append("  (none)")
+
     lines += ["-" * W, "PAYMENTS"]
     if payments:
         for p in payments:
@@ -116,7 +143,11 @@ def build_invoice_text(reservation, nights, accom, pos_items, payments, *, curre
     lines += [
         f"  Total Paid: {m(total_paid)}",
         "=" * W,
-        f"  Total Charges: {m(accom_gross + pos_gross)}",
+        f"  Accommodation: {m(accom_gross)}",
+        f"  POS / Extra:   {m(pos_gross)}",
+        f"  Services:      {m(services_gross)}",
+        f"  Discounts:    -{m(discounts_gross)}",
+        f"  Total Charges: {m(total_charges)}",
         f"  Balance Due:   {m(balance)}",
         "=" * W, "",
         footer_text or "Thank you for staying with us!",

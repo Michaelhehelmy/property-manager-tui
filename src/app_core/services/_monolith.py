@@ -2518,6 +2518,23 @@ def void_reservation_service(service_line_id, password=None):
             raise ValueError("Service line not found.")
         if row["voided_at"] or row["status"] == "voided":
             return rsid
+        # package-line consistency: prevent partial void that would desync applied package state
+        try:
+            pkg_link = conn.execute(
+                """SELECT rpl.reservation_package_id, rp.status, rp.voided_at
+                   FROM reservation_package_lines rpl
+                   JOIN reservation_packages rp ON rp.id = rpl.reservation_package_id
+                   WHERE rpl.reservation_service_id=?
+                   ORDER BY rpl.id DESC LIMIT 1""",
+                (rsid,),
+            ).fetchone()
+        except Exception:
+            pkg_link = None
+        if pkg_link and not pkg_link["voided_at"] and (pkg_link["status"] or "").lower() != "voided":
+            raise ValueError(
+                f"Service line #{rsid} is part of applied package #{pkg_link['reservation_package_id']}. "
+                "Void the package to keep folio/ledger state consistent."
+            )
         cur = conn.cursor()
         _reverse(cur, "RSVC", rsid, entry_type_filter=("CHARGE",))
         conn.execute("UPDATE reservation_services SET status='voided', voided_at=datetime('now','localtime') WHERE id=?", (rsid,))
@@ -4386,6 +4403,18 @@ def generate_invoice_text(reservation_id, currency=CURRENCY):
         WHERE p.reservation_id=? AND p.voided_at IS NULL
         ORDER BY p.id
     """, (*types, reservation_id)).fetchall()]
+    services = [dict(x) for x in conn.execute("""
+        SELECT id, service_id, description, quantity, unit_price, tax_amount, gross_amount, status, notes, posted_at
+        FROM reservation_services
+        WHERE reservation_id=? AND voided_at IS NULL AND status='posted'
+        ORDER BY id
+    """, (reservation_id,)).fetchall()]
+    discounts = [dict(x) for x in conn.execute("""
+        SELECT id, voucher_id, description, discount_type, value, amount, status, notes, applied_at
+        FROM reservation_discounts
+        WHERE reservation_id=? AND voided_at IS NULL AND status='applied'
+        ORDER BY id
+    """, (reservation_id,)).fetchall()]
     payments = [dict(x) for x in conn.execute("""
         SELECT amount, method, payment_type, notes, at FROM payments
         WHERE reservation_id=? AND voided_at IS NULL ORDER BY id
@@ -4407,6 +4436,8 @@ def generate_invoice_text(reservation_id, currency=CURRENCY):
         phone=get_setting("property_phone", ""),
         footer_text=get_setting("invoice_footer_text", "Thank you for staying with us!"),
         traceability_text_fn=_traceability_text,
+        services=services,
+        discounts=discounts,
     )
 
 
@@ -4767,11 +4798,34 @@ def get_front_desk_ops(day=None):
 
 
 def get_rooms_available_between(ci, co):
-    return db.connect().execute("""SELECT r.id, r.room_number, r.room_type, r.base_price, r.housekeeping_status
-        FROM rooms r WHERE r.id NOT IN (
-            SELECT room_id FROM reservations WHERE status IN ('Reserved','Checked In')
-            AND NOT (check_out_date <= ? OR check_in_date >= ?)
-        ) ORDER BY r.room_number""", (ci, co)).fetchall()
+    """Rooms free for [ci,co) considering reservations and active room blocks (OOO/OOS)."""
+    try:
+        return db.connect().execute(
+            """SELECT r.id, r.room_number, r.room_type, r.base_price, r.housekeeping_status
+               FROM rooms r
+               WHERE r.id NOT IN (
+                   SELECT room_id FROM reservations
+                   WHERE status IN ('Reserved','Checked In')
+                     AND NOT (check_out_date <= ? OR check_in_date >= ?)
+               )
+               AND r.id NOT IN (
+                   SELECT room_id FROM room_blocks
+                   WHERE status='active'
+                     AND NOT (end_date <= ? OR start_date >= ?)
+               )
+               ORDER BY r.room_number""",
+            (ci, co, ci, co),
+        ).fetchall()
+    except Exception:
+        # fallback: preserve reservation-based availability if blocks query unavailable
+        return db.connect().execute(
+            """SELECT r.id, r.room_number, r.room_type, r.base_price, r.housekeeping_status
+               FROM rooms r WHERE r.id NOT IN (
+                   SELECT room_id FROM reservations WHERE status IN ('Reserved','Checked In')
+                   AND NOT (check_out_date <= ? OR check_in_date >= ?)
+               ) ORDER BY r.room_number""",
+            (ci, co),
+        ).fetchall()
 
 
 def get_upcoming_reservations_for_room(room_id):
