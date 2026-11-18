@@ -5131,16 +5131,37 @@ def report_night_audit_summary(limit=30):
         return "\n".join(lines)
     for r in runs:
         lines.append(f"#{r.get('id')} {r.get('business_date')} [{r.get('status')}] completed={r.get('completed_at') or r.get('started_at')}")
+        summ = r.get("summary_json") or "{}"
         exc = r.get("exceptions_json") or "[]"
         try:
-            if isinstance(exc, str):
-                import json as _json
-                exc_obj = _json.loads(exc)
-            else:
-                exc_obj = exc
-            lines.append(f"  Exceptions: {len(exc_obj) if isinstance(exc_obj, list) else 0}")
+            summ_obj = json.loads(summ) if isinstance(summ, str) else (summ or {})
         except Exception:
-            lines.append("  Exceptions: (unavailable)")
+            summ_obj = {}
+        try:
+            exc_obj = json.loads(exc) if isinstance(exc, str) else (exc or [])
+        except Exception:
+            exc_obj = []
+        checks = (summ_obj.get("checks") or {})
+        fdc = (summ_obj.get("front_desk_counts") or {})
+        lines.append(f"  Exceptions: {len(exc_obj) if isinstance(exc_obj, list) else (summ_obj.get('exception_count') or 0)} | Arrivals {fdc.get('arrivals',0)} In-house {fdc.get('in_house',0)} Departures {fdc.get('departures',0)} Unpaid {fdc.get('unpaid',0)}")
+        if checks:
+            hk = checks.get("housekeeping_status") or {}
+            if hk:
+                lines.append(f"  HK rooms: {', '.join([f'{k}={v}' for k,v in hk.items()])}")
+            if checks.get("open_cash_shift"):
+                lines.append(f"  Open cash shift: #{(checks.get('open_cash_shift') or {}).get('id')} (warning)")
+            if checks.get("active_room_blocks"):
+                lines.append(f"  Active room blocks: {checks.get('active_room_blocks')}")
+            if checks.get("housekeeping_tasks"):
+                ht = checks.get("housekeeping_tasks") or {}
+                lines.append(f"  HK tasks: {', '.join([f'{k}={v}' for k,v in ht.items()])}")
+        if isinstance(exc_obj, list) and exc_obj:
+            for e in exc_obj[:8]:
+                if isinstance(e, dict):
+                    detail = e.get("detail") or e.get("guest_name") or str({k:v for k,v in e.items() if k in ("reservation_id","room_number","balance_due")})
+                    lines.append(f"   - [{e.get('type','')}] {detail}")
+            if len(exc_obj) > 8:
+                lines.append(f"   - ... and {len(exc_obj)-8} more")
         if r.get("notes"):
             lines.append(f"  Notes: {r.get('notes')}")
         lines.append("")
@@ -6525,9 +6546,10 @@ def list_night_audit_runs(limit=100):
 
 
 def run_night_audit(business_date=None, notes="", run_by=""):
-    """Advisory night-audit snapshot (no hard locks)."""
+    """Advisory night-audit snapshot (no hard locks). Richer checks for ops/cash/housekeeping/blocks."""
     if not business_date:
         business_date = datetime.now().strftime(DATE_FMT)
+    conn_ro = db.connect()
     try:
         ops = get_front_desk_ops(business_date)
     except Exception:
@@ -6537,16 +6559,84 @@ def run_night_audit(business_date=None, notes="", run_by=""):
     except Exception:
         ledger = {}
     exceptions = []
+    checks = {}
+    # front desk exceptions (arrivals/departures/in-house unpaid/dirty/not checked in/out)
     try:
         for e in (ops.get("exceptions") or []):
             exceptions.append({"type": "front_desk", **(e if isinstance(e, dict) else {"detail": str(e)})})
     except Exception:
         pass
+    # open shifts / reconciliation
+    try:
+        open_shift = get_open_cash_shift()
+        checks["open_cash_shift"] = open_shift
+        if open_shift:
+            try:
+                rec = get_cash_shift_reconciliation(open_shift["id"])
+                checks["open_cash_shift_reconciliation"] = {
+                    "id": rec.get("id"), "reconciled_expected_cash": rec.get("reconciled_expected_cash"),
+                    "linked_net": rec.get("linked_net"), "counted_cash": rec.get("counted_cash"), "variance": rec.get("variance"),
+                }
+            except Exception:
+                pass
+            exceptions.append({"type": "cash_shift", "severity": "warning", "detail": f"Cash shift #{open_shift.get('id')} is still open."})
+    except Exception:
+        checks["open_cash_shift"] = None
+    # dirty/maintenance rooms and readiness
+    try:
+        hk_rows = conn_ro.execute("SELECT housekeeping_status, COUNT(*) AS n FROM rooms GROUP BY housekeeping_status").fetchall()
+        checks["housekeeping_status"] = {r["housekeeping_status"]: r["n"] for r in hk_rows}
+        dirty_maint = sum(r["n"] for r in hk_rows if r["housekeeping_status"] in ("Dirty", "Maintenance"))
+        if dirty_maint:
+            exceptions.append({"type": "housekeeping", "severity": "info", "detail": f"{dirty_maint} room(s) are Dirty/Maintenance."})
+    except Exception:
+        checks["housekeeping_status"] = {}
+    # pending/in-progress housekeeping tasks
+    try:
+        task_rows = conn_ro.execute("SELECT status, COUNT(*) AS n FROM housekeeping_tasks GROUP BY status").fetchall()
+        checks["housekeeping_tasks"] = {r["status"]: r["n"] for r in task_rows}
+        open_tasks = sum(r["n"] for r in task_rows if r["status"] in ("pending", "in_progress"))
+        if open_tasks:
+            exceptions.append({"type": "housekeeping_task", "severity": "info", "detail": f"{open_tasks} housekeeping task(s) pending/in progress."})
+    except Exception:
+        checks["housekeeping_tasks"] = {}
+    # active room blocks
+    try:
+        blocks = conn_ro.execute("SELECT COUNT(*) AS n FROM room_blocks WHERE status='active'").fetchone()["n"]
+        checks["active_room_blocks"] = int(blocks or 0)
+        if blocks:
+            exceptions.append({"type": "room_block", "severity": "info", "detail": f"{int(blocks)} active room block(s) (OOO/OOS)."})
+    except Exception:
+        checks["active_room_blocks"] = 0
+    # unpaid in-house/reservations around business date (grounded)
+    try:
+        unpaid_inhouse = []
+        for r in (ops.get("in_house") or []):
+            if float(r.get("balance_due") or 0) > 0.005:
+                unpaid_inhouse.append({"reservation_id": r.get("id"), "guest_name": r.get("guest_name"), "room_number": r.get("room_number"), "balance_due": round(float(r.get("balance_due") or 0), 2)})
+        checks["unpaid_in_house_count"] = len(unpaid_inhouse)
+        if unpaid_inhouse:
+            exceptions.append({"type": "finance", "severity": "warning", "detail": f"{len(unpaid_inhouse)} in-house reservation(s) have unpaid balance."})
+    except Exception:
+        checks["unpaid_in_house_count"] = 0
+    # checked-out today but unpaid (operational risk)
+    try:
+        co_unpaid = []
+        for r in (ops.get("departures") or []):
+            if (r.get("status") == "Checked Out") and float(r.get("balance_due") or 0) > 0.005:
+                co_unpaid.append({"reservation_id": r.get("id"), "guest_name": r.get("guest_name"), "balance_due": round(float(r.get("balance_due") or 0), 2)})
+        checks["checked_out_unpaid_today_count"] = len(co_unpaid)
+        if co_unpaid:
+            exceptions.append({"type": "finance", "severity": "warning", "detail": f"{len(co_unpaid)} checked-out departure(s) still have unpaid balance."})
+    except Exception:
+        checks["checked_out_unpaid_today_count"] = 0
     summary = {
         "business_date": business_date,
         "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "front_desk_counts": (ops.get("counts") or {}),
+        "checks": checks,
         "ledger_summary": ledger,
+        "exception_count": len(exceptions),
     }
     with db.transaction() as conn:
         cur = conn.execute(
@@ -6555,7 +6645,7 @@ def run_night_audit(business_date=None, notes="", run_by=""):
             (business_date, json.dumps(summary, ensure_ascii=False, default=str), json.dumps(exceptions, ensure_ascii=False, default=str), (notes or "").strip(), (run_by or "").strip())
         )
         rid = cur.lastrowid
-    _audit("night_audit_run", "night_audit", rid, business_date)
+    _audit("night_audit_run", "night_audit", rid, f"{business_date} exceptions={len(exceptions)}")
     return rid
 
 
