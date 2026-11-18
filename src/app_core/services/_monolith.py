@@ -7250,3 +7250,125 @@ def void_reservation_package(reservation_package_id, password=None):
         conn.execute("UPDATE reservation_packages SET status='voided', voided_at=datetime('now','localtime') WHERE id=?", (rpid,))
     _audit("reservation_package_void", "reservation_package", rpid, f"res={rp['reservation_id']}")
     return rpid
+
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# APPROVALS (P4 foundation, additive)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _actor_context_defaults():
+    try:
+        ctx = get_current_actor() or {}
+    except Exception:
+        ctx = {}
+    return {
+        "actor": (ctx.get("actor") or ""),
+        "actor_user_id": ctx.get("actor_user_id"),
+        "actor_role": (ctx.get("actor_role") or ""),
+    }
+
+
+def create_approval_request(action_type, entity_type="", entity_id="", payload=None, reason="", notes="", requested_by="", requested_by_user_id=None):
+    action_type = (action_type or "").strip()
+    if not action_type:
+        raise ValueError("Approval action_type is required.")
+    ctx = _actor_context_defaults()
+    req_by = (requested_by or ctx.get("actor") or "").strip()
+    if requested_by_user_id is None:
+        requested_by_user_id = ctx.get("actor_user_id")
+    try:
+        payload_json = json.dumps(payload or {}, ensure_ascii=False, default=str)
+    except Exception:
+        payload_json = "{}"
+    with db.transaction() as conn:
+        cur = conn.execute(
+            """INSERT INTO approvals
+               (action_type, entity_type, entity_id, payload_json, status, reason, requested_by, requested_by_user_id, notes)
+               VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?)""",
+            (action_type, (entity_type or "").strip(), str(entity_id or "").strip(), payload_json,
+             (reason or "").strip(), req_by, requested_by_user_id, (notes or "").strip())
+        )
+        aid = cur.lastrowid
+    _audit("approval_request_create", "approval", aid, f"{action_type} {entity_type}:{entity_id}".strip(), actor=req_by or None, actor_user_id=requested_by_user_id, actor_role=ctx.get("actor_role") or "")
+    return aid
+
+
+def get_approval(approval_id):
+    row = db.connect().execute("SELECT * FROM approvals WHERE id=?", (int(approval_id),)).fetchone()
+    if not row:
+        return None
+    d = dict(row)
+    for k in ("payload_json", "execution_result_json"):
+        try:
+            if isinstance(d.get(k), str):
+                d[k] = json.loads(d[k]) if d.get(k) else {}
+        except Exception:
+            pass
+    return d
+
+
+def list_approvals(status="", limit=200):
+    q = "SELECT * FROM approvals WHERE 1=1"
+    params = []
+    if status:
+        q += " AND status=?"; params.append(status)
+    q += " ORDER BY id DESC LIMIT ?"
+    params.append(int(limit or 200))
+    rows = db.connect().execute(q, params).fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        for k in ("payload_json", "execution_result_json"):
+            try:
+                if isinstance(d.get(k), str):
+                    d[k] = json.loads(d[k]) if d.get(k) else {}
+            except Exception:
+                pass
+        out.append(d)
+    return out
+
+
+def decide_approval(approval_id, decision, decided_by="", decided_by_user_id=None, notes=""):
+    aid = int(approval_id)
+    decision = (decision or "").strip().lower()
+    if decision not in ("approved", "rejected", "cancelled"):
+        raise ValueError("Decision must be approved, rejected, or cancelled.")
+    ctx = _actor_context_defaults()
+    who = (decided_by or ctx.get("actor") or "").strip()
+    if decided_by_user_id is None:
+        decided_by_user_id = ctx.get("actor_user_id")
+    with db.transaction() as conn:
+        row = conn.execute("SELECT * FROM approvals WHERE id=?", (aid,)).fetchone()
+        if not row:
+            raise ValueError("Approval request not found.")
+        if row["status"] != "pending":
+            return aid
+        conn.execute(
+            """UPDATE approvals SET status=?, decided_by=?, decided_by_user_id=?, decided_at=datetime('now','localtime'),
+                                  notes=TRIM(COALESCE(notes,'') || CASE WHEN ?<>'' AND COALESCE(notes,'')<>'' THEN char(10) ELSE '' END || ?)
+               WHERE id=?""",
+            (decision, who, decided_by_user_id, (notes or "").strip(), (notes or "").strip(), aid)
+        )
+    _audit("approval_decision", "approval", aid, f"{decision}", actor=who or None, actor_user_id=decided_by_user_id, actor_role=ctx.get("actor_role") or "")
+    return aid
+
+
+def mark_approval_executed(approval_id, result=None, notes=""):
+    aid = int(approval_id)
+    try:
+        result_json = json.dumps(result or {}, ensure_ascii=False, default=str)
+    except Exception:
+        result_json = "{}"
+    with db.transaction() as conn:
+        row = conn.execute("SELECT id FROM approvals WHERE id=?", (aid,)).fetchone()
+        if not row:
+            raise ValueError("Approval request not found.")
+        conn.execute(
+            """UPDATE approvals SET status='executed', executed_at=datetime('now','localtime'), execution_result_json=?,
+                                  notes=TRIM(COALESCE(notes,'') || CASE WHEN ?<>'' AND COALESCE(notes,'')<>'' THEN char(10) ELSE '' END || ?)
+               WHERE id=?""",
+            (result_json, (notes or "").strip(), (notes or "").strip(), aid)
+        )
+    _audit("approval_executed", "approval", aid, "executed")
+    return aid

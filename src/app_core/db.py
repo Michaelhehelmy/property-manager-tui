@@ -16,7 +16,7 @@ from . import paths
 DATA_DIR = paths.DATA_DIR
 BASE_DIR = paths.BASE_DIR
 DB_PATH = paths.DB_PATH
-SCHEMA_VERSION = 20
+SCHEMA_VERSION = 21
 
 _conn = None
 _lock = threading.RLock()
@@ -795,6 +795,29 @@ CREATE TABLE assistant_feedback (
 );
 CREATE INDEX idx_assist_fb_created ON assistant_feedback(created_at);
 CREATE INDEX idx_assist_fb_intent ON assistant_feedback(corrected_intent);
+
+
+CREATE TABLE approvals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    action_type TEXT NOT NULL,
+    entity_type TEXT NOT NULL DEFAULT '',
+    entity_id TEXT NOT NULL DEFAULT '',
+    payload_json TEXT NOT NULL DEFAULT '{}',
+    status TEXT NOT NULL DEFAULT 'pending',
+    reason TEXT NOT NULL DEFAULT '',
+    requested_by TEXT NOT NULL DEFAULT '',
+    requested_by_user_id INTEGER,
+    requested_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    decided_by TEXT NOT NULL DEFAULT '',
+    decided_by_user_id INTEGER,
+    decided_at TEXT,
+    executed_at TEXT,
+    execution_result_json TEXT NOT NULL DEFAULT '{}',
+    notes TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX idx_approvals_status ON approvals(status, requested_at);
+CREATE INDEX idx_approvals_entity ON approvals(entity_type, entity_id);
+
 """
 
 
@@ -1396,6 +1419,33 @@ def _migrate_to_20(conn):
             pass
 
 
+def _migrate_to_21(conn):
+    # P4: approvals workflow foundation (additive)
+    if not _table_exists(conn, "approvals"):
+        conn.executescript("""
+        CREATE TABLE IF NOT EXISTS approvals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            action_type TEXT NOT NULL,
+            entity_type TEXT NOT NULL DEFAULT '',
+            entity_id TEXT NOT NULL DEFAULT '',
+            payload_json TEXT NOT NULL DEFAULT '{}',
+            status TEXT NOT NULL DEFAULT 'pending',
+            reason TEXT NOT NULL DEFAULT '',
+            requested_by TEXT NOT NULL DEFAULT '',
+            requested_by_user_id INTEGER,
+            requested_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            decided_by TEXT NOT NULL DEFAULT '',
+            decided_by_user_id INTEGER,
+            decided_at TEXT,
+            executed_at TEXT,
+            execution_result_json TEXT NOT NULL DEFAULT '{}',
+            notes TEXT NOT NULL DEFAULT ''
+        );
+        CREATE INDEX IF NOT EXISTS idx_approvals_status ON approvals(status, requested_at);
+        CREATE INDEX IF NOT EXISTS idx_approvals_entity ON approvals(entity_type, entity_id);
+        """)
+
+
 def migrate():
     """Create or upgrade schema to SCHEMA_VERSION.
 
@@ -1465,6 +1515,8 @@ def migrate():
                     _migrate_to_19(conn)
                 if version < 20:
                     _migrate_to_20(conn)
+                if version < 21:
+                    _migrate_to_21(conn)
                 conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
                 ensure_runtime_indexes(conn)
                 _record_migration_meta(conn, status="upgraded", from_version=from_version, to_version=SCHEMA_VERSION)

@@ -599,3 +599,62 @@ async def package_item_delete(request: Request, item_id: int):
     except Exception as e:
         deps.add_flash(request, str(e), "error")
     r = deps.redirect("/settings/packages"); deps.save_session(r, deps.get_session(request)); return r
+
+
+
+
+@router.get("/settings/approvals")
+def settings_approvals(request: Request, status: str = ""):
+    deps.require_unlock(request)
+    try:
+        approvals = services.list_approvals(status=status or "", limit=200)
+    except Exception:
+        approvals = []
+    return render(request, "settings/approvals.html", {
+        "title": "Approvals",
+        "approvals": approvals,
+        "status_filter": status or "",
+    })
+
+
+@router.post("/settings/approvals/request")
+async def settings_approvals_request(request: Request):
+    form = await deps.require_unlocked_form(request)
+    try:
+        payload_raw = (form.get("payload_json") or "").strip()
+        payload = {}
+        if payload_raw:
+            try:
+                payload = __import__("json").loads(payload_raw)
+            except Exception:
+                raise ValueError("payload_json must be valid JSON.")
+        aid = services.create_approval_request(
+            form.get("action_type", ""),
+            entity_type=form.get("entity_type", ""),
+            entity_id=form.get("entity_id", ""),
+            payload=payload,
+            reason=form.get("reason", ""),
+            notes=form.get("notes", ""),
+        )
+        deps.add_flash(request, f"Approval request #{aid} created (pending).", "success")
+    except Exception as e:
+        deps.add_flash(request, str(e), "error")
+    r = deps.redirect("/settings/approvals"); deps.save_session(r, deps.get_session(request)); return r
+
+
+@router.post("/settings/approvals/{approval_id}/decide")
+async def settings_approvals_decide(request: Request, approval_id: int):
+    form = await deps.require_unlocked_form(request)
+    try:
+        services.decide_approval(
+            approval_id,
+            form.get("decision", ""),
+            notes=form.get("notes", ""),
+        )
+        deps.add_flash(request, f"Approval #{approval_id} updated.", "success")
+    except Exception as e:
+        deps.add_flash(request, str(e), "error")
+    status = form.get("status_filter", "")
+    r = deps.redirect("/settings/approvals" + (f"?status={status}" if status else ""))
+    deps.save_session(r, deps.get_session(request)); return r
+

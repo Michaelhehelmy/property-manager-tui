@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h2>Approvals (P4 groundwork)</h2>
+    <p class="page-subtitle">Foundational approval requests/decisions for sensitive operations. This provides audit-friendly request/approval records; automated execution wiring is incremental and action-specific.</p>
+  </div>
+  <div><a class="button-like" href="/settings?tab=updates">← Settings</a></div>
+</div>
+
+<div class="grid grid-2">
+  <div class="panel"><h3>Create approval request</h3>
+    <form method="post" action="/settings/approvals/request"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+      <label>Action type<input name="action_type" required placeholder="e.g. refund_override, room_delete, rate_change"/></label>
+      <div class="row"><label>Entity type<input name="entity_type" placeholder="reservation/payment/room/..."/></label><label>Entity ID<input name="entity_id" placeholder="ID"/></label></div>
+      <label>Reason<input name="reason" placeholder="Why approval is needed"/></label>
+      <label>Payload (JSON, optional)<textarea name="payload_json" rows="4" placeholder='{"key":"value"}'></textarea></label>
+      <label>Notes<input name="notes"/></label>
+      <button class="ok" type="submit">Create pending request</button>
+    </form>
+    <p class="muted">Requires privileged/unlocked access. Requests are recorded with actor context for auditability.</p>
+  </div>
+  <div class="panel"><h3>Filter</h3>
+    <form method="get" action="/settings/approvals" class="row">
+      <select name="status">
+        <option value="" {% if not status_filter %}selected{% endif %}>All statuses</option>
+        {% for s in ['pending','approved','rejected','cancelled','executed'] %}<option value="{{s}}" {% if status_filter==s %}selected{% endif %}>{{s}}</option>{% endfor %}
+      </select>
+      <div style="flex:0"><button type="submit">Apply</button></div>
+    </form>
+    <p class="muted">Statuses: pending, approved, rejected, cancelled, executed. Execution remains action-specific and may be manual in this foundation stage.</p>
+  </div>
+</div>
+
+<div class="panel" style="margin-top:16px"><h3>Approval requests</h3>
+  <div class="table-wrap"><table>
+    <tr><th>ID</th><th>Status</th><th>Action</th><th>Entity</th><th>Requested</th><th>Decided</th><th>Details</th><th>Decision</th></tr>
+    {% for a in approvals %}<tr>
+      <td>{{a.id}}</td>
+      <td>{{a.status}}</td>
+      <td><strong>{{a.action_type}}</strong>{% if a.reason %}<div class="muted">{{a.reason}}</div>{% endif %}</td>
+      <td>{{a.entity_type}}{% if a.entity_id %} #{{a.entity_id}}{% endif %}</td>
+      <td><div>{{a.requested_at}}</div><div class="muted">{{a.requested_by or ''}}</div></td>
+      <td><div>{{a.decided_at or ''}}</div><div class="muted">{{a.decided_by or ''}}</div></td>
+      <td>
+        {% if a.payload_json %}<details><summary class="muted">Payload</summary><pre style="white-space:pre-wrap;font-size:11px;margin:4px 0">{{a.payload_json}}</pre></details>{% endif %}
+        {% if a.execution_result_json and a.execution_result_json != {} %}<details><summary class="muted">Execution</summary><pre style="white-space:pre-wrap;font-size:11px;margin:4px 0">{{a.execution_result_json}}</pre></details>{% endif %}
+        {% if a.notes %}<div class="muted">{{a.notes}}</div>{% endif %}
+      </td>
+      <td>
+        {% if a.status == 'pending' %}
+        <form method="post" action="/settings/approvals/{{a.id}}/decide"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><input type="hidden" name="status_filter" value="{{ status_filter }}"/>
+          <select name="decision"><option value="approved">Approve</option><option value="rejected">Reject</option><option value="cancelled">Cancel</option></select>
+          <input name="notes" placeholder="Decision notes" style="max-width:140px"/>
+          <button type="submit">Apply</button>
+        </form>
+        {% else %}<span class="muted">—</span>{% endif %}
+      </td>
+    </tr>{% else %}<tr><td colspan="8" class="muted">No approval requests found.</td></tr>{% endfor %}
+  </table></div>
+</div>
+
+<p style="margin-top:12px"><a href="/settings/users">Users &amp; Roles</a> · <a href="/settings">Settings</a></p>
+{% endblock %}
