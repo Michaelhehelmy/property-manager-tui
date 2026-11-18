@@ -2648,6 +2648,62 @@ def create_discount_voucher(code, discount_type="amount", value=0.0, name="", de
     return vid
 
 
+def update_discount_voucher(voucher_id, code=None, discount_type=None, value=None, name=None, description=None, max_uses=None, valid_from=None, valid_to=None, active=None):
+    vid = int(voucher_id)
+    row = db.connect().execute("SELECT * FROM discount_vouchers WHERE id=?", (vid,)).fetchone()
+    if not row:
+        raise ValueError("Voucher not found.")
+    vals = {
+        "code": (code if code is not None else row["code"]),
+        "discount_type": (discount_type if discount_type is not None else row["discount_type"]),
+        "value": (value if value is not None else row["value"]),
+        "name": (name if name is not None else row["name"]),
+        "description": (description if description is not None else row["description"]),
+        "max_uses": (max_uses if max_uses is not None else row["max_uses"]),
+        "valid_from": (valid_from if valid_from is not None else row["valid_from"]),
+        "valid_to": (valid_to if valid_to is not None else row["valid_to"]),
+        "active": (active if active is not None else row["active"]),
+    }
+    vals["code"] = (vals["code"] or "").strip().upper()
+    if not vals["code"]:
+        raise ValueError("Voucher code is required.")
+    vals["discount_type"] = (vals["discount_type"] or "amount").strip().lower()
+    if vals["discount_type"] not in ("amount", "percent"):
+        vals["discount_type"] = "amount"
+    try:
+        vals["value"] = float(vals["value"] or 0)
+    except Exception:
+        raise ValueError("Invalid discount value.")
+    if vals["value"] <= 0:
+        raise ValueError("Discount value must be greater than 0.")
+    if vals["discount_type"] == "percent" and vals["value"] > 100:
+        raise ValueError("Percent discount cannot exceed 100.")
+    if vals["max_uses"] in ("", None):
+        vals["max_uses"] = None
+    else:
+        try:
+            vals["max_uses"] = int(vals["max_uses"])
+            if vals["max_uses"] < 0:
+                raise ValueError()
+        except Exception:
+            raise ValueError("max_uses must be a non-negative integer or blank.")
+    with db.transaction() as conn:
+        try:
+            conn.execute(
+                """UPDATE discount_vouchers
+                   SET code=?, name=?, description=?, discount_type=?, value=?, max_uses=?, valid_from=?, valid_to=?, active=?
+                   WHERE id=?""",
+                (vals["code"], (vals["name"] or "").strip(), (vals["description"] or "").strip(), vals["discount_type"], vals["value"],
+                 vals["max_uses"], (vals["valid_from"] or "").strip(), (vals["valid_to"] or "").strip(), 1 if vals["active"] else 0, vid),
+            )
+        except Exception as e:
+            if "UNIQUE" in str(e).upper():
+                raise ValueError("A voucher with this code already exists.")
+            raise
+    _audit("discount_voucher_update", "discount_voucher", vid, vals["code"])
+    return vid
+
+
 def list_reservation_discounts(reservation_id):
     rid = int(reservation_id)
     rows = db.connect().execute(

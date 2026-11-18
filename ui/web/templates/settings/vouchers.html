@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Discount Vouchers</h2>
+<p class="muted">Manage voucher codes for reservation discounts. Usage counts and validity are enforced when vouchers are applied; voiding an applied discount adjusts usage where applicable.</p>
+
+<div class="grid grid-2">
+  <div class="panel"><h3>Create voucher</h3>
+    <form method="post" action="/settings/vouchers/add"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+      <div class="row"><label>Code<input name="code" required placeholder="e.g. WELCOME10"/></label><label>Name<input name="name" placeholder="Display name"/></label></div>
+      <div class="row"><label>Type<select name="discount_type"><option value="amount">Amount</option><option value="percent">Percent</option></select></label><label>Value<input name="value" type="number" step="0.01" required/></label></div>
+      <label>Description<input name="description"/></label>
+      <div class="row"><label>Max uses<input name="max_uses" type="number" min="0" placeholder="Blank = unlimited"/></label><label>Active <input type="checkbox" name="active" checked/></label></div>
+      <div class="row"><label>Valid from<input name="valid_from" placeholder="YYYY-MM-DD (optional)"/></label><label>Valid to<input name="valid_to" placeholder="YYYY-MM-DD (optional)"/></label></div>
+      <label>Super password<input type="password" name="password" required/></label>
+      <button class="ok" type="submit">Create voucher</button>
+    </form>
+  </div>
+  <div class="panel"><h3>Notes</h3>
+    <ul>
+      <li>Apply vouchers or custom discounts from the reservation detail folio/actions.</li>
+      <li>Percent vouchers are capped by validation rules in services.</li>
+      <li>Deactivate vouchers to prevent new use while preserving history.</li>
+    </ul>
+  </div>
+</div>
+
+<div class="panel" style="margin-top:16px"><h3>Vouchers</h3>
+  <div class="table-wrap"><table>
+    <tr><th>ID</th><th>Code</th><th>Type</th><th>Value</th><th>Uses</th><th>Validity</th><th>Active</th><th>Edit</th></tr>
+    {% for v in items %}<tr>
+      <td>{{v.id}}</td>
+      <td><strong>{{v.code}}</strong>{% if v.name %}<div class="muted">{{v.name}}</div>{% endif %}{% if v.description %}<div class="muted">{{v.description}}</div>{% endif %}</td>
+      <td>{{v.discount_type}}</td>
+      <td>{{v.value}}</td>
+      <td>{{v.used_count or 0}}{% if v.max_uses is not none %} / {{v.max_uses}}{% else %} / ∞{% endif %}</td>
+      <td>{{v.valid_from or '—'}} → {{v.valid_to or '—'}}</td>
+      <td>{{'yes' if v.active else 'no'}}</td>
+      <td>
+        <details><summary>Edit</summary>
+          <form method="post" action="/settings/vouchers/{{v.id}}/edit" style="margin-top:6px"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+            <div class="row"><label>Code<input name="code" value="{{v.code}}" required/></label><label>Name<input name="name" value="{{v.name or ''}}"/></label></div>
+            <div class="row"><label>Type<select name="discount_type"><option value="amount" {% if v.discount_type=='amount' %}selected{% endif %}>Amount</option><option value="percent" {% if v.discount_type=='percent' %}selected{% endif %}>Percent</option></select></label><label>Value<input name="value" type="number" step="0.01" value="{{v.value}}"/></label></div>
+            <label>Description<input name="description" value="{{v.description or ''}}"/></label>
+            <div class="row"><label>Max uses<input name="max_uses" type="number" min="0" value="{{v.max_uses if v.max_uses is not none else ''}}" placeholder="Blank = unlimited"/></label><label>Active <input type="checkbox" name="active" {% if v.active %}checked{% endif %}/></label></div>
+            <div class="row"><label>Valid from<input name="valid_from" value="{{v.valid_from or ''}}"/></label><label>Valid to<input name="valid_to" value="{{v.valid_to or ''}}"/></label></div>
+            <label>Super password<input type="password" name="password" required/></label>
+            <button type="submit">Save</button>
+          </form>
+        </details>
+      </td>
+    </tr>{% else %}<tr><td colspan="8" class="muted">No vouchers yet.</td></tr>{% endfor %}
+  </table></div>
+</div>
+
+<p style="margin-top:12px"><a href="/settings">← Back to Settings</a></p>
+{% endblock %}

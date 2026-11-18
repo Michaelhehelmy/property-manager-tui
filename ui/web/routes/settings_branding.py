@@ -533,6 +533,62 @@ async def updates_apply(request: Request):
 
 
 
+
+@router.get("/settings/vouchers")
+def vouchers(request: Request):
+    try:
+        items = services.list_discount_vouchers(active_only=False)
+    except Exception:
+        items = []
+    return render(request, "settings/vouchers.html", {"title": "Discount Vouchers", "items": items})
+
+
+@router.post("/settings/vouchers/add")
+async def voucher_add(request: Request):
+    form = await deps.require_unlocked_form(request)
+    try:
+        mu = form.get("max_uses")
+        services.create_discount_voucher(
+            form.get("code", ""),
+            discount_type=form.get("discount_type", "amount"),
+            value=float(form.get("value") or 0),
+            name=form.get("name", ""),
+            description=form.get("description", ""),
+            max_uses=(int(mu) if mu not in (None, "") else None),
+            valid_from=form.get("valid_from", ""),
+            valid_to=form.get("valid_to", ""),
+            active=bool(form.get("active")),
+        )
+        deps.add_flash(request, "Voucher created.", "success")
+    except Exception as e:
+        deps.add_flash(request, str(e), "error")
+    r = deps.redirect("/settings/vouchers"); deps.save_session(r, deps.get_session(request)); return r
+
+
+@router.post("/settings/vouchers/{voucher_id}/edit")
+async def voucher_edit(request: Request, voucher_id: int):
+    form = await deps.require_unlocked_form(request)
+    try:
+        mu = form.get("max_uses")
+        services.update_discount_voucher(
+            voucher_id,
+            code=form.get("code"),
+            discount_type=form.get("discount_type"),
+            value=float(form.get("value") or 0),
+            name=form.get("name"),
+            description=form.get("description"),
+            max_uses=(mu if mu == "" else (int(mu) if mu not in (None, "") else "")),
+            valid_from=form.get("valid_from"),
+            valid_to=form.get("valid_to"),
+            active=("active" in form),
+        )
+        deps.add_flash(request, "Voucher updated.", "success")
+    except Exception as e:
+        deps.add_flash(request, str(e), "error")
+    r = deps.redirect("/settings/vouchers"); deps.save_session(r, deps.get_session(request)); return r
+
+
+
 @router.get("/settings/service-catalog")
 def service_catalog(request: Request):
     try:
