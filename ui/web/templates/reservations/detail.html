@@ -153,7 +153,13 @@
     <td>{% if p['voided_at'] %}voided{% else %}active{% endif %}</td>
     <td>{% if not p['voided_at'] %}<form method="post" action="/reservations/{{r['id']}}/payments/{{p['id']}}/void" class="inline"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><input type="password" name="password" placeholder="Pwd" style="width:90px;display:inline-block"/><button class="err" title="Void/correct this payment or refund (reverses ledger impact; requires super password)">Void</button></form>{% else %}—{% endif %}</td>
   </tr>{% else %}<tr><td colspan="9" class="muted">None</td></tr>{% endfor %}</table></div>
-  <p class="muted">Net paid: {{ "%.2f"|format(folio.total_paid or 0) }}{% if folio.deposits is not none or folio.refunds is not none %} (deposits {{ "%.2f"|format(folio.deposits or 0) }}, refunds {{ "%.2f"|format(folio.refunds or 0) }}){% endif %}. Cash payments/refunds may be auto-linked to the open cash shift when applicable.</p></div>
+  <p class="muted">Net paid: {{ "%.2f"|format(folio.total_paid or 0) }}{% if folio.deposits is not none or folio.refunds is not none %} (deposits {{ "%.2f"|format(folio.deposits or 0) }}, refunds {{ "%.2f"|format(folio.refunds or 0) }}){% endif %}. Cash payments/refunds may be auto-linked to the open cash shift when applicable.</p>
+  {% if folio.allocation_summary and folio.allocation_summary.payments_with_allocation %}
+  <details style="margin-top:6px"><summary class="muted">Explicit payment allocations ({{folio.allocation_summary.payments_with_allocation}} payment{{'s' if folio.allocation_summary.payments_with_allocation != 1 else ''}})</summary>
+    <p class="muted">Allocated {{ "%.2f"|format(folio.allocation_summary.allocated_total or 0) }} · Unallocated {{ "%.2f"|format(folio.allocation_summary.unallocated_total or 0) }}</p>
+    {% if folio.allocation_summary.by_category %}<ul>{% for k,v in folio.allocation_summary.by_category.items() %}<li>{{k}}: {{ "%.2f"|format(v or 0) }}</li>{% endfor %}</ul>{% endif %}
+  </details>
+  {% endif %}</div>
 </div>
 <div class="panel" style="margin-top:16px" id="services"><h3>Extra services / add-ons</h3>
   <p class="muted">Stay extras posted to the reservation folio (separate from POS inventory sales and activities). Voiding requires unlock + super password.</p>
