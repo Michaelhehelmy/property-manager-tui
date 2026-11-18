@@ -7315,8 +7315,34 @@ def apply_package_to_reservation(reservation_id, package_id, notes=""):
 
 def list_reservation_packages(reservation_id):
     try:
-        rows = db.connect().execute("SELECT * FROM reservation_packages WHERE reservation_id=? ORDER BY id DESC", (int(reservation_id),)).fetchall()
-        return [dict(r) for r in rows]
+        conn = db.connect()
+        rows = conn.execute("SELECT * FROM reservation_packages WHERE reservation_id=? ORDER BY id DESC", (int(reservation_id),)).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            try:
+                line_rows = conn.execute(
+                    """SELECT rpl.id AS line_id, rpl.reservation_service_id, rpl.item_snapshot_json,
+                              rs.description, rs.quantity, rs.unit_price, rs.tax_amount, rs.gross_amount,
+                              rs.status AS service_status, rs.voided_at AS service_voided_at, rs.posted_at AS service_posted_at
+                       FROM reservation_package_lines rpl
+                       LEFT JOIN reservation_services rs ON rs.id = rpl.reservation_service_id
+                       WHERE rpl.reservation_package_id=?
+                       ORDER BY rpl.id""",
+                    (int(r["id"]),),
+                ).fetchall()
+                d["lines"] = [dict(x) for x in line_rows]
+            except Exception:
+                d["lines"] = []
+            # parse snapshots best-effort for consumers
+            for k in ("snapshot_json",):
+                try:
+                    if isinstance(d.get(k), str):
+                        d[k + "_obj"] = json.loads(d[k]) if d.get(k) else {}
+                except Exception:
+                    pass
+            out.append(d)
+        return out
     except Exception:
         return []
 
