@@ -164,6 +164,116 @@ async def create(request: Request):
     except Exception as e:
         return flash_redirect(request, "/reservations?tab=create", str(e), "error")
 
+# --- Reservation groups (P5 foundation) ---
+@router.get("/reservations/groups")
+def groups(request: Request):
+    try:
+        groups = services.list_reservation_groups(status="")
+    except Exception:
+        groups = []
+    recent = connect().execute(
+        "SELECT id, guest_name, status FROM reservations WHERE status NOT IN ('Deleted') ORDER BY id DESC LIMIT 200"
+    ).fetchall()
+    return render(request, "reservations/groups.html", {"title":"Reservation Groups","groups":groups,"recent_reservations":recent})
+
+
+@router.post("/reservations/groups/create")
+async def groups_create(request: Request):
+    form = await deps.require_unlocked_form(request, permission="reservations.manage")
+    try:
+        gid = services.create_reservation_group(
+            form.get("name",""),
+            group_type=form.get("group_type","group"),
+            contact_name=form.get("contact_name",""),
+            contact_phone=form.get("contact_phone",""),
+            contact_email=form.get("contact_email",""),
+            notes=form.get("notes",""),
+        )
+        return flash_redirect(request, "/reservations/groups", f"Group #{gid} created", "success")
+    except Exception as e:
+        return flash_redirect(request, "/reservations/groups", str(e), "error")
+
+
+@router.post("/reservations/groups/{gid}/add")
+async def groups_add(gid: int, request: Request):
+    form = await deps.require_unlocked_form(request, permission="reservations.manage")
+    try:
+        services.add_reservation_to_group(gid, int(form.get("reservation_id")), role=form.get("role","member"), notes=form.get("notes",""))
+        return flash_redirect(request, "/reservations/groups", "Reservation added to group", "success")
+    except Exception as e:
+        return flash_redirect(request, "/reservations/groups", str(e), "error")
+
+
+@router.post("/reservations/groups/{gid}/remove/{rid}")
+async def groups_remove(gid: int, rid: int, request: Request):
+    await deps.require_unlocked_form(request, permission="reservations.manage")
+    try:
+        services.remove_reservation_from_group(gid, rid)
+        return flash_redirect(request, "/reservations/groups", "Reservation removed from group", "success")
+    except Exception as e:
+        return flash_redirect(request, "/reservations/groups", str(e), "error")
+
+
+
+@router.post("/reservations/groups/{gid}/update")
+async def groups_update(gid: int, request: Request):
+    form = await deps.require_unlocked_form(request, permission="reservations.manage")
+    try:
+        services.update_reservation_group(
+            gid,
+            name=form.get("name"),
+            group_type=form.get("group_type"),
+            contact_name=form.get("contact_name"),
+            contact_phone=form.get("contact_phone"),
+            contact_email=form.get("contact_email"),
+            notes=form.get("notes"),
+            status=form.get("status"),
+        )
+        return flash_redirect(request, "/reservations/groups", "Group updated", "success")
+    except Exception as e:
+        return flash_redirect(request, "/reservations/groups", str(e), "error")
+
+
+@router.post("/reservations/groups/{gid}/payment")
+async def group_record_payment(gid: int, request: Request):
+    form = await deps.require_unlocked_form(request, permission="payments.record")
+    try:
+        rid = int(form.get("reservation_id") or 0)
+        if not rid:
+            raise ValueError("Select a group member reservation.")
+        amount = float(form.get("amount") or 0)
+        method = form.get("method", "Cash")
+        payment_type = form.get("payment_type", "Payment")
+        notes = form.get("notes", "")
+        reference = (form.get("reference") or "").strip()
+        # ensure member belongs to group (coordinated action safety)
+        g = services.get_reservation_group(gid)
+        if not g:
+            raise ValueError("Reservation group not found.")
+        member_ids = {int(m.get("reservation_id")) for m in (g.get("members") or []) if m.get("reservation_id") is not None}
+        if rid not in member_ids:
+            raise ValueError("Selected reservation is not a member of this group.")
+        pid = services.record_payment(rid, amount, method, notes, payment_type=payment_type, idempotency_key=(form.get("idempotency_key") or "").strip(), reference=reference, allocation_json=(form.get("allocation_json") or "{}"))
+        deps.add_flash(request, f"Payment recorded for reservation #{rid} (payment #{pid}).", "success")
+    except Exception as e:
+        deps.add_flash(request, str(e), "error")
+    r = deps.redirect("/reservations/groups"); deps.save_session(r, deps.get_session(request)); return r
+
+
+
+@router.get("/reservations/groups/{gid}/folio")
+def group_folio(gid: int, request: Request):
+    try:
+        g = services.get_reservation_group(gid)
+        if not g:
+            deps.add_flash(request, "Group not found", "error")
+            return deps.redirect("/reservations/groups")
+        text = services.report_reservation_group_folio(gid)
+        return render(request, "reports/view.html", {"title": f"Group Folio #{gid} - {g.get('name')}", "text": text, "kind": "group_folio", "period": "current"})
+    except Exception as e:
+        deps.add_flash(request, str(e), "error")
+        return deps.redirect("/reservations/groups")
+
 @router.get("/reservations/{rid}")
 def detail(rid: int, request: Request):
     res = services.get_reservation(rid)
@@ -516,112 +626,3 @@ async def void_package(rid: int, reservation_package_id: int, request: Request):
     r = deps.redirect(f"/reservations/{rid}"); deps.save_session(r, deps.get_session(request)); return r
 
 
-# --- Reservation groups (P5 foundation) ---
-@router.get("/reservations/groups")
-def groups(request: Request):
-    try:
-        groups = services.list_reservation_groups(status="")
-    except Exception:
-        groups = []
-    recent = connect().execute(
-        "SELECT id, guest_name, status FROM reservations WHERE status NOT IN ('Deleted') ORDER BY id DESC LIMIT 200"
-    ).fetchall()
-    return render(request, "reservations/groups.html", {"title":"Reservation Groups","groups":groups,"recent_reservations":recent})
-
-
-@router.post("/reservations/groups/create")
-async def groups_create(request: Request):
-    form = await deps.require_unlocked_form(request, permission="reservations.manage")
-    try:
-        gid = services.create_reservation_group(
-            form.get("name",""),
-            group_type=form.get("group_type","group"),
-            contact_name=form.get("contact_name",""),
-            contact_phone=form.get("contact_phone",""),
-            contact_email=form.get("contact_email",""),
-            notes=form.get("notes",""),
-        )
-        return flash_redirect(request, "/reservations/groups", f"Group #{gid} created", "success")
-    except Exception as e:
-        return flash_redirect(request, "/reservations/groups", str(e), "error")
-
-
-@router.post("/reservations/groups/{gid}/add")
-async def groups_add(gid: int, request: Request):
-    form = await deps.require_unlocked_form(request, permission="reservations.manage")
-    try:
-        services.add_reservation_to_group(gid, int(form.get("reservation_id")), role=form.get("role","member"), notes=form.get("notes",""))
-        return flash_redirect(request, "/reservations/groups", "Reservation added to group", "success")
-    except Exception as e:
-        return flash_redirect(request, "/reservations/groups", str(e), "error")
-
-
-@router.post("/reservations/groups/{gid}/remove/{rid}")
-async def groups_remove(gid: int, rid: int, request: Request):
-    await deps.require_unlocked_form(request, permission="reservations.manage")
-    try:
-        services.remove_reservation_from_group(gid, rid)
-        return flash_redirect(request, "/reservations/groups", "Reservation removed from group", "success")
-    except Exception as e:
-        return flash_redirect(request, "/reservations/groups", str(e), "error")
-
-
-
-@router.post("/reservations/groups/{gid}/update")
-async def groups_update(gid: int, request: Request):
-    form = await deps.require_unlocked_form(request, permission="reservations.manage")
-    try:
-        services.update_reservation_group(
-            gid,
-            name=form.get("name"),
-            group_type=form.get("group_type"),
-            contact_name=form.get("contact_name"),
-            contact_phone=form.get("contact_phone"),
-            contact_email=form.get("contact_email"),
-            notes=form.get("notes"),
-            status=form.get("status"),
-        )
-        return flash_redirect(request, "/reservations/groups", "Group updated", "success")
-    except Exception as e:
-        return flash_redirect(request, "/reservations/groups", str(e), "error")
-
-
-@router.post("/reservations/groups/{gid}/payment")
-async def group_record_payment(gid: int, request: Request):
-    form = await deps.require_unlocked_form(request, permission="payments.record")
-    try:
-        rid = int(form.get("reservation_id") or 0)
-        if not rid:
-            raise ValueError("Select a group member reservation.")
-        amount = float(form.get("amount") or 0)
-        method = form.get("method", "Cash")
-        payment_type = form.get("payment_type", "Payment")
-        notes = form.get("notes", "")
-        reference = (form.get("reference") or "").strip()
-        # ensure member belongs to group (coordinated action safety)
-        g = services.get_reservation_group(gid)
-        if not g:
-            raise ValueError("Reservation group not found.")
-        member_ids = {int(m.get("reservation_id")) for m in (g.get("members") or []) if m.get("reservation_id") is not None}
-        if rid not in member_ids:
-            raise ValueError("Selected reservation is not a member of this group.")
-        pid = services.record_payment(rid, amount, method, notes, payment_type=payment_type, idempotency_key=(form.get("idempotency_key") or "").strip(), reference=reference, allocation_json=(form.get("allocation_json") or "{}"))
-        deps.add_flash(request, f"Payment recorded for reservation #{rid} (payment #{pid}).", "success")
-    except Exception as e:
-        deps.add_flash(request, str(e), "error")
-    r = deps.redirect("/reservations/groups"); deps.save_session(r, deps.get_session(request)); return r
-
-
-
-@router.get("/reservations/groups/{gid}/folio")
-def group_folio(gid: int, request: Request):
-    try:
-        g = services.get_reservation_group(gid)
-        if not g:
-            deps.add_flash(request, "Group not found", "error")
-            return deps.redirect("/reservations/groups")
-        text = services.report_reservation_group_folio(gid)
-        return render(request, "reports/view.html", {"title": f"Group Folio #{gid} - {g.get('name')}", "text": text, "kind": "group_folio", "period": "current"})
-    except Exception as e:
-        deps.add_flash(request, str(e), "error")
-        return deps.redirect("/reservations/groups")

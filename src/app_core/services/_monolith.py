@@ -395,7 +395,8 @@ def _validate_setting(key, raw):
 
 def _require_super_password(password):
     """Validate super password or session proof; raise PermissionError on failure."""
-    _require_super_password(password)
+    if not verify_password(password):
+        raise PermissionError("Invalid super password.")
 
 
 def save_settings(changes, password):
