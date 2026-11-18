@@ -1068,6 +1068,19 @@ def tool_get_approval(args=None):
         return {"error": str(e)}
 
 
+def tool_verify_reservation_financials(args=None):
+    try:
+        args = args or {}
+        rid = _safe_int(args.get("reservation_id") or args.get("id"))
+        if not rid:
+            return {"error": "reservation_id is required"}
+        if not hasattr(services, "verify_reservation_financials"):
+            return {"error": "reservation financial integrity check unavailable"}
+        return services.verify_reservation_financials(rid)
+    except Exception as e:
+        return {"error": str(e)}
+
+
 TOOLS = {
     "list_capabilities": {"fn": tool_list_capabilities, "description": "List assistant capabilities.", "parameters": {"type":"object","properties":{},"additionalProperties":False}},
     "get_property_stats": {"fn": tool_get_property_stats, "description": "Property counts/stats (guests, rooms, reservations by status, in-house, arrivals/departures today).", "parameters": {"type":"object","properties":{},"additionalProperties":False}},
@@ -1098,6 +1111,7 @@ TOOLS = {
     "get_menu_info": {"fn": tool_get_menu_info, "description": "Meals/menu information.", "parameters": {"type":"object","properties":{},"additionalProperties":False}},
     "list_rate_plans": {"fn": tool_list_rate_plans, "description": "List rate plans and usage.", "parameters": {"type":"object","properties":{},"additionalProperties":False}},
     "verify_ledger_integrity": {"fn": tool_verify_ledger_integrity, "description": "Read-only ledger/data integrity health check.", "parameters": {"type":"object","properties":{},"additionalProperties":False}},
+    "verify_reservation_financials": {"fn": tool_verify_reservation_financials, "description": "Read-only reservation-level financial integrity/invariant check (charges, payments, allocations, ledger consistency).", "parameters": {"type":"object","properties":{"reservation_id":{"type":"integer"}},"required":["reservation_id"],"additionalProperties":False}},
     "search_guests": {"fn": tool_search_guests, "description": "Search guests by name/phone/email fragment.", "parameters": {"type":"object","properties":{"query":{"type":"string"},"limit":{"type":"integer"}},"required":["query"],"additionalProperties":False}},
     "get_guest_profile": {"fn": tool_get_guest_profile, "description": "Guest profile and recent reservations.", "parameters": {"type":"object","properties":{"guest_id":{"type":"integer"}},"required":["guest_id"],"additionalProperties":False}},
     "get_guest_last_visit": {"fn": tool_get_guest_last_visit, "description": "Guest's last visit (most recent Checked Out, else most recent non-deleted).", "parameters": {"type":"object","properties":{"guest_id":{"type":"integer"}},"required":["guest_id"],"additionalProperties":False}},

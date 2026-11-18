@@ -388,8 +388,9 @@ async def void_payment_route(rid: int, payment_id: int, request: Request):
             raise ValueError("Payment not found.")
         if int(row["reservation_id"] or 0) != int(rid):
             raise ValueError("Payment does not belong to this reservation.")
+        already = bool(row["voided_at"])
         services.void_payment(payment_id, deps.service_password(request, form))
-        deps.add_flash(request, "Payment/refund voided", "success")
+        deps.add_flash(request, "Payment/refund already voided" if already else "Payment/refund voided", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
     r = deps.redirect(f"/reservations/{rid}"); deps.save_session(r, deps.get_session(request)); return r

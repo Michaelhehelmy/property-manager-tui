@@ -279,6 +279,18 @@ def _execute_single(intent: str, text: str, slots: dict, ui_context=None):
         data = execute_tool("get_reservation_group", {"group_id": gidq}); tools_used.append("get_reservation_group")
         return _answer(intent, tools_used, data)
 
+
+    if intent == "reservation_financial_integrity":
+        ridq = slots.get("reservation_id") or slots.get("context", {}).get("reservation_id")
+        if not ridq:
+            m = re.search(r"(?:reservation|res|booking)\s*#?\s*(\d+)", text or "", re.I)
+            if m:
+                try: ridq = int(m.group(1))
+                except Exception: ridq = None
+        if not ridq:
+            return _need("Which reservation ID should I check for financial integrity?", intent, slots, missing=["reservation_id"])
+        return intent, "verify_reservation_financials", {"reservation_id": _coerce_int(ridq)}, "Checking grounded reservation financial integrity."
+
     if intent == "reservation_packages_applied":
         ridq = slots.get("reservation_id") or slots.get("context", {}).get("reservation_id")
         if not ridq:

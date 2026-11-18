@@ -1157,6 +1157,42 @@ def _fmt_approval_detail(data: dict) -> str:
     return "\n".join(lines)
 
 
+def _fmt_reservation_financial_integrity(data: dict) -> str:
+    if data.get("error"): return f"I couldn’t verify reservation financial integrity ({data.get('error')})."
+    rid = data.get("reservation_id")
+    ok = data.get("ok")
+    issues = data.get("issues") or []
+    warnings = data.get("warnings") or []
+    details = data.get("details") or {}
+    bd = details.get("balance_breakdown") or {}
+    status = "OK" if ok else "ISSUES FOUND"
+    lines = [f"**Reservation #{rid} financial integrity** (grounded, read-only): **{status}**"]
+    if bd:
+        lines.append(f"- Charges { _fmt_money(bd.get('total_charges') or 0) } · Paid { _fmt_money(bd.get('total_paid') or 0) } · Balance { _fmt_money(bd.get('balance_due') or 0) } (status: {details.get('status','')})")
+        if bd.get("allocation_summary") and bd["allocation_summary"].get("payments_with_allocation"):
+            a = bd["allocation_summary"]
+            lines.append(f"- Explicit allocations: {a.get('payments_with_allocation')} payment(s), allocated { _fmt_money(a.get('allocated_total') or 0) }, unallocated { _fmt_money(a.get('unallocated_total') or 0) }")
+    if issues:
+        lines.append(f"- Issues: {len(issues)}")
+        for it in issues[:10]:
+            if isinstance(it, dict):
+                lines.append(f"  - {it.get('type','issue')}: {_short(json.dumps(it, ensure_ascii=False), 180)}")
+            else:
+                lines.append(f"  - {it}")
+        if len(issues) > 10: lines.append(f"  - …and {len(issues)-10} more")
+    else:
+        lines.append("- Issues: none detected by current checks")
+    if warnings:
+        lines.append(f"- Warnings: {len(warnings)}")
+        for w in warnings[:10]:
+            if isinstance(w, dict):
+                lines.append(f"  - {w.get('type','warning')}: {_short(json.dumps(w, ensure_ascii=False), 160)}")
+            else:
+                lines.append(f"  - {w}")
+        if len(warnings) > 10: lines.append(f"  - …and {len(warnings)-10} more")
+    return "\n".join(lines)
+
+
 _INTENT_FORMATTERS = {
     "capabilities_help": _fmt_capabilities,
     "property_stats": _fmt_stats,

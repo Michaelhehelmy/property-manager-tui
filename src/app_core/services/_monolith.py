@@ -5777,6 +5777,108 @@ def verify_ledger_integrity():
         "note": "Read-only checks. Investigate issues before manual data edits; ledger is append-only.",
     }
 
+def verify_reservation_financials(reservation_id):
+    """Read-only reservation-level financial invariant/reconciliation checks (B1)."""
+    rid = int(reservation_id)
+    conn = db.connect()
+    issues = []
+    warnings = []
+    try:
+        res = conn.execute("SELECT id, status FROM reservations WHERE id=?", (rid,)).fetchone()
+        if not res:
+            return {"ok": False, "reservation_id": rid, "issues": ["reservation_not_found"], "warnings": [], "details": {}}
+        bd = get_balance_breakdown(rid) or {}
+        bal = calculate_guest_balance(rid)
+        details = {
+            "status": res["status"],
+            "balance_breakdown": bd,
+            "calculated_balance": round(float(bal or 0), 2),
+        }
+        # canonical balance consistency
+        try:
+            if abs(float(bd.get("balance_due") or 0) - float(bal or 0)) > 0.01:
+                issues.append("balance_due_mismatch")
+        except Exception:
+            warnings.append("balance_due_compare_failed")
+        try:
+            comp_total = round(
+                float(bd.get("accommodation_gross") or 0) + float(bd.get("pos_gross") or 0) + float(bd.get("services_gross") or 0) + float(bd.get("discounts_gross") or 0), 2
+            )
+            if abs(comp_total - float(bd.get("total_charges") or 0)) > 0.01:
+                issues.append("component_total_mismatch")
+        except Exception:
+            warnings.append("component_total_compare_failed")
+        # payment totals vs ledger (active payments/refunds)
+        try:
+            pay_sum = conn.execute(
+                "SELECT COALESCE(SUM(amount),0) FROM payments WHERE reservation_id=? AND voided_at IS NULL",
+                (rid,)
+            ).fetchone()[0] or 0
+            if abs(round(float(pay_sum), 2) - float(bd.get("total_paid") or 0)) > 0.01:
+                issues.append("payments_total_mismatch")
+            details["payments_sum_active"] = round(float(pay_sum), 2)
+        except Exception as e:
+            warnings.append(f"payments_check:{e}")
+        # allocation sanity (active payments)
+        try:
+            rows = conn.execute("SELECT id, amount, allocation_json, voided_at FROM payments WHERE reservation_id=?", (rid,)).fetchall()
+            bad_alloc = []
+            for r in rows:
+                if r["voided_at"]:
+                    continue
+                raw = (r["allocation_json"] or "").strip()
+                if not raw or raw in ("{}", "null", "None"):
+                    continue
+                try:
+                    obj = json.loads(raw)
+                    lines = obj.get("lines") if isinstance(obj, dict) and isinstance(obj.get("lines"), dict) else {}
+                    total = sum(float(v or 0) for v in (lines or {}).values())
+                    if total - abs(float(r["amount"] or 0)) > 0.01:
+                        bad_alloc.append(r["id"])
+                except Exception:
+                    bad_alloc.append(r["id"])
+            if bad_alloc:
+                issues.append({"type": "allocation_invalid_or_exceeds_amount", "payment_ids": bad_alloc[:20]})
+        except Exception as e:
+            warnings.append(f"allocation_check:{e}")
+        # voided package/service linkage consistency (best-effort)
+        try:
+            rows = conn.execute(
+                """SELECT rs.id, rs.status, rs.voided_at, rp.status AS pkg_status, rp.voided_at AS pkg_voided_at
+                   FROM reservation_services rs
+                   JOIN reservation_package_lines rpl ON rpl.reservation_service_id = rs.id
+                   JOIN reservation_packages rp ON rp.id = rpl.reservation_package_id
+                   WHERE rs.reservation_id=?""", (rid,)
+            ).fetchall()
+            bad_links = []
+            for r in rows:
+                pkg_active = (not r["pkg_voided_at"]) and str(r["pkg_status"] or "").lower() != "voided"
+                svc_voided = bool(r["voided_at"]) or str(r["status"] or "").lower() == "voided"
+                if pkg_active and svc_voided:
+                    bad_links.append(r["id"])
+            if bad_links:
+                issues.append({"type": "package_linked_service_void_mismatch", "service_ids": bad_links[:20]})
+        except Exception as e:
+            warnings.append(f"package_link_check:{e}")
+        # cancelled/no-show/deleted reservations should have zero balance by policy
+        try:
+            if res["status"] in ("Cancelled", "No-Show", "Deleted") and abs(float(bal or 0)) > 0.01:
+                warnings.append("non_active_reservation_nonzero_balance")
+        except Exception:
+            pass
+        return {
+            "ok": len([i for i in issues if isinstance(i, str) or isinstance(i, dict)]) == 0,
+            "reservation_id": rid,
+            "issues": issues,
+            "warnings": warnings,
+            "details": details,
+            "checked_at": datetime.now().isoformat(timespec="seconds"),
+        }
+    except Exception as e:
+        return {"ok": False, "reservation_id": rid, "issues": [f"check_error:{e}"], "warnings": warnings, "details": {}}
+
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # ANALYTICS, UNIFIED REPORTS, EXPORT PRESETS (read-only / guarded)
 # ═══════════════════════════════════════════════════════════════════════════

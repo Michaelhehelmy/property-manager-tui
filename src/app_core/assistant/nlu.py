@@ -69,6 +69,7 @@ _INTENT_CUES = {
   "housekeeping_tasks": (1.35, ["housekeeping tasks","cleaning tasks","room tasks","hk tasks","housekeeping workflow","tasks for housekeeping"]),
   "housekeeping_ops_report": (1.4, ["housekeeping ops","housekeeping operations","housekeeping report","housekeeping ops report","room operations housekeeping","hk ops","housekeeping overview report"]),
   "ledger_integrity": (1.4, ["health check","integrity","ledger integrity","data integrity","reconcile ledger","orphaned","mismatched records","sanity check","audit the database","consistency","books/data consistency"]),
+  "reservation_financial_integrity": (1.5, ["reservation integrity","reservation financial integrity","folio integrity","financial integrity for reservation","check reservation finances","reservation ledger check","balance integrity reservation","check reservation #","integrity of reservation"]),
   "recent_activity": (1.2, ["recent activity","audit log","what changed lately","recent changes"]),
   "expiring_batches": (1.5, ["expiring batch","expiring batches","expired batch","what expires","expires soon","expiry soon","nearing expiry","batches expiring","items expiring"]),
   "inventory_batches": (1.4, ["list batches","show batches","inventory batches","batch list","stock batches","lots for","list lots","inventory lots"]),
