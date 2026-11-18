@@ -4920,7 +4920,7 @@ def _front_desk_row(res_row, day, bucket):
     rid = d.get("id")
     room_id = d.get("room_id")
     try:
-        room = get_room_by_id(room_id) if room_id else None
+        room = get_room(room_id) if room_id else None
     except Exception:
         room = None
     if room:

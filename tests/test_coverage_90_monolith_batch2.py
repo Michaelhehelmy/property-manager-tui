@@ -116,13 +116,11 @@ def test_front_desk_row_and_report_daily_ops(monkeypatch):
     res = {"id": 1, "guest_name": "G", "status": "Checked In", "check_in_date": "2099-01-01", "check_out_date": "2099-01-02", "room_id": 5}
     room = {"id": 5, "room_number": "101", "room_type": "Std", "housekeeping_status": "Dirty"}
     monkeypatch.setattr(m, "get_reservation", lambda rid: res, raising=False)
-    monkeypatch.setattr(m, "get_room_by_id", lambda rid: room, raising=False)
     monkeypatch.setattr(m, "get_room", lambda rid: room, raising=False)
     monkeypatch.setattr(m, "calculate_guest_balance", lambda rid: (_ for _ in ()).throw(RuntimeError("x")), raising=False)
     d = m._front_desk_row(res, "2099-01-02", "departure")
     assert d.get("room_dirty") is True
     room2 = {"id": 5, "room_number": "101", "room_type": "Std", "housekeeping_status": "Maintenance"}
-    monkeypatch.setattr(m, "get_room_by_id", lambda rid: room2, raising=False)
     monkeypatch.setattr(m, "get_room", lambda rid: room2, raising=False)
     monkeypatch.setattr(m, "calculate_guest_balance", lambda rid: 10.0, raising=False)
     d = m._front_desk_row(res, "2099-01-02", "departures")

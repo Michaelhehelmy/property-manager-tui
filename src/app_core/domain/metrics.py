@@ -6,7 +6,6 @@ so they can be reused by services, reports, and future business logic.
 from __future__ import annotations
 
 from collections.abc import Iterable
-from datetime import date
 from typing import Any
 
 from .dates import parse_date, stay_nights_exclusive
