@@ -1290,10 +1290,28 @@ def get_room(room_id):
 
 
 def update_housekeeping_status(room_id, status):
-    if status not in ("Clean", "Dirty", "Maintenance"):
+    allowed = ("Clean", "Dirty", "Maintenance", "Inspected", "Out of Order", "Occupied")
+    if status not in allowed:
         raise ValueError("Invalid status.")
     with db.transaction() as conn:
-        conn.execute("UPDATE rooms SET housekeeping_status=? WHERE id=?", (status, room_id))
+        conn.execute("UPDATE rooms SET housekeeping_status=? WHERE id=?", (status, int(room_id)))
+        # P3 automation: keep task lifecycle consistent when room is manually marked clean/inspected
+        if status in ("Clean", "Inspected"):
+            task_status = "done" if status == "Clean" else "inspected"
+            ts_parts = ["status=?"]
+            params = [task_status]
+            if task_status == "done":
+                ts_parts.append("completed_at=COALESCE(completed_at, datetime('now','localtime'))")
+            else:
+                ts_parts.append("completed_at=COALESCE(completed_at, datetime('now','localtime'))")
+                ts_parts.append("inspected_at=COALESCE(inspected_at, datetime('now','localtime'))")
+            params.append(int(room_id))
+            conn.execute(
+                f"""UPDATE housekeeping_tasks
+                       SET {', '.join(ts_parts)}
+                     WHERE room_id=? AND status IN ('pending','in_progress')""",
+                params,
+            )
 
 
 def update_room_price(room_id, new_price, password):
@@ -2252,6 +2270,16 @@ def modify_reservation(rid, new_rate, new_ci, new_co, new_room_id, password=None
     tax = calculate_tax(new_rate * nights, nights)
     try:
         pricing_snapshot = resolve_reservation_pricing(new_room_id, None, new_ci, new_co, new_rate, source=new_source, market_segment=new_market_segment)
+        try:
+            gm = get_reservation_group_membership(rid)
+            if gm and isinstance(pricing_snapshot, dict):
+                inp = pricing_snapshot.setdefault("inputs", {})
+                inp["group_id"] = gm.get("id")
+                inp["group_name"] = gm.get("name")
+                inp["group_type"] = gm.get("group_type")
+                inp["group_role"] = gm.get("role")
+        except Exception:
+            pass
         pricing_snapshot_json = json.dumps(pricing_snapshot, ensure_ascii=False)
     except Exception:
         pricing_snapshot_json = "{}"
