@@ -378,6 +378,24 @@ async def pay(rid: int, request: Request):
     except Exception as e: deps.add_flash(request,str(e),"error")
     r=deps.redirect(f"/reservations/{rid}"); deps.save_session(r, deps.get_session(request)); return r
 
+@router.post("/reservations/{rid}/payments/{payment_id}/void")
+async def void_payment_route(rid: int, payment_id: int, request: Request):
+    form = await deps.require_unlocked_form(request, permission="payments.manage")
+    try:
+        # ensure payment belongs to reservation
+        row = connect().execute("SELECT reservation_id, voided_at FROM payments WHERE id=?", (payment_id,)).fetchone()
+        if not row:
+            raise ValueError("Payment not found.")
+        if int(row["reservation_id"] or 0) != int(rid):
+            raise ValueError("Payment does not belong to this reservation.")
+        services.void_payment(payment_id, deps.service_password(request, form))
+        deps.add_flash(request, "Payment/refund voided", "success")
+    except Exception as e:
+        deps.add_flash(request, str(e), "error")
+    r = deps.redirect(f"/reservations/{rid}"); deps.save_session(r, deps.get_session(request)); return r
+
+
+
 @router.post("/reservations/{rid}/refund")
 async def refund(rid: int, request: Request):
     form = await deps.require_unlocked_form(request, permission="payments.manage")

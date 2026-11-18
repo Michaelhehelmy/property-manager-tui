@@ -4187,6 +4187,29 @@ def record_refund(reservation_id, amount, method, notes, password, idempotency_k
     _audit("refund", "payment", pid, f"{amount} via {method}" + (f" shift={shift_id}" if shift_id else ""))
     return pid
 
+def void_payment(payment_id, password=None):
+    """Void/correct a payment or refund record (reverses ledger impact)."""
+    _require_super_password(password)
+    pid = int(payment_id)
+    with db.transaction() as conn:
+        row = conn.execute("SELECT * FROM payments WHERE id=?", (pid,)).fetchone()
+        if not row:
+            raise ValueError("Payment not found.")
+        if row["voided_at"]:
+            return pid
+        cur = conn.cursor()
+        is_refund = (str(row["payment_type"] or "").strip().lower() == "refund") or (float(row["amount"] or 0) < 0)
+        if is_refund:
+            ref_type = "PAY"
+            _reverse(cur, ref_type, pid, entry_type_filter=("REFUND",))
+        else:
+            ref_type = "WALKIN_PAY" if row["reservation_id"] is None else "PAY"
+            _reverse(cur, ref_type, pid, entry_type_filter=("PAYMENT",))
+        conn.execute("UPDATE payments SET voided_at=datetime('now','localtime') WHERE id=?", (pid,))
+    _audit("payment_void", "payment", pid, f"type={row['payment_type']} amount={row['amount']} res={row['reservation_id']}")
+    return pid
+
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 # EXPENSES
