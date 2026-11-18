@@ -19,10 +19,10 @@
     </form>
     <div class="table-wrap"><table>
       <tr><th>ID</th><th>Room</th><th>Type</th><th>Status</th><th>Priority</th><th>Assignee</th><th>Due</th><th>Notes</th><th>Actions</th></tr>
-      {% for t in tasks %}<tr>
+      {% for t in tasks %}<tr{% if t.get('is_overdue') %} style="background:#fff7ed"{% endif %}>
         <td>{{t['id']}}</td>
         <td>{{t['room_number'] or t['room_id']}} <span class="muted">{{t['room_type'] or ''}}</span><div class="muted">Room: {{t['room_housekeeping_status'] or ''}}</div>{% if t['reservation_id'] %}<div class="muted">Res #{{t['reservation_id']}} {{t['guest_name'] or ''}}</div>{% endif %}</td>
-        <td>{{t['task_type']}}</td><td>{{t['status']}}</td><td>{{t['priority']}}</td><td>{{t['assignee'] or ''}}</td><td>{{t['due_at'] or ''}}</td><td style="max-width:220px;white-space:pre-wrap">{{t['notes'] or ''}}</td>
+        <td>{{t['task_type']}}</td><td>{{t['status']}}{% if t.get('is_overdue') %} <span class="badge err">overdue</span>{% endif %}</td><td>{{t['priority']}}</td><td>{{t['assignee'] or ''}}</td><td>{{t['due_at'] or ''}}</td><td style="max-width:220px;white-space:pre-wrap">{{t['notes'] or ''}}</td>
         <td>
           <form method="post" action="/housekeeping/tasks/{{t['id']}}/status" class="inline" style="margin-bottom:6px"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
             <select name="status" style="min-width:120px">{% for s in ['pending','in_progress','done','inspected','cancelled'] %}<option value="{{s}}" {% if t['status']==s %}selected{% endif %}>{{s}}</option>{% endfor %}</select>

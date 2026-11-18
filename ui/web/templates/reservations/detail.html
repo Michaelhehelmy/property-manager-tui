@@ -192,7 +192,27 @@
   <div class="table-wrap"><table><tr><th>ID</th><th>Package</th><th>Gross (net/tax)</th><th>Status</th><th>Applied</th><th>Action</th></tr>
   {% for rp in reservation_packages or [] %}<tr>
     <td>{{rp['id']}}</td>
-    <td>{{rp['package_name'] or ('#' ~ rp['package_id'])}}{% if rp['notes'] %}<div class="muted">{{rp['notes']}}</div>{% endif %}{% if rp['snapshot_json'] %}<details style="margin-top:4px"><summary class="muted">Snapshot</summary><pre style="white-space:pre-wrap;font-size:11px;margin:4px 0">{{rp['snapshot_json']}}</pre></details>{% endif %}</td>
+    <td>
+      {{rp['package_name'] or ('#' ~ rp['package_id'])}}{% if rp['notes'] %}<div class="muted">{{rp['notes']}}</div>{% endif %}
+      {% if rp.get('lines') %}
+      <details style="margin-top:4px"><summary class="muted">Posted lines ({{rp['lines']|length}})</summary>
+        <table style="margin-top:4px;font-size:12px"><tr><th>Svc#</th><th>Description</th><th>Qty</th><th>Unit</th><th>Tax</th><th>Gross</th><th>Status</th></tr>
+        {% for ln in rp['lines'] %}
+          <tr>
+            <td>{{ln.reservation_service_id or ''}}</td>
+            <td>{{ln.description or ''}}</td>
+            <td>{{ln.quantity or ''}}</td>
+            <td>{{"%.2f"|format(ln.unit_price or 0)}}</td>
+            <td>{{"%.2f"|format(ln.tax_amount or 0)}}</td>
+            <td>{{"%.2f"|format(ln.gross_amount or 0)}}</td>
+            <td>{% if ln.service_voided_at %}voided{% else %}{{ln.service_status or ''}}{% endif %}</td>
+          </tr>
+        {% endfor %}
+        </table>
+      </details>
+      {% endif %}
+      {% if rp['snapshot_json'] %}<details style="margin-top:4px"><summary class="muted">Snapshot (raw)</summary><pre style="white-space:pre-wrap;font-size:11px;margin:4px 0">{{rp['snapshot_json']}}</pre></details>{% endif %}
+    </td>
     <td>{{"%.2f"|format(rp['total_gross'] or 0)}} <span class="muted">(net {{"%.2f"|format(rp['total_net'] or 0)}}, tax {{"%.2f"|format(rp['total_tax'] or 0)}})</span></td>
     <td>{{rp['status']}}{% if rp['voided_at'] %}<div class="muted">voided {{rp['voided_at']}}</div>{% endif %}</td>
     <td>{{rp['applied_at']}}</td>

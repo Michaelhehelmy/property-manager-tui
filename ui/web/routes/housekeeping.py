@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from fastapi import APIRouter, Request
 from app_core import services
 from app_core.db import connect
@@ -20,6 +22,28 @@ def housekeeping_page(request: Request, status: str = "", block_status: str = "a
         tasks = services.list_housekeeping_tasks(status=status or "")
     except Exception:
         tasks = []
+    # best-effort overdue flag for open tasks
+    now = datetime.now()
+    enriched = []
+    for t in tasks or []:
+        d = dict(t)
+        d["is_overdue"] = False
+        try:
+            if (d.get("status") in ("pending", "in_progress")) and d.get("due_at"):
+                due_s = str(d.get("due_at")).strip()
+                due_dt = None
+                for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+                    try:
+                        due_dt = datetime.strptime(due_s[:19], fmt)
+                        break
+                    except Exception:
+                        pass
+                if due_dt and due_dt < now:
+                    d["is_overdue"] = True
+        except Exception:
+            pass
+        enriched.append(d)
+    tasks = enriched
     block_status = (block_status or "active").strip().lower()
     if block_status not in ("active", "resolved", "all", ""):
         block_status = "active"
