@@ -54,6 +54,12 @@
           <input name="notes" placeholder="Decision notes" style="max-width:140px"/>
           <button type="submit">Apply</button>
         </form>
+        {% elif a.status == 'approved' %}
+        <form method="post" action="/settings/approvals/{{a.id}}/execute"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><input type="hidden" name="status_filter" value="{{ status_filter }}"/>
+          <input name="notes" placeholder="Execution notes/evidence" style="max-width:160px"/>
+          <details style="margin-top:4px"><summary class="muted">Result JSON (optional)</summary><textarea name="execution_result_json" rows="2" placeholder='{"result":"ok"}'></textarea></details>
+          <button type="submit" class="ok">Mark executed</button>
+        </form>
         {% else %}<span class="muted">—</span>{% endif %}
       </td>
     </tr>{% else %}<tr><td colspan="8" class="muted">No approval requests found.</td></tr>{% endfor %}

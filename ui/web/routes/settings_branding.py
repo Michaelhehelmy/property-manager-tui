@@ -658,3 +658,25 @@ async def settings_approvals_decide(request: Request, approval_id: int):
     r = deps.redirect("/settings/approvals" + (f"?status={status}" if status else ""))
     deps.save_session(r, deps.get_session(request)); return r
 
+
+
+
+@router.post("/settings/approvals/{approval_id}/execute")
+async def settings_approvals_execute(request: Request, approval_id: int):
+    form = await deps.require_unlocked_form(request)
+    try:
+        result_raw = (form.get("execution_result_json") or "").strip()
+        result = {}
+        if result_raw:
+            try:
+                result = __import__("json").loads(result_raw)
+            except Exception:
+                raise ValueError("execution_result_json must be valid JSON.")
+        services.mark_approval_executed(approval_id, result=result, notes=form.get("notes", ""))
+        deps.add_flash(request, f"Approval #{approval_id} marked as executed.", "success")
+    except Exception as e:
+        deps.add_flash(request, str(e), "error")
+    status = form.get("status_filter", "")
+    r = deps.redirect("/settings/approvals" + (f"?status={status}" if status else ""))
+    deps.save_session(r, deps.get_session(request)); return r
+
