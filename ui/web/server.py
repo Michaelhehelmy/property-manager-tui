@@ -9,8 +9,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "src"
-if str(SRC) not in sys.path:
-    sys.path.insert(0, str(SRC))
+if not (bool(getattr(sys, "frozen", False)) or "__compiled__" in globals()):
+    if str(SRC) not in sys.path:
+        sys.path.insert(0, str(SRC))
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse

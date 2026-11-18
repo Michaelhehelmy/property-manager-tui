@@ -43,6 +43,14 @@ def _project_root() -> Path:
     try:
         return Path(paths.PROJECT_ROOT)
     except Exception:
+        try:
+            import sys
+            if bool(getattr(sys, "frozen", False)) or "__compiled__" in globals():
+                exe = Path(getattr(sys, "executable", "") or "").resolve()
+                if str(exe):
+                    return exe.parent
+        except Exception:
+            pass
         return Path(__file__).resolve().parents[2]
 
 

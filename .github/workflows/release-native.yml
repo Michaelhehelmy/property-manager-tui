@@ -61,6 +61,11 @@ jobs:
             --include-package=starlette \
             --include-package=anyio \
             --include-package=jinja2 \
+            --include-package=itsdangerous \
+            --include-package=python_multipart \
+            --include-package=multipart \
+            --include-package=pydantic \
+            --include-package=pydantic_core \
             --include-data-dir=ui/web/templates=ui/web/templates \
             --include-data-dir=ui/web/static=ui/web/static \
             --include-data-files=pyproject.toml=pyproject.toml \
