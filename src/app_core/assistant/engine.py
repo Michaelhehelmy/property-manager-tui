@@ -8,7 +8,7 @@ from .common import (
     _norm_text, _parse_date_range, resolve_guest, _safe_int,
 )
 from .formatting import _apply_proactive, _fmt_capabilities, _format_for_intent
-from .nlu import _has_any
+from .nlu import _has_any, classify_intent  # noqa: F401
 from .tools import execute_tool
 
 logger = logging.getLogger(__name__)
