@@ -1519,7 +1519,7 @@ def resolve_reservation_pricing(room_id, rate_plan_id, check_in, check_out, agre
             else:
                 resolved = round(resolved + av, 2)
             applied_rules.append({"id": r.get("id"), "name": r.get("name"), "type": at, "value": av, "before": before, "after": resolved})
-    tax = calculate_tax(agreed * nights, nights)
+    tax = calculate_charge_tax("accommodation", agreed * nights, nights)
     snapshot = {
         "version": 1,
         "inputs": {
@@ -1568,7 +1568,7 @@ def quote_reservation_pricing(room_id, rate_plan_id, check_in, check_out, rate=N
     suggested = (snap.get("pricing") or {}).get("rule_resolved_nightly") or (snap.get("pricing") or {}).get("plan_suggested_nightly") or 0.0
     if rate_val is None:
         # recompute totals with suggested as prospective agreed rate
-        tax = calculate_tax(float(suggested or 0) * nights, nights)
+        tax = calculate_charge_tax("accommodation", float(suggested or 0) * nights, nights)
         snap["pricing"]["quoted_nightly_rate"] = round(float(suggested or 0), 2)
         snap["totals"] = {
             "accommodation_net": round(float(suggested or 0) * nights, 2),
@@ -1871,7 +1871,7 @@ def create_reservation(guest_name, source, room_id, rate_plan_id, agreed_nightly
     booking_notes = (booking_notes or notes or "").strip()
     notes = (notes or booking_notes).strip()
 
-    tax = calculate_tax(agreed_nightly_rate * nights, nights)
+    tax = calculate_charge_tax("accommodation", agreed_nightly_rate * nights, nights)
     try:
         pricing_snapshot = resolve_reservation_pricing(room_id, rate_plan_id, ci, co, agreed_nightly_rate, source=source, market_segment=market_segment)
         pricing_snapshot_json = json.dumps(pricing_snapshot, ensure_ascii=False)
@@ -2237,7 +2237,7 @@ def preview_reservation_modification(rid, new_rate, new_ci, new_co, new_room_id,
     available = True if allow_over else check_room_availability(new_room_id, new_ci, new_co, exclude_res_id=rid)
     if not available:
         return {"ok": False, "error": "Room not available.", "policy": policy}
-    new_tax = calculate_tax(new_rate * nights, nights)
+    new_tax = calculate_charge_tax("accommodation", new_rate * nights, nights)
     new_tax_total = round(new_tax["service"] + new_tax["vat"] + new_tax["city_tax"], 2)
     old_tax_total = round(float(row.get("tax_amount") or 0), 2)
     old_nights = 0
@@ -2304,7 +2304,7 @@ def modify_reservation(rid, new_rate, new_ci, new_co, new_room_id, password=None
     else:
         new_booking_notes = (booking_notes or "")
     new_notes = new_booking_notes
-    tax = calculate_tax(new_rate * nights, nights)
+    tax = calculate_charge_tax("accommodation", new_rate * nights, nights)
     try:
         pricing_snapshot = resolve_reservation_pricing(new_room_id, None, new_ci, new_co, new_rate, source=new_source, market_segment=new_market_segment)
         try:
@@ -4127,6 +4127,52 @@ def record_payment(reservation_id, amount, method, notes="", payment_type="Payme
 
 
 
+def _summarize_payment_allocations(reservation_id):
+    """Best-effort aggregate of explicit allocation metadata for active payments/refunds."""
+    out = {"by_category": {}, "allocated_total": 0.0, "unallocated_total": 0.0, "payments_with_allocation": 0}
+    try:
+        rows = db.connect().execute(
+            "SELECT amount, allocation_json, voided_at FROM payments WHERE reservation_id=? AND voided_at IS NULL",
+            (int(reservation_id),)
+        ).fetchall()
+        for r in rows:
+            raw = (r["allocation_json"] or "").strip() if "allocation_json" in r.keys() else ""
+            if not raw or raw in ("{}", "null", "None"):
+                continue
+            try:
+                obj = json.loads(raw)
+            except Exception:
+                continue
+            if not isinstance(obj, dict):
+                continue
+            lines = obj.get("lines") if isinstance(obj.get("lines"), dict) else {}
+            if not lines and not obj.get("unallocated"):
+                # legacy/simple map?
+                lines = {k:v for k,v in obj.items() if k not in ("mode","type","unallocated","notes")}
+            if not lines and not obj.get("unallocated"):
+                continue
+            out["payments_with_allocation"] += 1
+            for k,v in (lines or {}).items():
+                try:
+                    val = round(float(v or 0), 2)
+                except Exception:
+                    continue
+                if val <= 0:
+                    continue
+                out["by_category"][k] = round(float(out["by_category"].get(k, 0.0)) + val, 2)
+                out["allocated_total"] = round(out["allocated_total"] + val, 2)
+            try:
+                ua = round(float(obj.get("unallocated") or 0), 2)
+                if ua > 0:
+                    out["unallocated_total"] = round(out["unallocated_total"] + ua, 2)
+            except Exception:
+                pass
+    except Exception:
+        return out
+    return out
+
+
+
 def get_reservation_payment_summary(reservation_id):
     rid = int(reservation_id)
     conn = db.connect()
@@ -4137,11 +4183,16 @@ def get_reservation_payment_summary(reservation_id):
     pays = [dict(r) for r in rows]
     bd = get_balance_breakdown(rid) or {}
     total_paid = sum(float(p.get("amount") or 0) for p in pays if not p.get("voided_at"))
+    try:
+        alloc_summary = _summarize_payment_allocations(rid)
+    except Exception:
+        alloc_summary = {"by_category": {}, "allocated_total": 0.0, "unallocated_total": 0.0, "payments_with_allocation": 0}
     return {
         "reservation_id": rid,
         "payments": pays,
         "count": len(pays),
         "total_paid_active": round(total_paid, 2),
+        "allocation_summary": alloc_summary,
         "balance": bd,
     }
 
@@ -4463,6 +4514,11 @@ def get_balance_breakdown(rid):
     deposits = (pay_row["deposits"] if pay_row else 0) or 0
     refunds = (pay_row["refunds"] if pay_row else 0) or 0
     total_charges = comp["total_charges"]
+    alloc_summary = {}
+    try:
+        alloc_summary = _summarize_payment_allocations(rid)
+    except Exception:
+        alloc_summary = {"by_category": {}, "allocated_total": 0.0, "unallocated_total": 0.0, "payments_with_allocation": 0}
     return {
         "total_charges": round(total_charges, 2),
         "total_paid": round(paid, 2),
@@ -4482,6 +4538,7 @@ def get_balance_breakdown(rid):
         "discounts_net": comp.get("discounts_net", 0),
         "discounts_tax": comp.get("discounts_tax", 0),
         "discounts_gross": comp.get("discounts_gross", 0),
+        "allocation_summary": alloc_summary,
     }
 
 
