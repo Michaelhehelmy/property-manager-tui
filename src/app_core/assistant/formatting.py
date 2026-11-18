@@ -1068,6 +1068,59 @@ def _fmt_housekeeping_ops_report(data: dict) -> str:
     return "No housekeeping operations report available."
 
 
+def _fmt_rate_rules_list(data: dict) -> str:
+    if data.get("error"): return f"I couldn’t load rate rules ({data.get('error')})."
+    rules = data.get("rate_rules") or []
+    if not rules:
+        return "No rate rules found. Pricing rules can be managed in Settings → Rate Plans & Pricing Rules."
+    lines = [f"Rate rules (grounded): **{len(rules)}** rule(s)."]
+    for r in rules[:25]:
+        parts = [f"**#{r.get('id')} {r.get('name','')}**", f"[{'active' if r.get('active') else 'inactive'}]", f"pri={r.get('priority',100)}"]
+        cond = []
+        if r.get('room_type'): cond.append(f"room={r.get('room_type')}")
+        if r.get('source'): cond.append(f"source={r.get('source')}")
+        if r.get('market_segment'): cond.append(f"segment={r.get('market_segment')}")
+        if r.get('rate_plan_id') or r.get('rate_plan_name'): cond.append(f"plan={r.get('rate_plan_name') or r.get('rate_plan_id')}")
+        if r.get('start_date') or r.get('end_date'): cond.append(f"dates {r.get('start_date') or '…'}→{r.get('end_date') or '…'}")
+        if r.get('min_nights') or r.get('max_nights'): cond.append(f"nights {r.get('min_nights') or ''}-{r.get('max_nights') or ''}")
+        adj = f"{r.get('adjustment_type','amount')} {r.get('adjustment_value',0)}"
+        line = "- " + " ".join(parts) + f" — adj {adj}"
+        if cond: line += " (" + ", ".join(cond) + ")"
+        lines.append(line)
+    if len(rules) > 25:
+        lines.append(f"- …and {len(rules)-25} more.")
+    return "\n".join(lines)
+
+
+def _fmt_service_catalog_list(data: dict) -> str:
+    if data.get("error"): return f"I couldn’t load service catalog ({data.get('error')})."
+    items = data.get("service_catalog") or []
+    if not items:
+        return "No service catalog items found. Manage extras in Settings → Service Catalog."
+    lines = [f"Service catalog (grounded): **{len(items)}** item(s)."]
+    for it in items[:30]:
+        lines.append(f"- **#{it.get('id')} {it.get('name','')}** [{ 'active' if it.get('active') else 'inactive' }] — {it.get('category','Service')} · {_fmt_money(it.get('unit_price') or 0)}" + (" · non-taxable" if not it.get('taxable',1) else "") + (f" · { _short(it.get('description',''), 60) }" if it.get('description') else ""))
+    if len(items) > 30:
+        lines.append(f"- …and {len(items)-30} more.")
+    return "\n".join(lines)
+
+
+def _fmt_discount_vouchers_list(data: dict) -> str:
+    if data.get("error"): return f"I couldn’t load discount vouchers ({data.get('error')})."
+    items = data.get("discount_vouchers") or []
+    if not items:
+        return "No discount vouchers found. Manage vouchers in Settings → Discount Vouchers."
+    lines = [f"Discount vouchers (grounded): **{len(items)}** voucher(s)."]
+    for v in items[:30]:
+        uses = f"{v.get('used_count',0)}/{v.get('max_uses') if v.get('max_uses') is not None else '∞'}"
+        val = f"{v.get('value',0)}%" if (v.get('discount_type')=='percent') else _fmt_money(v.get('value') or 0)
+        validity = f"{v.get('valid_from') or '—'}→{v.get('valid_to') or '—'}"
+        lines.append(f"- **{v.get('code','')}** ({'active' if v.get('active') else 'inactive'}) — {val} {v.get('discount_type','amount')} · uses {uses} · valid {validity}" + (f" · {v.get('name')}" if v.get('name') else ""))
+    if len(items) > 30:
+        lines.append(f"- …and {len(items)-30} more.")
+    return "\n".join(lines)
+
+
 _INTENT_FORMATTERS = {
     "capabilities_help": _fmt_capabilities,
     "property_stats": _fmt_stats,
@@ -1130,6 +1183,9 @@ _INTENT_FORMATTERS = {
     "room_blocks": _fmt_room_blocks,
     "housekeeping_tasks": _fmt_housekeeping_tasks,
     "housekeeping_ops_report": _fmt_housekeeping_ops_report,
+    "rate_rules_list": _fmt_rate_rules_list,
+    "service_catalog_list": _fmt_service_catalog_list,
+    "discount_vouchers_list": _fmt_discount_vouchers_list,
     "front_desk_ops": lambda d: _fmt_today_ops({"date": (d or {}).get("date"), "ops": d, "front_desk": (d or {}).get("summary")}),
     "front_desk_arrivals": lambda d: ("\n".join([f"**Arrivals for {(d or {}).get('date') or _iso(_today())}** (grounded in real data): **{len((d or {}).get('arrivals') or [])}**"] + (["- None."] if not ((d or {}).get('arrivals') or []) else [f"- #{r.get('id')} **{r.get('guest_name','')}** [{r.get('status','')}]"+(f" · Room {r.get('room_number')}" if r.get('room_number') else "")+(f" · HK {r.get('housekeeping_status')}" if r.get('housekeeping_status') else "")+(f" · Due {_fmt_money(r.get('balance_due',0))}" if float(r.get('balance_due') or 0)>0 else "")+(f" · ⚠ {', '.join(r.get('exceptions') or [])}" if r.get('exceptions') else "") for r in ((d or {}).get('arrivals') or [])[:25]] + ([f"- … and {len((d or {}).get('arrivals') or [])-25} more."] if len((d or {}).get('arrivals') or [])>25 else []))) if not (d or {}).get('error') else f"I couldn’t retrieve arrivals ({(d or {}).get('error')})."),
     "front_desk_departures": lambda d: ("\n".join([f"**Departures for {(d or {}).get('date') or _iso(_today())}** (grounded in real data): **{len((d or {}).get('departures') or [])}**"] + (["- None."] if not ((d or {}).get('departures') or []) else [f"- #{r.get('id')} **{r.get('guest_name','')}** [{r.get('status','')}]"+(f" · Room {r.get('room_number')}" if r.get('room_number') else "")+(f" · HK {r.get('housekeeping_status')}" if r.get('housekeeping_status') else "")+(f" · Due {_fmt_money(r.get('balance_due',0))}" if float(r.get('balance_due') or 0)>0 else "")+(f" · ⚠ {', '.join(r.get('exceptions') or [])}" if r.get('exceptions') else "") for r in ((d or {}).get('departures') or [])[:25]] + ([f"- … and {len((d or {}).get('departures') or [])-25} more."] if len((d or {}).get('departures') or [])>25 else []))) if not (d or {}).get('error') else f"I couldn’t retrieve departures ({(d or {}).get('error')})."),

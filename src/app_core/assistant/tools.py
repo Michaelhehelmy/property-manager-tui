@@ -1001,6 +1001,44 @@ def tool_get_housekeeping_ops_report(args=None):
         return {"error": str(e)}
 
 
+def tool_list_rate_rules(args=None):
+    try:
+        active_only = bool((args or {}).get("active_only", False))
+        if not hasattr(services, "list_rate_rules"):
+            return {"error": "rate rules unavailable"}
+        rules = services.list_rate_rules(active_only=active_only)
+        return {"rate_rules": (rules or [])[:100], "count": len(rules or []), "active_only": active_only}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def tool_list_service_catalog(args=None):
+    try:
+        active_only = bool((args or {}).get("active_only", True))
+        if not hasattr(services, "list_service_catalog"):
+            return {"error": "service catalog unavailable"}
+        items = services.list_service_catalog(active_only=active_only)
+        return {"service_catalog": (items or [])[:100], "count": len(items or []), "active_only": active_only}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def tool_list_discount_vouchers(args=None):
+    try:
+        active_only = bool((args or {}).get("active_only", False))
+        if not hasattr(services, "list_discount_vouchers"):
+            return {"error": "discount vouchers unavailable"}
+        items = services.list_discount_vouchers(active_only=active_only)
+        # avoid exposing sensitive internals beyond operational fields
+        out = []
+        for v in (items or [])[:100]:
+            d = dict(v)
+            out.append(d)
+        return {"discount_vouchers": out, "count": len(out), "active_only": active_only}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 TOOLS = {
     "list_capabilities": {"fn": tool_list_capabilities, "description": "List assistant capabilities.", "parameters": {"type":"object","properties":{},"additionalProperties":False}},
     "get_property_stats": {"fn": tool_get_property_stats, "description": "Property counts/stats (guests, rooms, reservations by status, in-house, arrivals/departures today).", "parameters": {"type":"object","properties":{},"additionalProperties":False}},
@@ -1022,6 +1060,9 @@ TOOLS = {
     "get_reservation_pipeline": {"fn": tool_get_reservation_pipeline, "description": "Reservation counts by status and upcoming arrivals (7 days).", "parameters": {"type":"object","properties":{},"additionalProperties":False}},
     "get_housekeeping_summary": {"fn": tool_get_housekeeping_summary, "description": "Room housekeeping status summary.", "parameters": {"type":"object","properties":{},"additionalProperties":False}},
     "get_housekeeping_ops_report": {"fn": tool_get_housekeeping_ops_report, "description": "Grounded housekeeping operations report: room/task/block status, overdue/open tasks, and active blocks (read-only).", "parameters": {"type":"object","properties":{},"additionalProperties":False}},
+    "list_rate_rules": {"fn": tool_list_rate_rules, "description": "List pricing/rate rules (conditions and adjustments) (read-only).", "parameters": {"type":"object","properties":{"active_only":{"type":"boolean"}},"additionalProperties":False}},
+    "list_service_catalog": {"fn": tool_list_service_catalog, "description": "List extra-service catalog items with pricing/taxable status (read-only).", "parameters": {"type":"object","properties":{"active_only":{"type":"boolean"}},"additionalProperties":False}},
+    "list_discount_vouchers": {"fn": tool_list_discount_vouchers, "description": "List discount voucher definitions and usage/validity status (read-only).", "parameters": {"type":"object","properties":{"active_only":{"type":"boolean"}},"additionalProperties":False}},
     "get_room_availability": {"fn": tool_get_room_availability, "description": "Available rooms for a date range.", "parameters": {"type":"object","properties":{"start":{"type":"string"},"end":{"type":"string"}},"additionalProperties":False}},
     "get_menu_info": {"fn": tool_get_menu_info, "description": "Meals/menu information.", "parameters": {"type":"object","properties":{},"additionalProperties":False}},
     "list_rate_plans": {"fn": tool_list_rate_plans, "description": "List rate plans and usage.", "parameters": {"type":"object","properties":{},"additionalProperties":False}},

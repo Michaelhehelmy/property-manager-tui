@@ -30,7 +30,7 @@ INTENT_LABELS = [
     "report_pl", "report_cash_flow", "report_vat", "report_payment_methods", "report_occupancy", "report_daily_ops",
     "occupancy_summary", "compare_periods", "outstanding_balances", "inventory_alerts", "top_selling_items",
     "expenses_summary", "sales_breakdown", "reservation_pipeline", "housekeeping_summary", "room_availability",
-    "menu_info", "rate_plans", "ledger_integrity", "guest_search", "guest_profile", "guest_portfolio", "guest_last_visit",
+    "menu_info", "rate_plans", "rate_rules_list", "service_catalog_list", "discount_vouchers_list", "ledger_integrity", "guest_search", "guest_profile", "guest_portfolio", "guest_last_visit",
     "guest_top_items_last_visit", "guest_last_visit_spend", "guest_activity_bookings",
     "list_activities", "activity_stats",
     "reservation_search", "reservation_summary", "reservation_balance",

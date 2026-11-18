@@ -289,7 +289,7 @@ def _execute_single(intent: str, text: str, slots: dict, ui_context=None):
 
     # Simple read-only intent -> tool mappings (behavior-preserving consolidation)
     if intent in ("property_stats", "today_ops", "outstanding_balances", "inventory_alerts", "reservation_pipeline",
-                  "housekeeping_summary", "menu_info", "rate_plans", "recent_activity", "list_activities",
+                  "housekeeping_summary", "menu_info", "rate_plans", "rate_rules_list", "service_catalog_list", "discount_vouchers_list", "recent_activity", "list_activities",
                   "activity_stats", "walkin_sales_summary", "reservation_groups", "packages_list", "cash_shifts",
                   "night_audit_runs", "room_blocks", "housekeeping_tasks", "housekeeping_ops_report"):
         tool = {
@@ -301,6 +301,9 @@ def _execute_single(intent: str, text: str, slots: dict, ui_context=None):
             "housekeeping_summary": "get_housekeeping_summary",
             "menu_info": "get_menu_info",
             "rate_plans": "list_rate_plans",
+            "rate_rules_list": "list_rate_rules",
+            "service_catalog_list": "list_service_catalog",
+            "discount_vouchers_list": "list_discount_vouchers",
             "recent_activity": "get_recent_activity",
             "list_activities": "list_activities",
             "activity_stats": "get_activity_stats",
