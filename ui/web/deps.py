@@ -282,24 +282,85 @@ def current_actor(request: Request) -> dict[str, Any]:
     }
 
 
+# --- RBAC/auth migration scaffolding (P4, additive, non-breaking defaults) ---
+
+def web_auth_mode() -> str:
+    """Auth enforcement mode for migration path.
+    - legacy (default): preserve existing unlock/session behavior.
+    - hybrid: prefer user identity/roles when present, keep unlock fallback.
+    - strict/rbac: intended for stricter enforcement (opt-in; route adoption incremental).
+    """
+    v = os.environ.get("PM_WEB_AUTH_MODE", "legacy").strip().lower()
+    if v in ("strict", "rbac", "enforce"):
+        return "strict"
+    if v in ("hybrid", "mixed"):
+        return "hybrid"
+    return "legacy"
+
+
+def is_strict_rbac() -> bool:
+    return web_auth_mode() == "strict"
+
+
+def is_privileged_user(request: Request) -> bool:
+    u = get_current_user(request)
+    if not u:
+        return False
+    role = (u.get("role") or "").strip().lower()
+    return role in ("admin", "owner", "manager")
+
+
+def require_authenticated_user(request: Request) -> None:
+    """Strict-mode helper (not enforced globally by default)."""
+    if get_current_user(request):
+        return
+    if is_strict_rbac():
+        raise HTTPException(status_code=403, detail="Authenticated user session required (strict auth mode)")
+    # legacy/hybrid: no-op
+
+
+
 def has_permission(request: Request, permission: str) -> bool:
-    """RBAC scaffold (non-enforcing by default). Preserves existing unlock behavior.
-    - If unlocked and no user context, allow (legacy admin-equivalent).
-    - If user context present, allow admin/* roles broadly for now; otherwise permissive scaffold.
-    Strict enforcement can be enabled later per-route without breaking current flows.
+    """RBAC scaffold/migration helper. Defaults preserve existing unlock behavior.
+    - Legacy unlocked session without user identity remains admin-equivalent.
+    - Logged-in privileged roles (admin/owner/manager) are allowed.
+    - In strict auth mode, logged-in non-privileged users are evaluated against a
+      minimal role capability map for common permission namespaces; unknown permissions
+      remain allowed to avoid accidental lockout during incremental migration.
+    - In legacy/hybrid modes, behavior remains permissive for compatibility.
     """
     try:
-        if is_unlocked(request) and not get_current_user(request):
-            return True
         u = get_current_user(request)
+        if is_unlocked(request) and not u:
+            return True
         if not u:
             # no explicit user; rely on existing unlock gates elsewhere
             return True
-        role = (u.get("role") or "").lower()
+        role = (u.get("role") or "").strip().lower()
         if role in ("admin", "owner", "manager"):
             return True
-        # permissive groundwork: allow unless explicitly denied in future
-        return True
+        if not is_strict_rbac():
+            # permissive groundwork in legacy/hybrid for backward compatibility
+            return True
+        # strict-mode minimal capability map (incremental, non-exhaustive)
+        perm = (permission or "").strip().lower()
+        caps = {
+            "front_desk": {"reservations", "guests", "housekeeping.read", "reports.read", "pos.read"},
+            "housekeeping": {"housekeeping", "reservations.read", "rooms.read"},
+            "accounting": {"accounting", "reports.read", "payments", "reservations.read"},
+            "staff": {"reservations.read", "reports.read", "housekeeping.read"},
+        }.get(role, set())
+        if not perm or "*" in caps:
+            return True
+        # allow if namespace/action prefix matches
+        for c in caps:
+            if perm == c or perm.startswith(c.rstrip("*")) or (c.endswith(".*") and perm.startswith(c[:-1])) or (c.endswith(".read") and perm == c):
+                return True
+        # also allow generic read-only checks to be safe
+        if perm.endswith(".read") or perm.endswith(":read"):
+            return True
+        # unknown/unsupported permission in strict mode for non-privileged role: deny
+        return False
     except Exception:
         return True
 
