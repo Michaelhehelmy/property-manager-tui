@@ -125,7 +125,7 @@ async def setup_wizard_post(request: Request):
 
 @router.post("/settings/branding")
 async def branding(request: Request):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="settings.manage")
     try:
         services.apply_branding_settings(form.get("display_name",""), form.get("tagline",""), form.get("animation","reveal"))
         deps.add_flash(request, "Branding updated", "success")
@@ -134,7 +134,7 @@ async def branding(request: Request):
 
 @router.post("/settings/save")
 async def save_settings(request: Request):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="settings.manage")
     changes = {}
     for k in services.SETTINGS_CATALOG.keys():
         if k in form and k != "schema_version":
@@ -148,7 +148,7 @@ async def save_settings(request: Request):
 
 @router.post("/settings/backup")
 async def backup(request: Request):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="settings.manage")
     try:
         path = services.backup_now()
         deps.add_flash(request, f"Backup: {Path(path).name}", "success")
@@ -160,7 +160,7 @@ async def backup(request: Request):
 
 @router.post("/settings/demo-preset")
 async def demo_preset(request: Request):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="settings.manage")
     try:
         res = services.apply_demo_data_preset(form.get("preset","analysis_small"), deps.service_password(request, form), form.get("confirm",""), allow_existing=False)
         deps.add_flash(request, f"Demo preset applied: {res['created']}", "success")
@@ -170,7 +170,7 @@ async def demo_preset(request: Request):
 
 @router.post("/settings/reset")
 async def reset_settings(request: Request):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="settings.manage")
     try:
         if str(form.get("confirm", "")).strip().upper() != "RESET DEFAULTS":
             raise ValueError("Confirmation text must be exactly: RESET DEFAULTS")
@@ -203,7 +203,7 @@ def rate_plans(request: Request):
 
 @router.post("/settings/rate-plans/add")
 async def rate_plan_add(request: Request):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="settings.manage")
     try:
         services.add_rate_plan(form.get("name", ""), float(form.get("modifier") or 0), deps.service_password(request, form))
         deps.add_flash(request, "Rate plan added.", "success")
@@ -214,7 +214,7 @@ async def rate_plan_add(request: Request):
 
 @router.post("/settings/rate-plans/{plan_id}/edit")
 async def rate_plan_edit(request: Request, plan_id: int):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="settings.manage")
     try:
         services.update_rate_plan(plan_id, form.get("name", ""), float(form.get("modifier") or 0), deps.service_password(request, form))
         deps.add_flash(request, "Rate plan updated.", "success")
@@ -225,7 +225,7 @@ async def rate_plan_edit(request: Request, plan_id: int):
 
 @router.post("/settings/rate-plans/{plan_id}/delete")
 async def rate_plan_delete(request: Request, plan_id: int):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="settings.manage")
     try:
         services.delete_rate_plan(plan_id, deps.service_password(request, form))
         deps.add_flash(request, "Rate plan deleted.", "success")
@@ -236,7 +236,7 @@ async def rate_plan_delete(request: Request, plan_id: int):
 
 @router.post("/settings/rate-rules/add")
 async def rate_rule_add(request: Request):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="settings.manage")
     try:
         services.add_rate_rule(
             name=form.get("name", "Rate rule"),
@@ -261,7 +261,7 @@ async def rate_rule_add(request: Request):
 
 @router.post("/settings/rate-rules/{rule_id}/edit")
 async def rate_rule_edit(request: Request, rule_id: int):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="settings.manage")
     try:
         services.update_rate_rule(
             rule_id,
@@ -345,7 +345,7 @@ def settings_users(request: Request):
 
 @router.post("/settings/users/add")
 async def settings_users_add(request: Request):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="settings.manage")
     try:
         services.create_user(
             form.get("username", ""),
@@ -362,7 +362,7 @@ async def settings_users_add(request: Request):
 
 @router.post("/settings/users/{user_id}/edit")
 async def settings_users_edit(request: Request, user_id: int):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="settings.manage")
     try:
         services.update_user(
             user_id,
@@ -454,7 +454,7 @@ async def seed_export_inventory_csv(request: Request):
 
 @router.post("/settings/rooms/add")
 async def room_add(request: Request):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="settings.manage")
     try:
         rid = services.add_room(form.get("room_number", ""), form.get("room_type", ""), form.get("base_price", 0), form.get("housekeeping_status", "Clean"))
         deps.add_flash(request, f"Room added (#{rid}).", "success")
@@ -466,7 +466,7 @@ async def room_add(request: Request):
 
 @router.post("/settings/rooms/{room_id}/delete")
 async def room_delete(request: Request, room_id: int):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="settings.manage")
     try:
         services.delete_room(room_id)
         deps.add_flash(request, "Room deleted.", "success")
@@ -478,7 +478,7 @@ async def room_delete(request: Request, room_id: int):
 
 @router.post("/settings/test-label")
 async def test_label(request: Request):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="settings.manage")
     try:
         ok, msg, p = services.test_label_print()
         deps.add_flash(request, f"Test label: {msg} ({p})", "success" if ok else "warning")
@@ -512,7 +512,7 @@ async def updates_check(request: Request):
 
 @router.post("/settings/updates/apply")
 async def updates_apply(request: Request):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="settings.manage")
     try:
         if str(form.get("confirm", "")).strip().upper() != "UPDATE APP":
             raise ValueError("Confirmation text must be exactly: UPDATE APP")
@@ -545,7 +545,7 @@ def vouchers(request: Request):
 
 @router.post("/settings/vouchers/add")
 async def voucher_add(request: Request):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="settings.manage")
     try:
         mu = form.get("max_uses")
         services.create_discount_voucher(
@@ -567,7 +567,7 @@ async def voucher_add(request: Request):
 
 @router.post("/settings/vouchers/{voucher_id}/edit")
 async def voucher_edit(request: Request, voucher_id: int):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="settings.manage")
     try:
         mu = form.get("max_uses")
         services.update_discount_voucher(
@@ -600,7 +600,7 @@ def service_catalog(request: Request):
 
 @router.post("/settings/service-catalog/add")
 async def service_catalog_add(request: Request):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="settings.manage")
     try:
         services.create_service_catalog_item(
             form.get("name", ""),
@@ -618,7 +618,7 @@ async def service_catalog_add(request: Request):
 
 @router.post("/settings/service-catalog/{item_id}/edit")
 async def service_catalog_edit(request: Request, item_id: int):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="settings.manage")
     try:
         services.update_service_catalog_item(
             item_id,
@@ -651,7 +651,7 @@ def packages(request: Request):
 
 @router.post("/settings/packages/add")
 async def package_add(request: Request):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="settings.manage")
     try:
         services.create_package(form.get("name", ""), form.get("description", ""), active=bool(form.get("active", "1")))
         deps.add_flash(request, "Package created.", "success")
@@ -662,7 +662,7 @@ async def package_add(request: Request):
 
 @router.post("/settings/packages/{package_id}/edit")
 async def package_edit(request: Request, package_id: int):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="settings.manage")
     try:
         services.update_package(package_id, name=form.get("name"), description=form.get("description"), active=bool(form.get("active")))
         deps.add_flash(request, "Package updated.", "success")
@@ -673,7 +673,7 @@ async def package_edit(request: Request, package_id: int):
 
 @router.post("/settings/packages/{package_id}/items/add")
 async def package_item_add(request: Request, package_id: int):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="settings.manage")
     try:
         sid = form.get("service_id") or None
         up = form.get("unit_price")
@@ -696,7 +696,7 @@ async def package_item_add(request: Request, package_id: int):
 
 @router.post("/settings/packages/items/{item_id}/delete")
 async def package_item_delete(request: Request, item_id: int):
-    await deps.require_unlocked_form(request)
+    await deps.require_unlocked_form(request, permission="settings.manage")
     try:
         services.delete_package_item(item_id)
         deps.add_flash(request, "Package item removed.", "success")

@@ -195,7 +195,7 @@ def pos(request: Request, q: str = "", scan: str = "", batch_item: str = "", tab
 @router.post("/pos/add")
 async def pos_add(request: Request):
     """Add a single POS item directly to an existing reservation (real backend)."""
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="pos_inventory.manage")
     next_url = safe_local_path(form.get("next"), "/pos?tab=sell")
     try:
         rid = form.get("reservation_id"); rid = int(rid) if rid else None
@@ -292,7 +292,7 @@ async def walkin(request: Request):
 
 @router.post("/pos/void/{pos_id}")
 async def pos_void(pos_id: int, request: Request):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="pos_inventory.manage")
     ref = safe_local_path(form.get("next"), "/pos?tab=history")
     try:
         services.void_pos_item(pos_id, deps.service_password(request, form))
@@ -303,7 +303,7 @@ async def pos_void(pos_id: int, request: Request):
 
 @router.post("/inventory/restock")
 async def restock(request: Request):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="pos_inventory.manage")
     try:
         services.restock_inventory(
             int(form.get("item_id")),
@@ -319,7 +319,7 @@ async def restock(request: Request):
 
 @router.post("/inventory/add")
 async def inv_add(request: Request):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="pos_inventory.manage")
     try:
         services.add_inventory_item(
             form.get("name", ""), form.get("category", ""), form.get("unit", ""), float(form.get("stock") or 0),
@@ -348,7 +348,7 @@ def _parse_recipe_components(text: str):
 
 @router.post("/recipes/set")
 async def recipe_set(request: Request):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="pos_inventory.manage")
     try:
         menu_id = int(form.get("menu_item_id") or form.get("item_id") or 0)
         comps = _parse_recipe_components(form.get("components") or "")
@@ -361,7 +361,7 @@ async def recipe_set(request: Request):
 
 @router.post("/recipes/clear")
 async def recipe_clear(request: Request):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="pos_inventory.manage")
     try:
         menu_id = int(form.get("menu_item_id") or form.get("item_id") or 0)
         services.clear_recipe_components(menu_id, deps.service_password(request, form))
@@ -386,7 +386,7 @@ def _parse_meal_ingredients(text: str):
 
 @router.post("/meals/save")
 async def meal_save(request: Request):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="pos_inventory.manage")
     try:
         meal_id = (form.get("meal_id") or "").strip()
         name = form.get("name", "")
@@ -409,7 +409,7 @@ async def meal_save(request: Request):
 
 @router.post("/meals/delete")
 async def meal_delete(request: Request):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="pos_inventory.manage")
     try:
         services.delete_meal(int(form.get("meal_id") or 0), deps.service_password(request, form))
         deps.add_flash(request, "Meal deleted.", "success")
@@ -419,7 +419,7 @@ async def meal_delete(request: Request):
 
 @router.post("/activities/create")
 async def activity_create(request: Request):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="pos_inventory.manage")
     try:
         _ = deps.service_password(request, form)
         services.create_activity(form.get("name",""), form.get("description",""), form.get("category","Trip"), float(form.get("unit_price") or 0), 1)
@@ -430,7 +430,7 @@ async def activity_create(request: Request):
 
 @router.post("/activities/{aid}/toggle")
 async def activity_toggle(aid: int, request: Request):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="pos_inventory.manage")
     try:
         act = services.get_activity(aid)
         if not act: raise ValueError("Activity not found")
@@ -443,7 +443,7 @@ async def activity_toggle(aid: int, request: Request):
 
 @router.post("/inventory/batch/receive")
 async def batch_receive(request: Request):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="pos_inventory.manage")
     try:
         batch = services.receive_inventory_batch(
             int(form.get("item_id")), float(form.get("qty") or 0), float(form.get("unit_cost") or 0),
@@ -461,7 +461,7 @@ async def batch_receive(request: Request):
 
 @router.post("/inventory/label/item/{item_id}")
 async def label_item(item_id: int, request: Request):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="pos_inventory.manage")
     nxt = safe_local_path(form.get("next"), "/pos?tab=batches")
     try:
         _ = deps.service_password(request, form)
@@ -473,7 +473,7 @@ async def label_item(item_id: int, request: Request):
 
 @router.post("/inventory/label/batch/{batch_id}")
 async def label_batch(batch_id: int, request: Request):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="pos_inventory.manage")
     nxt = safe_local_path(form.get("next"), "/pos?tab=batches")
     try:
         _ = deps.service_password(request, form)

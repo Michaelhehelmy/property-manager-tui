@@ -131,7 +131,7 @@ async def generate_tasks(request: Request):
 
 @router.post("/housekeeping/blocks/create")
 async def create_block(request: Request):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="housekeeping.manage")
     try:
         services.create_room_block(
             int(form.get("room_id")),
@@ -149,7 +149,7 @@ async def create_block(request: Request):
 
 @router.post("/housekeeping/blocks/{block_id}/resolve")
 async def resolve_block(block_id: int, request: Request):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="housekeeping.manage")
     try:
         services.resolve_room_block(block_id)
         deps.add_flash(request, "Room block resolved", "success")

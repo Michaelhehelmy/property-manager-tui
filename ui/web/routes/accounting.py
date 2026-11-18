@@ -51,7 +51,7 @@ def accounting(request: Request, tab: str = "overview", shift_id: int | None = N
 
 @router.post("/accounting/expense")
 async def expense(request: Request):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="accounting.manage")
     try:
         services.record_operational_expense(
             int(form.get("cat_id")),
@@ -67,7 +67,7 @@ async def expense(request: Request):
 
 @router.post("/accounting/expense/{eid}/void")
 async def void_expense(eid: int, request: Request):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="accounting.manage")
     try:
         services.void_expense(eid, deps.service_password(request, form))
         return flash_redirect(request, "/accounting?tab=expenses", "Expense voided", "success")
@@ -76,7 +76,7 @@ async def void_expense(eid: int, request: Request):
 
 @router.post("/accounting/payment")
 async def payment(request: Request):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="accounting.manage")
     try:
         rid = form.get("reservation_id")
         services.record_payment(
@@ -93,7 +93,7 @@ async def payment(request: Request):
 
 @router.post("/accounting/refund")
 async def refund(request: Request):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="accounting.manage")
     try:
         services.record_refund(
             int(form.get("reservation_id")),
@@ -110,7 +110,7 @@ async def refund(request: Request):
 
 @router.post("/accounting/shifts/open")
 async def shift_open(request: Request):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="accounting.manage")
     try:
         services.open_cash_shift(
             name=form.get("name", ""),
@@ -124,7 +124,7 @@ async def shift_open(request: Request):
 
 @router.post("/accounting/shifts/{shift_id}/movement")
 async def shift_movement(shift_id: int, request: Request):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="accounting.manage")
     try:
         services.add_cash_movement(
             shift_id,
@@ -141,7 +141,7 @@ async def shift_movement(shift_id: int, request: Request):
 
 @router.post("/accounting/shifts/{shift_id}/close")
 async def shift_close(shift_id: int, request: Request):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="accounting.manage")
     try:
         counted = form.get("counted_cash")
         services.close_cash_shift(
@@ -156,7 +156,7 @@ async def shift_close(shift_id: int, request: Request):
 
 @router.post("/accounting/night-audit/run")
 async def night_audit_run(request: Request):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="accounting.manage")
     try:
         services.run_night_audit(business_date=form.get("business_date") or None, notes=form.get("notes", ""))
         return flash_redirect(request, "/accounting?tab=night_audit", "Night audit snapshot recorded (advisory)", "success")

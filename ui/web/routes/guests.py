@@ -100,7 +100,7 @@ def guest_detail(gid: int, request: Request):
 
 @router.post("/guests/{gid}/update")
 async def guest_update(gid: int, request: Request):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="guests.manage")
     try:
         services.update_guest(
             gid,

@@ -265,7 +265,7 @@ async def checkout(rid: int, request: Request):
 
 @router.post("/reservations/{rid}/checkout-override")
 async def checkout_override(rid: int, request: Request):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="reservations.manage")
     try:
         services.checkout_reservation(rid, override=True, password=deps.service_password(request, form))
         deps.add_flash(request, "Checked out (override)", "success")
@@ -274,21 +274,21 @@ async def checkout_override(rid: int, request: Request):
 
 @router.post("/reservations/{rid}/cancel")
 async def cancel(rid: int, request: Request):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="reservations.manage")
     try: services.cancel_reservation(rid, deps.service_password(request, form)); deps.add_flash(request,"Cancelled","success")
     except Exception as e: deps.add_flash(request,str(e),"error")
     r=deps.redirect(f"/reservations/{rid}"); deps.save_session(r, deps.get_session(request)); return r
 
 @router.post("/reservations/{rid}/noshow")
 async def noshow(rid: int, request: Request):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="reservations.manage")
     try: services.mark_no_show(rid, deps.service_password(request, form)); deps.add_flash(request,"Marked no-show","success")
     except Exception as e: deps.add_flash(request,str(e),"error")
     r=deps.redirect(f"/reservations/{rid}"); deps.save_session(r, deps.get_session(request)); return r
 
 @router.post("/reservations/{rid}/delete")
 async def delete(rid: int, request: Request):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="reservations.manage")
     try: services.delete_reservation(rid, deps.service_password(request, form)); deps.add_flash(request,"Deleted","success"); dest="/reservations?tab=list"
     except Exception as e: deps.add_flash(request,str(e),"error"); dest=f"/reservations/{rid}"
     r=deps.redirect(dest); deps.save_session(r, deps.get_session(request)); return r
@@ -350,7 +350,7 @@ async def quote_modify(rid: int, request: Request):
 
 @router.post("/reservations/{rid}/modify")
 async def modify(rid: int, request: Request):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="reservations.manage")
     try:
         services.modify_reservation(
             rid,
@@ -380,7 +380,7 @@ async def pay(rid: int, request: Request):
 
 @router.post("/reservations/{rid}/refund")
 async def refund(rid: int, request: Request):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="payments.manage")
     try:
         services.record_refund(rid, float(form.get("amount") or 0), form.get("method","Cash"), form.get("notes",""), deps.service_password(request, form), reference=(form.get("reference") or "").strip())
         deps.add_flash(request,"Refund recorded","success")
@@ -389,7 +389,7 @@ async def refund(rid: int, request: Request):
 
 @router.post("/reservations/{rid}/invoice")
 async def invoice(rid: int, request: Request):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="reservations.manage")
     try:
         text = services.generate_invoice_text(rid, form.get("currency","EGP"))
         path = services.save_invoice_file(text, rid, form.get("currency","EGP"))
@@ -402,7 +402,7 @@ async def invoice(rid: int, request: Request):
 
 @router.post("/reservations/{rid}/book-activity")
 async def book_activity(rid: int, request: Request):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="reservations.manage")
     try:
         act_id = int(form.get("activity_id"))
         qty = int(form.get("qty") or 1)
@@ -436,7 +436,7 @@ async def add_service(rid: int, request: Request):
 
 @router.post("/reservations/{rid}/services/{service_line_id}/void")
 async def void_service(rid: int, service_line_id: int, request: Request):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="reservations.manage")
     try:
         services.void_reservation_service(service_line_id, deps.service_password(request, form))
         deps.add_flash(request, "Extra service voided", "success")
@@ -464,7 +464,7 @@ async def apply_discount(rid: int, request: Request):
 
 @router.post("/reservations/{rid}/discounts/{discount_id}/void")
 async def void_discount(rid: int, discount_id: int, request: Request):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="reservations.manage")
     try:
         services.void_reservation_discount(discount_id, deps.service_password(request, form))
         deps.add_flash(request, "Discount voided", "success")
@@ -488,7 +488,7 @@ async def apply_package(rid: int, request: Request):
 
 @router.post("/reservations/{rid}/packages/{reservation_package_id}/void")
 async def void_package(rid: int, reservation_package_id: int, request: Request):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="reservations.manage")
     try:
         services.void_reservation_package(reservation_package_id, deps.service_password(request, form))
         deps.add_flash(request, "Applied package voided", "success")
@@ -512,7 +512,7 @@ def groups(request: Request):
 
 @router.post("/reservations/groups/create")
 async def groups_create(request: Request):
-    form = await deps.get_form(request)
+    form = await deps.require_unlocked_form(request, permission="reservations.manage")
     try:
         gid = services.create_reservation_group(
             form.get("name",""),
@@ -529,7 +529,7 @@ async def groups_create(request: Request):
 
 @router.post("/reservations/groups/{gid}/add")
 async def groups_add(gid: int, request: Request):
-    form = await deps.get_form(request)
+    form = await deps.require_unlocked_form(request, permission="reservations.manage")
     try:
         services.add_reservation_to_group(gid, int(form.get("reservation_id")), role=form.get("role","member"), notes=form.get("notes",""))
         return flash_redirect(request, "/reservations/groups", "Reservation added to group", "success")
@@ -539,7 +539,7 @@ async def groups_add(gid: int, request: Request):
 
 @router.post("/reservations/groups/{gid}/remove/{rid}")
 async def groups_remove(gid: int, rid: int, request: Request):
-    await deps.get_form(request)
+    await deps.require_unlocked_form(request, permission="reservations.manage")
     try:
         services.remove_reservation_from_group(gid, rid)
         return flash_redirect(request, "/reservations/groups", "Reservation removed from group", "success")
@@ -550,7 +550,7 @@ async def groups_remove(gid: int, rid: int, request: Request):
 
 @router.post("/reservations/groups/{gid}/update")
 async def groups_update(gid: int, request: Request):
-    form = await deps.get_form(request)
+    form = await deps.require_unlocked_form(request, permission="reservations.manage")
     try:
         services.update_reservation_group(
             gid,
