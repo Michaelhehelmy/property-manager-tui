@@ -5044,23 +5044,35 @@ def report_housekeeping_ops():
         lines.append("\nTasks by status:")
         for r in trows:
             lines.append(f"  - {r['status']}: {r['n']}")
+        try:
+            overdue = conn.execute(
+                """SELECT COUNT(*) FROM housekeeping_tasks
+                   WHERE status IN ('pending','in_progress') AND due_at IS NOT NULL AND due_at != '' AND datetime(due_at) < datetime('now','localtime')"""
+            ).fetchone()[0]
+            lines.append(f"Overdue open tasks (by due_at): {int(overdue or 0)}")
+        except Exception:
+            pass
         open_tasks = conn.execute(
-            """SELECT ht.id, ht.status, ht.task_type, ht.priority, ht.due_at, rm.room_number
+            """SELECT ht.id, ht.status, ht.task_type, ht.priority, ht.assignee, ht.due_at, rm.room_number, ht.reservation_id
                FROM housekeeping_tasks ht LEFT JOIN rooms rm ON rm.id=ht.room_id
-               WHERE ht.status IN ('pending','in_progress') ORDER BY ht.priority DESC, ht.id DESC LIMIT 30"""
+               WHERE ht.status IN ('pending','in_progress')
+               ORDER BY CASE ht.priority WHEN 'urgent' THEN 1 WHEN 'high' THEN 2 WHEN 'normal' THEN 3 ELSE 4 END,
+                        CASE WHEN ht.due_at IS NULL OR ht.due_at='' THEN 1 ELSE 0 END, ht.due_at, ht.id DESC
+               LIMIT 30"""
         ).fetchall()
         lines.append(f"\nOpen tasks (up to 30): {len(open_tasks)}")
         for t in open_tasks:
-            lines.append(f"  - #{t['id']} Rm {t['room_number'] or '-'} [{t['status']}] {t['task_type']} pri={t['priority']} due={t['due_at'] or '-'}")
+            extra = []
+            if t['assignee']: extra.append(f"assignee={t['assignee']}")
+            if t['reservation_id']: extra.append(f"res=#{t['reservation_id']}")
+            suffix = ("  " + ", ".join(extra)) if extra else ""
+            lines.append(f"  - #{t['id']} Rm {t['room_number'] or '-'} [{t['status']}] {t['task_type']} pri={t['priority']} due={t['due_at'] or '-'}{suffix}")
     except Exception:
         lines.append("\nTasks: unavailable")
     try:
-        if hasattr(__import__('sys').modules.get('app_core.services'), 'list_room_blocks') or 'list_room_blocks' in globals():
-            blocks = list_room_blocks(status="active") if 'list_room_blocks' in globals() else []
-        else:
-            blocks = []
-        # fallback direct query
-        if not blocks:
+        try:
+            blocks = list_room_blocks(status="active")
+        except Exception:
             rows = conn.execute("SELECT rb.*, rm.room_number FROM room_blocks rb LEFT JOIN rooms rm ON rm.id=rb.room_id WHERE rb.status='active' ORDER BY rb.start_date, rb.id").fetchall()
             blocks = [dict(r) for r in rows]
         lines.append(f"\nActive room blocks (OOO/OOS): {len(blocks)}")
@@ -5076,12 +5088,20 @@ def report_reservation_groups():
     if not groups:
         lines.append("No reservation groups found.")
         return "\n".join(lines)
+    total_charges = sum(float((g.get("totals") or {}).get("total_charges") or 0) for g in groups)
+    total_paid = sum(float((g.get("totals") or {}).get("total_paid") or 0) for g in groups)
+    total_due = sum(float((g.get("totals") or {}).get("balance_due") or 0) for g in groups)
+    lines.append(f"Groups: {len(groups)} | Charges: {total_charges:.2f} | Paid: {total_paid:.2f} | Balance: {total_due:.2f}")
+    lines.append("")
     for g in groups:
         t = g.get("totals") or {}
+        contact = " / ".join([x for x in [g.get("contact_name"), g.get("contact_phone"), g.get("contact_email")] if x])
         lines.append(f"#{g.get('id')} {g.get('name')} [{g.get('status')}] ({g.get('group_type')}) members={g.get('member_count',0)}")
-        lines.append(f"  Charges: {t.get('total_charges',0):.2f} | Paid: {t.get('total_paid',0):.2f} | Balance: {t.get('balance_due',0):.2f}")
+        if contact:
+            lines.append(f"  Contact: {contact}")
+        lines.append(f"  Charges: {float(t.get('total_charges') or 0):.2f} | Paid: {float(t.get('total_paid') or 0):.2f} | Balance: {float(t.get('balance_due') or 0):.2f}")
         for m in (g.get("members") or []):
-            lines.append(f"  - Res #{m.get('reservation_id')} {m.get('guest_name','')} Rm {m.get('room_number') or '-'} [{m.get('reservation_status')}] Bal {float(m.get('balance_due') or 0):.2f}")
+            lines.append(f"  - Res #{m.get('reservation_id')} {m.get('guest_name','')} Rm {m.get('room_number') or '-'} [{m.get('reservation_status')}] {m.get('check_in_date')}->{m.get('check_out_date')} Bal {float(m.get('balance_due') or 0):.2f}")
         lines.append("")
     return "\n".join(lines).rstrip()
 
@@ -5092,8 +5112,38 @@ def report_packages_summary():
     if not pkgs:
         lines.append("No packages found.")
         return "\n".join(lines)
+    # usage/allocation stats (best-effort)
+    usage = {}
+    try:
+        conn = db.connect()
+        rows = conn.execute(
+            """SELECT package_id, status,
+                      COUNT(*) AS n,
+                      COALESCE(SUM(total_gross),0) AS gross,
+                      COALESCE(SUM(total_net),0) AS net,
+                      COALESCE(SUM(total_tax),0) AS tax
+               FROM reservation_packages GROUP BY package_id, status"""
+        ).fetchall()
+        for r in rows:
+            u = usage.setdefault(int(r["package_id"]), {"applied_n": 0, "voided_n": 0, "applied_gross": 0.0, "applied_net": 0.0, "applied_tax": 0.0, "voided_gross": 0.0})
+            st = (r["status"] or "").lower()
+            n = int(r["n"] or 0)
+            gross = float(r["gross"] or 0)
+            net = float(r["net"] or 0)
+            tax = float(r["tax"] or 0)
+            if st == "voided":
+                u["voided_n"] += n; u["voided_gross"] += gross
+            else:
+                u["applied_n"] += n; u["applied_gross"] += gross; u["applied_net"] += net; u["applied_tax"] += tax
+    except Exception:
+        usage = {}
+    lines.append(f"Defined packages: {len(pkgs)}")
+    lines.append("")
     for p in pkgs:
+        u = usage.get(int(p.get("id") or 0), {})
         lines.append(f"#{p.get('id')} {p.get('name')} [{'active' if p.get('active') else 'inactive'}] items={len(p.get('items') or [])} est={float(p.get('estimated_total') or 0):.2f}")
+        if u:
+            lines.append(f"  Applied: {u.get('applied_n',0)} (gross {u.get('applied_gross',0.0):.2f}, net {u.get('applied_net',0.0):.2f}, tax {u.get('applied_tax',0.0):.2f}) | Voided: {u.get('voided_n',0)}")
         if p.get("description"):
             lines.append(f"  {p.get('description')}")
         for it in (p.get("items") or []):

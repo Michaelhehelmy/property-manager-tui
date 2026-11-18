@@ -21,7 +21,7 @@
       <tr><th>ID</th><th>Room</th><th>Type</th><th>Status</th><th>Priority</th><th>Assignee</th><th>Due</th><th>Notes</th><th>Action</th></tr>
       {% for t in tasks %}<tr>
         <td>{{t['id']}}</td>
-        <td>{{t['room_number'] or t['room_id']}} <span class="muted">{{t['room_type'] or ''}}</span><div class="muted">Room: {{t['room_housekeeping_status'] or ''}}</div></td>
+        <td>{{t['room_number'] or t['room_id']}} <span class="muted">{{t['room_type'] or ''}}</span><div class="muted">Room: {{t['room_housekeeping_status'] or ''}}</div>{% if t['reservation_id'] %}<div class="muted">Res #{{t['reservation_id']}} {{t['guest_name'] or ''}}</div>{% endif %}</td>
         <td>{{t['task_type']}}</td><td>{{t['status']}}</td><td>{{t['priority']}}</td><td>{{t['assignee'] or ''}}</td><td>{{t['due_at'] or ''}}</td><td>{{t['notes'] or ''}}</td>
         <td>
           <form method="post" action="/housekeeping/tasks/{{t['id']}}/status" class="inline"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>
@@ -48,15 +48,24 @@
   </div>
 
   <div class="panel">
-    <h3>Active room blocks (OOO/OOS)</h3>
-    <p class="muted">Active blocks prevent room availability for overlapping dates.</p>
+    <h3>Room blocks (OOO/OOS)</h3>
+    <form method="get" class="row" style="margin-bottom:10px">
+      <input type="hidden" name="status" value="{{ status_filter }}"/>
+      <select name="block_status">
+        <option value="active" {% if block_status_filter=='active' %}selected{% endif %}>Active</option>
+        <option value="resolved" {% if block_status_filter=='resolved' %}selected{% endif %}>Resolved</option>
+        <option value="" {% if block_status_filter in ['','all'] %}selected{% endif %}>All</option>
+      </select>
+      <div style="flex:0"><button type="submit">Filter blocks</button></div>
+    </form>
+    <p class="muted">Active blocks prevent room availability for overlapping dates. Resolved blocks are kept for history.</p>
     <div class="table-wrap"><table>
-      <tr><th>ID</th><th>Room</th><th>Type</th><th>Dates</th><th>Reason</th><th>Action</th></tr>
+      <tr><th>ID</th><th>Room</th><th>Type</th><th>Dates</th><th>Status</th><th>Reason</th><th>Action</th></tr>
       {% for b in blocks %}<tr>
         <td>{{b['id']}}</td><td>{{b['room_number'] or b['room_id']}}</td><td>{{b['block_type']}}</td>
-        <td>{{b['start_date']}} → {{b['end_date']}}</td><td>{{b['reason'] or b['notes'] or ''}}</td>
-        <td><form method="post" action="/housekeeping/blocks/{{b['id']}}/resolve" class="inline"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><input type="password" name="password" placeholder="Pwd" style="width:90px;display:inline-block"/><button class="ok" title="Resolve/unblock (requires unlock)">Resolve</button></form></td>
-      </tr>{% else %}<tr><td colspan="6" class="muted">No active blocks</td></tr>{% endfor %}
+        <td>{{b['start_date']}} → {{b['end_date']}}</td><td>{{b['status']}}</td><td>{{b['reason'] or b['notes'] or ''}}</td>
+        <td>{% if b['status'] == 'active' %}<form method="post" action="/housekeeping/blocks/{{b['id']}}/resolve" class="inline"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><input type="password" name="password" placeholder="Pwd" style="width:90px;display:inline-block"/><button class="ok" title="Resolve/unblock (requires unlock)">Resolve</button></form>{% else %}<span class="muted">Resolved {{b['resolved_at'] or ''}}</span>{% endif %}</td>
+      </tr>{% else %}<tr><td colspan="7" class="muted">No blocks for selected filter</td></tr>{% endfor %}
     </table></div>
     <details style="margin-top:10px"><summary><strong>Create room block</strong> (requires unlock + password)</summary>
       <form method="post" action="/housekeeping/blocks/create"><input type="hidden" name="csrf" value="{{ csrf_token }}"/>

@@ -15,13 +15,16 @@ def _rooms():
 
 
 @router.get("/housekeeping")
-def housekeeping_page(request: Request, status: str = ""):
+def housekeeping_page(request: Request, status: str = "", block_status: str = "active"):
     try:
         tasks = services.list_housekeeping_tasks(status=status or "")
     except Exception:
         tasks = []
+    block_status = (block_status or "active").strip().lower()
+    if block_status not in ("active", "resolved", "all", ""):
+        block_status = "active"
     try:
-        blocks = services.list_room_blocks(status="active")
+        blocks = services.list_room_blocks(status=block_status)
     except Exception:
         blocks = []
     return render(request, "housekeeping/index.html", {
@@ -30,6 +33,7 @@ def housekeeping_page(request: Request, status: str = ""):
         "rooms": _rooms(),
         "blocks": blocks,
         "status_filter": status or "",
+        "block_status_filter": block_status or "active",
     })
 
 
