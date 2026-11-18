@@ -3996,6 +3996,72 @@ def restock_inventory(item_id, qty, unit_cost=0.0, password=""):
     return batch
 
 
+def _normalize_payment_allocation(allocation_json, amount, *, allow_empty=True):
+    """Validate/normalize payment allocation metadata (additive, backward-compatible).
+    Accepts dict or JSON string. Empty/omitted allocations remain allowed.
+    If provided, allocation is normalized to {"mode": ..., "lines": {...}, "unallocated": ...}
+    with non-negative numeric values and total <= abs(amount) (small float tolerance).
+    """
+    if allocation_json in (None, "", {}):
+        raw = {}
+    elif isinstance(allocation_json, str):
+        s = allocation_json.strip()
+        if not s:
+            raw = {}
+        else:
+            try:
+                raw = json.loads(s)
+            except Exception:
+                raise ValueError("allocation_json must be valid JSON.")
+    elif isinstance(allocation_json, dict):
+        raw = dict(allocation_json)
+    else:
+        raise ValueError("allocation_json must be a JSON object/string.")
+
+    if not raw:
+        if allow_empty:
+            return "{}"
+        raise ValueError("Payment allocation is required.")
+
+    # support simple category map: {"accommodation": 100, "pos": 50, ...}
+    lines = {}
+    mode = str(raw.get("mode") or raw.get("type") or "categories").strip() or "categories"
+    source = raw.get("lines") if isinstance(raw.get("lines"), dict) else {k: v for k, v in raw.items() if k not in ("mode", "type", "unallocated", "notes")}
+    for k, v in source.items():
+        key = str(k or "").strip().lower().replace(" ", "_")
+        if not key:
+            continue
+        try:
+            val = round(float(v or 0), 2)
+        except Exception:
+            raise ValueError(f"Invalid allocation amount for '{k}'.")
+        if val < 0:
+            raise ValueError("Allocation amounts cannot be negative.")
+        if val > 0:
+            lines[key] = val
+    total = round(sum(lines.values()), 2)
+    try:
+        amt = round(abs(float(amount or 0)), 2)
+    except Exception:
+        amt = 0.0
+    if total - amt > 0.01:
+        raise ValueError(f"Allocated total ({total:.2f}) exceeds payment amount ({amt:.2f}).")
+    unallocated = round(max(0.0, amt - total), 2)
+    # preserve explicit unallocated if provided and consistent
+    if raw.get("unallocated") not in (None, ""):
+        try:
+            ua = round(float(raw.get("unallocated") or 0), 2)
+            if ua >= 0 and abs((ua + total) - amt) <= 0.01:
+                unallocated = ua
+        except Exception:
+            pass
+    out = {"mode": mode, "lines": lines, "unallocated": unallocated}
+    if raw.get("notes"):
+        out["notes"] = str(raw.get("notes"))[:500]
+    return json.dumps(out, ensure_ascii=False, sort_keys=True)
+
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # PAYMENTS
 # ═══════════════════════════════════════════════════════════════════════════
@@ -4007,7 +4073,7 @@ def record_payment(reservation_id, amount, method, notes="", payment_type="Payme
         raise ValueError("Invalid reservation ID.")
     idempotency_key = (idempotency_key or "").strip()
     reference = (reference or "").strip()
-    allocation_json = allocation_json if isinstance(allocation_json, str) else json.dumps(allocation_json or {}, ensure_ascii=False)
+    allocation_json = _normalize_payment_allocation(allocation_json, amount, allow_empty=True)
     # P4 groundwork: auto-link to open cash shift for cash payments when not specified
     if shift_id in ("", 0):
         shift_id = None
@@ -4073,7 +4139,7 @@ def record_refund(reservation_id, amount, method, notes, password, idempotency_k
         raise ValueError("Refund amount must be positive.")
     idempotency_key = (idempotency_key or "").strip()
     reference = (reference or "").strip()
-    allocation_json = allocation_json if isinstance(allocation_json, str) else json.dumps(allocation_json or {}, ensure_ascii=False)
+    allocation_json = _normalize_payment_allocation(allocation_json, amount, allow_empty=True)
     if shift_id in ("", 0):
         shift_id = None
     if shift_id is None:
