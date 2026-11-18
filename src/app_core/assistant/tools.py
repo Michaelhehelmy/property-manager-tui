@@ -904,10 +904,17 @@ def tool_list_room_blocks(args=None):
     try:
         if not hasattr(services, "list_room_blocks"):
             return {"error": "room block tools unavailable"}
-        room_id = _safe_int((args or {}).get("room_id"))
-        include_past = bool((args or {}).get("include_past", False))
-        blocks = services.list_room_blocks(room_id=room_id, include_past=include_past)
-        return {"room_blocks": (blocks or [])[:100], "count": len(blocks or [])}
+        args = args or {}
+        room_id = _safe_int(args.get("room_id"))
+        status = (args.get("status") or "").strip().lower()
+        include_past = bool(args.get("include_past", False))
+        # service signature: list_room_blocks(room_id=None, status="active"); empty status => all
+        if include_past and not status:
+            status = ""
+        elif not status:
+            status = "active"
+        blocks = services.list_room_blocks(room_id=room_id, status=status)
+        return {"room_blocks": (blocks or [])[:100], "count": len(blocks or []), "status_filter": status or "all"}
     except Exception as e:
         return {"error": str(e)}
 
@@ -923,6 +930,63 @@ def tool_list_housekeeping_tasks(args=None):
     except Exception as e:
         return {"error": str(e)}
 
+
+
+
+def tool_list_reservation_packages(args=None):
+    """List packages applied to a specific reservation (folio-linked)."""
+    try:
+        rid = _safe_int((args or {}).get("reservation_id") or (args or {}).get("id"))
+        if not rid:
+            return {"error": "reservation_id is required"}
+        if not hasattr(services, "list_reservation_packages"):
+            return {"error": "reservation packages unavailable"}
+        rows = services.list_reservation_packages(rid)
+        out = []
+        for r in (rows or [])[:50]:
+            d = dict(r)
+            # parse snapshot for compact summary
+            try:
+                snap = d.get("snapshot_json")
+                if isinstance(snap, str):
+                    snap = json.loads(snap)
+                if isinstance(snap, dict):
+                    d["item_count"] = len((snap.get("items") or []))
+            except Exception:
+                pass
+            out.append(d)
+        return {"reservation_id": rid, "reservation_packages": out, "count": len(out)}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def tool_get_reservation_group(args=None):
+    """Get reservation group details, members, and aggregated folio totals."""
+    try:
+        gid = _safe_int((args or {}).get("group_id") or (args or {}).get("id"))
+        if not gid:
+            return {"error": "group_id is required"}
+        if not hasattr(services, "get_reservation_group"):
+            return {"error": "reservation groups unavailable"}
+        g = services.get_reservation_group(gid)
+        if not g:
+            return {"error": f"Group #{gid} not found"}
+        # compact members
+        members = []
+        for m in (g.get("members") or [])[:50]:
+            members.append({
+                "reservation_id": m.get("reservation_id"), "guest_name": m.get("guest_name"),
+                "room_number": m.get("room_number"), "status": m.get("reservation_status"),
+                "check_in_date": m.get("check_in_date"), "check_out_date": m.get("check_out_date"),
+                "total_charges": m.get("total_charges"), "total_paid": m.get("total_paid"),
+                "balance_due": m.get("balance_due"), "role": m.get("role"),
+            })
+        g2 = {k: v for k, v in g.items() if k != "members"}
+        g2["members"] = members
+        g2["member_count"] = len(g.get("members") or [])
+        return {"group": g2}
+    except Exception as e:
+        return {"error": str(e)}
 
 
 TOOLS = {
@@ -975,8 +1039,10 @@ TOOLS = {
     "list_packages": {"fn": tool_list_packages, "description": "List package/bundle definitions and items (read-only).", "parameters": {"type":"object","properties":{"active_only":{"type":"boolean"}},"additionalProperties":False}},
     "get_cash_shifts": {"fn": tool_get_cash_shifts, "description": "Cash shift/register status: open shift, movements, and recent shifts (read-only).", "parameters": {"type":"object","properties":{"limit":{"type":"integer"}},"additionalProperties":False}},
     "list_night_audit_runs": {"fn": tool_list_night_audit_runs, "description": "List advisory night-audit run snapshots and exceptions (read-only).", "parameters": {"type":"object","properties":{"limit":{"type":"integer"}},"additionalProperties":False}},
-    "list_room_blocks": {"fn": tool_list_room_blocks, "description": "List room blocks (OOO/OOS) affecting availability (read-only).", "parameters": {"type":"object","properties":{"room_id":{"type":"integer"},"include_past":{"type":"boolean"}},"additionalProperties":False}},
+    "list_room_blocks": {"fn": tool_list_room_blocks, "description": "List room blocks (OOO/OOS) affecting availability (read-only).", "parameters": {"type":"object","properties":{"room_id":{"type":"integer"},"status":{"type":"string"},"include_past":{"type":"boolean"}},"additionalProperties":False}},
     "list_housekeeping_tasks": {"fn": tool_list_housekeeping_tasks, "description": "List housekeeping tasks and workflow status (read-only).", "parameters": {"type":"object","properties":{"status":{"type":"string"},"room_id":{"type":"integer"}},"additionalProperties":False}},
+    "list_reservation_packages": {"fn": tool_list_reservation_packages, "description": "List packages/bundles applied to a reservation with posted amounts/status (read-only).", "parameters": {"type":"object","properties":{"reservation_id":{"type":"integer"}},"required":["reservation_id"],"additionalProperties":False}},
+    "get_reservation_group": {"fn": tool_get_reservation_group, "description": "Get reservation group details, members, and aggregated folio totals (read-only).", "parameters": {"type":"object","properties":{"group_id":{"type":"integer"}},"required":["group_id"],"additionalProperties":False}},
 }
 
 def execute_tool(name: str, args: dict | None = None) -> dict:

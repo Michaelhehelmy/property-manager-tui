@@ -271,6 +271,22 @@ def _execute_single(intent: str, text: str, slots: dict, ui_context=None):
         return {"ok": True, "intent": intent, "needs_clarification": True, "tools_used": [], "data": {"missing": "context"},
                 "answer": "I want to make sure I get this right — could you rephrase with a bit more detail? I can help with briefings, property/ops stats, reports & comparisons, who owes money, inventory alerts, top sellers, expenses/sales, expiring batches and batch/lot lists, barcode/lot traceability (received/expiry/movements), guests (search/profile/full portfolio/last visit/orders/spend/activities), reservations/balances/pipeline/groups, packages/bundles, housekeeping/tasks/room blocks, availability, activities, menus, rate plans, cash shifts, night-audit runs, integrity/doctor/health diagnostics (including backup/restore readiness and batch-stock consistency), and app version/update status."}
 
+    if intent == "reservation_group_detail":
+        gidq = slots.get("group_id") or slots.get("context", {}).get("group_id")
+        if not gidq:
+            return {"ok": True, "intent": intent, "needs_clarification": True, "tools_used": [], "data": {"missing": "group_id"},
+                    "answer": "Which reservation group should I show? Please share a group ID (e.g. `group #3 details` or `group folio for group 3`) so I can fetch grounded members and totals."}
+        data = execute_tool("get_reservation_group", {"group_id": gidq}); tools_used.append("get_reservation_group")
+        return _answer(intent, tools_used, data)
+
+    if intent == "reservation_packages_applied":
+        ridq = slots.get("reservation_id") or slots.get("context", {}).get("reservation_id")
+        if not ridq:
+            return {"ok": True, "intent": intent, "needs_clarification": True, "tools_used": [], "data": {"missing": "reservation_id"},
+                    "answer": "Which reservation’s applied packages should I show? Please include a reservation ID (e.g. `packages on reservation #12`)."}
+        data = execute_tool("list_reservation_packages", {"reservation_id": ridq}); tools_used.append("list_reservation_packages")
+        return _answer(intent, tools_used, data)
+
     # Simple read-only intent -> tool mappings (behavior-preserving consolidation)
     if intent in ("property_stats", "today_ops", "outstanding_balances", "inventory_alerts", "reservation_pipeline",
                   "housekeeping_summary", "menu_info", "rate_plans", "recent_activity", "list_activities",

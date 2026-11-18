@@ -36,6 +36,8 @@ INTENT_LABELS = [
     "reservation_search", "reservation_summary", "reservation_balance",
     "inventory_search", "inventory_item_details",
     "walkin_sales_summary", "payments_summary",
+    "reservation_groups", "reservation_group_detail", "packages_list", "reservation_packages_applied",
+    "cash_shifts", "night_audit_runs", "room_blocks", "housekeeping_tasks", "front_desk_ops", "front_desk_arrivals", "front_desk_departures", "front_desk_in_house",
     "recent_activity", "expiring_batches", "inventory_batches", "trace_barcode", "app_update_status", "health_diagnostics",
     "ambiguous_needs_clarification", "unsupported_or_unsafe", "compound_multi_intent",
 ]
@@ -171,7 +173,7 @@ def _context_from_history(history):
     for h in reversed(history):
         if h.get("role") == "assistant":
             slots = h.get("slots") or {}
-            for k in ("guest_id", "reservation_id", "date_start", "date_end"):
+            for k in ("guest_id", "reservation_id", "group_id", "date_start", "date_end"):
                 if slots.get(k) and k not in ctx: ctx[k] = slots.get(k)
             if h.get("intent") and "last_intent" not in ctx: ctx["last_intent"] = h.get("intent")
             if h.get("resolved_guest_id") and "guest_id" not in ctx: ctx["guest_id"] = h.get("resolved_guest_id")
@@ -189,6 +191,8 @@ def extract_slots(text: str, history=None) -> dict:
     if m: slots["reservation_id"] = int(m.group(1))
     m = re.search(r"\bguest\s*#?\s*(\d+)\b", tl)
     if m: slots["guest_id"] = int(m.group(1))
+    m = re.search(r"\b(?:reservation\s+)?group\s*#?\s*(\d+)\b", tl)
+    if m: slots["group_id"] = int(m.group(1))
     m = re.search(r"\broom\s*#?\s*([a-z0-9-]+)\b", tl)
     if m: slots["room_query"] = m.group(1)
     s, e = _parse_date_range(t); slots["date_start"], slots["date_end"] = s, e
@@ -226,7 +230,7 @@ def extract_slots(text: str, history=None) -> dict:
     ctx = _context_from_history(history)
     followup = any(k in tl for k in ["same guest", "that guest", "his ", "her ", "their ", "same reservation", "that reservation", "for him", "for her", "for them", "and for", "what about", "same period", "same range", "break that down", "show me more", "their portfolio", "his portfolio", "her portfolio"])
     if followup or (len(t.split()) <= 6 and not slots.get("guest_id") and not slots.get("reservation_id")):
-        for k in ("guest_id", "reservation_id", "date_start", "date_end"):
+        for k in ("guest_id", "reservation_id", "group_id", "date_start", "date_end"):
             if not slots.get(k) and ctx.get(k): slots[k] = ctx[k]
     slots["context"] = ctx
     return slots

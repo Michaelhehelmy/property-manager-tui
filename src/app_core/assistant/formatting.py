@@ -1006,11 +1006,58 @@ def _fmt_housekeeping_tasks(data: dict) -> str:
         return "No housekeeping tasks found. Tasks and room blocks can be managed from Housekeeping."
     lines = [f"Housekeeping tasks (grounded): **{len(tasks)}** task(s)."]
     for t in tasks[:25]:
-        lines.append(f"- **#{t.get('id')}** Room {t.get('room_number') or t.get('room_id')} [{t.get('status')}] {t.get('task_type') or 'task'} — {t.get('notes') or t.get('description') or ''} ({t.get('scheduled_for') or t.get('created_at') or ''})".rstrip())
+        room = t.get('room_number') or t.get('room_id') or '-'
+        parts = [f"**#{t.get('id')}** Room {room}", f"[{t.get('status')}]", (t.get('task_type') or 'task')]
+        if t.get('priority'): parts.append(f"pri={t.get('priority')}")
+        meta = []
+        if t.get('assignee'): meta.append(f"assignee {t.get('assignee')}")
+        if t.get('due_at'): meta.append(f"due {t.get('due_at')}")
+        if t.get('reservation_id'): meta.append(f"res #{t.get('reservation_id')}" + (f" {t.get('guest_name')}" if t.get('guest_name') else ""))
+        if t.get('room_housekeeping_status'): meta.append(f"room HK {t.get('room_housekeeping_status')}")
+        line = "- " + " ".join(parts)
+        if meta: line += " — " + ", ".join(meta)
+        notes = (t.get('notes') or '').strip()
+        if notes: line += f" · { _short(notes, 80) }"
+        lines.append(line)
     if len(tasks) > 25:
         lines.append(f"- …and {len(tasks)-25} more.")
     return "\n".join(lines)
 
+
+
+
+def _fmt_reservation_packages_applied(data: dict) -> str:
+    if data.get("error"): return f"I couldn’t load reservation packages ({data.get('error')})."
+    rid = data.get("reservation_id")
+    rows = data.get("reservation_packages") or []
+    if not rows:
+        return f"No packages applied to reservation #{rid} (grounded)." if rid else "No applied packages found."
+    lines = [f"Packages applied to reservation **#{rid}** (grounded): **{len(rows)}**."]
+    for p in rows[:20]:
+        lines.append(f"- **#{p.get('id')}** {p.get('package_name') or ('Package #' + str(p.get('package_id') or ''))} [{p.get('status')}] — gross {_fmt_money(p.get('total_gross') or 0)} (net {_fmt_money(p.get('total_net') or 0)}, tax {_fmt_money(p.get('total_tax') or 0)}) applied {p.get('applied_at') or ''}" + (f", voided {p.get('voided_at')}" if p.get('voided_at') else ""))
+        if p.get('item_count'):
+            lines.append(f"  • {p.get('item_count')} item(s) in snapshot")
+    if len(rows) > 20:
+        lines.append(f"- …and {len(rows)-20} more.")
+    return "\n".join(lines)
+
+
+def _fmt_reservation_group_detail(data: dict) -> str:
+    if data.get("error"): return f"I couldn’t load reservation group ({data.get('error')})."
+    g = data.get("group") or {}
+    if not g:
+        return "Reservation group not found."
+    t = g.get("totals") or {}
+    lines = [f"**Reservation group #{g.get('id')} — {g.get('name')}** ({g.get('group_type')}, {g.get('status')}, grounded):"]
+    contact = " / ".join([x for x in [g.get('contact_name'), g.get('contact_phone'), g.get('contact_email')] if x])
+    if contact: lines.append(f"- Contact: {contact}")
+    if g.get('notes'): lines.append(f"- Notes: {_short(g.get('notes'), 160)}")
+    lines.append(f"- Members: **{g.get('member_count', len(g.get('members') or []))}** · Charges {_fmt_money(t.get('total_charges',0))}, Paid {_fmt_money(t.get('total_paid',0))}, Balance {_fmt_money(t.get('balance_due',0))}")
+    for m in (g.get("members") or [])[:20]:
+        lines.append(f"  • Res #{m.get('reservation_id')} {m.get('guest_name','')} (Rm {m.get('room_number') or '-'}, {m.get('status') or '-'}, {m.get('check_in_date')}→{m.get('check_out_date')}) — due {_fmt_money(m.get('balance_due') or 0)} [{m.get('role')}]")
+    if len(g.get("members") or []) > 20:
+        lines.append(f"  • …and {len(g.get('members') or [])-20} more.")
+    return "\n".join(lines)
 
 
 _INTENT_FORMATTERS = {
@@ -1067,7 +1114,9 @@ _INTENT_FORMATTERS = {
     "walkin_sales_summary": _fmt_walkin_sales_summary,
     "payments_summary": _fmt_payments_summary,
     "reservation_groups": _fmt_reservation_groups,
+    "reservation_group_detail": _fmt_reservation_group_detail,
     "packages_list": _fmt_packages_list,
+    "reservation_packages_applied": _fmt_reservation_packages_applied,
     "cash_shifts": _fmt_cash_shifts,
     "night_audit_runs": _fmt_night_audit_runs,
     "room_blocks": _fmt_room_blocks,

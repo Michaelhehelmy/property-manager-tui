@@ -54,8 +54,10 @@ _INTENT_CUES = {
   "inventory_item_details": (1.4, ["item details","product details","inventory item #","item #","stock of item","price of item","details for item"]),
   "walkin_sales_summary": (1.5, ["walk-in sales","walkin sales","walk in sales","counter sales","pos sales without reservation","sales without room","recent walk-in","walk-in payments","direct sales summary","non-reservation sales"]),
   "payments_summary": (1.4, ["payments summary","payments by method","money received","total payments","payment totals","collections summary","how much was paid"]),
-  "reservation_groups": (1.4, ["reservation groups","group bookings","group reservations","booking groups","groups folio","group balances","show groups"]),
-  "packages_list": (1.35, ["list packages","packages and bundles","bundles","available packages","package catalog","service packages"]),
+  "reservation_groups": (1.35, ["reservation groups","group bookings","group reservations","booking groups","list groups","show groups","groups list","group balances summary"]),
+  "packages_list": (1.35, ["list packages","packages and bundles","bundles","available packages","package catalog","service packages","what packages do we have"]),
+  "reservation_packages_applied": (1.45, ["packages on reservation","packages for reservation","packages applied to reservation","reservation packages","applied packages","bundles on reservation","what packages are on reservation","packages on booking","reservation package lines"]),
+  "reservation_group_detail": (1.45, ["group details","reservation group details","group folio","group members","group balance","show group #","details for group","reservation group #"]),
   "cash_shifts": (1.4, ["cash shift","cash shifts","cash register","register shift","open shift","till","cash drawer","shift summary"]),
   "night_audit_runs": (1.4, ["night audit","night audit runs","audit runs","end of day audit","night audit summary","audit snapshot"]),
   "room_blocks": (1.35, ["room blocks","out of order","out of service","ooo rooms","oos rooms","blocked rooms","room maintenance blocks"]),
@@ -124,6 +126,11 @@ def rule_classify(text: str, slots: dict | None = None) -> dict:
         scores["guest_last_visit"] += 0.1
     if _has_any(tl, ["when did","when was the last time","last time they stayed","last stay with us","previous visit here"]) and scores.get("guest_profile",0)>0 and scores.get("guest_top_items_last_visit",0)==0:
         scores["guest_last_visit"] += 0.5
+    # intent refinements
+    if (slots.get("group_id") or "group #" in tl) and scores.get("reservation_groups",0) > 0 and _has_any(tl, ["detail","details","members","folio","balance","show group","group #","for group"]):
+        scores["reservation_group_detail"] += max(scores.get("reservation_groups",0), 1.0) + 0.4
+    if slots.get("reservation_id") and scores.get("packages_list",0) > 0 and _has_any(tl, ["on reservation","for reservation","applied","reservation #","booking #","res #"]):
+        scores["reservation_packages_applied"] += max(scores.get("packages_list",0), 1.0) + 0.5
     # ambiguity
     if _has_any(tl, ["he ordered","she ordered","they ordered","his last visit","her last visit","their last visit","that guest","they owe","do they owe","his portfolio","her portfolio"]) and not gid and not gq and not slots.get("context",{}).get("guest_id"):
         scores["ambiguous_needs_clarification"] += 1.2
