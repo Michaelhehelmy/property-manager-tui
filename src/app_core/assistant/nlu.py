@@ -62,6 +62,7 @@ _INTENT_CUES = {
   "night_audit_runs": (1.4, ["night audit","night audit runs","audit runs","end of day audit","night audit summary","audit snapshot"]),
   "room_blocks": (1.35, ["room blocks","out of order","out of service","ooo rooms","oos rooms","blocked rooms","room maintenance blocks"]),
   "housekeeping_tasks": (1.35, ["housekeeping tasks","cleaning tasks","room tasks","hk tasks","housekeeping workflow","tasks for housekeeping"]),
+  "housekeeping_ops_report": (1.4, ["housekeeping ops","housekeeping operations","housekeeping report","housekeeping ops report","room operations housekeeping","hk ops","housekeeping overview report"]),
   "ledger_integrity": (1.4, ["health check","integrity","ledger integrity","data integrity","reconcile ledger","orphaned","mismatched records","sanity check","audit the database","consistency","books/data consistency"]),
   "recent_activity": (1.2, ["recent activity","audit log","what changed lately","recent changes"]),
   "expiring_batches": (1.5, ["expiring batch","expiring batches","expired batch","what expires","expires soon","expiry soon","nearing expiry","batches expiring","items expiring"]),

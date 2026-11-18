@@ -37,7 +37,7 @@ INTENT_LABELS = [
     "inventory_search", "inventory_item_details",
     "walkin_sales_summary", "payments_summary",
     "reservation_groups", "reservation_group_detail", "packages_list", "reservation_packages_applied",
-    "cash_shifts", "night_audit_runs", "room_blocks", "housekeeping_tasks", "front_desk_ops", "front_desk_arrivals", "front_desk_departures", "front_desk_in_house",
+    "cash_shifts", "night_audit_runs", "room_blocks", "housekeeping_tasks", "housekeeping_ops_report", "front_desk_ops", "front_desk_arrivals", "front_desk_departures", "front_desk_in_house",
     "recent_activity", "expiring_batches", "inventory_batches", "trace_barcode", "app_update_status", "health_diagnostics",
     "ambiguous_needs_clarification", "unsupported_or_unsafe", "compound_multi_intent",
 ]

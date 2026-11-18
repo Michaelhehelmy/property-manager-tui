@@ -989,6 +989,18 @@ def tool_get_reservation_group(args=None):
         return {"error": str(e)}
 
 
+def tool_get_housekeeping_ops_report(args=None):
+    """Grounded housekeeping operations report (rooms/tasks/blocks)."""
+    try:
+        if hasattr(services, "report_housekeeping_ops"):
+            report = services.report_housekeeping_ops()
+            return {"report": report}
+        # fallback compose
+        return {"error": "housekeeping ops report unavailable"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 TOOLS = {
     "list_capabilities": {"fn": tool_list_capabilities, "description": "List assistant capabilities.", "parameters": {"type":"object","properties":{},"additionalProperties":False}},
     "get_property_stats": {"fn": tool_get_property_stats, "description": "Property counts/stats (guests, rooms, reservations by status, in-house, arrivals/departures today).", "parameters": {"type":"object","properties":{},"additionalProperties":False}},
@@ -1009,6 +1021,7 @@ TOOLS = {
     "get_sales_breakdown": {"fn": tool_get_sales_breakdown, "description": "Sales/POS and payment/reservation-source breakdown for a period.", "parameters": {"type":"object","properties":{"start":{"type":"string"},"end":{"type":"string"},"range":{"type":"string"}},"additionalProperties":False}},
     "get_reservation_pipeline": {"fn": tool_get_reservation_pipeline, "description": "Reservation counts by status and upcoming arrivals (7 days).", "parameters": {"type":"object","properties":{},"additionalProperties":False}},
     "get_housekeeping_summary": {"fn": tool_get_housekeeping_summary, "description": "Room housekeeping status summary.", "parameters": {"type":"object","properties":{},"additionalProperties":False}},
+    "get_housekeeping_ops_report": {"fn": tool_get_housekeeping_ops_report, "description": "Grounded housekeeping operations report: room/task/block status, overdue/open tasks, and active blocks (read-only).", "parameters": {"type":"object","properties":{},"additionalProperties":False}},
     "get_room_availability": {"fn": tool_get_room_availability, "description": "Available rooms for a date range.", "parameters": {"type":"object","properties":{"start":{"type":"string"},"end":{"type":"string"}},"additionalProperties":False}},
     "get_menu_info": {"fn": tool_get_menu_info, "description": "Meals/menu information.", "parameters": {"type":"object","properties":{},"additionalProperties":False}},
     "list_rate_plans": {"fn": tool_list_rate_plans, "description": "List rate plans and usage.", "parameters": {"type":"object","properties":{},"additionalProperties":False}},

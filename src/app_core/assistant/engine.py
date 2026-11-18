@@ -291,7 +291,7 @@ def _execute_single(intent: str, text: str, slots: dict, ui_context=None):
     if intent in ("property_stats", "today_ops", "outstanding_balances", "inventory_alerts", "reservation_pipeline",
                   "housekeeping_summary", "menu_info", "rate_plans", "recent_activity", "list_activities",
                   "activity_stats", "walkin_sales_summary", "reservation_groups", "packages_list", "cash_shifts",
-                  "night_audit_runs", "room_blocks", "housekeeping_tasks"):
+                  "night_audit_runs", "room_blocks", "housekeeping_tasks", "housekeeping_ops_report"):
         tool = {
             "property_stats": "get_property_stats",
             "today_ops": "get_today_ops",
@@ -311,6 +311,7 @@ def _execute_single(intent: str, text: str, slots: dict, ui_context=None):
             "night_audit_runs": "list_night_audit_runs",
             "room_blocks": "list_room_blocks",
             "housekeeping_tasks": "list_housekeeping_tasks",
+            "housekeeping_ops_report": "get_housekeeping_ops_report",
         }[intent]
         args = {}
         data = execute_tool(tool, args); tools_used.append(tool)

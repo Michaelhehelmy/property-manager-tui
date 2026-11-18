@@ -1060,6 +1060,14 @@ def _fmt_reservation_group_detail(data: dict) -> str:
     return "\n".join(lines)
 
 
+def _fmt_housekeeping_ops_report(data: dict) -> str:
+    if data.get("error"): return f"I couldn’t load housekeeping ops report ({data.get('error')})."
+    rep = data.get("report")
+    if isinstance(rep, str) and rep.strip():
+        return rep if len(rep) <= 4000 else rep[:4000] + "\n…"
+    return "No housekeeping operations report available."
+
+
 _INTENT_FORMATTERS = {
     "capabilities_help": _fmt_capabilities,
     "property_stats": _fmt_stats,
@@ -1121,6 +1129,7 @@ _INTENT_FORMATTERS = {
     "night_audit_runs": _fmt_night_audit_runs,
     "room_blocks": _fmt_room_blocks,
     "housekeeping_tasks": _fmt_housekeeping_tasks,
+    "housekeeping_ops_report": _fmt_housekeeping_ops_report,
     "front_desk_ops": lambda d: _fmt_today_ops({"date": (d or {}).get("date"), "ops": d, "front_desk": (d or {}).get("summary")}),
     "front_desk_arrivals": lambda d: ("\n".join([f"**Arrivals for {(d or {}).get('date') or _iso(_today())}** (grounded in real data): **{len((d or {}).get('arrivals') or [])}**"] + (["- None."] if not ((d or {}).get('arrivals') or []) else [f"- #{r.get('id')} **{r.get('guest_name','')}** [{r.get('status','')}]"+(f" · Room {r.get('room_number')}" if r.get('room_number') else "")+(f" · HK {r.get('housekeeping_status')}" if r.get('housekeeping_status') else "")+(f" · Due {_fmt_money(r.get('balance_due',0))}" if float(r.get('balance_due') or 0)>0 else "")+(f" · ⚠ {', '.join(r.get('exceptions') or [])}" if r.get('exceptions') else "") for r in ((d or {}).get('arrivals') or [])[:25]] + ([f"- … and {len((d or {}).get('arrivals') or [])-25} more."] if len((d or {}).get('arrivals') or [])>25 else []))) if not (d or {}).get('error') else f"I couldn’t retrieve arrivals ({(d or {}).get('error')})."),
     "front_desk_departures": lambda d: ("\n".join([f"**Departures for {(d or {}).get('date') or _iso(_today())}** (grounded in real data): **{len((d or {}).get('departures') or [])}**"] + (["- None."] if not ((d or {}).get('departures') or []) else [f"- #{r.get('id')} **{r.get('guest_name','')}** [{r.get('status','')}]"+(f" · Room {r.get('room_number')}" if r.get('room_number') else "")+(f" · HK {r.get('housekeeping_status')}" if r.get('housekeeping_status') else "")+(f" · Due {_fmt_money(r.get('balance_due',0))}" if float(r.get('balance_due') or 0)>0 else "")+(f" · ⚠ {', '.join(r.get('exceptions') or [])}" if r.get('exceptions') else "") for r in ((d or {}).get('departures') or [])[:25]] + ([f"- … and {len((d or {}).get('departures') or [])-25} more."] if len((d or {}).get('departures') or [])>25 else []))) if not (d or {}).get('error') else f"I couldn’t retrieve departures ({(d or {}).get('error')})."),
