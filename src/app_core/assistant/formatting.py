@@ -1121,6 +1121,42 @@ def _fmt_discount_vouchers_list(data: dict) -> str:
     return "\n".join(lines)
 
 
+def _fmt_approvals_list(data: dict) -> str:
+    if data.get("error"): return f"I couldn’t load approvals ({data.get('error')})."
+    items = data.get("approvals") or []
+    if not items:
+        return "No approval requests found" + (f" (status={data.get('status_filter')})." if data.get("status_filter") else ".")
+    lines = [f"Approval requests (grounded): **{len(items)}** item(s)" + (f", status={data.get('status_filter')}" if data.get("status_filter") else "") + "."]
+    for a in items[:30]:
+        bits = [f"**#{a.get('id')}**", f"[{a.get('status','')}]"]
+        if a.get('action_key'): bits.append(str(a.get('action_key')))
+        if a.get('entity_type') or a.get('entity_id'): bits.append(f"{a.get('entity_type','entity')}#{a.get('entity_id','')}")
+        if a.get('requested_by'): bits.append(f"req={a.get('requested_by')}")
+        if a.get('created_at'): bits.append(str(a.get('created_at')))
+        if a.get('executed_at'): bits.append("executed")
+        lines.append("- " + " · ".join(bits) + (f" — {_short(a.get('reason',''), 80)}" if a.get('reason') else ""))
+    if len(items) > 30:
+        lines.append(f"- …and {len(items)-30} more.")
+    return "\n".join(lines)
+
+
+def _fmt_approval_detail(data: dict) -> str:
+    if data.get("error"): return f"I couldn’t load approval details ({data.get('error')})."
+    a = data.get("approval") or {}
+    if not a:
+        return "No approval details available."
+    lines = [f"**Approval #{a.get('id')}** (grounded) — status **{a.get('status','')}**"]
+    for k,label in [('action_key','Action'),('entity_type','Entity type'),('entity_id','Entity id'),('requested_by','Requested by'),('approved_by','Decided by'),('created_at','Created'),('decided_at','Decided'),('executed_at','Executed')]:
+        if a.get(k) not in (None, ''):
+            lines.append(f"- {label}: {a.get(k)}")
+    if a.get('reason'): lines.append(f"- Reason: {a.get('reason')}")
+    if a.get('decision_notes'): lines.append(f"- Decision notes: {a.get('decision_notes')}")
+    if a.get('execution_notes'): lines.append(f"- Execution notes: {a.get('execution_notes')}")
+    if a.get('request_json'): lines.append(f"- Request payload: {_short(str(a.get('request_json')), 300)}")
+    if a.get('result_json'): lines.append(f"- Result/evidence: {_short(str(a.get('result_json')), 300)}")
+    return "\n".join(lines)
+
+
 _INTENT_FORMATTERS = {
     "capabilities_help": _fmt_capabilities,
     "property_stats": _fmt_stats,
@@ -1186,6 +1222,8 @@ _INTENT_FORMATTERS = {
     "rate_rules_list": _fmt_rate_rules_list,
     "service_catalog_list": _fmt_service_catalog_list,
     "discount_vouchers_list": _fmt_discount_vouchers_list,
+    "approvals_list": _fmt_approvals_list,
+    "approval_detail": _fmt_approval_detail,
     "front_desk_ops": lambda d: _fmt_today_ops({"date": (d or {}).get("date"), "ops": d, "front_desk": (d or {}).get("summary")}),
     "front_desk_arrivals": lambda d: ("\n".join([f"**Arrivals for {(d or {}).get('date') or _iso(_today())}** (grounded in real data): **{len((d or {}).get('arrivals') or [])}**"] + (["- None."] if not ((d or {}).get('arrivals') or []) else [f"- #{r.get('id')} **{r.get('guest_name','')}** [{r.get('status','')}]"+(f" · Room {r.get('room_number')}" if r.get('room_number') else "")+(f" · HK {r.get('housekeeping_status')}" if r.get('housekeeping_status') else "")+(f" · Due {_fmt_money(r.get('balance_due',0))}" if float(r.get('balance_due') or 0)>0 else "")+(f" · ⚠ {', '.join(r.get('exceptions') or [])}" if r.get('exceptions') else "") for r in ((d or {}).get('arrivals') or [])[:25]] + ([f"- … and {len((d or {}).get('arrivals') or [])-25} more."] if len((d or {}).get('arrivals') or [])>25 else []))) if not (d or {}).get('error') else f"I couldn’t retrieve arrivals ({(d or {}).get('error')})."),
     "front_desk_departures": lambda d: ("\n".join([f"**Departures for {(d or {}).get('date') or _iso(_today())}** (grounded in real data): **{len((d or {}).get('departures') or [])}**"] + (["- None."] if not ((d or {}).get('departures') or []) else [f"- #{r.get('id')} **{r.get('guest_name','')}** [{r.get('status','')}]"+(f" · Room {r.get('room_number')}" if r.get('room_number') else "")+(f" · HK {r.get('housekeeping_status')}" if r.get('housekeeping_status') else "")+(f" · Due {_fmt_money(r.get('balance_due',0))}" if float(r.get('balance_due') or 0)>0 else "")+(f" · ⚠ {', '.join(r.get('exceptions') or [])}" if r.get('exceptions') else "") for r in ((d or {}).get('departures') or [])[:25]] + ([f"- … and {len((d or {}).get('departures') or [])-25} more."] if len((d or {}).get('departures') or [])>25 else []))) if not (d or {}).get('error') else f"I couldn’t retrieve departures ({(d or {}).get('error')})."),

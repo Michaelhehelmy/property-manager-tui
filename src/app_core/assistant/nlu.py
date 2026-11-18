@@ -53,6 +53,8 @@ _INTENT_CUES = {
   "rate_rules_list": (1.4, ["rate rules","pricing rules","rate rule","seasonal rates","pricing adjustments","rate adjustments","list rate rules"]),
   "service_catalog_list": (1.4, ["service catalog","extra services catalog","add-on services list","list services catalog","available extra services"]),
   "discount_vouchers_list": (1.4, ["discount vouchers","voucher codes","promo codes","list vouchers","coupons","discount codes"]),
+  "approvals_list": (1.4, ["approvals","approval requests","pending approvals","list approvals","approval queue","requests awaiting approval"]),
+  "approval_detail": (1.4, ["approval #","approval request #","show approval","approval status for","details for approval"]),
   "inventory_search": (1.4, ["search inventory","find product","search product","search item","find item","list products","list inventory items","inventory search","product search","what products","what items do we have","stock for","find in inventory"]),
   "inventory_item_details": (1.4, ["item details","product details","inventory item #","item #","stock of item","price of item","details for item"]),
   "walkin_sales_summary": (1.5, ["walk-in sales","walkin sales","walk in sales","counter sales","pos sales without reservation","sales without room","recent walk-in","walk-in payments","direct sales summary","non-reservation sales"]),

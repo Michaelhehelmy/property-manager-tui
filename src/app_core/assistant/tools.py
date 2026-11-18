@@ -1039,6 +1039,35 @@ def tool_list_discount_vouchers(args=None):
         return {"error": str(e)}
 
 
+def tool_list_approvals(args=None):
+    try:
+        args = args or {}
+        if not hasattr(services, "list_approvals"):
+            return {"error": "approvals unavailable"}
+        status = (args.get("status") or "").strip()
+        limit = min(int(args.get("limit") or 50), 100)
+        items = services.list_approvals(status=status, limit=limit)
+        return {"approvals": items or [], "count": len(items or []), "status_filter": status or None}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def tool_get_approval(args=None):
+    try:
+        args = args or {}
+        if not hasattr(services, "get_approval"):
+            return {"error": "approvals unavailable"}
+        aid = int(args.get("approval_id") or args.get("id") or 0)
+        if not aid:
+            return {"error": "approval_id is required"}
+        item = services.get_approval(aid)
+        if not item:
+            return {"error": f"Approval #{aid} not found"}
+        return {"approval": item}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 TOOLS = {
     "list_capabilities": {"fn": tool_list_capabilities, "description": "List assistant capabilities.", "parameters": {"type":"object","properties":{},"additionalProperties":False}},
     "get_property_stats": {"fn": tool_get_property_stats, "description": "Property counts/stats (guests, rooms, reservations by status, in-house, arrivals/departures today).", "parameters": {"type":"object","properties":{},"additionalProperties":False}},
@@ -1063,6 +1092,8 @@ TOOLS = {
     "list_rate_rules": {"fn": tool_list_rate_rules, "description": "List pricing/rate rules (conditions and adjustments) (read-only).", "parameters": {"type":"object","properties":{"active_only":{"type":"boolean"}},"additionalProperties":False}},
     "list_service_catalog": {"fn": tool_list_service_catalog, "description": "List extra-service catalog items with pricing/taxable status (read-only).", "parameters": {"type":"object","properties":{"active_only":{"type":"boolean"}},"additionalProperties":False}},
     "list_discount_vouchers": {"fn": tool_list_discount_vouchers, "description": "List discount voucher definitions and usage/validity status (read-only).", "parameters": {"type":"object","properties":{"active_only":{"type":"boolean"}},"additionalProperties":False}},
+    "list_approvals": {"fn": tool_list_approvals, "description": "List approval requests and their status/decision/execution metadata (read-only).", "parameters": {"type":"object","properties":{"status":{"type":"string"},"limit":{"type":"integer"}},"additionalProperties":False}},
+    "get_approval": {"fn": tool_get_approval, "description": "Get a specific approval request by id (read-only).", "parameters": {"type":"object","properties":{"approval_id":{"type":"integer"}},"required":["approval_id"],"additionalProperties":False}},
     "get_room_availability": {"fn": tool_get_room_availability, "description": "Available rooms for a date range.", "parameters": {"type":"object","properties":{"start":{"type":"string"},"end":{"type":"string"}},"additionalProperties":False}},
     "get_menu_info": {"fn": tool_get_menu_info, "description": "Meals/menu information.", "parameters": {"type":"object","properties":{},"additionalProperties":False}},
     "list_rate_plans": {"fn": tool_list_rate_plans, "description": "List rate plans and usage.", "parameters": {"type":"object","properties":{},"additionalProperties":False}},
