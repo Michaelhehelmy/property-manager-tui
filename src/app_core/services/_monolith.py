@@ -2388,7 +2388,11 @@ def _calc_service_line_tax(net, taxable=True):
 
 
 def calculate_charge_tax(charge_type, net, nights=0, taxable=True):
-    """Unified per-charge-type tax breakdown (additive). Accommodation keeps existing service+vat+city logic."""
+    """Unified per-charge-type tax breakdown (additive, deterministic).
+    - accommodation/stay: service + VAT (+ city tax per night) via existing policy.
+    - pos/fnb/activity: service + VAT (no city tax) to preserve current POS/folio behavior.
+    - service/add-on/other: VAT only when taxable (current extra-service behavior).
+    """
     try:
         net = round(float(net or 0), 2)
     except Exception:
@@ -2400,9 +2404,17 @@ def calculate_charge_tax(charge_type, net, nights=0, taxable=True):
         t = calculate_tax(net, nights or 0)
         t["charge_type"] = charge_type
         return t
+    if charge_type in ("pos", "fnb", "food", "beverage", "activity", "pos_item"):
+        t = calculate_tax(net, 0)
+        # no per-night city tax for POS/F&B lines
+        t["city_tax"] = 0.0
+        t["gross"] = round(t["net"] + t["service"] + t["vat"], 2)
+        t["charge_type"] = charge_type
+        return t
+    # services/add-ons/packages/custom taxable charges: VAT-only by current policy
     cfg = get_tax_config()
     vat = round(net * cfg["vat_rate"], 2)
-    return {"net": net, "service": 0.0, "vat": vat, "city_tax": 0.0, "gross": round(net + vat, 2), "charge_type": charge_type}
+    return {"net": net, "service": 0.0, "vat": vat, "city_tax": 0.0, "gross": round(net + vat, 2), "charge_type": charge_type or "service"}
 
 
 def list_service_catalog(active_only=False):
@@ -3320,7 +3332,7 @@ def _add_pos_item_tx(conn, reservation_id, desc, qty, price, inv_id=None, activi
                 raise ValueError("Insufficient ingredient stock: " + "; ".join(missing))
             cost_at_sale = round(total_cost_per_unit, 6)
             net = price * qty
-            tax = calculate_tax(net, 0)
+            tax = calculate_charge_tax("pos", net, nights=0, taxable=True)
             cur.execute("""INSERT INTO pos_tabs
                 (reservation_id, inventory_item_id, item_description, quantity, unit_price, tax_amount, cost_at_sale, activity_id, batch_id, lot_code)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
@@ -3388,7 +3400,7 @@ def _add_pos_item_tx(conn, reservation_id, desc, qty, price, inv_id=None, activi
                     continue
                 take_int_i = min(take_int_i, remaining_qty)
                 net_l = price * take_int_i
-                tax_l = calculate_tax(net_l, 0)
+                tax_l = calculate_charge_tax("pos", net_l, nights=0, taxable=True)
                 bcost = float(b["unit_cost"] or inv["unit_cost"] or 0)
                 lot_code_val = b["lot_code"] if "lot_code" in b.keys() else None
                 desc_l = desc.strip()
@@ -3424,7 +3436,7 @@ def _add_pos_item_tx(conn, reservation_id, desc, qty, price, inv_id=None, activi
                 if allow_neg and overflow_qty > 0:
                     take_int_i = overflow_qty
                     net_l = price * take_int_i
-                    tax_l = calculate_tax(net_l, 0)
+                    tax_l = calculate_charge_tax("pos", net_l, nights=0, taxable=True)
                     bcost = float(inv["unit_cost"] or 0)
                     desc_l = f"{desc.strip()} [unbatched]"
                     cur.execute("""INSERT INTO pos_tabs
@@ -3457,7 +3469,7 @@ def _add_pos_item_tx(conn, reservation_id, desc, qty, price, inv_id=None, activi
                 raise ValueError(f"Insufficient stock: {inv['stock_qty']} available, {qty} requested.")
             cost_at_sale = float(inv["unit_cost"] or 0)
             net = price * qty
-            tax = calculate_tax(net, 0)
+            tax = calculate_charge_tax("pos", net, nights=0, taxable=True)
             cur.execute("""INSERT INTO pos_tabs
                 (reservation_id, inventory_item_id, item_description, quantity, unit_price, tax_amount, cost_at_sale, activity_id, batch_id, lot_code)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
@@ -3481,7 +3493,7 @@ def _add_pos_item_tx(conn, reservation_id, desc, qty, price, inv_id=None, activi
                 raise ValueError(f"Insufficient stock: {inv['stock_qty']} available, {qty} requested.")
             cost_at_sale = float(inv["unit_cost"] or 0)
             net = price * qty
-            tax = calculate_tax(net, 0)
+            tax = calculate_charge_tax("pos", net, nights=0, taxable=True)
             cur.execute("""INSERT INTO pos_tabs
                 (reservation_id, inventory_item_id, item_description, quantity, unit_price, tax_amount, cost_at_sale, activity_id, batch_id, lot_code)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
@@ -3502,7 +3514,7 @@ def _add_pos_item_tx(conn, reservation_id, desc, qty, price, inv_id=None, activi
 
     # non-inventory POS (service/activity without inv_id linkage handled elsewhere)
     net = price * qty
-    tax = calculate_tax(net, 0)
+    tax = calculate_charge_tax("pos", net, nights=0, taxable=True)
     cur.execute("""INSERT INTO pos_tabs
         (reservation_id, inventory_item_id, item_description, quantity, unit_price, tax_amount, cost_at_sale, activity_id, batch_id, lot_code)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
