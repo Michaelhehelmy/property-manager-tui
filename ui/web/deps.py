@@ -477,8 +477,22 @@ def clear_auth_failures(request: Request, scope: str = "unlock") -> None:
     clear_attempts(bucket, key)
 
 
+def has_privileged_access(request: Request) -> bool:
+    """Privilege check for sensitive actions with safe migration behavior.
+    - legacy: unlocked session required (current behavior)
+    - hybrid/strict: authenticated privileged user (admin/owner/manager) OR unlocked session
+      provides privileged access, enabling login-session integration without breaking unlock flows.
+    """
+    if is_unlocked(request):
+        return True
+    mode = web_auth_mode()
+    if mode in ("hybrid", "strict") and is_privileged_user(request):
+        return True
+    return False
+
+
 def require_unlock(request: Request) -> None:
-    if not is_unlocked(request):
+    if not has_privileged_access(request):
         nxt = quote(str(request.url.path) or "/")
         raise HTTPException(status_code=303, headers={"Location": f"/unlock?next={nxt}"})
 
