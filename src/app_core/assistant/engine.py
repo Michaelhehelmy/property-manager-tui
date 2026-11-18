@@ -289,7 +289,9 @@ def _execute_single(intent: str, text: str, slots: dict, ui_context=None):
                 except Exception: ridq = None
         if not ridq:
             return _need("Which reservation ID should I check for financial integrity?", intent, slots, missing=["reservation_id"])
-        return intent, "verify_reservation_financials", {"reservation_id": _coerce_int(ridq)}, "Checking grounded reservation financial integrity."
+        data = execute_tool("verify_reservation_financials", {"reservation_id": _safe_int(ridq)})
+        tools_used.append("verify_reservation_financials")
+        return _answer(intent, tools_used, data)
 
     if intent == "reservation_packages_applied":
         ridq = slots.get("reservation_id") or slots.get("context", {}).get("reservation_id")
@@ -300,7 +302,7 @@ def _execute_single(intent: str, text: str, slots: dict, ui_context=None):
         return _answer(intent, tools_used, data)
 
     if intent == "approval_detail":
-        aid = _coerce_int(slots.get("approval_id") or slots.get("id") or slots.get("context", {}).get("approval_id"))
+        aid = _safe_int(slots.get("approval_id") or slots.get("id") or slots.get("context", {}).get("approval_id"))
         if not aid:
             m = re.search(r"approval\s*#?\s*(\d+)", text or "", re.I)
             if m:
@@ -308,7 +310,9 @@ def _execute_single(intent: str, text: str, slots: dict, ui_context=None):
                 except Exception: aid = None
         if not aid:
             return _need("Which approval ID should I look up?", intent, slots, missing=["approval_id"])
-        return intent, "get_approval", {"approval_id": aid}, "Providing grounded approval request details."
+        data = execute_tool("get_approval", {"approval_id": aid})
+        tools_used.append("get_approval")
+        return _answer(intent, tools_used, data)
 
     # Simple read-only intent -> tool mappings (behavior-preserving consolidation)
     if intent in ("property_stats", "today_ops", "outstanding_balances", "inventory_alerts", "reservation_pipeline",
