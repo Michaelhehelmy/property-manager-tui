@@ -723,7 +723,7 @@ def settings_approvals(request: Request, status: str = ""):
 
 @router.post("/settings/approvals/request")
 async def settings_approvals_request(request: Request):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="approvals.manage")
     try:
         payload_raw = (form.get("payload_json") or "").strip()
         payload = {}
@@ -748,7 +748,7 @@ async def settings_approvals_request(request: Request):
 
 @router.post("/settings/approvals/{approval_id}/decide")
 async def settings_approvals_decide(request: Request, approval_id: int):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="approvals.manage")
     try:
         services.decide_approval(
             approval_id,
@@ -767,7 +767,7 @@ async def settings_approvals_decide(request: Request, approval_id: int):
 
 @router.post("/settings/approvals/{approval_id}/execute")
 async def settings_approvals_execute(request: Request, approval_id: int):
-    form = await deps.require_unlocked_form(request)
+    form = await deps.require_unlocked_form(request, permission="approvals.manage")
     try:
         result_raw = (form.get("execution_result_json") or "").strip()
         result = {}

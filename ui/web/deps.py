@@ -194,14 +194,19 @@ async def require_csrf_form(request: Request):
     return form
 
 
-async def require_unlocked_form(request: Request):
+async def require_unlocked_form(request: Request, permission: str | None = None):
     """Return cached/parsed form and enforce per-browser unlock for sensitive mutations.
 
     CSRF for browser form posts is enforced centrally by middleware; this helper
     normalizes unlock+form access for route handlers.
+
+    Optional permission enables incremental RBAC enforcement for migrated routes
+    (legacy unlocked behavior remains compatible via has_permission defaults).
     """
     form = await get_form(request)
     require_unlock(request)
+    if permission:
+        require_permission(request, permission)
     return form
 
 
