@@ -16,6 +16,38 @@ from ui.web.rendering import render
 from ui.web.route_utils import flash_redirect, guarded_unlock_redirect, htmx_partial_or_redirect
 
 logger = logging.getLogger(__name__)
+
+
+def _json_safe_value(value, _depth=0):
+    """Return a JSON-safe sanitized copy (drops exception/trace-like objects)."""
+    if _depth > 8:
+        return str(value)
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, BaseException):
+        return "internal_error"
+    if isinstance(value, dict):
+        out = {}
+        for k, v in value.items():
+            try:
+                key = str(k)
+            except Exception:
+                continue
+            # avoid leaking traceback/exception internals by key names
+            if key in {"__traceback__", "tb", "traceback", "exception", "exc_info"}:
+                continue
+            out[key] = _json_safe_value(v, _depth + 1)
+        return out
+    if isinstance(value, (list, tuple, set)):
+        return [_json_safe_value(v, _depth + 1) for v in list(value)[:200]]
+    # fallback: string form, but avoid repr of exception objects
+    try:
+        if value.__class__.__module__ in ("traceback", "types") and value.__class__.__name__ in ("TracebackType", "FrameType", "CodeType"):
+            return "internal_error"
+    except Exception:
+        pass
+    return str(value)
+
 router = APIRouter()
 
 PENDING_ACTION_SESSION_KEY = "assistant_pending_action"
@@ -229,13 +261,13 @@ async def assistant_ask(request: Request):
 
     if want_json:
         # Return only sanitized, JSON-safe fields (no exception/trace data).
-        safe_slots = result.get("slots") if isinstance(result.get("slots"), dict) else {}
-        safe_ui_actions = result.get("ui_actions") if isinstance(result.get("ui_actions"), list) else []
+        safe_slots = _json_safe_value(result.get("slots") if isinstance(result.get("slots"), dict) else {})
+        safe_ui_actions = _json_safe_value(result.get("ui_actions") if isinstance(result.get("ui_actions"), list) else [])
         payload = {
             "ok": bool(result.get("ok", True)),
             "answer": str(result.get("answer") or ""),
             "intent": str(result.get("intent") or ""),
-            "confidence": result.get("confidence"),
+            "confidence": _json_safe_value(result.get("confidence")),
             "tools_used": [str(x) for x in (result.get("tools_used") or []) if isinstance(x, (str, int, float, bool))],
             "source": str(result.get("source") or ""),
             "slots": safe_slots,
@@ -243,24 +275,16 @@ async def assistant_ask(request: Request):
         }
         pa = result.get("proposed_action") or pending_action
         if isinstance(pa, dict):
-            payload["proposed_action"] = {
-                "id": str(pa.get("id") or ""),
-                "type": str(pa.get("type") or ""),
-                "summary": str(pa.get("summary") or ""),
-                "risk_level": str(pa.get("risk_level") or ""),
-                "status": str(pa.get("status") or ""),
-            }
-            payload["pending_action"] = payload["proposed_action"]
+            safe_pa = _json_safe_value(pa)
+            if isinstance(safe_pa, dict):
+                payload["proposed_action"] = safe_pa
+                payload["pending_action"] = safe_pa
         else:
             cur = get_pending_action(request)
             if isinstance(cur, dict):
-                payload["pending_action"] = {
-                    "id": str(cur.get("id") or ""),
-                    "type": str(cur.get("type") or ""),
-                    "summary": str(cur.get("summary") or ""),
-                    "risk_level": str(cur.get("risk_level") or ""),
-                    "status": str(cur.get("status") or ""),
-                }
+                safe_cur = _json_safe_value(cur)
+                if isinstance(safe_cur, dict):
+                    payload["pending_action"] = safe_cur
         return payload
 
     shown = _history(request)[-20:]
