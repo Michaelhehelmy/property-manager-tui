@@ -90,6 +90,104 @@ jobs:
             echo "Build output not found" >&2; ls -la; exit 1
           fi
 
+      - name: Smoke test packaged binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os, pathlib, platform, shutil, socket, subprocess, sys, tempfile, time, urllib.request
+
+          artifact = os.environ.get("ARTIFACT_NAME", "")
+          root = pathlib.Path("dist").resolve()
+          work = root / "_smoke"
+          if work.exists():
+              shutil.rmtree(work)
+          work.mkdir(parents=True, exist_ok=True)
+
+          # Extract packaged artifact
+          candidates = list(root.glob(f"{artifact}.*")) or list(root.glob("property-manager-*"))
+          if not candidates:
+              print("No packaged artifact found in dist", file=sys.stderr)
+              sys.exit(1)
+          pkg = candidates[0]
+          print(f"Smoke test package: {pkg}")
+          if pkg.suffix == ".zip":
+              shutil.unpack_archive(str(pkg), str(work))
+          elif pkg.name.endswith(".tar.gz"):
+              shutil.unpack_archive(str(pkg), str(work))
+          else:
+              shutil.copy2(pkg, work / pkg.name)
+
+          # Locate launcher executable
+          exe = None
+          if os.name == "nt":
+              for cand in [work / "launcher.dist" / "launcher.exe", work / "launcher.exe"]:
+                  if cand.exists():
+                      exe = cand
+                      break
+              if exe is None:
+                  found = list(work.rglob("launcher.exe"))
+                  exe = found[0] if found else None
+          else:
+              for cand in [work / "launcher.dist" / "launcher", work / "launcher"]:
+                  if cand.exists():
+                      exe = cand
+                      break
+              if exe is None:
+                  found = [p for p in work.rglob("launcher") if p.is_file()]
+                  exe = found[0] if found else None
+          if exe is None:
+              print("Launcher executable not found", file=sys.stderr)
+              for p in work.rglob("*"):
+                  print(" -", p)
+              sys.exit(1)
+          try:
+              os.chmod(exe, 0o755)
+          except Exception:
+              pass
+
+          # Pick a free localhost port
+          with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+              s.bind(("127.0.0.1", 0))
+              port = s.getsockname()[1]
+
+          cmd = [str(exe), "--mode", "web", "--host", "127.0.0.1", "--port", str(port), "--no-browser"]
+          print("Starting:", cmd)
+          proc = subprocess.Popen(cmd, cwd=str(exe.parent), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+          try:
+              ok = False
+              last_err = None
+              for _ in range(90):  # up to ~90s for cold native startup
+                  if proc.poll() is not None:
+                      out = ""
+                      try:
+                          out = (proc.stdout.read() or "")[-4000:]
+                      except Exception:
+                          pass
+                      raise RuntimeError(f"Process exited early with code {proc.returncode}. Output:\n{out}")
+                  try:
+                      with urllib.request.urlopen(f"http://127.0.0.1:{port}/healthz", timeout=2) as resp:
+                          body = resp.read().decode("utf-8", "replace")
+                          if resp.status == 200 and '"ok"' in body:
+                              print("Health check OK:", body[:300])
+                              ok = True
+                              break
+                  except Exception as e:
+                      last_err = e
+                  time.sleep(1)
+              if not ok:
+                  raise RuntimeError(f"Health check did not pass: {last_err}")
+          finally:
+              proc.terminate()
+              try:
+                  proc.wait(timeout=15)
+              except Exception:
+                  proc.kill()
+          PY
+        env:
+          ARTIFACT_NAME: ${{ matrix.artifact_name }}
+          PM_WEB_SECRET_KEY: ci-smoke-test-secret-key
+
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
