@@ -38,17 +38,33 @@ def _write_confined_invoice_file(filename: str, text):
         or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,200}", safe_name)
     ):
         raise ValueError("Invalid invoice filename.")
+    import os as _os
     base = invoice_dir.resolve()
-    out_path = (base / safe_name).resolve()  # codeql[py/path-injection] filename strictly validated and confined to invoice dir
+    # Write using dir_fd + validated basename to confine operation to invoice directory.
+    dir_fd = None
     try:
-        import os as _os
-        if _os.path.commonpath([str(base), str(out_path)]) != str(base):
-            raise ValueError("Refusing to write file outside invoice directory.")
-        out_path.relative_to(base)
+        dir_fd = _os.open(str(base), _os.O_RDONLY)
+        flags = _os.O_WRONLY | _os.O_CREAT | _os.O_TRUNC
+        nofollow = getattr(_os, "O_NOFOLLOW", 0)
+        fd = _os.open(safe_name, flags | nofollow, 0o600, dir_fd=dir_fd)
+        try:
+            with _os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(str(text or ""))
+        except Exception:
+            try:
+                _os.close(fd)
+            except Exception:
+                pass
+            raise
     except Exception:
         raise ValueError("Refusing to write file outside invoice directory.")
-    out_path.write_text(str(text or ""), encoding="utf-8")  # codeql[py/path-injection] path confined to invoice dir
-    return str(out_path)
+    finally:
+        if dir_fd is not None:
+            try:
+                _os.close(dir_fd)
+            except Exception:
+                pass
+    return str((base / safe_name).resolve())
 
 
 def build_invoice_text(reservation, nights, accom, pos_items, payments, *, currency="EGP", usd_to_egp=1.0,

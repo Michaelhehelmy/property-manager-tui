@@ -153,12 +153,21 @@ def _allowed_print_roots():
 
 def _is_under_allowed_root(path_obj):
     try:
-        p = Path(path_obj).resolve()  # codeql[py/path-injection] path validated against allowed roots by caller/context
+        raw = str(path_obj or "")
+        if "\x00" in raw:
+            return False
+        p = Path(raw).resolve()
     except Exception:
         return False
     for root in _allowed_print_roots():
-        if p == root or root in p.parents:
-            return True
+        try:
+            rel = p.relative_to(root)
+            # Reconstruct from trusted root to avoid using tainted path flows.
+            safe_p = (root / rel).resolve()
+            if safe_p == p and (safe_p == root or root in safe_p.parents):
+                return True
+        except Exception:
+            continue
     return False
 
 
@@ -3121,16 +3130,33 @@ def _print_text_label(text, filename_base, printer=None, fmt="code128"):
     filename = _safe_export_filename(filename_base, ".txt")
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,200}", str(filename)):
         raise ValueError("Invalid label filename.")
+    import os as _os
     base = EXPORT_DIR.resolve()
-    out_path = (base / filename).resolve()  # codeql[py/path-injection] filename strictly validated and confined to export dir
+    # Write using dir_fd + validated basename to confine operation to export directory.
+    dir_fd = None
     try:
-        import os as _os
-        if _os.path.commonpath([str(base), str(out_path)]) != str(base):
-            raise ValueError("Refusing to write label outside export directory.")
-        out_path.relative_to(base)
+        dir_fd = _os.open(str(base), _os.O_RDONLY)
+        flags = _os.O_WRONLY | _os.O_CREAT | _os.O_TRUNC
+        nofollow = getattr(_os, "O_NOFOLLOW", 0)
+        fd = _os.open(filename, flags | nofollow, 0o600, dir_fd=dir_fd)
+        try:
+            with _os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(str(text or ""))
+        except Exception:
+            try:
+                _os.close(fd)
+            except Exception:
+                pass
+            raise
     except Exception:
         raise ValueError("Refusing to write label outside export directory.")
-    out_path.write_text(str(text or ""), encoding="utf-8")  # codeql[py/path-injection] path confined to export dir
+    finally:
+        if dir_fd is not None:
+            try:
+                _os.close(dir_fd)
+            except Exception:
+                pass
+    out_path = (base / filename).resolve()
     target = printer if printer is not None else get_label_printer()
     ok, msg = print_to_printer(str(out_path), target)
     return ok, msg, str(out_path)
@@ -4803,21 +4829,29 @@ def _validate_print_filepath(filepath):
         candidate = Path(raw)
         if not candidate.is_absolute():
             candidate = (Path.cwd() / candidate)
-        candidate = candidate.resolve(strict=True)  # codeql[py/path-injection] confined to approved data/export/invoice roots
+        candidate = candidate.resolve(strict=True)
     except Exception:
         raise FileNotFoundError("File not found.")
-    if not candidate.is_file():  # codeql[py/path-injection] confined candidate
-        raise FileNotFoundError("File not found.")
-    if not _is_under_allowed_root(candidate):
+    # Confine to approved roots and reconstruct path from trusted root.
+    safe_candidate = None
+    for root in _allowed_print_roots():
+        try:
+            rel = candidate.relative_to(root)
+            rp = (root / rel).resolve()
+            if rp == candidate and rp.is_file():
+                safe_candidate = rp
+                break
+        except Exception:
+            continue
+    if safe_candidate is None:
         raise ValueError("Refusing to print files outside approved data/export/invoice directories.")
-    # Re-resolve under allowed root context is implicit via confinement check above.
     try:
-        size = candidate.stat().st_size  # codeql[py/path-injection] confined candidate
+        size = safe_candidate.stat().st_size
     except Exception:
         size = 0
     if size > 5 * 1024 * 1024:
         raise ValueError("Refusing to print oversized file (>5MB).")
-    return candidate
+    return safe_candidate
 
 
 def print_to_printer(filepath, printer=None):
