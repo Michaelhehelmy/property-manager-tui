@@ -18,24 +18,22 @@ permissions:
   contents: read
 
 jobs:
-  sbom:
+  generate:
     name: Generate SBOMs
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Generate repository SBOM (SPDX JSON)
-        uses: anchore/sbom-action@v0
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
         with:
           path: .
           format: spdx-json
           output-file: sbom-repository.spdx.json
 
       - name: Generate repository SBOM (CycloneDX JSON)
-        uses: anchore/sbom-action@v0
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
         with:
           path: .
           format: cyclonedx-json
@@ -45,21 +43,21 @@ jobs:
         run: docker build --tag spms-sbom:${{ github.sha }} .
 
       - name: Generate image SBOM (SPDX JSON)
-        uses: anchore/sbom-action@v0
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
         with:
           image: spms-sbom:${{ github.sha }}
           format: spdx-json
           output-file: sbom-image.spdx.json
 
       - name: Generate image SBOM (CycloneDX JSON)
-        uses: anchore/sbom-action@v0
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
         with:
           image: spms-sbom:${{ github.sha }}
           format: cyclonedx-json
           output-file: sbom-image.cdx.json
 
       - name: Upload SBOM artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: sbom-${{ github.run_id }}
           path: |
@@ -69,12 +67,25 @@ jobs:
             sbom-image.cdx.json
           if-no-files-found: error
 
+  attach-release:
+    name: Attach SBOMs to release
+    needs: generate
+    if: github.event_name == 'release' && github.event.action == 'published'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download SBOM artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: sbom-${{ github.run_id }}
+          path: sbom
+
       - name: Attach SBOMs to release
-        if: github.event_name == 'release' && github.event.action == 'published'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           files: |
-            sbom-repository.spdx.json
-            sbom-repository.cdx.json
-            sbom-image.spdx.json
-            sbom-image.cdx.json
+            sbom/sbom-repository.spdx.json
+            sbom/sbom-repository.cdx.json
+            sbom/sbom-image.spdx.json
+            sbom/sbom-image.cdx.json

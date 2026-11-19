@@ -21,7 +21,8 @@ Design intent: keep business rules and data access centralized in `app_core` so 
 ├─ index.html                  # Landing/download page (static)
 ├─ wrangler.toml               # Cloudflare Worker static-assets config for landing page
 ├─ pyproject.toml              # Packaging, deps/extras, scripts, ruff config
-├─ requirements*.txt           # Runtime/web/dev dependency sets
+├─ requirements.txt            # Runtime dependencies (web-only)
+├─ requirements-dev.txt        # Dev/test dependencies
 ├─ scripts/                    # Install/setup/update/backup/build/lint/coverage helpers
 ├─ src/app_core/               # Shared backend (authoritative business/data layer)
 │  ├─ db.py                    # SQLite connection/schema/migrations/helpers

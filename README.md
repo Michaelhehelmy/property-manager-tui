@@ -37,8 +37,9 @@ SPMS (Super Property Management System) — local-first property management with
 ```text
 launcher.py                  # unified web launcher/menu
 main.py                      # web entry point (compatibility)
-pyproject.toml               # packaging metadata and extras
-requirements*.txt            # runtime / web / dev Python deps
+pyproject.toml               # packaging metadata, dependencies, extras
+requirements.txt             # runtime dependencies (web-only app)
+requirements-dev.txt         # dev/test dependencies
 scripts/                     # install/setup/update/backup/coverage helpers
 src/app_core/                # shared backend (db, services, paths, assistant, doctor, updater, ...)
 ui/web/                      # FastAPI + HTMX web UI
@@ -135,8 +136,8 @@ git clone https://github.com/Michaelhehelmy/spms.git
 cd spms
 python3 -m venv .venv
 # activate: Unix `. .venv/bin/activate` | PowerShell `.\\.venv\\Scripts\\Activate.ps1` | cmd `.venv\\Scripts\\activate.bat`
-pip install -r requirements.txt
-pip install -r requirements-web.txt  # optional, for web
+pip install -r requirements.txt  # runtime dependencies (web-only app)
+# optional dev/test deps: pip install -r requirements-dev.txt
 python launcher.py          # menu
 python launcher.py --web --host 127.0.0.1 --port 8000
 # direct web server (always --workers 1):
@@ -211,7 +212,7 @@ See `docs/BACKUP_RESTORE.md` for DR guidance.
 python -m py_compile src/app_core/*.py ui/web/*.py main.py launcher.py
 PYTHONPATH=src pytest -q
 pytest --cov=src/app_core --cov=ui --cov-report=term-missing --cov-report=xml:coverage.xml
-python -m pip install -r requirements-dev.txt -r requirements-web.txt && python -m pytest -q
+python -m pip install -r requirements.txt -r requirements-dev.txt && python -m pytest -q
 ```
 
 ## Troubleshooting (quick)

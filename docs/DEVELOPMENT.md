@@ -8,7 +8,7 @@ This guide is for contributors, maintainers, and developers forking/extending th
 - **Git**
 - **SQLite** (bundled with Python)
 - OS/toolchain packages as needed for your platform (build tools may be required for some deps/wheels)
-- For web UI: dependencies in `requirements-web.txt`
+- Runtime dependencies (web-only app): `requirements.txt` (also declared in `pyproject.toml`)
 - For native builds: see [`docs/NATIVE_BUILDS.md`](NATIVE_BUILDS.md)
 
 ## Clone and environment setup
@@ -24,7 +24,7 @@ python3 -m venv .venv
 # .\.venv\Scripts\Activate.ps1
 
 pip install -U pip
-pip install -r requirements.txt -r requirements-web.txt -r requirements-dev.txt
+pip install -r requirements.txt -r requirements-dev.txt
 # alternative:
 # pip install -e ".[web,dev]"
 ```

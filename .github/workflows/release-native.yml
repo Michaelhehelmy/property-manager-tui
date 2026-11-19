@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
@@ -17,153 +17,302 @@ jobs:
         include:
           - os: windows-latest
             artifact_name: spms-windows-x64
-            shell_ext: .exe
+            platform: windows
           - os: ubuntu-latest
             artifact_name: spms-linux-x64
-            shell_ext: ""
+            platform: linux
           - os: macos-15-intel
             artifact_name: spms-macos-x64
-            shell_ext: ""
+            platform: macos
           - os: macos-latest
             artifact_name: spms-macos-arm64
-            shell_ext: ""
+            platform: macos
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
 
       - name: Install dependencies
         shell: bash
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install -r requirements-web.txt || true
-          pip install nuitka ordered-set zstandard
+          python -m pip install --upgrade "pip>=24.3.1"
+          python -m pip install -r requirements.txt
+          python -m pip install "nuitka>=2.6.0" "ordered-set>=4.1.0" "zstandard>=0.23.0" "imageio>=2.36.0"
 
-      - name: Build (Nuitka standalone)
+      - name: Build native app (Nuitka)
         shell: bash
         env:
           PYTHONPATH: src
+          BUILD_PLATFORM: ${{ matrix.platform }}
+          NUITKA_OUT: dist/nuitka
         run: |
-          python -m nuitka \
-            --standalone \
-            --assume-yes-for-downloads \
-            --enable-plugin=anti-bloat \
-            --include-package=app_core \
-            --include-package=ui \
-            --include-package=uvicorn \
-            --include-package=fastapi \
-            --include-package=starlette \
-            --include-package=anyio \
-            --include-package=jinja2 \
-            --include-package=itsdangerous \
-            --include-package=python_multipart \
-            --include-package=multipart \
-            --include-package=pydantic \
-            --include-package=pydantic_core \
-            --include-data-dir=ui/web/templates=ui/web/templates \
-            --include-data-dir=ui/web/static=ui/web/static \
-            --include-data-files=pyproject.toml=pyproject.toml \
-            --output-dir=dist/nuitka \
-            launcher.py
+          set -euo pipefail
+          rm -rf "$NUITKA_OUT" dist/pkg 2>/dev/null || true
+          mkdir -p "$NUITKA_OUT" dist/pkg
+          COMMON_ARGS=(
+            -m nuitka
+            --assume-yes-for-downloads
+            --enable-plugin=anti-bloat
+            --include-package=app_core
+            --include-package=ui
+            --include-package=uvicorn
+            --include-package=fastapi
+            --include-package=starlette
+            --include-package=anyio
+            --include-package=jinja2
+            --include-package=itsdangerous
+            --include-package=python_multipart
+            --include-package=multipart
+            --include-package=pydantic
+            --include-package=pydantic_core
+            --include-data-dir=ui/web/templates=ui/web/templates
+            --include-data-dir=ui/web/static=ui/web/static
+            --include-data-files=pyproject.toml=pyproject.toml
+            --output-dir="$NUITKA_OUT"
+            --output-filename=spms
+          )
+
+          case "$BUILD_PLATFORM" in
+            windows)
+              # Single-file executable (.exe)
+              python "${COMMON_ARGS[@]}" --onefile --windows-console-mode=force launcher.py
+              ;;
+            linux)
+              # Single-file executable/binary (can also be wrapped as AppImage later)
+              python "${COMMON_ARGS[@]}" --onefile launcher.py
+              ;;
+            macos)
+              # macOS app bundle packaged into .dmg
+              python "${COMMON_ARGS[@]}" --standalone --macos-create-app-bundle --macos-app-name=SPMS launcher.py
+              ;;
+            *)
+              echo "Unsupported BUILD_PLATFORM=$BUILD_PLATFORM" >&2
+              exit 1
+              ;;
+          esac
+
+          echo "Build output:"
+          find "$NUITKA_OUT" -maxdepth 3 -print
 
       - name: Package artifact
         shell: bash
+        env:
+          ARTIFACT_NAME: ${{ matrix.artifact_name }}
+          BUILD_PLATFORM: ${{ matrix.platform }}
         run: |
           set -euo pipefail
-          cd dist/nuitka
-          # Nuitka outputs launcher.dist or launcher.exe depending on platform/mode
-          if [ -d launcher.dist ]; then
-            case "${{ matrix.os }}" in
-              windows-*)
-                7z a "../${{ matrix.artifact_name }}.zip" launcher.dist
-                ;;
-              *)
-                tar -czf "../${{ matrix.artifact_name }}.tar.gz" launcher.dist
-                ;;
-            esac
-          elif [ -f launcher.exe ]; then
-            7z a "../${{ matrix.artifact_name }}.zip" launcher.exe
-          else
-            echo "Build output not found" >&2; ls -la; exit 1
-          fi
+          mkdir -p dist
+          case "$BUILD_PLATFORM" in
+            windows)
+              exe=""
+              for c in dist/nuitka/spms.exe dist/nuitka/launcher.exe dist/nuitka/spms.dist/spms.exe dist/nuitka/launcher.dist/launcher.exe; do
+                [ -f "$c" ] && exe="$c" && break
+              done
+              if [ -z "$exe" ]; then exe="$(find dist/nuitka -maxdepth 4 -type f -name '*.exe' | head -n1 || true)"; fi
+              [ -n "$exe" ] || { echo "Windows executable not found"; find dist/nuitka -maxdepth 4 -print; exit 1; }
+              cp "$exe" "dist/${ARTIFACT_NAME}.exe"
+              ;;
+            linux)
+              bin=""
+              for c in dist/nuitka/spms.bin dist/nuitka/spms dist/nuitka/launcher.bin dist/nuitka/launcher; do
+                [ -f "$c" ] && bin="$c" && break
+              done
+              if [ -z "$bin" ]; then bin="$(find dist/nuitka -maxdepth 3 -type f \( -name 'spms*' -o -name 'launcher*' \) ! -name '*.py' | head -n1 || true)"; fi
+              [ -n "$bin" ] || { echo "Linux binary not found"; find dist/nuitka -maxdepth 4 -print; exit 1; }
+              chmod +x "$bin" || true
+              cp "$bin" "dist/${ARTIFACT_NAME}"
+              chmod +x "dist/${ARTIFACT_NAME}" || true
 
-      - name: Smoke test packaged binary
+              # Best-effort AppImage (single-file Linux distribution)
+              set +e
+              APPIMAGE_OUT="dist/${ARTIFACT_NAME}.AppImage"
+              WORKDIR_APP="dist/_appimage"
+              rm -rf "$WORKDIR_APP"
+              mkdir -p "$WORKDIR_APP/AppDir/usr/bin" "$WORKDIR_APP/AppDir/usr/share/icons/hicolor/256x256/apps" "$WORKDIR_APP/AppDir/usr/share/applications"
+              cp "$bin" "$WORKDIR_APP/AppDir/usr/bin/spms"
+              chmod +x "$WORKDIR_APP/AppDir/usr/bin/spms"
+              if [ -f ui/web/static/icons/icon-512.png ]; then
+                cp ui/web/static/icons/icon-512.png "$WORKDIR_APP/AppDir/spms.png"
+                cp ui/web/static/icons/icon-512.png "$WORKDIR_APP/AppDir/usr/share/icons/hicolor/256x256/apps/spms.png"
+              fi
+              cat > "$WORKDIR_APP/AppDir/spms.desktop" <<'DESKTOP'
+[Desktop Entry]
+Type=Application
+Name=SPMS
+Comment=Super Property Management System
+Exec=spms
+Icon=spms
+Terminal=true
+Categories=Office;Finance;
+DESKTOP
+              cp "$WORKDIR_APP/AppDir/spms.desktop" "$WORKDIR_APP/AppDir/usr/share/applications/spms.desktop"
+              cat > "$WORKDIR_APP/AppDir/AppRun" <<'APPRUN'
+#!/bin/sh
+HERE="$(dirname "$(readlink -f "$0")")"
+exec "$HERE/usr/bin/spms" "$@"
+APPRUN
+              chmod +x "$WORKDIR_APP/AppDir/AppRun"
+              ARCH_APPIMAGE="$(uname -m)"
+              case "$ARCH_APPIMAGE" in
+                x86_64|amd64) ARCH_APPIMAGE=x86_64 ;;
+                aarch64|arm64) ARCH_APPIMAGE=aarch64 ;;
+              esac
+              APPIMAGE_TOOL=""
+              if command -v appimagetool >/dev/null 2>&1; then
+                APPIMAGE_TOOL="$(command -v appimagetool)"
+              else
+                curl -fsSL -o "$WORKDIR_APP/appimagetool" "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-${ARCH_APPIMAGE}.AppImage" \
+                  && chmod +x "$WORKDIR_APP/appimagetool" \
+                  && APPIMAGE_TOOL="$WORKDIR_APP/appimagetool"
+              fi
+              if [ -n "$APPIMAGE_TOOL" ]; then
+                ARCH="$ARCH_APPIMAGE" "$APPIMAGE_TOOL" "$WORKDIR_APP/AppDir" "$APPIMAGE_OUT" || echo "AppImage packaging failed (binary artifact still available)"
+              else
+                echo "appimagetool unavailable; skipping AppImage (binary artifact still available)"
+              fi
+              rm -rf "$WORKDIR_APP"
+              set -e
+              ;;
+            macos)
+              app=""
+              for c in dist/nuitka/SPMS.app dist/nuitka/spms.app dist/nuitka/launcher.app; do
+                [ -d "$c" ] && app="$c" && break
+              done
+              if [ -z "$app" ]; then app="$(find dist/nuitka -maxdepth 3 -type d -name '*.app' | head -n1 || true)"; fi
+              [ -n "$app" ] || { echo "macOS .app bundle not found"; find dist/nuitka -maxdepth 4 -print; exit 1; }
+              hdiutil create -volname "SPMS" -srcfolder "$app" -ov -format UDZO "dist/${ARTIFACT_NAME}.dmg"
+              ;;
+            *)
+              echo "Unsupported BUILD_PLATFORM=$BUILD_PLATFORM" >&2
+              exit 1
+              ;;
+          esac
+
+          echo "Packaged artifacts:"
+          ls -la dist
+
+      - name: Smoke test packaged artifact
         shell: bash
+        env:
+          ARTIFACT_NAME: ${{ matrix.artifact_name }}
+          BUILD_PLATFORM: ${{ matrix.platform }}
+          PM_WEB_SECRET_KEY: ci-smoke-test-secret-key
         run: |
           set -euo pipefail
           python - <<'PY'
           import os, pathlib, platform, shutil, socket, subprocess, sys, tempfile, time, urllib.request
 
-          artifact = os.environ.get("ARTIFACT_NAME", "")
+          artifact = os.environ["ARTIFACT_NAME"]
+          build_platform = os.environ["BUILD_PLATFORM"]
           root = pathlib.Path("dist").resolve()
           work = root / "_smoke"
           if work.exists():
               shutil.rmtree(work)
           work.mkdir(parents=True, exist_ok=True)
 
-          # Extract packaged artifact
-          candidates = list(root.glob(f"{artifact}.*")) or list(root.glob("spms-*")) or list(root.glob("property-manager-*"))
-          if not candidates:
-              print("No packaged artifact found in dist", file=sys.stderr)
-              sys.exit(1)
-          pkg = candidates[0]
-          print(f"Smoke test package: {pkg}")
-          if pkg.suffix == ".zip":
-              shutil.unpack_archive(str(pkg), str(work))
-          elif pkg.name.endswith(".tar.gz"):
-              shutil.unpack_archive(str(pkg), str(work))
-          else:
-              shutil.copy2(pkg, work / pkg.name)
+          def find_exe():
+              candidates = []
+              if build_platform == "windows":
+                  exe_pkg = root / f"{artifact}.exe"
+                  if exe_pkg.exists():
+                      dst = work / exe_pkg.name
+                      shutil.copy2(exe_pkg, dst)
+                      return dst
+                  for ext in (".zip", ".tar.gz"):
+                      p = root / f"{artifact}{ext}"
+                      if p.exists():
+                          shutil.unpack_archive(str(p), str(work))
+                          break
+                  for p in work.rglob("*.exe"):
+                      if p.name.lower().startswith(("spms", "launcher")):
+                          candidates.append(p)
+                  if not candidates:
+                      candidates = list(work.rglob("*.exe"))
+              elif build_platform == "linux":
+                  bin_pkg = root / f"{artifact}"
+                  if bin_pkg.exists() and bin_pkg.is_file():
+                      dst = work / bin_pkg.name
+                      shutil.copy2(bin_pkg, dst)
+                      try:
+                          os.chmod(dst, 0o755)
+                      except Exception:
+                          pass
+                      return dst
+                  # fallback AppImage or archives
+                  appimage = root / f"{artifact}.AppImage"
+                  if appimage.exists():
+                      dst = work / appimage.name
+                      shutil.copy2(appimage, dst)
+                      try:
+                          os.chmod(dst, 0o755)
+                      except Exception:
+                          pass
+                      return dst
+                  for ext in (".tar.gz", ".zip"):
+                      p = root / f"{artifact}{ext}"
+                      if p.exists():
+                          shutil.unpack_archive(str(p), str(work))
+                          break
+                  for name in ("spms", "launcher", "spms.bin", "launcher.bin", artifact):
+                      for p in work.rglob(name):
+                          if p.is_file():
+                              candidates.append(p)
+                  if not candidates:
+                      candidates = [p for p in work.rglob("*") if p.is_file() and os.access(p, os.X_OK) and p.suffix not in (".png", ".desktop", ".md", ".txt", ".json")]
+              elif build_platform == "macos":
+                  dmg = root / f"{artifact}.dmg"
+                  if not dmg.exists():
+                      # fallback archive
+                      for ext in (".tar.gz", ".zip"):
+                          p = root / f"{artifact}{ext}"
+                          if p.exists():
+                              shutil.unpack_archive(str(p), str(work))
+                              break
+                  else:
+                      mount = work / "mnt"
+                      mount.mkdir(parents=True, exist_ok=True)
+                      subprocess.run(["hdiutil", "attach", str(dmg), "-nobrowse", "-mountpoint", str(mount)], check=True)
+                      try:
+                          apps = list(mount.glob("*.app"))
+                          if not apps:
+                              apps = list(mount.rglob("*.app"))
+                          if not apps:
+                              raise RuntimeError(f"No .app found in mounted dmg: {dmg}")
+                          # copy app bundle out so we can detach before running
+                          app_dst = work / apps[0].name
+                          shutil.copytree(apps[0], app_dst, symlinks=True)
+                      finally:
+                          subprocess.run(["hdiutil", "detach", str(mount), "-force"], check=False)
+                      # find executable inside .app bundle
+                      macos_dir = app_dst / "Contents" / "MacOS"
+                      if macos_dir.exists():
+                          exes = [p for p in macos_dir.iterdir() if p.is_file()]
+                          if exes:
+                              return exes[0]
+                      candidates = [p for p in app_dst.rglob("*") if p.is_file() and os.access(p, os.X_OK)]
+              else:
+                  raise RuntimeError(f"Unknown platform: {build_platform}")
+              if not candidates:
+                  print("No executable candidate found. Work tree:", file=sys.stderr)
+                  for p in work.rglob("*"):
+                      print(" -", p, file=sys.stderr)
+                  raise RuntimeError("Executable not found")
+              # prefer likely names
+              candidates.sort(key=lambda p: (0 if p.name in ("spms","spms.exe","launcher","launcher.exe","spms.bin","launcher.bin",artifact) else 1, len(str(p))))
+              return candidates[0]
 
-          # Locate launcher executable
-          exe = None
-          if os.name == "nt":
-              cands = [
-                  work / "launcher.dist" / "launcher.exe",
-                  work / "launcher.exe",
-              ]
-              for cand in cands:
-                  if cand.exists():
-                      exe = cand
-                      break
-              if exe is None:
-                  found = list(work.rglob("launcher.exe"))
-                  exe = found[0] if found else None
-          else:
-              cands = [
-                  work / "launcher.dist" / "launcher",
-                  work / "launcher.dist" / "launcher.bin",
-                  work / "launcher",
-                  work / "launcher.bin",
-              ]
-              for cand in cands:
-                  if cand.exists() and cand.is_file():
-                      exe = cand
-                      break
-              if exe is None:
-                  found = [p for p in work.rglob("launcher*") if p.is_file() and os.access(p, os.X_OK) and p.suffix in ("", ".bin")]
-                  if not found:
-                      found = [p for p in work.rglob("launcher.bin") if p.is_file()]
-                  if not found:
-                      found = [p for p in (list(work.rglob("launcher")) + list(work.rglob("launcher.bin"))) if p.is_file()]
-                  exe = found[0] if found else None
-          if exe is None:
-              print("Launcher executable not found", file=sys.stderr)
-              for p in work.rglob("*"):
-                  print(" -", p)
-              sys.exit(1)
+          exe = find_exe()
           try:
               os.chmod(exe, 0o755)
           except Exception:
               pass
+          print(f"Smoke test executable: {exe}")
 
-          # Pick a free localhost port
           with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
               s.bind(("127.0.0.1", 0))
               port = s.getsockname()[1]
@@ -174,7 +323,7 @@ jobs:
           try:
               ok = False
               last_err = None
-              for _ in range(90):  # up to ~90s for cold native startup
+              for _ in range(120):  # onefile may need longer cold start/extraction
                   if proc.poll() is not None:
                       out = ""
                       try:
@@ -197,27 +346,29 @@ jobs:
           finally:
               proc.terminate()
               try:
-                  proc.wait(timeout=15)
+                  proc.wait(timeout=20)
               except Exception:
                   proc.kill()
           PY
-        env:
-          ARTIFACT_NAME: ${{ matrix.artifact_name }}
-          PM_WEB_SECRET_KEY: ci-smoke-test-secret-key
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ${{ matrix.artifact_name }}
-          path: dist/${{ matrix.artifact_name }}.*
+          path: |
+            dist/${{ matrix.artifact_name }}
+            dist/${{ matrix.artifact_name }}.*
+          if-no-files-found: error
 
   release:
     needs: build
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Download artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           path: release-assets
           merge-multiple: true
@@ -226,7 +377,7 @@ jobs:
         run: ls -R release-assets
 
       - name: Publish GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           files: release-assets/*
           generate_release_notes: true

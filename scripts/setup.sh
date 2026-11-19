@@ -187,25 +187,20 @@ setup_venv_and_deps() {
   fi
   # shellcheck disable=SC1091
   . .venv/bin/activate
-  python -m pip install --upgrade pip setuptools wheel || warn "pip bootstrap upgrade failed; continuing..."
+  python -m pip install --upgrade "pip>=24.3.1" setuptools wheel || warn "pip bootstrap upgrade failed; continuing..."
 
-  log "Installing runtime/core dependencies..."
-  if [ -f requirements.txt ]; then
-    python -m pip install -r requirements.txt
-  else
-    warn "requirements.txt not found; continuing (web-only app)."
-  fi
-
+  log "Installing runtime dependencies (web-only app)..."
   if [ "$SKIP_WEB" = "1" ]; then
-    log "Skipping web dependencies (SKIP_WEB=1). Web UI will be unavailable until web deps are installed."
-  elif [ -f requirements-web.txt ]; then
-    log "Installing web dependencies..."
-    if ! python -m pip install -r requirements-web.txt; then
-      warn "Web dependency installation failed. Web UI requires web dependencies."
+    log "Skipping runtime dependency install (SKIP_WEB=1). SPMS is web-only and will be unavailable until dependencies are installed."
+  elif [ -f requirements.txt ]; then
+    if ! python -m pip install -r requirements.txt; then
+      warn "Runtime dependency installation failed. SPMS requires web dependencies (FastAPI/Uvicorn/Jinja2/etc.)."
       warn "Constrained environments (iSH/Termux/older CPU archs, limited build toolchains): some packages (e.g. pydantic-core) may require Rust/cargo or a prebuilt wheel for your Python version/architecture."
-      warn "Install build deps/Rust and retry, or run the web UI on a supported host. To continue core setup only, rerun with SKIP_WEB=1 ACTION=setup."
+      warn "Install build deps/Rust and retry, or run on a supported host. To continue setup without runtime deps, rerun with SKIP_WEB=1 ACTION=setup."
       SKIP_WEB=1
     fi
+  else
+    warn "requirements.txt not found; continuing."
   fi
 
   if [ "$INSTALL_DEV" = "1" ]; then

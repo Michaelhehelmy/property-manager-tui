@@ -32,7 +32,7 @@ def main(argv: list[str] | None = None) -> int:
         from ui.web.server import app as web_app
     except Exception:
         print("Web dependencies are not installed (uvicorn/server import failed).")
-        print(f"Install: {sys.executable} -m pip install -r requirements-web.txt")
+        print(f"Install: {sys.executable} -m pip install -r requirements.txt")
         return 1
 
     host = args.host or "127.0.0.1"

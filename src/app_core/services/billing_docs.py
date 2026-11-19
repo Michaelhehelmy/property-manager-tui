@@ -25,10 +25,15 @@ def _money_fmt(value, currency, usd_to_egp=1.0):
 
 def _write_confined_invoice_file(filename: str, text):
     invoice_dir = _invoice_dir()
-    invoice_dir.mkdir(exist_ok=True)
-    path = (invoice_dir / filename).resolve()
+    invoice_dir.mkdir(parents=True, exist_ok=True)
+    safe_name = Path(str(filename or "")).name
+    if not safe_name or safe_name in {".", ".."} or "/" in str(filename or "") or "\\" in str(filename or ""):
+        raise ValueError("Invalid invoice filename.")
     base = invoice_dir.resolve()
-    if base != path and base not in path.parents:
+    path = (base / safe_name).resolve()
+    try:
+        path.relative_to(base)
+    except Exception:
         raise ValueError("Refusing to write file outside invoice directory.")
     path.write_text(str(text or ""), encoding="utf-8")
     return str(path)

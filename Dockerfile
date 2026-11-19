@@ -4,7 +4,7 @@
 # - Put a reverse proxy (Caddy/Nginx/Traefik) in front for HTTPS/TLS in production
 # - Runs as non-root user (uid/gid 10001) by default; ensure /data volume permissions allow writes
 
-FROM python:3.12-slim
+FROM python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -13,10 +13,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# Apply OS security updates where available (helps reduce image CVEs such as zlib).
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install runtime deps first for better layer caching
-COPY requirements.txt requirements-web.txt ./
-RUN python -m pip install --upgrade pip \
-    && python -m pip install -r requirements.txt -r requirements-web.txt
+COPY requirements.txt ./
+RUN python -m pip install --upgrade "pip>=24.3.1" "setuptools>=78.1.1" "wheel>=0.45.1" \
+    && python -m pip install -r requirements.txt
 
 # Copy application source
 COPY pyproject.toml main.py launcher.py ./

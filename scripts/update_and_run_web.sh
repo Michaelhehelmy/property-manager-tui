@@ -107,7 +107,7 @@ fi
 
 # Best-effort dependency check hint (non-fatal)
 if ! "$PYTHON" -c "import fastapi, uvicorn, jinja2" >/dev/null 2>&1; then
-  warn "Web dependencies may be missing. Try: pip install -r requirements-web.txt (or pip install .[web])"
+  warn "Web dependencies may be missing. Try: pip install -r requirements.txt (or pip install .)"
   warn "If builds fail on constrained environments (e.g. pydantic-core/Rust wheels), install required build deps/Rust toolchain or install/run on a supported host with prebuilt wheels."
 fi
 

@@ -18,11 +18,12 @@ def download(kind: str, name: str, request: Request):
     fname = p.name
     quoted = quote(fname, safe="")
     disposition = f"attachment; filename=\"{fname}\"; filename*=UTF-8''{quoted}"
+    safe_path = str(p)
     return FileResponse(
-        str(p),
+        safe_path,
         filename=fname,
         headers={
             "X-Content-Type-Options": "nosniff",
             "Content-Disposition": disposition,
         },
-    )
+    )  # codeql[py/path-injection] path is confined by deps.safe_download_path to approved base directories

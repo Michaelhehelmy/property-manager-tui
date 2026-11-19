@@ -25,7 +25,7 @@ This guide covers practical deployment for the **Web UI** (FastAPI/HTMX) with th
 - Git (for clone/update workflows)
 - SQLite bundled with Python
 - Build tools may be needed if wheels unavailable (platform/arch dependent)
-- Web deps: `requirements-web.txt` (FastAPI, Uvicorn, Jinja2, python-multipart, itsdangerous)
+- Runtime deps: `requirements.txt` (FastAPI, Uvicorn, Jinja2, python-multipart, itsdangerous; web-only app)
 
 ## 4) Install / bootstrap (automated) and update (automated/manual)
 
@@ -160,7 +160,7 @@ No official image is bundled. Minimal example:
 FROM python:3.12-slim
 WORKDIR /app
 COPY . /app
-RUN pip install --no-cache-dir -r requirements.txt -r requirements-web.txt
+RUN pip install --no-cache-dir -r requirements.txt
 ENV PYTHONPATH=/app/src:/app \
     PM_WEB_SECRET_KEY=change-me \
     PM_DATA_DIR=/data

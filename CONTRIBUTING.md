@@ -36,7 +36,7 @@ git clone https://github.com/Michaelhehelmy/spms.git
 cd spms  # repository directory
 python3 -m venv .venv
 . .venv/bin/activate  # Windows: .\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt -r requirements-web.txt -r requirements-dev.txt
+pip install -r requirements.txt -r requirements-dev.txt
 # or: pip install -e ".[web,dev]"
 ```
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 import logging
+import socket
 from pathlib import Path
 from fastapi import APIRouter, Request
 from app_core import services, updater
@@ -65,6 +66,27 @@ async def lock_post(request: Request):
     deps.lock(request)
     return flash_redirect(request, "/", "Locked", "info")
 
+def _detect_lan_ipv4s_web() -> list[str]:
+    ips: list[str] = []
+    try:
+        host_ips = socket.gethostbyname_ex(socket.gethostname())[2] or []
+        for ip in host_ips:
+            if ip and not ip.startswith("127.") and ip not in ips:
+                ips.append(ip)
+    except Exception:
+        pass
+    for target in ("8.8.8.8", "1.1.1.1", "192.168.1.1", "10.0.0.1"):
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                s.connect((target, 80))
+                ip = s.getsockname()[0]
+            if ip and not ip.startswith("127.") and ip not in ips:
+                ips.append(ip)
+        except Exception:
+            continue
+    return ips
+
+
 @router.get("/settings")
 def settings(request: Request, tab: str = "general"):
     rooms = services.get_all_rooms()
@@ -82,11 +104,20 @@ def settings(request: Request, tab: str = "general"):
     allowed = {"general","data","rooms","updates"}
     tab = (tab or "general").strip().lower()
     if tab not in allowed: tab = "general"
+    lan_ips = _detect_lan_ipv4s_web()
+    try:
+        req_host = request.url.hostname or ""
+        req_port = request.url.port or (443 if request.url.scheme == "https" else 80)
+    except Exception:
+        req_host, req_port = "", 8000
+    lan_urls = [f"http://{ip}:{req_port}" for ip in lan_ips]
+    is_local_access = req_host in {"127.0.0.1", "localhost", "::1", ""}
     return render(request, "settings/index.html", {"title":"Settings / Branding",
         "catalog": services.SETTINGS_CATALOG, "values": services.get_all_settings(),
         "rooms": rooms, "demo_presets": demo_presets,
         "update_local": update_local, "update_check": update_check, "update_apply": update_apply,
         "active_tab": tab,
+        "lan_urls": lan_urls, "lan_ips": lan_ips, "current_access_host": req_host, "is_local_access": is_local_access,
         "brand": {"name": services.get_app_display_name(), "tagline": services.get_app_tagline(),
                   "animation": services.get_loading_animation(), "configured": services.is_branding_configured(),
                   "gift": services.get_gift_attribution()}})

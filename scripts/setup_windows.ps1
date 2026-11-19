@@ -251,31 +251,25 @@ function Ensure-Venv-And-Deps([string]$py) {
   }
 
   Log "Upgrading pip/setuptools/wheel (best-effort)..."
-  try { & $venvPy -m pip install --upgrade pip setuptools wheel } catch { Warn "pip upgrade failed: $($_.Exception.Message)" }
+  try { & $venvPy -m pip install --upgrade "pip>=24.3.1" setuptools wheel } catch { Warn "pip upgrade failed: $($_.Exception.Message)" }
 
-  if (Test-Path (Join-Path $InstallDir 'requirements.txt')) {
-    Log "Installing runtime/core dependencies (requirements.txt)..."
+  $doRuntime = $true
+  if ($SkipWeb -eq '1') { $doRuntime = $false }
+  if ($SkipWeb -eq '0') { $doRuntime = $true }
+
+  if ($doRuntime -and (Test-Path (Join-Path $InstallDir 'requirements.txt'))) {
+    Log "Installing runtime dependencies (requirements.txt, web-only app)..."
     & $venvPy -m pip install -r requirements.txt
-    if ($LASTEXITCODE -ne 0) { throw "Failed to install requirements.txt" }
-  } else {
-    Warn "requirements.txt not found; continuing (web-only app)."
-  }
-
-  $doWeb = $true
-  if ($SkipWeb -eq '1') { $doWeb = $false }
-  if ($SkipWeb -eq '0') { $doWeb = $true }
-
-  if ($doWeb -and (Test-Path (Join-Path $InstallDir 'requirements-web.txt'))) {
-    Log "Installing web dependencies (requirements-web.txt)..."
-    & $venvPy -m pip install -r requirements-web.txt
     if ($LASTEXITCODE -ne 0) {
-      Warn "Web dependency installation failed. Web UI requires web dependencies."
+      Warn "Runtime dependency installation failed. SPMS requires web dependencies (FastAPI/Uvicorn/Jinja2/etc.)."
       Warn "On constrained environments/toolchains, some packages (e.g. pydantic-core) may require Rust/build tools or a prebuilt wheel for your Python version/architecture."
-      Warn "Install build prerequisites and retry, or run on a supported host. To continue core setup only: -SkipWeb 1 -Action setup."
+      Warn "Install build prerequisites and retry, or run on a supported host. To continue setup without runtime deps: -SkipWeb 1 -Action setup."
       $script:SkipWeb = '1'
     }
-  } elseif (-not $doWeb) {
-    Log "Skipping web dependencies (SkipWeb=$SkipWeb). Web UI will be unavailable until web deps are installed."
+  } elseif (-not $doRuntime) {
+    Log "Skipping runtime dependency install (SkipWeb=$SkipWeb). SPMS is web-only and will be unavailable until dependencies are installed."
+  } elseif (-not (Test-Path (Join-Path $InstallDir 'requirements.txt'))) {
+    Warn "requirements.txt not found; continuing."
   }
 
   if ($InstallDev) {

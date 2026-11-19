@@ -31,7 +31,7 @@ Collect: OS/platform, install method, command used, full error output, whether W
 - **Windows PATH / Store alias issues:** disable App Execution Aliases for `python.exe`/`python3.exe` if they shadow real Python; reopen shell; re-run installer/setup. Use `py -3` where available.
 
 ### Web dependency build failures
-- **Symptoms:** `pip install -r requirements-web.txt` fails (common on constrained envs like iSH or missing compilers/rust for some deps).
+- **Symptoms:** `pip install -r requirements.txt` fails (common on constrained envs like iSH or missing compilers/rust for some deps, e.g. pydantic-core/uvicorn extras).
 - **Mitigations:** use **Web UI mode** (`run on a supported host or install required web dependencies`), install system build deps if supported, or run web on a more capable host and access via browser.
 - **Check installed deps:** `python -c "import fastapi, uvicorn, jinja2; import multipart"`.
 
@@ -41,7 +41,7 @@ Collect: OS/platform, install method, command used, full error output, whether W
 
 ## 3) Web UI issues
 
-- **Web UI fails to start:** ensure runtime/web deps installed (`requirements.txt`, `requirements-web.txt`), run from install root, and `PYTHONPATH` includes `src` when running directly (launcher/main handle typical cases).
+- **Web UI fails to start:** ensure runtime deps installed (`requirements.txt`), run from install root, and `PYTHONPATH` includes `src` when running directly (launcher/main handle typical cases).
 - **Terminal rendering/input issues (constrained terminals/iSH):** prefer Web UI mode there; resize terminal, use compatible font/encoding, or run via SSH from a fuller terminal.
 
 ## 4) Web server issues
@@ -79,7 +79,7 @@ Collect: OS/platform, install method, command used, full error output, whether W
 - **Non-fast-forward/diverged history:** resolve manually (`git fetch`, review divergence, merge/rebase/reset as appropriate for your controlled workflow) then `git pull --ff-only` if applicable.
 - **Update applied but behavior unchanged:** restart app/server; verify running commit/version and that correct install/venv is launched.
 - **Windows installer/update fails with git reset/checkout/pull errors (e.g. `Reset branch 'main'` followed by failure):** usually caused by a dirty/conflicted checkout, diverged/non-ff state, stale `.git/index.lock`, or stuck git operations. **Built-in recovery:** rerun with `-Repair` / `$env:REPAIR='1'` (or `$env:FORCE_RESET='1'`) to auto-abort stuck ops, remove stale lock, fetch, and reset local source to `origin/main` (discards local source changes/untracked files inside repo; runtime data in external `PM_DATA_DIR` is not removed by git). Examples: `$env:REPAIR='1'; irm https://raw.githubusercontent.com/Michaelhehelmy/spms/main/scripts/install_windows.ps1 | iex` or `powershell -ExecutionPolicy Bypass -File .\scripts\setup_windows.ps1 -Action setup -Repair`. Manual fix if needed: `git status --porcelain --branch`; commit/stash/discard local changes, resolve locks/stuck states, then `git fetch --all --tags --prune && git checkout -B main origin/main && git reset --hard origin/main && git clean -fd`; re-run setup. If corrupted, back up runtime data (`PM_DATA_DIR`/DB/exports/invoices), reclone/reinstall, and restore data.
-- **Dependency/import errors after update:** re-run setup/dependency install for the environment; compare with `requirements*.txt`/`pyproject.toml` (Windows: `scripts\setup_windows.ps1 -Action setup`; Unix/Termux: `ACTION=setup sh scripts/setup.sh`).
+- **Dependency/import errors after update:** re-run setup/dependency install for the environment; compare with `requirements.txt`/`requirements-dev.txt`/`pyproject.toml` (Windows: `scripts\setup_windows.ps1 -Action setup`; Unix/Termux: `ACTION=setup sh scripts/setup.sh`).
 - **Termux web update issues:** if web deps fail to build (e.g. `pydantic-core`/Rust), use Web UI-only (`run on a supported host or install required web dependencies`) or update on a fuller host; always run web with `--workers 1`.
 - **Rollback needed:** stop app, restore known-good code and matching deps; if schema/data incompatible, restore verified pre-update backup (see `docs/UPDATES.md`, `docs/BACKUP_RESTORE.md`).
 

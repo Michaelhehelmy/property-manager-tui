@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 import json
 import time
 from datetime import datetime, timezone
@@ -13,6 +15,7 @@ from ui.web import deps
 from ui.web.rendering import render
 from ui.web.route_utils import flash_redirect, guarded_unlock_redirect, htmx_partial_or_redirect
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 PENDING_ACTION_SESSION_KEY = "assistant_pending_action"
@@ -189,8 +192,9 @@ async def assistant_ask(request: Request):
         except TypeError:
             # backward compat if chat signature not yet updated
             result = assistant.chat(message, history=history_for_chat)
-        except Exception as e:
-            result = {"ok": False, "answer": f"Assistant error: {e}", "intent": "error", "confidence": 0.0, "tools_used": [], "source": "error", "ui_actions": []}
+        except Exception:
+            logger.exception("assistant_ask_failed")
+            result = {"ok": False, "answer": "Sorry, the assistant encountered an error while processing your request. Please try again.", "intent": "error", "confidence": 0.0, "tools_used": [], "source": "error", "ui_actions": []}
 
         if not isinstance(result, dict):
             result = {"ok": True, "answer": str(result), "intent": "unknown", "confidence": 0.0, "tools_used": [], "source": "unknown", "ui_actions": []}
@@ -358,8 +362,9 @@ async def assistant_action_confirm(request: Request):
         exec_result = execute_pending_action(pending, request=request, password=proof, proof=proof)
         if not isinstance(exec_result, dict):
             exec_result = {"ok": True, "answer": str(exec_result), "ui_actions": []}
-    except Exception as e:
-        exec_result = {"ok": False, "answer": f"Failed to execute action: {e}", "error": str(e), "ui_actions": [], "terminal": True}
+    except Exception:
+        logger.exception("assistant_action_confirm_failed")
+        exec_result = {"ok": False, "answer": "Failed to execute action due to an internal error. Please try again or check logs.", "error": "internal_error", "ui_actions": [], "terminal": True}
 
     ok = bool(exec_result.get("ok", False))
     terminal_failure = bool(exec_result.get("terminal")) or not ok

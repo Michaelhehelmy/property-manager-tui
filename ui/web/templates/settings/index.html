@@ -170,8 +170,8 @@
 </div>
 
 {% else %}{# general #}
-<div class="subtab-help">Branding, barcode/label configuration, backups, and the settings catalog.</div>
-<details class="help-box"><summary>How to use General settings</summary><ul><li><strong>Branding:</strong> property name/tagline and loading animation.</li><li><strong>Barcode/label:</strong> configure in settings catalog below; test label printing if needed.</li><li><strong>Backup:</strong> create a backup now (preserves runtime data).</li><li><strong>Settings catalog:</strong> edit supported values (save requires unlock + super password).</li></ul></details>
+<div class="subtab-help">Branding, barcode/label configuration, backups, network/LAN access, and the settings catalog.</div>
+<details class="help-box"><summary>How to use General settings</summary><ul><li><strong>Branding:</strong> property name/tagline and loading animation.</li><li><strong>Barcode/label:</strong> configure in settings catalog below; test label printing if needed.</li><li><strong>Backup:</strong> create a backup now (preserves runtime data).</li><li><strong>LAN/PWA access:</strong> run server bound to <code>0.0.0.0</code> on a fixed port and use a stable LAN IP so installed PWAs can reconnect to the same URL.</li><li><strong>Settings catalog:</strong> edit supported values (save requires unlock + super password).</li></ul></details>
 <div class="grid grid-2">
   <div class="panel"><h3>Branding &amp; animation</h3>
     <p class="muted">Gift: {{ brand.gift }}</p>
@@ -190,6 +190,23 @@
     <form method="post" action="/settings/test-label"><input type="hidden" name="csrf" value="{{ csrf_token }}"/><button type="submit">Test label print</button></form>
     <p class="muted" style="margin-top:8px">Barcode/label device settings (barcode_*, label_printer, label_format, expiry policy) are in the catalog below.</p>
   </div>
+</div>
+
+<div class="panel" style="margin-top:14px"><h3>LAN / Network access (PWA &amp; other devices)</h3>
+  <p class="muted">To access SPMS from phones/tablets/other PCs on the same network, run the server on host <code>0.0.0.0</code> (launcher menu: <strong>LAN mode</strong> or <code>--host 0.0.0.0</code>) with a fixed port and <strong>SQLite-safe <code>--workers 1</code></strong>.</p>
+  <ul class="muted" style="margin:6px 0 10px 18px">
+    <li><strong>Stable same IP:</strong> set a static/DHCP-reserved LAN IP for this machine so the URL stays the same across restarts (required for a PWA to auto-reconnect to the same origin).</li>
+    <li><strong>Install PWA from LAN URL:</strong> open the same <code>http://&lt;LAN-IP&gt;:&lt;port&gt;</code> on each device and use “Add to Home Screen / Install app”. Keep the same IP+port when starting the server.</li>
+    <li><strong>Security:</strong> set a strong <code>PM_WEB_SECRET_KEY</code> for shared/LAN access, allow the port in firewall for trusted networks only, and prefer HTTPS reverse proxy/VPN outside trusted LAN. Some browsers limit full PWA install/offline features on non-localhost HTTP origins.</li>
+  </ul>
+  {% if current_access_host %}<p><strong>Current access host:</strong> <code>{{ current_access_host }}</code>{% if is_local_access %} <span class="muted">(local access)</span>{% endif %}</p>{% endif %}
+  {% if lan_urls %}
+    <p><strong>Detected LAN URL candidates (this server port):</strong></p>
+    <ul>{% for u in lan_urls %}<li><code>{{ u }}</code></li>{% endfor %}</ul>
+    <p class="muted">If the server is running on <code>0.0.0.0</code>, open one of these URLs from another device on the same network. If multiple interfaces are shown, use the one reachable on your Wi-Fi/LAN.</p>
+  {% else %}
+    <p class="muted">No LAN IPv4 address auto-detected. Check your network adapter settings and use your machine’s LAN IP, e.g. <code>http://&lt;this-machine-LAN-IP&gt;:&lt;port&gt;</code>.</p>
+  {% endif %}
 </div>
 
 <div class="panel" style="margin-top:14px"><h3>Settings catalog (unlock + password to save)</h3>

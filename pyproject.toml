@@ -62,7 +62,7 @@ dev = [
 labels = []
 # Convenience extra for development tooling
 all = [
-  "property-manager[dev]",
+  "spms[dev]",
 ]
 
 [project.scripts]

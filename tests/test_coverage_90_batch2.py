@@ -300,7 +300,7 @@ def test_common_coverage(monkeypatch):
     slots = common.extract_slots('find reservation #12 guest #3 group #4 room #A1 "John Doe" source Booking.com segment Corporate')
     assert slots.get("reservation_id") == 12 and slots.get("guest_id") == 3 and slots.get("group_id") == 4
     assert slots.get("guest_query") == "John Doe"
-    assert "Booking.com" in (slots.get("source") or "")
+    assert (slots.get("source") or "").strip().lower() == "booking.com"
     assert "Corporate" in (slots.get("market_segment") or "")
 
 

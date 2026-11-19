@@ -1,2 +1,6 @@
-# Runtime/core dependencies (web-only app).
-# Web UI dependencies are in requirements-web.txt.
+# Runtime dependencies for SPMS (web-only app: FastAPI/HTMX, SQLite-safe single-worker web).
+fastapi>=0.110
+uvicorn[standard]>=0.27
+jinja2>=3.1
+python-multipart>=0.0.9
+itsdangerous>=2.1

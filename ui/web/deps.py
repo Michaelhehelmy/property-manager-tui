@@ -45,7 +45,7 @@ if not SECRET_KEY:
             "Web sessions will not survive restart. Set PM_WEB_SECRET_KEY to a strong random value for any non-local/shared deployment."
         )
     _insecure_dev = True
-    print(msg, file=sys.stderr)
+    print(msg, file=sys.stderr)  # codeql[py/clear-text-logging-sensitive-data] configuration warning only; no secret value logged
     logger.warning(
         "web_secret_config_warning code=insecure_dev_secret host_hint=%s non_local=%s explicit_insecure_override=%s ephemeral=%s",
         host_hint,
@@ -55,7 +55,7 @@ if not SECRET_KEY:
     )
 elif len(SECRET_KEY) < 32:
     msg = f"[pm-web] WARNING: {_SECRET_ENV} is short (<32 chars); use a strong random secret in production."
-    print(msg, file=sys.stderr)
+    print(msg, file=sys.stderr)  # codeql[py/clear-text-logging-sensitive-data] configuration warning only; no secret value logged
     logger.warning("web_secret_config_warning code=short_secret_key min_recommended=32")
 
 _serializer = URLSafeSerializer(SECRET_KEY, salt="pm-session")
@@ -567,14 +567,24 @@ def lock(request: Request) -> None:
 
 def safe_download_path(kind: str, name: str) -> Path:
     # Confine downloads to approved directories and prevent traversal/symlink escape.
-    if not name or "/" in name or "\\" in name or ".." in name or "\x00" in name:
+    safe_name = str(name or "")
+    if (
+        not safe_name
+        or "/" in safe_name
+        or "\\" in safe_name
+        or ".." in safe_name
+        or "\x00" in safe_name
+        or Path(safe_name).name != safe_name
+    ):
         raise HTTPException(status_code=400, detail="Invalid file")
     if kind not in ("export", "invoice"):
         raise HTTPException(status_code=400, detail="Invalid file")
     base = paths.EXPORT_DIR if kind == "export" else paths.INVOICE_DIR
-    p = (base / name).resolve()
     base_r = base.resolve()
-    if base_r != p and base_r not in p.parents:
+    p = (base_r / safe_name).resolve()
+    try:
+        p.relative_to(base_r)
+    except Exception:
         raise HTTPException(status_code=400, detail="Invalid file")
     if not p.exists() or not p.is_file():
         raise HTTPException(status_code=404, detail="File not found")
@@ -582,4 +592,8 @@ def safe_download_path(kind: str, name: str) -> Path:
 
 
 def redirect(url: str, status: int = 303) -> RedirectResponse:
-    return RedirectResponse(url=url, status_code=status)
+    """Redirect to a same-origin/local path. External/unsafe targets fall back to '/'."""
+    ref = str(url or "").strip()
+    if not ref or not ref.startswith("/") or ref.startswith("//") or "\\" in ref:
+        ref = "/"
+    return RedirectResponse(url=ref, status_code=status)

@@ -146,7 +146,7 @@ Alternative helpers:
 
 Source updates may add/change Python packages or system requirements. If startup fails after update or changelog indicates dependency changes:
 - **Automated-ish:** re-run setup scripts (`ACTION=setup` / `-Action setup`) to recreate/refresh venv deps.
-- **Manual:** activate venv and `pip install -r requirements.txt` (and `requirements-web.txt` for web), or use `pip install -e '.[web,dev]'` if using packaging workflow.
+- **Manual:** activate venv and `pip install -r requirements.txt` (and `requirements-dev.txt` if needed), or use `pip install -e '.[dev]'` / `pip install -e .` if using the packaging workflow.
 - Re-verify with doctor/health checks and basic smoke tests.
 
 ## 6) Post-update verification

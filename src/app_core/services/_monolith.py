@@ -3111,15 +3111,19 @@ def _safe_export_filename(base: str, suffix: str = ".txt") -> str:
         safe = "label"
     suffix = suffix if str(suffix).startswith(".") else f".{suffix}"
     # keep room for suffix
-    return safe[: max(1, 120 - len(suffix))] + suffix
+    name = safe[: max(1, 120 - len(suffix))] + suffix
+    # final hardening: basename only
+    return Path(name).name
 
 
 def _print_text_label(text, filename_base, printer=None, fmt="code128"):
     EXPORT_DIR.mkdir(parents=True, exist_ok=True)
     filename = _safe_export_filename(filename_base, ".txt")
-    path = (EXPORT_DIR / filename).resolve()
     base = EXPORT_DIR.resolve()
-    if base != path and base not in path.parents:
+    path = (base / filename).resolve()
+    try:
+        path.relative_to(base)
+    except Exception:
         raise ValueError("Refusing to write label outside export directory.")
     path.write_text(str(text or ""), encoding="utf-8")
     target = printer if printer is not None else get_label_printer()
@@ -4787,13 +4791,16 @@ def _validate_print_target(target: str):
 
 
 def _validate_print_filepath(filepath):
-    p = Path(str(filepath or "")).expanduser()
+    raw = str(filepath or "")
+    if "\x00" in raw:
+        raise ValueError("Invalid file path.")
+    p = Path(raw).expanduser()
     try:
-        p = p.resolve()
+        p = p.resolve(strict=True)
     except Exception:
-        p = Path(os.path.abspath(str(p)))
-    if not p.exists() or not p.is_file():
-        raise FileNotFoundError(f"File not found: {p}")
+        raise FileNotFoundError("File not found.")
+    if not p.is_file():
+        raise FileNotFoundError("File not found.")
     if not _is_under_allowed_root(p):
         raise ValueError("Refusing to print files outside approved data/export/invoice directories.")
     try:

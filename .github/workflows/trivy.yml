@@ -9,18 +9,20 @@ on:
 
 permissions:
   contents: read
-  security-events: write
 
 jobs:
   fs-scan:
     name: Trivy filesystem scan
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Run Trivy filesystem scan (vuln, misconfig)
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
           scan-ref: .
@@ -31,7 +33,7 @@ jobs:
           severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
 
       - name: Upload filesystem scan SARIF
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@9418214df1f2c4b8128c770156c409013b07d6b9 # v3
         if: always() && hashFiles('trivy-fs-results.sarif') != ''
         with:
           sarif_file: trivy-fs-results.sarif
@@ -40,15 +42,18 @@ jobs:
   image-scan:
     name: Trivy image scan
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Build container image (no push)
         run: docker build --tag spms-trivy-scan:${{ github.sha }} .
 
       - name: Run Trivy image scan (vuln, misconfig)
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: image
           image-ref: spms-trivy-scan:${{ github.sha }}
@@ -59,7 +64,7 @@ jobs:
           severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
 
       - name: Upload image scan SARIF
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@9418214df1f2c4b8128c770156c409013b07d6b9 # v3
         if: always() && hashFiles('trivy-image-results.sarif') != ''
         with:
           sarif_file: trivy-image-results.sarif
