@@ -13,17 +13,16 @@ router = APIRouter()
 @router.get("/files/{kind}/{name}")
 def download(kind: str, name: str, request: Request):
     deps.require_unlock(request)
-    p = deps.safe_download_path(kind, name)
+    safe_file = deps.safe_download_path(kind, name)
     # Confined path validated by deps.safe_download_path; serve with safe headers.
-    fname = p.name
+    fname = safe_file.name
     quoted = quote(fname, safe="")
     disposition = f"attachment; filename=\"{fname}\"; filename*=UTF-8''{quoted}"
-    safe_path = str(p)
     return FileResponse(
-        safe_path,
+        path=str(safe_file),
         filename=fname,
         headers={
             "X-Content-Type-Options": "nosniff",
             "Content-Disposition": disposition,
         },
-    )  # codeql[py/path-injection] path is confined by deps.safe_download_path to approved base directories
+    )

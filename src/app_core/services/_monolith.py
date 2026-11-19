@@ -3119,16 +3119,18 @@ def _safe_export_filename(base: str, suffix: str = ".txt") -> str:
 def _print_text_label(text, filename_base, printer=None, fmt="code128"):
     EXPORT_DIR.mkdir(parents=True, exist_ok=True)
     filename = _safe_export_filename(filename_base, ".txt")
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,200}", str(filename)):
+        raise ValueError("Invalid label filename.")
     base = EXPORT_DIR.resolve()
-    path = (base / filename).resolve()
+    out_path = (base / filename).resolve()
     try:
-        path.relative_to(base)
+        out_path.relative_to(base)
     except Exception:
         raise ValueError("Refusing to write label outside export directory.")
-    path.write_text(str(text or ""), encoding="utf-8")
+    out_path.write_text(str(text or ""), encoding="utf-8")
     target = printer if printer is not None else get_label_printer()
-    ok, msg = print_to_printer(str(path), target)
-    return ok, msg, str(path)
+    ok, msg = print_to_printer(str(out_path), target)
+    return ok, msg, str(out_path)
 
 
 def print_item_label(item_id, printer=None):
@@ -4792,24 +4794,24 @@ def _validate_print_target(target: str):
 
 def _validate_print_filepath(filepath):
     raw = str(filepath or "")
-    if "\x00" in raw:
+    if "\x00" in raw or not raw.strip():
         raise ValueError("Invalid file path.")
-    p = Path(raw).expanduser()
     try:
-        p = p.resolve(strict=True)
+        candidate = Path(raw).expanduser().resolve(strict=True)
     except Exception:
         raise FileNotFoundError("File not found.")
-    if not p.is_file():
+    if not candidate.is_file():
         raise FileNotFoundError("File not found.")
-    if not _is_under_allowed_root(p):
+    if not _is_under_allowed_root(candidate):
         raise ValueError("Refusing to print files outside approved data/export/invoice directories.")
+    # Re-resolve under allowed root context is implicit via confinement check above.
     try:
-        size = p.stat().st_size
+        size = candidate.stat().st_size
     except Exception:
         size = 0
     if size > 5 * 1024 * 1024:
         raise ValueError("Refusing to print oversized file (>5MB).")
-    return p
+    return candidate
 
 
 def print_to_printer(filepath, printer=None):

@@ -26,37 +26,28 @@ _insecure_dev = False
 if not SECRET_KEY:
     host_hint = (os.environ.get("HOST") or os.environ.get("PM_WEB_HOST") or "127.0.0.1")
     non_local = host_hint not in ("127.0.0.1", "localhost", "::1")
-    if non_local and os.environ.get(_ALLOW_INSECURE_ENV) != "1":
+    allow_insecure = os.environ.get(_ALLOW_INSECURE_ENV) == "1"
+    if non_local and not allow_insecure:
         raise RuntimeError(
-            f"{_SECRET_ENV} must be set for non-local web deployment (HOST={host_hint}). "
-            f"Set {_ALLOW_INSECURE_ENV}=1 only for explicit local/dev override."
+            "PM_WEB_SECRET_KEY must be set for non-local web deployment. "
+            "Set PM_WEB_ALLOW_INSECURE_DEV_SECRET=1 only for explicit local/dev override."
         )
     # Never use a hardcoded fallback secret. Generate an ephemeral per-process
     # secret (sessions invalidate on restart) for local/dev and explicit override cases.
     SECRET_KEY = secrets.token_urlsafe(48)
-    if os.environ.get(_ALLOW_INSECURE_ENV) == "1":
-        msg = (
-            f"[pm-web] WARNING: {_SECRET_ENV} not set and {_ALLOW_INSECURE_ENV}=1; "
-            "using an insecure ephemeral development secret. Use only for explicit local/dev scenarios."
-        )
-    else:
-        msg = (
-            f"[pm-web] WARNING: {_SECRET_ENV} not set; using an ephemeral per-process development secret. "
-            "Web sessions will not survive restart. Set PM_WEB_SECRET_KEY to a strong random value for any non-local/shared deployment."
-        )
     _insecure_dev = True
-    print(msg, file=sys.stderr)  # codeql[py/clear-text-logging-sensitive-data] configuration warning only; no secret value logged
-    logger.warning(
-        "web_secret_config_warning code=insecure_dev_secret host_hint=%s non_local=%s explicit_insecure_override=%s ephemeral=%s",
-        host_hint,
-        bool(non_local),
-        os.environ.get(_ALLOW_INSECURE_ENV) == "1",
-        True,
-    )
+    if allow_insecure:
+        stderr_msg = "[pm-web] WARNING: using an insecure ephemeral development web session secret (explicit local/dev override)."
+        warn_code = "insecure_dev_secret_override"
+    else:
+        stderr_msg = "[pm-web] WARNING: web session secret not configured; using an ephemeral per-process development secret."
+        warn_code = "insecure_dev_secret"
+    print(stderr_msg, file=sys.stderr)
+    logger.warning("web_secret_config_warning code=%s host_scope=%s ephemeral=%s", warn_code, "non_local" if non_local else "local", True)
 elif len(SECRET_KEY) < 32:
-    msg = f"[pm-web] WARNING: {_SECRET_ENV} is short (<32 chars); use a strong random secret in production."
-    print(msg, file=sys.stderr)  # codeql[py/clear-text-logging-sensitive-data] configuration warning only; no secret value logged
-    logger.warning("web_secret_config_warning code=short_secret_key min_recommended=32")
+    _insecure_dev = True
+    print("[pm-web] WARNING: configured web session secret is short; use a strong random secret in production.", file=sys.stderr)
+    logger.warning("web_secret_config_warning code=short_secret_key")
 
 _serializer = URLSafeSerializer(SECRET_KEY, salt="pm-session")
 
@@ -567,33 +558,44 @@ def lock(request: Request) -> None:
 
 def safe_download_path(kind: str, name: str) -> Path:
     # Confine downloads to approved directories and prevent traversal/symlink escape.
-    safe_name = str(name or "")
-    if (
-        not safe_name
-        or "/" in safe_name
-        or "\\" in safe_name
-        or ".." in safe_name
-        or "\x00" in safe_name
-        or Path(safe_name).name != safe_name
-    ):
+    import re as _re
+
+    raw_name = str(name or "")
+    if not raw_name or raw_name in {".", ".."} or "/" in raw_name or "\\" in raw_name or "\x00" in raw_name:
+        raise HTTPException(status_code=400, detail="Invalid file")
+    safe_name = Path(raw_name).name
+    if safe_name != raw_name or not _re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,200}", safe_name):
         raise HTTPException(status_code=400, detail="Invalid file")
     if kind not in ("export", "invoice"):
         raise HTTPException(status_code=400, detail="Invalid file")
     base = paths.EXPORT_DIR if kind == "export" else paths.INVOICE_DIR
     base_r = base.resolve()
-    p = (base_r / safe_name).resolve()
+    candidate = (base_r / safe_name).resolve()
     try:
-        p.relative_to(base_r)
+        candidate.relative_to(base_r)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid file")
-    if not p.exists() or not p.is_file():
+    if not candidate.is_file():
         raise HTTPException(status_code=404, detail="File not found")
-    return p
+    return candidate
 
 
 def redirect(url: str, status: int = 303) -> RedirectResponse:
     """Redirect to a same-origin/local path. External/unsafe targets fall back to '/'."""
+    from urllib.parse import urlsplit
+
     ref = str(url or "").strip()
-    if not ref or not ref.startswith("/") or ref.startswith("//") or "\\" in ref:
-        ref = "/"
-    return RedirectResponse(url=ref, status_code=status)
+    # Allow only app-local absolute paths (no scheme/netloc/backslashes)
+    parts = urlsplit(ref)
+    safe_path = "/"
+    if ref and not parts.scheme and not parts.netloc and not ref.startswith("//") and "\\" not in ref and ref.startswith("/"):
+        # normalize simple cases; keep query/fragment if present
+        path = parts.path or "/"
+        if not path.startswith("/"):
+            path = "/" + path
+        safe_path = path
+        if parts.query:
+            safe_path += "?" + parts.query
+        if parts.fragment:
+            safe_path += "#" + parts.fragment
+    return RedirectResponse(url=safe_path, status_code=status)

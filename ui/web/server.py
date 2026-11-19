@@ -69,21 +69,17 @@ def create_app(*, init_db: bool = True, run_startup: bool = True) -> FastAPI:
         paths.ensure_data_dirs()
         # Best-effort startup hygiene warnings (no secrets logged)
         try:
-            web_secret_configured = bool((os.environ.get("PM_WEB_SECRET_KEY") or "").strip())
             host_hint = (os.environ.get("HOST") or os.environ.get("PM_WEB_HOST") or "127.0.0.1")
-            if not web_secret_configured and host_hint not in ("127.0.0.1", "localhost", "::1"):
-                logger.warning(
-                    "web_startup_config_warning code=missing_web_secret host_hint=%s",
-                    host_hint,
-                )
+            local_host = host_hint in ("127.0.0.1", "localhost", "::1")
+            if not local_host and not (os.environ.get("PM_WEB_SECRET_KEY") or "").strip():
+                logger.warning("web_startup_config_warning code=missing_web_secret host_scope=non_local")
             perm = paths.check_runtime_permissions() if hasattr(paths, "check_runtime_permissions") else {}
             if perm and not ((perm.get("data_dir") or {}).get("writable")):
                 logger.warning("web_startup_permission_warning code=data_dir_not_writable")
             logger.info(
-                "web_startup event=init_complete db_initialized=%s web_secret_configured=%s",
+                "web_startup event=init_complete db_initialized=%s",
                 bool(db.is_initialized()) if hasattr(db, "is_initialized") else False,
-                web_secret_configured,
-            )  # codeql[py/clear-text-logging-sensitive-data] logs boolean configuration state only
+            )
         except Exception as exc:
             logger.exception("web_startup_warning_failed error=%s", _safe_detail(exc))
         services.init_db()

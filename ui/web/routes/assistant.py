@@ -230,21 +230,22 @@ async def assistant_ask(request: Request):
     if want_json:
         payload = {
             "ok": bool(result.get("ok", True)),
-            "answer": result.get("answer") or "",
-            "intent": result.get("intent"),
+            "answer": str(result.get("answer") or ""),
+            "intent": str(result.get("intent") or ""),
             "confidence": result.get("confidence"),
-            "tools_used": result.get("tools_used") or [],
-            "source": result.get("source"),
-            "slots": result.get("slots") or {},
-            "ui_actions": result.get("ui_actions") or [],
+            "tools_used": [str(x) for x in (result.get("tools_used") or []) if isinstance(x, (str, int, float))],
+            "source": str(result.get("source") or ""),
+            "slots": result.get("slots") if isinstance(result.get("slots"), dict) else {},
+            "ui_actions": result.get("ui_actions") if isinstance(result.get("ui_actions"), list) else [],
         }
         if pending_action or result.get("proposed_action"):
-            payload["proposed_action"] = result.get("proposed_action") or pending_action
-            payload["pending_action"] = result.get("proposed_action") or pending_action
+            pa = result.get("proposed_action") or pending_action
+            payload["proposed_action"] = pa if isinstance(pa, dict) else None
+            payload["pending_action"] = pa if isinstance(pa, dict) else None
         else:
             cur = get_pending_action(request)
             if cur:
-                payload["pending_action"] = cur
+                payload["pending_action"] = cur if isinstance(cur, dict) else None
         return payload
 
     shown = _history(request)[-20:]
@@ -394,12 +395,20 @@ async def assistant_action_confirm(request: Request):
     deps.get_session(request)["assistant_history"] = hist[-40:]
 
     if want_json:
+        safe_exec = {
+            "ok": bool((exec_result or {}).get("ok", False)),
+            "answer": str((exec_result or {}).get("answer") or answer),
+            "tools_used": [str(x) for x in ((exec_result or {}).get("tools_used") or []) if isinstance(x, (str, int, float))],
+            "ui_actions": (exec_result or {}).get("ui_actions") if isinstance((exec_result or {}).get("ui_actions"), list) else [],
+        }
+        if not ok and (exec_result or {}).get("error"):
+            safe_exec["error"] = "internal_error"
         return {
             "ok": ok,
-            "answer": answer,
-            "result": exec_result,
-            "ui_actions": exec_result.get("ui_actions") or [],
-            "pending_action": pending_after,
+            "answer": str(answer),
+            "result": safe_exec,
+            "ui_actions": safe_exec["ui_actions"],
+            "pending_action": pending_after if isinstance(pending_after, dict) else None,
             "proposed_action": None,
         }
 

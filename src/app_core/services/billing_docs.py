@@ -25,19 +25,27 @@ def _money_fmt(value, currency, usd_to_egp=1.0):
 
 
 def _write_confined_invoice_file(filename: str, text):
+    import re
+
     invoice_dir = _invoice_dir()
     invoice_dir.mkdir(parents=True, exist_ok=True)
-    safe_name = Path(str(filename or "")).name
-    if not safe_name or safe_name in {".", ".."} or "/" in str(filename or "") or "\\" in str(filename or ""):
+    raw_name = str(filename or "")
+    safe_name = Path(raw_name).name
+    if (
+        not raw_name
+        or raw_name != safe_name
+        or safe_name in {".", ".."}
+        or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,200}", safe_name)
+    ):
         raise ValueError("Invalid invoice filename.")
     base = invoice_dir.resolve()
-    path = (base / safe_name).resolve()
+    out_path = (base / safe_name).resolve()
     try:
-        path.relative_to(base)
+        out_path.relative_to(base)
     except Exception:
         raise ValueError("Refusing to write file outside invoice directory.")
-    path.write_text(str(text or ""), encoding="utf-8")
-    return str(path)
+    out_path.write_text(str(text or ""), encoding="utf-8")
+    return str(out_path)
 
 
 def build_invoice_text(reservation, nights, accom, pos_items, payments, *, currency="EGP", usd_to_egp=1.0,

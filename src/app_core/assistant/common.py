@@ -213,13 +213,13 @@ def extract_slots(text: str, history=None) -> dict:
             if cand.lower() not in bad and not re.fullmatch(r"\d+", cand):
                 slots["guest_query"] = cand
     # booking source / market segment hints (for reservation search/filtering)
-    m = re.search(r"(?:\bsource\b|\bchannel\b|\bfrom\b)\s*[:=]?\s*([A-Za-z][A-Za-z0-9 ._/-]{1,30})", t[:500], re.IGNORECASE)  # codeql[py/polynomial-redos] bounded quantifiers and input-limited search
+    m = re.search(r"(?:\bsource\b|\bchannel\b|\bfrom\b)[ \t]*[:=]?[ \t]*([A-Za-z][A-Za-z0-9._/-](?:[A-Za-z0-9 ._/-]{0,28}[A-Za-z0-9._/-])?)", t[:500], re.IGNORECASE)
     if m:
         sv = m.group(1).strip(" ,.")
         sv = re.split(r"\b(segment|status|guest|room|from\s+20\d{2}|between|for|on|in)\b", sv, flags=re.IGNORECASE)[0].strip(" ,.")
         if sv and sv.lower() not in ("a", "the"):
             slots["source"] = sv
-    m = re.search(r"(?:\bsegment\b|market\s+segment)\s*[:=]?\s*([A-Za-z][A-Za-z0-9 ._/-]{1,30})", t[:500], re.IGNORECASE)  # codeql[py/polynomial-redos] bounded quantifiers and input-limited search
+    m = re.search(r"(?:\bsegment\b|market[ \t]+segment)[ \t]*[:=]?[ \t]*([A-Za-z][A-Za-z0-9._/-](?:[A-Za-z0-9 ._/-]{0,28}[A-Za-z0-9._/-])?)", t[:500], re.IGNORECASE)
     if m:
         mv = m.group(1).strip(" ,.")
         mv = re.split(r"\b(source|channel|status|guest|room|from\s+20\d{2}|between|for|on|in)\b", mv, flags=re.IGNORECASE)[0].strip(" ,.")
