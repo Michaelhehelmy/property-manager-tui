@@ -228,24 +228,39 @@ async def assistant_ask(request: Request):
         pending_action = get_pending_action(request)
 
     if want_json:
+        # Return only sanitized, JSON-safe fields (no exception/trace data).
+        safe_slots = result.get("slots") if isinstance(result.get("slots"), dict) else {}
+        safe_ui_actions = result.get("ui_actions") if isinstance(result.get("ui_actions"), list) else []
         payload = {
             "ok": bool(result.get("ok", True)),
             "answer": str(result.get("answer") or ""),
             "intent": str(result.get("intent") or ""),
             "confidence": result.get("confidence"),
-            "tools_used": [str(x) for x in (result.get("tools_used") or []) if isinstance(x, (str, int, float))],
+            "tools_used": [str(x) for x in (result.get("tools_used") or []) if isinstance(x, (str, int, float, bool))],
             "source": str(result.get("source") or ""),
-            "slots": result.get("slots") if isinstance(result.get("slots"), dict) else {},
-            "ui_actions": result.get("ui_actions") if isinstance(result.get("ui_actions"), list) else [],
+            "slots": safe_slots,
+            "ui_actions": safe_ui_actions,
         }
-        if pending_action or result.get("proposed_action"):
-            pa = result.get("proposed_action") or pending_action
-            payload["proposed_action"] = pa if isinstance(pa, dict) else None
-            payload["pending_action"] = pa if isinstance(pa, dict) else None
+        pa = result.get("proposed_action") or pending_action
+        if isinstance(pa, dict):
+            payload["proposed_action"] = {
+                "id": str(pa.get("id") or ""),
+                "type": str(pa.get("type") or ""),
+                "summary": str(pa.get("summary") or ""),
+                "risk_level": str(pa.get("risk_level") or ""),
+                "status": str(pa.get("status") or ""),
+            }
+            payload["pending_action"] = payload["proposed_action"]
         else:
             cur = get_pending_action(request)
-            if cur:
-                payload["pending_action"] = cur if isinstance(cur, dict) else None
+            if isinstance(cur, dict):
+                payload["pending_action"] = {
+                    "id": str(cur.get("id") or ""),
+                    "type": str(cur.get("type") or ""),
+                    "summary": str(cur.get("summary") or ""),
+                    "risk_level": str(cur.get("risk_level") or ""),
+                    "status": str(cur.get("status") or ""),
+                }
         return payload
 
     shown = _history(request)[-20:]
