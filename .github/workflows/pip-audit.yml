@@ -5,6 +5,7 @@ on:
     paths:
       - "requirements.txt"
       - "requirements-dev.txt"
+      - "requirements/ci-pip-audit.txt"
       - "pyproject.toml"
       - ".github/workflows/pip-audit.yml"
   pull_request:
