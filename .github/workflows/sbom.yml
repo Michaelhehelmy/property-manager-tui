@@ -25,7 +25,7 @@ jobs:
       contents: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Generate repository SBOM (SPDX JSON)
         uses: anchore/sbom-action@v0
@@ -59,7 +59,7 @@ jobs:
           output-file: sbom-image.cdx.json
 
       - name: Upload SBOM artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sbom-${{ github.run_id }}
           path: |
@@ -71,7 +71,7 @@ jobs:
 
       - name: Attach SBOMs to release
         if: github.event_name == 'release' && github.event.action == 'published'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             sbom-repository.spdx.json
