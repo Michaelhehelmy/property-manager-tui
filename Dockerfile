@@ -19,8 +19,8 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # Install runtime deps first for better layer caching
-COPY requirements.txt ./
-RUN python -m pip install --upgrade "pip==26.2.0" "setuptools==82.0.0" "wheel==0.46.3" \
+COPY requirements.txt requirements/ci-bootstrap-tools.txt ./
+RUN python -m pip install --require-hashes -r requirements/ci-bootstrap-tools.txt \
     && python -m pip install -r requirements.txt
 
 # Copy application source

@@ -251,7 +251,7 @@ function Ensure-Venv-And-Deps([string]$py) {
   }
 
   Log "Upgrading pip/setuptools/wheel (best-effort)..."
-  try { & $venvPy -m pip install --upgrade "pip==26.2.0" "setuptools==82.0.0" "wheel==0.46.3" } catch { Warn "pip upgrade failed: $($_.Exception.Message)" }
+  try { & $venvPy -m pip install --require-hashes -r requirements/ci-bootstrap-tools.txt } catch { Warn "pip upgrade failed: $($_.Exception.Message)" }
 
   $doRuntime = $true
   if ($SkipWeb -eq '1') { $doRuntime = $false }
