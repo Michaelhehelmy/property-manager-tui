@@ -3122,7 +3122,7 @@ def _print_text_label(text, filename_base, printer=None, fmt="code128"):
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,200}", str(filename)):
         raise ValueError("Invalid label filename.")
     base = EXPORT_DIR.resolve()
-    out_path = (base / filename).resolve()  # lgtm[py/path-injection]
+    out_path = (base / filename).resolve()
     try:
         import os as _os
         if _os.path.commonpath([str(base), str(out_path)]) != str(base):
@@ -3130,7 +3130,7 @@ def _print_text_label(text, filename_base, printer=None, fmt="code128"):
         out_path.relative_to(base)
     except Exception:
         raise ValueError("Refusing to write label outside export directory.")
-    out_path.write_text(str(text or ""), encoding="utf-8")  # lgtm[py/path-injection]
+    out_path.write_text(str(text or ""), encoding="utf-8")
     target = printer if printer is not None else get_label_printer()
     ok, msg = print_to_printer(str(out_path), target)
     return ok, msg, str(out_path)
@@ -4803,7 +4803,7 @@ def _validate_print_filepath(filepath):
         candidate = Path(raw)
         if not candidate.is_absolute():
             candidate = (Path.cwd() / candidate)
-        candidate = candidate.resolve(strict=True)  # lgtm[py/path-injection]
+        candidate = candidate.resolve(strict=True)
     except Exception:
         raise FileNotFoundError("File not found.")
     if not candidate.is_file():

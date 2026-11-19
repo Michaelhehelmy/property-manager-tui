@@ -570,14 +570,14 @@ def safe_download_path(kind: str, name: str) -> Path:
         raise HTTPException(status_code=400, detail="Invalid file")
     base = paths.EXPORT_DIR if kind == "export" else paths.INVOICE_DIR
     base_r = base.resolve()
-    candidate = (base_r / safe_name).resolve()  # lgtm[py/path-injection]
+    candidate = (base_r / safe_name).resolve()
     try:
         if os.path.commonpath([str(base_r), str(candidate)]) != str(base_r):
             raise HTTPException(status_code=400, detail="Invalid file")
         candidate.relative_to(base_r)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid file")
-    if not candidate.exists() or not candidate.is_file():  # lgtm[py/path-injection]
+    if not candidate.exists() or not candidate.is_file():
         raise HTTPException(status_code=404, detail="File not found")
     return candidate
 
