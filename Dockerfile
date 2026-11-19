@@ -4,7 +4,7 @@
 # - Put a reverse proxy (Caddy/Nginx/Traefik) in front for HTTPS/TLS in production
 # - Runs as non-root user (uid/gid 10001) by default; ensure /data volume permissions allow writes
 
-FROM python:3.12-slim
+FROM python:3.15-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
