@@ -141,21 +141,23 @@ jobs:
                 cp ui/web/static/icons/icon-512.png "$WORKDIR_APP/AppDir/usr/share/icons/hicolor/256x256/apps/spms.png"
               fi
               cat > "$WORKDIR_APP/AppDir/spms.desktop" <<'DESKTOP'
-[Desktop Entry]
-Type=Application
-Name=SPMS
-Comment=Super Property Management System
-Exec=spms
-Icon=spms
-Terminal=true
-Categories=Office;Finance;
-DESKTOP
+              [Desktop Entry]
+              Type=Application
+              Name=SPMS
+              Comment=Super Property Management System
+              Exec=spms
+              Icon=spms
+              Terminal=true
+              Categories=Office;Finance;
+              DESKTOP
+              sed -i 's/^              //' "$WORKDIR_APP/AppDir/spms.desktop"
               cp "$WORKDIR_APP/AppDir/spms.desktop" "$WORKDIR_APP/AppDir/usr/share/applications/spms.desktop"
               cat > "$WORKDIR_APP/AppDir/AppRun" <<'APPRUN'
-#!/bin/sh
-HERE="$(dirname "$(readlink -f "$0")")"
-exec "$HERE/usr/bin/spms" "$@"
-APPRUN
+              #!/bin/sh
+              HERE="$(dirname "$(readlink -f "$0")")"
+              exec "$HERE/usr/bin/spms" "$@"
+              APPRUN
+              sed -i 's/^              //' "$WORKDIR_APP/AppDir/AppRun"
               chmod +x "$WORKDIR_APP/AppDir/AppRun"
               ARCH_APPIMAGE="$(uname -m)"
               case "$ARCH_APPIMAGE" in

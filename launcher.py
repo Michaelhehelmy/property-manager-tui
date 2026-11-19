@@ -811,7 +811,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--serve-web", action="store_true", help=argparse.SUPPRESS)
     try:
         args = parser.parse_args(argv)
-    except SystemExit as e:
+    except SystemExit:
         # argparse exits on --help / parse errors; preserve code
         raise
     except Exception as e:
