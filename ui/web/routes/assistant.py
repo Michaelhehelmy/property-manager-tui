@@ -198,7 +198,7 @@ async def assistant_ask(request: Request):
 
     if not _assistant_allowed(request):
         if want_json:
-            return {"ok": False, "error": "Unlock required to use Manager Assistant (sensitive data).", "ui_actions": [{"type": "navigate", "url": "/unlock?next=/assistant"}]}
+            return JSONResponse(content={"ok": False, "error": "Unlock required to use Manager Assistant (sensitive data).", "ui_actions": [{"type": "navigate", "url": "/unlock?next=/assistant"}]})
         return guarded_unlock_redirect(request, "/unlock?next=/assistant", "Unlock required to use Manager Assistant (sensitive data).")
 
     message = (form.get("message") or "").strip()
@@ -228,7 +228,7 @@ async def assistant_ask(request: Request):
             except Exception:
                 logger.exception("assistant_ask_failed")
                 if want_json:
-                    return {
+                    return JSONResponse(content={
                         "ok": False,
                         "answer": "Sorry, the assistant encountered an error while processing your request. Please try again.",
                         "intent": "error",
@@ -237,12 +237,12 @@ async def assistant_ask(request: Request):
                         "source": "error",
                         "slots": {},
                         "ui_actions": [],
-                    }
+                    })
                 result = {"ok": False, "answer": "Sorry, the assistant encountered an error while processing your request. Please try again.", "intent": "error", "confidence": 0.0, "tools_used": [], "source": "error", "ui_actions": []}
         except Exception:
             logger.exception("assistant_ask_failed")
             if want_json:
-                return {
+                return JSONResponse(content={
                     "ok": False,
                     "answer": "Sorry, the assistant encountered an error while processing your request. Please try again.",
                     "intent": "error",
@@ -251,7 +251,7 @@ async def assistant_ask(request: Request):
                     "source": "error",
                     "slots": {},
                     "ui_actions": [],
-                }
+                })
             result = {"ok": False, "answer": "Sorry, the assistant encountered an error while processing your request. Please try again.", "intent": "error", "confidence": 0.0, "tools_used": [], "source": "error", "ui_actions": []}
 
         if not isinstance(result, dict):
@@ -288,7 +288,7 @@ async def assistant_ask(request: Request):
     if want_json:
         # Error responses: return fixed safe payload to avoid any exception/trace exposure.
         if not bool(result.get("ok", True)) and str(result.get("source") or "") == "error":
-            return {
+            return JSONResponse(content={
                 "ok": False,
                 "answer": "Sorry, the assistant encountered an error while processing your request. Please try again.",
                 "intent": "error",
@@ -297,7 +297,7 @@ async def assistant_ask(request: Request):
                 "source": "error",
                 "slots": {},
                 "ui_actions": [],
-            }
+            })
 
         # Return only sanitized, JSON-safe fields (no exception/trace data).
         safe_slots = _json_safe_value(result.get("slots") if isinstance(result.get("slots"), dict) else {})
@@ -326,9 +326,9 @@ async def assistant_ask(request: Request):
                     payload["pending_action"] = safe_cur
         # Final JSON round-trip to ensure a clean, JSON-serializable response object.
         try:
-            payload = json.loads(json.dumps(payload, default=lambda _o: "internal_error"))
+            clean_payload = json.loads(json.dumps(payload, default=lambda _o: "internal_error"))
         except Exception:
-            payload = {
+            clean_payload = {
                 "ok": False,
                 "answer": "Sorry, the assistant encountered an error while processing your request. Please try again.",
                 "intent": "error",
@@ -338,7 +338,7 @@ async def assistant_ask(request: Request):
                 "slots": {},
                 "ui_actions": [],
             }
-        return payload
+        return JSONResponse(content=clean_payload)
 
     shown = _history(request)[-20:]
     animate_index = None
