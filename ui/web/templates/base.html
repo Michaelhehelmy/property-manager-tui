@@ -57,6 +57,35 @@
         {% if update_notice.url %}<a href="{{ update_notice.url }}" target="_blank" rel="noopener" style="margin-left:8px">View details</a>{% endif %}
       </div>
     {% endif %}
+    {% if show_update_modal and update_notice and update_notice.update_available %}
+      <div class="modal-backdrop" id="update-modal-backdrop" style="position:fixed;inset:0;background:rgba(8,10,18,.55);display:flex;align-items:center;justify-content:center;z-index:1200;padding:16px;">
+        <div class="panel" role="dialog" aria-modal="true" aria-label="Update available" style="max-width:520px;width:100%;margin:0;box-shadow:0 20px 50px rgba(0,0,0,.45);">
+          <div class="panel-header"><h3 style="margin:0">Update available</h3></div>
+          <p style="margin-top:0">{{ update_notice.message or 'A newer version is available.' }}</p>
+          <p class="muted" style="margin-top:-4px">Runtime data (DB, exports, invoices, data directory) is preserved. A restart is required after updating.</p>
+          {% if update_notice.kind == 'git' %}
+            <p class="muted">Git/source install: the app can try to apply a safe fast-forward update now (unlock required). If local source changes exist, apply from Settings → Updates after resolving them.</p>
+          {% else %}
+            <p class="muted">Native/release install: automatic in-place replacement is not performed. Download/install the latest release for your platform, then restart the app.</p>
+          {% endif %}
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px">
+            <form method="post" action="/updates/apply-now" style="margin:0">
+              <input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+              <input type="hidden" name="next" value="{{ request.url.path }}"/>
+              <button type="submit" class="warn">Update now</button>
+            </form>
+            {% if update_notice.url %}<a class="btn ghost" href="{{ update_notice.url }}" target="_blank" rel="noopener">Download / details</a>{% endif %}
+            <a class="btn ghost" href="/settings?tab=updates">Open Updates</a>
+            <form method="post" action="/updates/dismiss" style="margin:0;margin-left:auto">
+              <input type="hidden" name="csrf" value="{{ csrf_token }}"/>
+              <input type="hidden" name="key" value="{{ update_notice_key }}"/>
+              <input type="hidden" name="next" value="{{ request.url.path }}"/>
+              <button type="submit" class="ghost">Not now</button>
+            </form>
+          </div>
+        </div>
+      </div>
+    {% endif %}
     {% for f in flashes %}<div class="flash {{ f.level }}">{{ f.message }}</div>{% endfor %}
     {% block content %}{% endblock %}
   </main>

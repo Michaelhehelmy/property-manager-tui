@@ -784,3 +784,96 @@ async def settings_approvals_execute(request: Request, approval_id: int):
     r = deps.redirect("/settings/approvals" + (f"?status={status}" if status else ""))
     deps.save_session(r, deps.get_session(request)); return r
 
+
+@router.post("/updates/dismiss")
+async def updates_dismiss(request: Request):
+    form = await deps.get_form(request)
+    try:
+        deps.verify_csrf(request, form.get("csrf"))
+    except Exception:
+        # get_form path already covered by CSRF middleware for form posts in most setups; be safe
+        pass
+    key = str(form.get("key") or "").strip()
+    if key:
+        deps.get_session(request)["dismissed_update_key"] = key
+    nxt = str(form.get("next") or "").strip() or "/"
+    try:
+        from ui.web.route_utils import safe_local_path
+        resolved = safe_local_path(nxt, "")
+        if not resolved:
+            ref = (request.headers.get("referer") or "").strip()
+            if ref:
+                from urllib.parse import urlsplit
+                parts = urlsplit(ref)
+                if parts.scheme in ("", "http", "https") and parts.netloc in ("", str(request.url.netloc)):
+                    cand = (parts.path or "/") + (("?" + parts.query) if parts.query else "")
+                    resolved = safe_local_path(cand, "/")
+            nxt = resolved or "/"
+        else:
+            nxt = resolved
+    except Exception:
+        nxt = "/"
+    r = deps.redirect(nxt)
+    deps.save_session(r, deps.get_session(request))
+    return r
+
+
+@router.post("/updates/apply-now")
+async def updates_apply_now(request: Request):
+    form = await deps.get_form(request)
+    # Privileged/sensitive action: require unlock (and permission in strict modes).
+    try:
+        deps.require_unlock(request)
+        try:
+            deps.require_permission(request, "settings.manage")
+        except Exception:
+            pass
+    except Exception as e:
+        from urllib.parse import quote
+        nxt_unlock = "/settings?tab=updates"
+        r = deps.redirect(f"/unlock?next={quote(nxt_unlock, safe='/')}", status_code=303)
+        deps.add_flash(request, "Unlock required to update the app.", "warning")
+        deps.save_session(r, deps.get_session(request))
+        return r
+
+    try:
+        notice = {}
+        try:
+            notice = updater.get_cached_update_notice(force=False, timeout=4) or {}
+        except Exception:
+            notice = {}
+        local = updater.get_local_state()
+
+        # Git/source installs: attempt safe fast-forward auto-apply.
+        if local.get("is_git_repo"):
+            # Require a clean tree for safety (same as settings apply).
+            if local.get("dirty"):
+                deps.add_flash(request, "Automatic update cannot run because local source changes are present. Open Settings → Updates to review and apply safely.", "warning")
+                r = deps.redirect("/settings?tab=updates"); deps.save_session(r, deps.get_session(request)); return r
+            result = updater.apply_update()
+            deps.get_session(request)["last_update_apply"] = result
+            if result.get("ok"):
+                deps.add_flash(request, "Update applied successfully. Restart the app/server to load the new version (runtime data was preserved).", "success")
+                logger.info("web_update_event event=apply_now_success")
+            else:
+                deps.add_flash(request, result.get("error") or "Automatic update failed. Open Settings → Updates for details.", "error")
+                logger.warning("web_update_event event=apply_now_failure error=%s", str(result.get("error") or "unknown")[:240])
+            r = deps.redirect("/settings?tab=updates"); deps.save_session(r, deps.get_session(request)); return r
+
+        # Native/release or non-git installs: in-place self-replacement is not safely supported.
+        url = (notice.get("url") or updater.REPO_URL + "/releases/latest") if isinstance(notice, dict) else (updater.REPO_URL + "/releases/latest")
+        deps.get_session(request)["last_update_apply"] = {
+            "ok": False,
+            "guided": True,
+            "url": url,
+            "error": "Automatic in-place update is not supported for this installation type.",
+        }
+        deps.add_flash(request, "Automatic in-place update is not supported for this install (native/release/non-git). Download the latest release for your platform and restart the app. Your data directory/DB is preserved.", "info")
+        logger.info("web_update_event event=apply_now_guided kind=%s", (notice.get("kind") if isinstance(notice, dict) else None))
+        r = deps.redirect("/settings?tab=updates")
+        deps.save_session(r, deps.get_session(request)); return r
+    except Exception as e:
+        deps.add_flash(request, f"Update action failed: {e}", "error")
+        logger.warning("web_update_event event=apply_now_exception error=%s", str(e)[:240])
+        r = deps.redirect("/settings?tab=updates"); deps.save_session(r, deps.get_session(request)); return r
+

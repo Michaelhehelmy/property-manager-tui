@@ -69,6 +69,9 @@
       {% if update_apply.ok %}
         <div class="ok"><strong>Update applied.</strong> Restart the app to load the new version. Data preserved.</div>
         {% if update_apply.local_after %}<div class="muted">Now at: <code>{{ update_apply.local_after.commit_short }}</code> {{ update_apply.local_after.commit_subject or '' }}</div>{% endif %}
+      {% elif update_apply.guided %}
+        <div class="warn"><strong>Manual update required for this install.</strong> {{ update_apply.error }} Download and install the latest release for your platform, then restart the app. Your database/exports/invoices/data directory are preserved.</div>
+        {% if update_apply.url %}<p><a href="{{ update_apply.url }}" target="_blank" rel="noopener">Open latest release/download page</a></p>{% endif %}
       {% else %}
         <div class="err"><strong>Update failed:</strong> {{ update_apply.error }}</div>
       {% endif %}
