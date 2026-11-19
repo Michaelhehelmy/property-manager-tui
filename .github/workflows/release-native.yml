@@ -40,7 +40,7 @@ jobs:
       - name: Install dependencies
         shell: bash
         run: |
-          python -m pip install --upgrade "pip==26.0.1"
+          python -m pip install --upgrade "pip==26.2.0"
           python -m pip install -r requirements.txt
           python -m pip install "nuitka>=2.6.0" "ordered-set>=4.1.0" "zstandard>=0.23.0" "imageio>=2.36.0"
 
