@@ -31,8 +31,13 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --require-hashes -r requirements/ci-bootstrap-tools.txt
-          python -m pip install -r requirements.txt -r requirements-dev.txt
-          python -m pip install -e .
+          case "${{ matrix.python-version }}" in
+            3.10) python -m pip install --require-hashes -r requirements/runtime-linux-cp310.txt -r requirements/dev-linux-cp310.txt ;;
+            3.11) python -m pip install --require-hashes -r requirements/runtime-linux-cp311.txt -r requirements/dev-linux-cp311.txt ;;
+            3.12) python -m pip install --require-hashes -r requirements/runtime-linux-cp312.txt -r requirements/dev-linux-cp312.txt ;;
+            *) python -m pip install -r requirements.txt -r requirements-dev.txt ;;
+          esac
+          python -m pip install --no-deps -e .
 
       - name: Basic syntax check
         run: |

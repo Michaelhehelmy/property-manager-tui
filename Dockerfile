@@ -19,9 +19,9 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # Install runtime deps first for better layer caching
-COPY requirements.txt requirements/ci-bootstrap-tools.txt ./
+COPY requirements.txt requirements/ci-bootstrap-tools.txt requirements/runtime-linux-cp312.txt ./
 RUN python -m pip install --require-hashes -r ci-bootstrap-tools.txt \
-    && python -m pip install -r requirements.txt
+    && python -m pip install --require-hashes -r runtime-linux-cp312.txt
 
 # Copy application source
 COPY pyproject.toml main.py launcher.py ./
