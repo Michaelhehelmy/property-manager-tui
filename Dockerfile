@@ -20,7 +20,7 @@ RUN apt-get update \
 
 # Install runtime deps first for better layer caching
 COPY requirements.txt ./
-RUN python -m pip install --upgrade "pip==24.3.1" "setuptools==78.1.1" "wheel==0.46.3" \
+RUN python -m pip install --upgrade "pip==26.0.1" "setuptools==82.0.0" "wheel==0.46.3" \
     && python -m pip install -r requirements.txt
 
 # Copy application source

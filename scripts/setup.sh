@@ -187,7 +187,7 @@ setup_venv_and_deps() {
   fi
   # shellcheck disable=SC1091
   . .venv/bin/activate
-  python -m pip install --upgrade "pip==24.3.1" "setuptools==78.1.1" "wheel==0.46.3" || warn "pip bootstrap upgrade failed; continuing..."
+  python -m pip install --upgrade "pip==26.0.1" "setuptools==82.0.0" "wheel==0.46.3" || warn "pip bootstrap upgrade failed; continuing..."
 
   log "Installing runtime dependencies (web-only app)..."
   if [ "$SKIP_WEB" = "1" ]; then
