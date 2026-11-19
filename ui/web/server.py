@@ -14,7 +14,7 @@ if not (bool(getattr(sys, "frozen", False)) or "__compiled__" in globals()):
         sys.path.insert(0, str(SRC))
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -253,6 +253,19 @@ def create_app(*, init_db: bool = True, run_startup: bool = True) -> FastAPI:
             "service": "property-manager-web",
             "readiness": readiness,
         }
+
+    @app.get("/favicon.ico", include_in_schema=False)
+    def favicon():
+        # Browsers request /favicon.ico by default; redirect to packaged app icon.
+        return RedirectResponse(url="/static/icons/icon-192.png", status_code=307)
+
+    @app.get("/v1/models", include_in_schema=False)
+    def openai_models_probe():
+        # Explicit response for common external probes; this app is not an OpenAI-compatible API.
+        return JSONResponse(
+            status_code=404,
+            content={"error": {"message": "Not Found", "type": "not_found", "code": "endpoint_not_available"}},
+        )
 
     return app
 

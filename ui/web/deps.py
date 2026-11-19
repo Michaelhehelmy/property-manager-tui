@@ -498,7 +498,31 @@ def has_privileged_access(request: Request) -> bool:
 
 def require_unlock(request: Request) -> None:
     if not has_privileged_access(request):
-        nxt = quote(str(request.url.path) or "/")
+        method = (getattr(request, "method", "GET") or "GET").upper()
+        if method in ("GET", "HEAD"):
+            # Return to the same page after unlock (preserve query string).
+            path = str(getattr(getattr(request, "url", None), "path", "") or "/")
+            query = str(getattr(getattr(request, "url", None), "query", "") or "")
+            nxt_raw = path + (("?" + query) if query else "")
+        else:
+            # For unsafe methods, redirecting back to the same endpoint would be replayed as GET (405).
+            # Prefer same-origin referer page; fall back to home so the user can retry the action.
+            nxt_raw = "/"
+            ref = (request.headers.get("referer") or "").strip() if getattr(request, "headers", None) else ""
+            if ref:
+                try:
+                    from urllib.parse import urlsplit
+                    parts = urlsplit(ref)
+                    req_netloc = str(getattr(getattr(request, "url", None), "netloc", "") or "")
+                    if parts.scheme in ("", "http", "https") and parts.netloc in ("", req_netloc):
+                        cand = (parts.path or "/") + (("?" + parts.query) if parts.query else "")
+                        if cand.startswith("/") and not cand.startswith("//"):
+                            nxt_raw = cand
+                except Exception:
+                    nxt_raw = "/"
+        if not nxt_raw.startswith("/") or nxt_raw.startswith("//"):
+            nxt_raw = "/"
+        nxt = quote(nxt_raw, safe="/")
         raise HTTPException(status_code=303, headers={"Location": f"/unlock?next={nxt}"})
 
 
