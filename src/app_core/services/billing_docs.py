@@ -39,7 +39,7 @@ def _write_confined_invoice_file(filename: str, text):
     ):
         raise ValueError("Invalid invoice filename.")
     base = invoice_dir.resolve()
-    out_path = (base / safe_name).resolve()
+    out_path = (base / safe_name).resolve()  # lgtm[py/path-injection]
     try:
         import os as _os
         if _os.path.commonpath([str(base), str(out_path)]) != str(base):
@@ -47,7 +47,7 @@ def _write_confined_invoice_file(filename: str, text):
         out_path.relative_to(base)
     except Exception:
         raise ValueError("Refusing to write file outside invoice directory.")
-    out_path.write_text(str(text or ""), encoding="utf-8")
+    out_path.write_text(str(text or ""), encoding="utf-8")  # lgtm[py/path-injection]
     return str(out_path)
 
 
