@@ -1,0 +1,35 @@
+name: PowerShell Analysis
+
+on:
+  push:
+    paths:
+      - '**/*.ps1'
+  pull_request:
+    paths:
+      - '**/*.ps1'
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  pssa:
+    name: PSScriptAnalyzer
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run PSScriptAnalyzer
+        uses: microsoft/psscriptanalyzer-action@v1.1
+        with:
+          path: .\
+          recurse: true
+          output: results.sarif
+
+      - name: Upload SARIF results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always() && hashFiles('results.sarif') != ''
+        with:
+          sarif_file: results.sarif
+          category: powershell-analysis

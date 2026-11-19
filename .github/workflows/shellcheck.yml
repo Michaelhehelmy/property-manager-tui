@@ -1,0 +1,29 @@
+name: ShellCheck
+
+on:
+  push:
+    paths:
+      - 'scripts/**/*.sh'
+  pull_request:
+    paths:
+      - 'scripts/**/*.sh'
+  schedule:
+    - cron: '30 2 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  shellcheck:
+    name: ShellCheck scripts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run ShellCheck
+        uses: ludeeus/action-shellcheck@2.0.0
+        with:
+          scandir: './scripts'
+          severity: warning
+          format: gcc

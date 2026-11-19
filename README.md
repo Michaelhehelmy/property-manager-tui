@@ -210,8 +210,8 @@ See `docs/BACKUP_RESTORE.md` for DR guidance.
 ```bash
 python -m py_compile src/app_core/*.py ui/web/*.py main.py launcher.py
 PYTHONPATH=src pytest -q
-bash scripts/coverage.sh
-bash scripts/install_deps_and_test.sh
+pytest --cov=src/app_core --cov=ui --cov-report=term-missing --cov-report=xml:coverage.xml
+python -m pip install -r requirements-dev.txt -r requirements-web.txt && python -m pytest -q
 ```
 
 ## Troubleshooting (quick)

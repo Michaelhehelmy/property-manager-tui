@@ -72,10 +72,10 @@ PYTHONPATH=src python3 -m pytest -q
 PYTHONPATH=src python3 -m pytest -q tests/web/test_web_deps.py
 
 # Lint/dead-code checks (ruff, CI-aligned baseline)
-bash scripts/lint.sh
+python -m ruff check .
 
 # Coverage
-bash scripts/coverage.sh
+pytest --cov=src/app_core --cov=ui --cov-report=term-missing --cov-report=xml:coverage.xml
 ```
 
 CI (`.github/workflows/ci.yml`) runs lint, compileall, and tests with coverage across supported Python versions. Keep changes compatible.

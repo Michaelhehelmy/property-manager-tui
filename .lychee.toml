@@ -1,0 +1,33 @@
+# Lychee link checker configuration
+# https://lychee.cli.rs/#/usage/config
+
+max_retries = 3
+retry_wait_time = 2
+timeout = 20
+max_concurrency = 8
+
+# Accept common transient/rate-limited responses in addition to success codes.
+accept = [200, 204, 206, 429]
+
+# Exclude local endpoints, placeholders, and non-public URLs commonly used in docs/examples.
+exclude = [
+  '^https?://localhost(?::\d+)?(?:/.*)?$',
+  '^https?://127\.0\.0\.1(?::\d+)?(?:/.*)?$',
+  '^https?://0\.0\.0\.0(?::\d+)?(?:/.*)?$',
+  '^https?://\[::1\](?::\d+)?(?:/.*)?$',
+  '^https?://<[^>]*>.*$',
+  '^https://\.\.\..*$',
+  '^mailto:',
+  # Placeholder/tag template URL shown in documentation
+  'raw\.githubusercontent\.com/Michaelhehelmy/spms/<tag-or-commit>/',
+]
+
+exclude_path = [
+  "(^|/)\\.git/",
+  "(^|/)\\.venv/",
+  "(^|/)venv/",
+  "(^|/)__pycache__/",
+  "(^|/)data/",
+  "(^|/)htmlcov/",
+  "(^|/)\\.pytest_cache/",
+]

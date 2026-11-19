@@ -44,3 +44,22 @@ property_manager.db
 property_manager.db-*
 test-results/
 venv/
+
+# Security/scanning/SBOM tool outputs
+*.sarif
+sbom*.json
+sbom*.spdx*
+sbom*.cdx*
+*.spdx.json
+*.cdx.json
+cyclonedx*.json
+trivy-results*
+trivy-report*
+bandit-report*
+bandit*.json
+bandit*.sarif
+semgrep*
+safety-report*
+pip-audit*.json
+syft*.json
+grype*.json

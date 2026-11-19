@@ -56,9 +56,9 @@ Run the checks relevant to your change (at minimum compile/tests for touched are
 PYTHONPATH=src python3 -m compileall -q src ui tests
 PYTHONPATH=src python3 -m pytest -q
 # lint/dead-code checks (CI-aligned)
-bash scripts/lint.sh
+python -m ruff check .
 # optional coverage
-bash scripts/coverage.sh
+pytest --cov=src/app_core --cov=ui --cov-report=term-missing --cov-report=xml:coverage.xml
 ```
 On Windows, run equivalent commands in PowerShell/cmd with the venv activated and `PYTHONPATH=src` set.
 

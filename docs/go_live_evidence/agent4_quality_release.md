@@ -9,10 +9,10 @@
 - Warning: Starlette/TestClient httpx deprecation warning (non-functional; triage/document).
 
 ## CI/release readiness assessment (verified)
-- `.github/workflows/ci.yml` **exists** (push/PR, Python 3.10-3.12): installs deps, `py_compile`/compileall, `bash scripts/lint.sh` (ruff), explicit `pytest -m "authz or invariant"`, full `pytest tests -q`, and optional coverage artifact on 3.12 via `scripts/coverage.sh`. Additional workflows: `release-container.yml`, `release-native.yml`.
+- `.github/workflows/ci.yml` **exists** (push/PR, Python 3.10-3.12): installs deps, `py_compile`/compileall, `python -m ruff check .` (ruff), explicit `pytest -m "authz or invariant"`, full `pytest tests -q`, and optional coverage artifact on 3.12 (pytest-cov). Additional workflows: `release-container.yml`, `release-native.yml`.
 - Remaining gaps vs plan: no explicit E2E/stress/performance stages, no enforced coverage threshold/ratchet (coverage is optional/non-blocking), no automated pinned-release install/rollback verification job, and constrained-platform (e.g. pydantic-core) matrix not explicitly covered. `pyproject.toml` dev deps now include `pytest-cov` and `ruff`.
 - Existing relevant tests: `tests/web/test_p1_8_smoke_e2e.py`, `tests/web/test_golive_web_integration.py`, `tests/test_golive_invariants_migrations_contracts.py` plus `authz`/`invariant` markers and broad unit/integration suites.
-- Commands: full `PYTHONPATH=src PM_WEB_SECRET_KEY=test-secret python3 -m pytest tests -q`, lint `PYTHONPATH=src:. python3 -m ruff check .` (or `scripts/lint.sh`), markers `-m "authz or invariant"`, coverage `scripts/coverage.sh`.
+- Commands: full `PYTHONPATH=src PM_WEB_SECRET_KEY=test-secret python3 -m pytest tests -q`, lint `PYTHONPATH=src:. python3 -m ruff check .` (), markers `-m "authz or invariant"`, coverage `pytest --cov=src/app_core --cov=ui --cov-report=term-missing --cov-report=xml:coverage.xml`.
 
 ## Planned tasks
 - [ ] Add/restore CI workflow with required gates (lint, full tests, web/integration/invariant, coverage threshold/ratchet)

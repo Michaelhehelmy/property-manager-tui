@@ -1,0 +1,80 @@
+name: SBOM
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - 'v*'
+  release:
+    types:
+      - published
+  schedule:
+    - cron: '30 5 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sbom:
+    name: Generate SBOMs
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Generate repository SBOM (SPDX JSON)
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: spdx-json
+          output-file: sbom-repository.spdx.json
+
+      - name: Generate repository SBOM (CycloneDX JSON)
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: cyclonedx-json
+          output-file: sbom-repository.cdx.json
+
+      - name: Build container image for SBOM
+        run: docker build --tag spms-sbom:${{ github.sha }} .
+
+      - name: Generate image SBOM (SPDX JSON)
+        uses: anchore/sbom-action@v0
+        with:
+          image: spms-sbom:${{ github.sha }}
+          format: spdx-json
+          output-file: sbom-image.spdx.json
+
+      - name: Generate image SBOM (CycloneDX JSON)
+        uses: anchore/sbom-action@v0
+        with:
+          image: spms-sbom:${{ github.sha }}
+          format: cyclonedx-json
+          output-file: sbom-image.cdx.json
+
+      - name: Upload SBOM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ github.run_id }}
+          path: |
+            sbom-repository.spdx.json
+            sbom-repository.cdx.json
+            sbom-image.spdx.json
+            sbom-image.cdx.json
+          if-no-files-found: error
+
+      - name: Attach SBOMs to release
+        if: github.event_name == 'release' && github.event.action == 'published'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            sbom-repository.spdx.json
+            sbom-repository.cdx.json
+            sbom-image.spdx.json
+            sbom-image.cdx.json

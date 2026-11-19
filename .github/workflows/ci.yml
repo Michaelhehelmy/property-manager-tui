@@ -41,9 +41,11 @@ jobs:
           PYTHONPATH=src python -m compileall -q src ui tests
 
       - name: Lint / dead-code quality gates (ruff)
+        env:
+          PYTHONPATH: src
         run: |
           echo "::group::Ruff lint checks"
-          bash scripts/lint.sh
+          python -m ruff check .
           echo "::endgroup::"
 
       - name: Run authz/invariant go-live checks (explicit)
@@ -69,9 +71,10 @@ jobs:
         continue-on-error: true
         env:
           PM_WEB_SECRET_KEY: test-secret
+          PYTHONPATH: src
         run: |
           python -m pip install pytest-cov
-          bash scripts/coverage.sh --maxfail=20
+          python -m pytest tests -q --maxfail=20 --cov=src/app_core --cov=ui --cov-report=term-missing --cov-report=xml:coverage.xml
 
       - name: Upload coverage artifacts (optional)
         if: matrix.python-version == '3.12' && always() && hashFiles('coverage.xml') != ''

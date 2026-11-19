@@ -1,0 +1,66 @@
+name: Trivy Security Scan
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: '30 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  fs-scan:
+    name: Trivy filesystem scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run Trivy filesystem scan (vuln, misconfig)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,misconfig
+          format: sarif
+          output: trivy-fs-results.sarif
+          ignore-unfixed: true
+          severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+
+      - name: Upload filesystem scan SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always() && hashFiles('trivy-fs-results.sarif') != ''
+        with:
+          sarif_file: trivy-fs-results.sarif
+          category: trivy-fs
+
+  image-scan:
+    name: Trivy image scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build container image (no push)
+        run: docker build --tag spms-trivy-scan:${{ github.sha }} .
+
+      - name: Run Trivy image scan (vuln, misconfig)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: image
+          image-ref: spms-trivy-scan:${{ github.sha }}
+          scanners: vuln,misconfig
+          format: sarif
+          output: trivy-image-results.sarif
+          ignore-unfixed: true
+          severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+
+      - name: Upload image scan SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always() && hashFiles('trivy-image-results.sarif') != ''
+        with:
+          sarif_file: trivy-image-results.sarif
+          category: trivy-image
