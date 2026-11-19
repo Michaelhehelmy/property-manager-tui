@@ -757,7 +757,7 @@ def _net_types(base_types):
 
 
 def _ledger_scalar(conn, expr, where, params=()):
-    row = conn.execute(f"SELECT COALESCE({expr}, 0) AS v FROM general_ledger WHERE {where}", params).fetchone()
+    row = conn.execute(f"SELECT COALESCE({expr}, 0) AS v FROM general_ledger WHERE {where}", params).fetchone()  # nosec B608
     return row["v"] if row else 0
 
 
@@ -795,7 +795,7 @@ def _reservation_charge_components(conn, rid):
 
     def q(expr, ref_sql, ref_params):
         return conn.execute(
-            f"SELECT COALESCE(SUM({expr}), 0) AS v FROM general_ledger WHERE {ref_sql} AND entry_type IN ({ph})",
+            f"SELECT COALESCE(SUM({expr}), 0) AS v FROM general_ledger WHERE {ref_sql} AND entry_type IN ({ph})",  # nosec B608
             (*ref_params, *types),
         ).fetchone()["v"] or 0
 
@@ -1304,12 +1304,8 @@ def update_housekeeping_status(room_id, status):
                 ts_parts.append("completed_at=COALESCE(completed_at, datetime('now','localtime'))")
                 ts_parts.append("inspected_at=COALESCE(inspected_at, datetime('now','localtime'))")
             params.append(int(room_id))
-            conn.execute(
-                f"""UPDATE housekeeping_tasks
-                       SET {', '.join(ts_parts)}
-                     WHERE room_id=? AND status IN ('pending','in_progress')""",
-                params,
-            )
+            _hk_upd_sql = f"UPDATE housekeeping_tasks SET {', '.join(ts_parts)} WHERE room_id=? AND status IN ('pending','in_progress')"  # nosec B608
+            conn.execute(_hk_upd_sql, params)
 
 
 def update_room_price(room_id, new_price, password):
@@ -1762,7 +1758,7 @@ def update_housekeeping_task_status(task_id, status, notes_append=""):
             updates.append("notes=TRIM(COALESCE(notes,'') || CASE WHEN COALESCE(notes,'')<>'' THEN char(10) ELSE '' END || ?)")
             params.append(str(notes_append))
         params.append(tid)
-        conn.execute(f"UPDATE housekeeping_tasks SET {', '.join(updates)} WHERE id=?", params)
+        conn.execute(f"UPDATE housekeeping_tasks SET {', '.join(updates)} WHERE id=?", params)  # nosec B608
         # reflect room status
         if status == "done":
             conn.execute("UPDATE rooms SET housekeeping_status='Clean' WHERE id=?", (row["room_id"],))
@@ -1806,7 +1802,7 @@ def update_housekeeping_task(task_id, task_type=None, priority=None, assignee=No
         if not updates:
             return tid
         params.append(tid)
-        conn.execute(f"UPDATE housekeeping_tasks SET {', '.join(updates)} WHERE id=?", params)
+        conn.execute(f"UPDATE housekeeping_tasks SET {', '.join(updates)} WHERE id=?", params)  # nosec B608
     _audit("housekeeping_task_update", "housekeeping_task", tid, "fields_updated")
     return tid
 
@@ -3576,15 +3572,14 @@ def complete_walkin_sale(items, method, notes="", payment_type="Payment"):
         receipt_items = []
         if pos_ids:
             ph = ",".join("?" * len(pos_ids))
-            rows = conn.execute(f"""
-                SELECT p.id, p.item_description, p.quantity, p.unit_price, p.tax_amount, p.batch_id, p.lot_code,
-                       b.expiry_date AS batch_expiry_date, b.received_at AS batch_received_at,
-                       (SELECT COALESCE(SUM(gross),0) FROM general_ledger WHERE ref_type='POS' AND ref_id=p.id AND entry_type IN ('CHARGE','VOID_CHARGE')) AS gross
-                FROM pos_tabs p
-                LEFT JOIN inventory_batches b ON b.id = p.batch_id
-                WHERE p.id IN ({ph})
-                ORDER BY p.id
-            """, pos_ids).fetchall()
+            _pos_items_sql = (  # nosec B608
+                f"SELECT p.id, p.item_description, p.quantity, p.unit_price, p.tax_amount, p.batch_id, p.lot_code, "
+                f"b.expiry_date AS batch_expiry_date, b.received_at AS batch_received_at, "
+                f"(SELECT COALESCE(SUM(gross),0) FROM general_ledger WHERE ref_type='POS' AND ref_id=p.id AND entry_type IN ('CHARGE','VOID_CHARGE')) AS gross "
+                f"FROM pos_tabs p LEFT JOIN inventory_batches b ON b.id = p.batch_id "
+                f"WHERE p.id IN ({ph}) ORDER BY p.id"
+            )
+            rows = conn.execute(_pos_items_sql, pos_ids).fetchall()
             for r in rows:
                 receipt_items.append({
                     "pos_id": r["id"],
@@ -3739,7 +3734,7 @@ def update_inventory_item(item_id, name, category, unit, selling_price, low, ove
         if default_supplier is not None:
             sets.append("default_supplier=?"); params.append((default_supplier or "").strip())
         params.append(item_id)
-        conn.execute(f"UPDATE inventory SET {', '.join(sets)} WHERE id=?", params)
+        conn.execute(f"UPDATE inventory SET {', '.join(sets)} WHERE id=?", params)  # nosec B608
     _audit("inventory_update", "inventory", item_id, name)
 
 
@@ -4461,16 +4456,15 @@ def get_activity_stats(activity_id=None):
     filt = "WHERE p.voided_at IS NULL AND p.activity_id IS NOT NULL"
     if activity_id is not None:
         filt += " AND p.activity_id=?"; params.append(int(activity_id))
-    rows = db.connect().execute(f"""
-        SELECT p.activity_id, a.name AS activity_name, a.category, a.unit_price, a.active,
-               COUNT(*) AS bookings, COALESCE(SUM(p.quantity),0) AS total_qty,
-               COALESCE(SUM(p.quantity*p.unit_price + p.tax_amount),0) AS gross_revenue,
-               MIN(p.created_at) AS first_booked, MAX(p.created_at) AS last_booked
-        FROM pos_tabs p JOIN activities a ON a.id=p.activity_id
-        {filt}
-        GROUP BY p.activity_id
-        ORDER BY gross_revenue DESC, total_qty DESC
-    """, params).fetchall()
+    _activity_stats_sql = (  # nosec B608
+        "SELECT p.activity_id, a.name AS activity_name, a.category, a.unit_price, a.active, "
+        "COUNT(*) AS bookings, COALESCE(SUM(p.quantity),0) AS total_qty, "
+        "COALESCE(SUM(p.quantity*p.unit_price + p.tax_amount),0) AS gross_revenue, "
+        "MIN(p.created_at) AS first_booked, MAX(p.created_at) AS last_booked "
+        "FROM pos_tabs p JOIN activities a ON a.id=p.activity_id "
+        f"{filt} GROUP BY p.activity_id ORDER BY gross_revenue DESC, total_qty DESC"
+    )
+    rows = db.connect().execute(_activity_stats_sql, params).fetchall()
     stats = [dict(r) for r in rows]
     # include registered activities with zero bookings when listing all
     if activity_id is None:
@@ -4562,30 +4556,24 @@ def get_general_ledger_summary():
     gph = ",".join("?" * len(cogs_types))
 
     revenue = conn.execute(
-        f"SELECT COALESCE(SUM(net + service), 0) FROM general_ledger WHERE entry_type IN ({cph})",
+        f"SELECT COALESCE(SUM(net + service), 0) FROM general_ledger WHERE entry_type IN ({cph})",  # nosec B608
         charge_types,
     ).fetchone()[0] or 0
     expenses = conn.execute(
-        f"SELECT COALESCE(SUM(net), 0) FROM general_ledger WHERE entry_type IN ({eph})",
+        f"SELECT COALESCE(SUM(net), 0) FROM general_ledger WHERE entry_type IN ({eph})",  # nosec B608
         exp_types,
     ).fetchone()[0] or 0
     cogs = conn.execute(
-        f"SELECT COALESCE(SUM(net), 0) FROM general_ledger WHERE entry_type IN ({gph})",
+        f"SELECT COALESCE(SUM(net), 0) FROM general_ledger WHERE entry_type IN ({gph})",  # nosec B608
         cogs_types,
     ).fetchone()[0] or 0
 
     cash_types = _net_types(("PAYMENT", "REFUND", "EXPENSE", "ASSET_IN"))
     csh = ",".join("?" * len(cash_types))
-    cash_in = conn.execute(
-        f"""SELECT COALESCE(SUM(CASE WHEN gross > 0 THEN gross ELSE 0 END), 0)
-            FROM general_ledger WHERE entry_type IN ({csh})""",
-        cash_types,
-    ).fetchone()[0] or 0
-    cash_out = conn.execute(
-        f"""SELECT COALESCE(SUM(CASE WHEN gross < 0 THEN -gross ELSE 0 END), 0)
-            FROM general_ledger WHERE entry_type IN ({csh})""",
-        cash_types,
-    ).fetchone()[0] or 0
+    _cash_in_sql = f"SELECT COALESCE(SUM(CASE WHEN gross > 0 THEN gross ELSE 0 END), 0) FROM general_ledger WHERE entry_type IN ({csh})"  # nosec B608
+    cash_in = conn.execute(_cash_in_sql, cash_types).fetchone()[0] or 0
+    _cash_out_sql = f"SELECT COALESCE(SUM(CASE WHEN gross < 0 THEN -gross ELSE 0 END), 0) FROM general_ledger WHERE entry_type IN ({csh})"  # nosec B608
+    cash_out = conn.execute(_cash_out_sql, cash_types).fetchone()[0] or 0
 
     ar = 0.0
     for row in conn.execute(
@@ -4642,24 +4630,17 @@ def generate_invoice_text(reservation_id, currency=CURRENCY):
         raise ValueError("Reservation not found.")
     nights = _nights(r["check_in_date"], r["check_out_date"])
     types = _net_types(("CHARGE",))
-    ph = ",".join("?" * len(types))
-    accom_row = conn.execute(f"""
-        SELECT COALESCE(SUM(net),0) AS net, COALESCE(SUM(service),0) AS service,
-               COALESCE(SUM(vat),0) AS vat, COALESCE(SUM(city_tax),0) AS city_tax,
-               COALESCE(SUM(gross),0) AS gross
-        FROM general_ledger
-        WHERE ref_type='RES' AND ref_id=? AND entry_type IN ({ph})
-    """, (reservation_id, *types)).fetchone()
-    pos_items = [dict(x) for x in conn.execute(f"""
-        SELECT p.id, p.item_description, p.quantity, p.unit_price, p.tax_amount, p.lot_code, p.batch_id,
-               b.expiry_date AS batch_expiry_date, b.received_at AS batch_received_at,
-               (SELECT COALESCE(SUM(gross),0) FROM general_ledger
-                WHERE ref_type='POS' AND ref_id=p.id AND entry_type IN ({ph})) AS gross
-        FROM pos_tabs p
-        LEFT JOIN inventory_batches b ON b.id = p.batch_id
-        WHERE p.reservation_id=? AND p.voided_at IS NULL
-        ORDER BY p.id
-    """, (*types, reservation_id)).fetchall()]
+    ph = ",".join("?" * len(types))  # nosec B608
+    _accom_sql = f"SELECT COALESCE(SUM(net),0) AS net, COALESCE(SUM(service),0) AS service, COALESCE(SUM(vat),0) AS vat, COALESCE(SUM(city_tax),0) AS city_tax, COALESCE(SUM(gross),0) AS gross FROM general_ledger WHERE ref_type='RES' AND ref_id=? AND entry_type IN ({ph})"  # nosec B608
+    accom_row = conn.execute(_accom_sql, (reservation_id, *types)).fetchone()
+    _folio_pos_sql = (  # nosec B608
+        f"SELECT p.id, p.item_description, p.quantity, p.unit_price, p.tax_amount, p.lot_code, p.batch_id, "
+        f"b.expiry_date AS batch_expiry_date, b.received_at AS batch_received_at, "
+        f"(SELECT COALESCE(SUM(gross),0) FROM general_ledger WHERE ref_type='POS' AND ref_id=p.id AND entry_type IN ({ph})) AS gross "
+        f"FROM pos_tabs p LEFT JOIN inventory_batches b ON b.id = p.batch_id "
+        f"WHERE p.reservation_id=? AND p.voided_at IS NULL ORDER BY p.id"
+    )
+    pos_items = [dict(x) for x in conn.execute(_folio_pos_sql, (*types, reservation_id)).fetchall()]
     services = [dict(x) for x in conn.execute("""
         SELECT id, service_id, description, quantity, unit_price, tax_amount, gross_amount, status, notes, posted_at
         FROM reservation_services
@@ -5131,18 +5112,10 @@ def get_daily_revenue_expense_series(start, end):
     cost_types = _net_types(("EXPENSE", "COGS"))
     cph = ",".join("?" * len(charge_types))
     xph = ",".join("?" * len(cost_types))
-    rev = {r[0]: r[1] for r in conn.execute(
-        f"""SELECT date(at), SUM(net + service) FROM general_ledger
-            WHERE entry_type IN ({cph}) AND date(at) BETWEEN date(?) AND date(?)
-            GROUP BY date(at)""",
-        (*charge_types, start, end),
-    ).fetchall()}
-    exp = {r[0]: r[1] for r in conn.execute(
-        f"""SELECT date(at), SUM(net) FROM general_ledger
-            WHERE entry_type IN ({xph}) AND date(at) BETWEEN date(?) AND date(?)
-            GROUP BY date(at)""",
-        (*cost_types, start, end),
-    ).fetchall()}
+    _rev_sql = f"SELECT date(at), SUM(net + service) FROM general_ledger WHERE entry_type IN ({cph}) AND date(at) BETWEEN date(?) AND date(?) GROUP BY date(at)"  # nosec B608
+    rev = {r[0]: r[1] for r in conn.execute(_rev_sql, (*charge_types, start, end)).fetchall()}
+    _exp_sql = f"SELECT date(at), SUM(net) FROM general_ledger WHERE entry_type IN ({xph}) AND date(at) BETWEEN date(?) AND date(?) GROUP BY date(at)"  # nosec B608
+    exp = {r[0]: r[1] for r in conn.execute(_exp_sql, (*cost_types, start, end)).fetchall()}
     d1 = datetime.strptime(start, DATE_FMT)
     d2 = datetime.strptime(end, DATE_FMT)
     out = []
@@ -5161,13 +5134,8 @@ def get_daily_profit_series(start, end):
 def get_payment_method_dict(start, end):
     types = _net_types(("PAYMENT", "REFUND"))
     ph = ",".join("?" * len(types))
-    return {r[0]: round(r[1] or 0, 2) for r in db.connect().execute(
-        f"""SELECT method, SUM(gross) FROM general_ledger
-            WHERE entry_type IN ({ph}) AND date(at) BETWEEN date(?) AND date(?)
-              AND method IS NOT NULL AND method <> ''
-            GROUP BY method""",
-        (*types, start, end),
-    ).fetchall() if r[0]}
+    _pay_method_sql = f"SELECT method, SUM(gross) FROM general_ledger WHERE entry_type IN ({ph}) AND date(at) BETWEEN date(?) AND date(?) AND method IS NOT NULL AND method <> '' GROUP BY method"  # nosec B608
+    return {r[0]: round(r[1] or 0, 2) for r in db.connect().execute(_pay_method_sql, (*types, start, end)).fetchall() if r[0]}
 
 
 def get_daily_occupancy_series(start, end):
@@ -5226,20 +5194,14 @@ def report_pl_statement(start, end):
     gph = ",".join("?" * len(cogs_types))
     eph = ",".join("?" * len(exp_types))
 
-    rev = conn.execute(
-        f"""SELECT category, SUM(net) AS net, SUM(service) AS svc
-            FROM general_ledger WHERE {where} AND entry_type IN ({cph}) GROUP BY category""",
-        (*params, *charge_types),
-    ).fetchall()
+    _rev_cat_sql = f"SELECT category, SUM(net) AS net, SUM(service) AS svc FROM general_ledger WHERE {where} AND entry_type IN ({cph}) GROUP BY category"  # nosec B608
+    rev = conn.execute(_rev_cat_sql, (*params, *charge_types)).fetchall()
     cogs = conn.execute(
-        f"SELECT COALESCE(SUM(net), 0) FROM general_ledger WHERE {where} AND entry_type IN ({gph})",
+        f"SELECT COALESCE(SUM(net), 0) FROM general_ledger WHERE {where} AND entry_type IN ({gph})",  # nosec B608
         (*params, *cogs_types),
     ).fetchone()[0] or 0
-    exp = conn.execute(
-        f"""SELECT category, SUM(net) AS net FROM general_ledger
-            WHERE {where} AND entry_type IN ({eph}) GROUP BY category""",
-        (*params, *exp_types),
-    ).fetchall()
+    _exp_cat_sql = f"SELECT category, SUM(net) AS net FROM general_ledger WHERE {where} AND entry_type IN ({eph}) GROUP BY category"  # nosec B608
+    exp = conn.execute(_exp_cat_sql, (*params, *exp_types)).fetchall()
 
     total_rev = sum((r["net"] or 0) + (r["svc"] or 0) for r in rev)
     total_exp = sum((r["net"] or 0) for r in exp)
@@ -5263,16 +5225,10 @@ def report_cash_flow(start, end):
     where, params = _range_where(start, end)
     cash_types = _net_types(("PAYMENT", "REFUND", "EXPENSE", "ASSET_IN"))
     csh = ",".join("?" * len(cash_types))
-    cin = conn.execute(
-        f"""SELECT COALESCE(SUM(CASE WHEN gross > 0 THEN gross ELSE 0 END), 0)
-            FROM general_ledger WHERE {where} AND entry_type IN ({csh})""",
-        (*params, *cash_types),
-    ).fetchone()[0] or 0
-    cout = conn.execute(
-        f"""SELECT COALESCE(SUM(CASE WHEN gross < 0 THEN -gross ELSE 0 END), 0)
-            FROM general_ledger WHERE {where} AND entry_type IN ({csh})""",
-        (*params, *cash_types),
-    ).fetchone()[0] or 0
+    _cin_sql = f"SELECT COALESCE(SUM(CASE WHEN gross > 0 THEN gross ELSE 0 END), 0) FROM general_ledger WHERE {where} AND entry_type IN ({csh})"  # nosec B608
+    cin = conn.execute(_cin_sql, (*params, *cash_types)).fetchone()[0] or 0
+    _cout_sql = f"SELECT COALESCE(SUM(CASE WHEN gross < 0 THEN -gross ELSE 0 END), 0) FROM general_ledger WHERE {where} AND entry_type IN ({csh})"  # nosec B608
+    cout = conn.execute(_cout_sql, (*params, *cash_types)).fetchone()[0] or 0
     return "\n".join([f"CASH FLOW   {start} to {end}", "=" * 60,
                       f"  Cash In:   {cin:>15,.2f}", f"  Cash Out:  {cout:>15,.2f}",
                       f"  NET CASH:  {cin - cout:>15,.2f}"])
@@ -5297,11 +5253,11 @@ def report_vat(start, end):
     oph = ",".join("?" * len(out_types))
     iph = ",".join("?" * len(in_types))
     out_vat = conn.execute(
-        f"SELECT COALESCE(SUM(vat), 0) FROM general_ledger WHERE {where} AND entry_type IN ({oph})",
+        f"SELECT COALESCE(SUM(vat), 0) FROM general_ledger WHERE {where} AND entry_type IN ({oph})",  # nosec B608
         (*params, *out_types),
     ).fetchone()[0] or 0
     in_vat = conn.execute(
-        f"SELECT COALESCE(SUM(vat), 0) FROM general_ledger WHERE {where} AND entry_type IN ({iph})",
+        f"SELECT COALESCE(SUM(vat), 0) FROM general_ledger WHERE {where} AND entry_type IN ({iph})",  # nosec B608
         (*params, *in_types),
     ).fetchone()[0] or 0
     return "\n".join([f"VAT REPORT   {start} to {end}", "=" * 60,

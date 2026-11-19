@@ -3,7 +3,7 @@
 # Usage: sh scripts/backup_runtime.sh --backup | --verify <backup.db> | --restore-precheck <backup.db> | [other supported args]
 set -eu
 
-ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." 2>/dev/null && pwd)"
+ROOT="$(CDPATH='' cd -- "$(dirname -- "$0")/.." 2>/dev/null && pwd)"
 PYTHON="${PYTHON:-python3}"
 
 if [ ! -d "$ROOT" ]; then

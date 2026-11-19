@@ -79,11 +79,14 @@ jobs:
           cd dist/nuitka
           # Nuitka outputs launcher.dist or launcher.exe depending on platform/mode
           if [ -d launcher.dist ]; then
-            if [[ "${{ matrix.os }}" == windows-* ]]; then
-              7z a "../${{ matrix.artifact_name }}.zip" launcher.dist
-            else
-              tar -czf "../${{ matrix.artifact_name }}.tar.gz" launcher.dist
-            fi
+            case "${{ matrix.os }}" in
+              windows-*)
+                7z a "../${{ matrix.artifact_name }}.zip" launcher.dist
+                ;;
+              *)
+                tar -czf "../${{ matrix.artifact_name }}.tar.gz" launcher.dist
+                ;;
+            esac
           elif [ -f launcher.exe ]; then
             7z a "../${{ matrix.artifact_name }}.zip" launcher.exe
           else
@@ -269,6 +272,7 @@ jobs:
             echo ""
             echo "This issue was opened/updated automatically because a native build/smoke-test run failed. Review the run logs in GitHub Actions, fix the cause, and close this issue when resolved. No secrets, environment variables, logs, or runtime data are included."
           } >"$body_file"
+          # shellcheck disable=SC2016
           existing="$(gh issue list --repo "$REPO" --state open --label "$label" --search "$title in:title" --json number,title --jq --arg t "$title" '.[] | select(.title==$t) | .number' 2>/dev/null | head -n1 || true)"
           if [ -n "${existing}" ] && [ "${existing}" != "null" ]; then
             gh issue comment "$existing" --repo "$REPO" --body-file "$body_file" >/dev/null

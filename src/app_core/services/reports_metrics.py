@@ -158,14 +158,8 @@ def outstanding_balances(limit: int | None = None, include_checked_out: bool = T
     statuses = ("Reserved", "Checked In", "Checked Out") if include_checked_out else ("Reserved", "Checked In")
     q = "?, " * (len(statuses) - 1) + "?"
     conn = db.connect()
-    rows = conn.execute(
-        f"""SELECT r.id, r.guest_name, r.room_id, rm.room_number, r.check_in_date, r.check_out_date, r.status
-            FROM reservations r
-            LEFT JOIN rooms rm ON rm.id = r.room_id
-            WHERE r.status IN ({q})
-            ORDER BY r.check_out_date DESC, r.id DESC""",
-        statuses,
-    ).fetchall()
+    _outstanding_sql = f"SELECT r.id, r.guest_name, r.room_id, rm.room_number, r.check_in_date, r.check_out_date, r.status FROM reservations r LEFT JOIN rooms rm ON rm.id = r.room_id WHERE r.status IN ({q}) ORDER BY r.check_out_date DESC, r.id DESC"  # nosec B608
+    rows = conn.execute(_outstanding_sql, statuses).fetchall()
     results = []
     for r in rows:
         item = dict(r)

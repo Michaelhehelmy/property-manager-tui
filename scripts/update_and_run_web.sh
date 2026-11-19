@@ -14,8 +14,8 @@
 set -eu
 
 # Resolve install dir: explicit INSTALL_DIR, or repo root relative to this script.
-SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" 2>/dev/null && pwd)"
-DEFAULT_DIR="$(CDPATH= cd -- "$SCRIPT_DIR/.." 2>/dev/null && pwd)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname -- "$0")" 2>/dev/null && pwd)"
+DEFAULT_DIR="$(CDPATH='' cd -- "$SCRIPT_DIR/.." 2>/dev/null && pwd)"
 INSTALL_DIR="${INSTALL_DIR:-$DEFAULT_DIR}"
 HOST="${HOST:-127.0.0.1}"
 PORT="${PORT:-8000}"

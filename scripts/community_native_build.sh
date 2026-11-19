@@ -4,7 +4,7 @@
 # Privacy-first: no secrets/DB/runtime data included. Run with explicit user consent.
 set -eu
 
-ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+ROOT_DIR="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$ROOT_DIR"
 
 log() { printf '%s\n' "==> $*"; }

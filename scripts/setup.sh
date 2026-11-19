@@ -77,7 +77,7 @@ detect_env() {
 
   if [ "$SKIP_WEB" = "auto" ]; then SKIP_WEB=0; fi
   # Legacy mode values mapped to web-only
-  case "$MODE" in auto|web|web|both|"") MODE="web" ;; esac
+  case "$MODE" in auto|web|both|"") MODE="web" ;; esac
   log "Environment: OS=$OS ARCH=$ARCH pkg=$PMGR ish=$IS_ISH alpine=$IS_ALPINE termux=$IS_TERMUX debian=$IS_DEBIAN mac=$IS_MAC"
   log "Selected: MODE=$MODE ACTION=$ACTION SKIP_WEB=$SKIP_WEB HOST=$HOST PORT=$PORT ref=$GIT_REF"
 }
@@ -272,7 +272,7 @@ run_deploy() {
   export PYTHONPATH="$INSTALL_DIR/src:$INSTALL_DIR${PYTHONPATH:+:$PYTHONPATH}"
   validate_web_target
   case "$MODE" in
-    web|auto|web|both)
+    web|auto|both)
       if [ "$SKIP_WEB" = "1" ]; then
         err "Web dependencies are not installed/skipped; cannot start web UI. Re-run with SKIP_WEB=0 ACTION=setup."
         exit 1

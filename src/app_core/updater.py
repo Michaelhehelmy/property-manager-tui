@@ -152,7 +152,7 @@ def _github_get(url: str, timeout: int = 12) -> Any:
         req.add_header("Authorization", f"Bearer {token}")
     # Hard timeout to avoid hanging on network issues
     t = _clamp_int(timeout, 12, 1, 30)
-    with urllib.request.urlopen(req, timeout=t) as resp:
+    with urllib.request.urlopen(req, timeout=t) as resp:  # nosec B310 - https URL to trusted GitHub API endpoint
         data = resp.read().decode("utf-8", errors="replace")
     return json.loads(data)
 
