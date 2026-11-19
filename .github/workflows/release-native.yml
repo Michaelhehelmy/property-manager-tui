@@ -121,7 +121,11 @@ jobs:
           # Locate launcher executable
           exe = None
           if os.name == "nt":
-              for cand in [work / "launcher.dist" / "launcher.exe", work / "launcher.exe"]:
+              cands = [
+                  work / "launcher.dist" / "launcher.exe",
+                  work / "launcher.exe",
+              ]
+              for cand in cands:
                   if cand.exists():
                       exe = cand
                       break
@@ -129,12 +133,22 @@ jobs:
                   found = list(work.rglob("launcher.exe"))
                   exe = found[0] if found else None
           else:
-              for cand in [work / "launcher.dist" / "launcher", work / "launcher"]:
-                  if cand.exists():
+              cands = [
+                  work / "launcher.dist" / "launcher",
+                  work / "launcher.dist" / "launcher.bin",
+                  work / "launcher",
+                  work / "launcher.bin",
+              ]
+              for cand in cands:
+                  if cand.exists() and cand.is_file():
                       exe = cand
                       break
               if exe is None:
-                  found = [p for p in work.rglob("launcher") if p.is_file()]
+                  found = [p for p in work.rglob("launcher*") if p.is_file() and os.access(p, os.X_OK) and p.suffix in ("", ".bin")]
+                  if not found:
+                      found = [p for p in work.rglob("launcher.bin") if p.is_file()]
+                  if not found:
+                      found = [p for p in (list(work.rglob("launcher")) + list(work.rglob("launcher.bin"))) if p.is_file()]
                   exe = found[0] if found else None
           if exe is None:
               print("Launcher executable not found", file=sys.stderr)
@@ -151,7 +165,7 @@ jobs:
               s.bind(("127.0.0.1", 0))
               port = s.getsockname()[1]
 
-          cmd = [str(exe), "--mode", "web", "--host", "127.0.0.1", "--port", str(port), "--no-browser"]
+          cmd = [str(exe), "--web", "--host", "127.0.0.1", "--port", str(port), "--no-browser"]
           print("Starting:", cmd)
           proc = subprocess.Popen(cmd, cwd=str(exe.parent), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
           try:
