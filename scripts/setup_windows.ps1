@@ -55,7 +55,7 @@ function Refresh-PathEnv {
     $machine = [System.Environment]::GetEnvironmentVariable('Path', 'Machine')
     $user = [System.Environment]::GetEnvironmentVariable('Path', 'User')
     $env:Path = ($machine, $user, $env:Path | Where-Object { $_ -and $_.Trim() }) -join ';'
-  } catch {}
+  } catch { $null = $_ }
   $candidates = @('C:\Program Files\Git\cmd','C:\Program Files\Git\bin')
   try {
     $pyRoots = @('C:\Program Files', 'C:\Program Files (x86)', (Join-Path $env:LOCALAPPDATA 'Programs\Python'))
@@ -67,7 +67,7 @@ function Refresh-PathEnv {
         }
       }
     }
-  } catch {}
+  } catch { $null = $_ }
   foreach ($p in $candidates) {
     if ($p -and (Test-Path $p) -and ($env:Path -notlike "*$p*")) { $env:Path = "$p;$env:Path" }
   }
@@ -85,7 +85,7 @@ function Test-PythonCmd([string]$cand) {
       & $cand --version *> $null
       return ($LASTEXITCODE -eq 0)
     }
-  } catch {}
+  } catch { $null = $_ }
   return $false
 }
 
@@ -108,7 +108,7 @@ function Resolve-Python {
         if ((Test-Path $exe) -and (Test-PythonCmd $exe)) { return $exe }
       }
     }
-  } catch {}
+  } catch { $null = $_ }
   return $null
 }
 
@@ -169,10 +169,10 @@ function Print-SecurityGuidance {
 
 function Checkout-RequestedRef([string]$dir, [string]$ref) {
   if (-not $ref) { return }
-  try { git -C $dir fetch --all --tags --prune *> $null } catch {}
+  try { git -C $dir fetch --all --tags --prune *> $null } catch { $null = $_ }
   $remoteRef = "refs/remotes/origin/$ref"
   $hasRemote = $false
-  try { git -C $dir rev-parse --verify --quiet $remoteRef *> $null; if ($LASTEXITCODE -eq 0) { $hasRemote = $true } } catch {}
+  try { git -C $dir rev-parse --verify --quiet $remoteRef *> $null; if ($LASTEXITCODE -eq 0) { $hasRemote = $true } } catch { $null = $_ }
   if ($hasRemote) {
     git -C $dir checkout -B $ref "origin/$ref" *> $null
     if ($LASTEXITCODE -ne 0) { git -C $dir checkout $ref }
@@ -189,11 +189,11 @@ function Clone-Or-Update([string]$git) {
     $lock = Join-Path $InstallDir '.git\index.lock'
     if (Test-Path $lock) {
       Warn "Found stale .git\index.lock; removing it (if another git process is running, stop it and retry)."
-      try { Remove-Item $lock -Force -ErrorAction SilentlyContinue } catch {}
+      try { Remove-Item $lock -Force -ErrorAction SilentlyContinue } catch { $null = $_ }
     }
-    try { & git -C $InstallDir merge --abort *> $null } catch {}
-    try { & git -C $InstallDir rebase --abort *> $null } catch {}
-    try { & git -C $InstallDir cherry-pick --abort *> $null } catch {}
+    try { & git -C $InstallDir merge --abort *> $null } catch { $null = $_ }
+    try { & git -C $InstallDir rebase --abort *> $null } catch { $null = $_ }
+    try { & git -C $InstallDir cherry-pick --abort *> $null } catch { $null = $_ }
     try { & git -C $InstallDir fetch --all --tags --prune *> $null } catch { Warn "git fetch failed: $($_.Exception.Message)" }
     if ($Repair) {
       Warn "Repair mode: resetting local checkout to origin/$Branch (discards local source changes/untracked files inside repo). Runtime data in PM_DATA_DIR/external data dirs is not removed by git."
@@ -202,20 +202,20 @@ function Clone-Or-Update([string]$git) {
       if ($LASTEXITCODE -ne 0) { throw "Repair checkout failed for branch '$Branch'." }
       & git -C $InstallDir reset --hard "origin/$Branch"
       if ($LASTEXITCODE -ne 0) { throw "Repair reset failed." }
-      try { & git -C $InstallDir clean -fd *> $null } catch {}
+      try { & git -C $InstallDir clean -fd *> $null } catch { $null = $_ }
       if ($GitRef -and $GitRef -ne $Branch) { Checkout-RequestedRef $InstallDir $GitRef }
     } else {
       $dirty = ''
       try { $dirty = (& git -C $InstallDir status --porcelain 2>$null) } catch { $dirty = '' }
       if ($dirty) {
         Warn "Local changes detected in $InstallDir. Commit/stash/discard them before auto-update to avoid checkout/reset/pull failures."
-        try { & git -C $InstallDir status --short --branch } catch {}
+        try { & git -C $InstallDir status --short --branch } catch { $null = $_ }
         throw "Working tree is not clean. Re-run with -Repair (or REPAIR=1) to auto-reset local source to origin/$Branch, or resolve changes manually."
       }
       if ($GitRef) {
         Checkout-RequestedRef $InstallDir $GitRef
       } elseif ($Branch) {
-        try { & git -C $InstallDir checkout $Branch *> $null } catch {}
+        try { & git -C $InstallDir checkout $Branch *> $null } catch { $null = $_ }
       }
       try {
         & git -C $InstallDir symbolic-ref -q HEAD *> $null
@@ -232,7 +232,7 @@ function Clone-Or-Update([string]$git) {
     $parent = Split-Path -Parent $InstallDir
     if ($parent -and -not (Test-Path $parent)) { New-Item -ItemType Directory -Path $parent -Force | Out-Null }
     $cloned = $false
-    try { & git clone --branch $Branch $RepoUrl $InstallDir; if ($LASTEXITCODE -eq 0) { $cloned = $true } } catch {}
+    try { & git clone --branch $Branch $RepoUrl $InstallDir; if ($LASTEXITCODE -eq 0) { $cloned = $true } } catch { $null = $_ }
     if (-not $cloned) {
       & git clone $RepoUrl $InstallDir
       if ($LASTEXITCODE -ne 0) { throw "git clone failed" }
@@ -408,7 +408,7 @@ try {
           try {
             $ans = Read-Host 'Build a native app for this OS now and prepare a sanitized report to share with the maintainer? [y/N]'
             if ($ans -match '^(y|yes)$') { $doBuild = $true }
-          } catch {}
+          } catch { $null = $_ }
         }
         if ($doBuild) {
           Log 'Starting community native build (best-effort, may take a while; requires toolchain)...'
