@@ -3124,6 +3124,9 @@ def _print_text_label(text, filename_base, printer=None, fmt="code128"):
     base = EXPORT_DIR.resolve()
     out_path = (base / filename).resolve()
     try:
+        import os as _os
+        if _os.path.commonpath([str(base), str(out_path)]) != str(base):
+            raise ValueError("Refusing to write label outside export directory.")
         out_path.relative_to(base)
     except Exception:
         raise ValueError("Refusing to write label outside export directory.")

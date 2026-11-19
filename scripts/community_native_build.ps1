@@ -1,4 +1,4 @@
-<# 
+<#
 Best-effort: build a native Windows app, package it as a single-file .exe, generate a
 sanitized report + prefilled GitHub issue URL, and optionally auto-file via gh.
 Privacy-first: no secrets/DB/runtime data included. Run with explicit user consent.

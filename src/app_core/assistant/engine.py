@@ -298,7 +298,7 @@ def _execute_single(intent: str, text: str, slots: dict, ui_context=None):
     if intent == "reservation_financial_integrity":
         ridq = slots.get("reservation_id") or slots.get("context", {}).get("reservation_id")
         if not ridq:
-            m = re.search(r"(?:reservation|res|booking)[ \t]*#?[ \t]*(\d+)", (text or "")[:500], re.I)
+            m = re.search(r"(?:reservation|res|booking)[ \t]{0,20}#?[ \t]{0,20}(\d+)", (text or "")[:500], re.I)
             if m:
                 try: ridq = int(m.group(1))
                 except Exception: ridq = None
@@ -319,7 +319,7 @@ def _execute_single(intent: str, text: str, slots: dict, ui_context=None):
     if intent == "approval_detail":
         aid = _safe_int(slots.get("approval_id") or slots.get("id") or slots.get("context", {}).get("approval_id"))
         if not aid:
-            m = re.search(r"approval[ \t]*#?[ \t]*(\d+)", (text or "")[:500], re.I)
+            m = re.search(r"approval[ \t]{0,20}#?[ \t]{0,20}(\d+)", (text or "")[:500], re.I)
             if m:
                 try: aid = int(m.group(1))
                 except Exception: aid = None

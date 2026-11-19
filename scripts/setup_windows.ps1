@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
 Dynamic setup/deploy script for SPMS on Windows (web-only).
 

@@ -572,30 +572,37 @@ def safe_download_path(kind: str, name: str) -> Path:
     base_r = base.resolve()
     candidate = (base_r / safe_name).resolve()
     try:
+        if os.path.commonpath([str(base_r), str(candidate)]) != str(base_r):
+            raise HTTPException(status_code=400, detail="Invalid file")
         candidate.relative_to(base_r)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid file")
-    if not candidate.is_file():
+    if not candidate.exists() or not candidate.is_file():
         raise HTTPException(status_code=404, detail="File not found")
     return candidate
 
 
 def redirect(url: str, status: int = 303) -> RedirectResponse:
     """Redirect to a same-origin/local path. External/unsafe targets fall back to '/'."""
+    import re as _re
     from urllib.parse import urlsplit
 
     ref = str(url or "").strip()
-    # Allow only app-local absolute paths (no scheme/netloc/backslashes)
+    # Allow only app-local absolute paths (no scheme/netloc/backslashes/control chars)
     parts = urlsplit(ref)
     safe_path = "/"
     if ref and not parts.scheme and not parts.netloc and not ref.startswith("//") and "\\" not in ref and ref.startswith("/"):
-        # normalize simple cases; keep query/fragment if present
         path = parts.path or "/"
         if not path.startswith("/"):
             path = "/" + path
-        safe_path = path
-        if parts.query:
-            safe_path += "?" + parts.query
-        if parts.fragment:
-            safe_path += "#" + parts.fragment
+        # Reject traversal and disallowed characters to avoid unsafe redirects.
+        segments = [seg for seg in path.split("/") if seg not in ("", ".")]
+        if ".." not in segments and all(ch >= " " and ch != "\x7f" for ch in ref):
+            candidate = path
+            if parts.query:
+                candidate += "?" + parts.query
+            if parts.fragment:
+                candidate += "#" + parts.fragment
+            if _re.fullmatch(r"/[A-Za-z0-9._~\-/%?=&#,+@:;!]*", candidate):
+                safe_path = candidate
     return RedirectResponse(url=safe_path, status_code=status)

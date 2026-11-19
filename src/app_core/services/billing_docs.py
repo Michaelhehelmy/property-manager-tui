@@ -41,6 +41,9 @@ def _write_confined_invoice_file(filename: str, text):
     base = invoice_dir.resolve()
     out_path = (base / safe_name).resolve()
     try:
+        import os as _os
+        if _os.path.commonpath([str(base), str(out_path)]) != str(base):
+            raise ValueError("Refusing to write file outside invoice directory.")
         out_path.relative_to(base)
     except Exception:
         raise ValueError("Refusing to write file outside invoice directory.")
