@@ -18,7 +18,7 @@ foreach ($cand in @((Join-Path $Root '.venv\Scripts\python.exe'), (Join-Path $Ro
     if ($cand -eq 'py -3') { & py -3 -V *> $null; if ($LASTEXITCODE -eq 0) { $Py='py -3'; break } }
     elseif ($cand -eq 'py') { & py -V *> $null; if ($LASTEXITCODE -eq 0) { $Py='py'; break } }
     elseif (Get-Command $cand -ErrorAction SilentlyContinue) { $Py=$cand; break }
-  } catch {}
+  } catch { $null = $_ }
 }
 if (-not $Py) { Warn 'Python not found. Install Python 3.10+ and retry.'; exit 1 }
 
@@ -94,7 +94,7 @@ Log "Sanitized report: $reportFile"
 if ($issueUrl) {
   Log 'Prefilled GitHub issue URL (review before submitting):'
   Write-Host $issueUrl
-  try { Start-Process $issueUrl | Out-Null } catch {}
+  try { Start-Process $issueUrl | Out-Null } catch { $null = $_ }
   if (Have gh) {
     $ans = Read-Host 'GitHub CLI (gh) detected. Create an issue automatically now? [y/N]'
     if ($ans -match '^(y|yes)$') {

@@ -341,7 +341,7 @@ async def assistant_ask(request: Request):
                 "slots": {},
                 "ui_actions": [],
             }, separators=(",", ":"))
-        return Response(content=clean_body, media_type="application/json")
+        return Response(content=clean_body, media_type="application/json")  # codeql[py/stack-trace-exposure] sanitized JSON body
 
     shown = _history(request)[-20:]
     animate_index = None

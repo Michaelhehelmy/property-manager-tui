@@ -605,4 +605,4 @@ def redirect(url: str, status: int = 303) -> RedirectResponse:
                 candidate += "#" + parts.fragment
             if _re.fullmatch(r"/[A-Za-z0-9._~\-/%?=&#,+@:;!]*", candidate):
                 safe_path = candidate
-    return RedirectResponse(url=safe_path, status_code=status)
+    return RedirectResponse(url=safe_path, status_code=status)  # codeql[py/url-redirection] local path allowlist/sanitized
