@@ -111,17 +111,17 @@ jobs:
           run_url="${SERVER_URL}/${REPO}/actions/runs/${RUN_ID}"
           short_sha="${SHA:0:12}"
           body_file="$(mktemp)"
-          cat >"$body_file" <<EOF
-Automated CI failure report (sanitized).
-
-- Workflow: ${WORKFLOW}
-- Event: ${EVENT}
-- Ref: ${REF_NAME}
-- Commit: ${short_sha}
-- Run: [#${RUN_NUMBER} (attempt ${RUN_ATTEMPT})](${run_url})
-
-This issue was opened/updated automatically because a CI run failed. Review the run logs in GitHub Actions, fix the cause, and close this issue when resolved. No secrets, environment variables, logs, or runtime data are included.
-EOF
+          {
+            echo "Automated CI failure report (sanitized)."
+            echo ""
+            echo "- Workflow: ${WORKFLOW}"
+            echo "- Event: ${EVENT}"
+            echo "- Ref: ${REF_NAME}"
+            echo "- Commit: ${short_sha}"
+            echo "- Run: [#${RUN_NUMBER} (attempt ${RUN_ATTEMPT})](${run_url})"
+            echo ""
+            echo "This issue was opened/updated automatically because a CI run failed. Review the run logs in GitHub Actions, fix the cause, and close this issue when resolved. No secrets, environment variables, logs, or runtime data are included."
+          } >"$body_file"
           # Dedupe by exact open issue title with automation label.
           existing="$(gh issue list --repo "$REPO" --state open --label "$label" --search "$title in:title" --json number,title --jq --arg t "$title" '.[] | select(.title==$t) | .number' 2>/dev/null | head -n1 || true)"
           if [ -n "${existing}" ] && [ "${existing}" != "null" ]; then
