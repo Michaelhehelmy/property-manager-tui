@@ -152,6 +152,7 @@ jobs:
                   'Categories=Office;Finance;'
               } > "$WORKDIR_APP/AppDir/spms.desktop"
               cp "$WORKDIR_APP/AppDir/spms.desktop" "$WORKDIR_APP/AppDir/usr/share/applications/spms.desktop"
+              # shellcheck disable=SC2016
               {
                 printf '%s\n' \
                   '#!/bin/sh' \
