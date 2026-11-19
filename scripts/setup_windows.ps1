@@ -251,7 +251,7 @@ function Ensure-Venv-And-Deps([string]$py) {
   }
 
   Log "Upgrading pip/setuptools/wheel (best-effort)..."
-  try { & $venvPy -m pip install --upgrade "pip>=24.3.1" setuptools wheel } catch { Warn "pip upgrade failed: $($_.Exception.Message)" }
+  try { & $venvPy -m pip install --upgrade "pip==24.3.1" "setuptools==78.1.1" "wheel==0.46.3" } catch { Warn "pip upgrade failed: $($_.Exception.Message)" }
 
   $doRuntime = $true
   if ($SkipWeb -eq '1') { $doRuntime = $false }
