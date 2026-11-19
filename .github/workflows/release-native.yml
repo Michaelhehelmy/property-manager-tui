@@ -215,3 +215,51 @@ jobs:
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  report-failure:
+    name: Report failure issue (sanitized, deduplicated)
+    needs: [build]
+    if: ${{ failure() }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Open or update failure issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          WORKFLOW: ${{ github.workflow }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_NUMBER: ${{ github.run_number }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          REF_NAME: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+          EVENT: ${{ github.event_name }}
+          SERVER_URL: ${{ github.server_url }}
+        run: |
+          set -euo pipefail
+          title="[Native Build] Failure: ${WORKFLOW} on ${REF_NAME}"
+          label="ci-failure:auto"
+          run_url="${SERVER_URL}/${REPO}/actions/runs/${RUN_ID}"
+          short_sha="${SHA:0:12}"
+          body_file="$(mktemp)"
+          cat >"$body_file" <<EOF
+Automated native-build failure report (sanitized).
+
+- Workflow: ${WORKFLOW}
+- Event: ${EVENT}
+- Ref: ${REF_NAME}
+- Commit: ${short_sha}
+- Run: [#${RUN_NUMBER} (attempt ${RUN_ATTEMPT})](${run_url})
+
+This issue was opened/updated automatically because a native build/smoke-test run failed. Review the run logs in GitHub Actions, fix the cause, and close this issue when resolved. No secrets, environment variables, logs, or runtime data are included.
+EOF
+          existing="$(gh issue list --repo "$REPO" --state open --label "$label" --search "$title in:title" --json number,title --jq --arg t "$title" '.[] | select(.title==$t) | .number' 2>/dev/null | head -n1 || true)"
+          if [ -n "${existing}" ] && [ "${existing}" != "null" ]; then
+            gh issue comment "$existing" --repo "$REPO" --body-file "$body_file" >/dev/null
+            echo "Updated existing issue #${existing}"
+          else
+            gh label create "$label" --repo "$REPO" --color "B60205" --description "Automated CI failure reports" >/dev/null 2>&1 || true
+            gh issue create --repo "$REPO" --title "$title" --label "$label" --body-file "$body_file"
+          fi
