@@ -20,7 +20,7 @@ RUN apt-get update \
 
 # Install runtime deps first for better layer caching
 COPY requirements.txt requirements/ci-bootstrap-tools.txt ./
-RUN python -m pip install --require-hashes -r requirements/ci-bootstrap-tools.txt \
+RUN python -m pip install --require-hashes -r ci-bootstrap-tools.txt \
     && python -m pip install -r requirements.txt
 
 # Copy application source
