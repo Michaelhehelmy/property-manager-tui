@@ -4,7 +4,7 @@ This document describes the high-level architecture, module boundaries, data flo
 
 ## Overview
 
-Property Manager is a **local-first** application with:
+SPMS is a **local-first** application with:
 - **Shared core/backend:** `src/app_core/` (DB, services/business logic, paths/config, assistant, updater, doctor, barcodes/integrity helpers)
 - **Web UI frontend:** FastAPI + HTMX/Jinja2 in `ui/web/` (entry: `ui.web.server:app`, launcher: `launcher.py --web`, `main.py`)
 - **Datastore:** SQLite (local file under `PM_DATA_DIR`/defaults). **Web must run with `--workers 1`.**

@@ -1,7 +1,7 @@
 services:
   property-manager-web:
     build: .
-    image: property-manager-tui:local
+    image: spms:local
     container_name: property-manager-web
     restart: unless-stopped
     # Container runs as non-root (uid:gid 10001:10001). Ensure pm_data volume is writable by that user.

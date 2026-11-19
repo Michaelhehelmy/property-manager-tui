@@ -1,6 +1,6 @@
 # Security Guide (Hardening, Authz, CSRF, Data & Files)
 
-This document provides practical security guidance for operating Property Manager (Web UI). It distinguishes **implemented controls** from **operational responsibilities**.
+This document provides practical security guidance for operating SPMS (Super Property Management System). It distinguishes **implemented controls** from **operational responsibilities**.
 
 ## 1) Security posture summary
 

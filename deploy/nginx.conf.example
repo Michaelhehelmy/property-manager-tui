@@ -1,4 +1,4 @@
-# Example Nginx reverse-proxy snippet for Property Manager Web UI (HTTPS/TLS termination).
+# Example Nginx reverse-proxy snippet for SPMS Web UI (HTTPS/TLS termination).
 # Assumes the app runs locally on 127.0.0.1:8000 with uvicorn --workers 1 (SQLite-safe).
 #
 # Prerequisites:

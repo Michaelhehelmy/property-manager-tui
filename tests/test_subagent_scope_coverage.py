@@ -366,7 +366,7 @@ def test_integrity_and_doctor_helpers(fresh):
     assert report.get("schema", {}).get("expected_version") == db.SCHEMA_VERSION
     assert "sqlite" in report.get("integrity", {})
     txt = doctor.format_health_report(report)
-    assert "Property Manager Doctor" in txt and "Schema:" in txt and "Backup/restore guidance:" in txt
+    assert "SPMS Doctor" in txt and "Schema:" in txt and "Backup/restore guidance:" in txt
 
     drift = doctor._batch_stock_consistency(db.connect())
     assert drift.get("checked") is True and drift.get("mismatch_count", 0) >= 1

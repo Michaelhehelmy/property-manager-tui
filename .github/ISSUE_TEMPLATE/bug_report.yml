@@ -1,5 +1,5 @@
 name: Bug report
-description: Report a problem with Property Manager (use in-app "Report issue" for sanitized diagnostics when possible)
+description: Report a problem with SPMS (use in-app "Report issue" for sanitized diagnostics when possible)
 title: "[Bug]: "
 labels: ["bug"]
 body:

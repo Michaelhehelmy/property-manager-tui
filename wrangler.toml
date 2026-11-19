@@ -1,4 +1,4 @@
-name = "property-manager-landing"
+name = "spms-landing"
 compatibility_date = "2026-11-14"
 
 # Deploy landing page (index.html) as a Cloudflare Worker static asset site.

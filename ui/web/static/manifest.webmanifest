@@ -1,7 +1,7 @@
 {
-  "name": "Property Manager",
-  "short_name": "PropManager",
-  "description": "Local-first property manager web app (reservations, POS, inventory, accounting, reports, assistant).",
+  "name": "SPMS",
+  "short_name": "SPMS",
+  "description": "SPMS — local-first super property management system web app (reservations, POS, inventory, accounting, reports, assistant).",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

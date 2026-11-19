@@ -16,16 +16,16 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            artifact_name: property-manager-windows-x64
+            artifact_name: spms-windows-x64
             shell_ext: .exe
           - os: ubuntu-latest
-            artifact_name: property-manager-linux-x64
+            artifact_name: spms-linux-x64
             shell_ext: ""
           - os: macos-15-intel
-            artifact_name: property-manager-macos-x64
+            artifact_name: spms-macos-x64
             shell_ext: ""
           - os: macos-latest
-            artifact_name: property-manager-macos-arm64
+            artifact_name: spms-macos-arm64
             shell_ext: ""
     runs-on: ${{ matrix.os }}
     steps:

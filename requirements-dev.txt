@@ -1,4 +1,4 @@
-# Dev/test dependencies for property-manager-tui
+# Dev/test dependencies for spms
 pytest>=7.0
 httpx>=0.24
 ruff>=0.8.0

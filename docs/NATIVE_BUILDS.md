@@ -70,10 +70,10 @@ python -m nuitka ^
 
 Publish assets with clear OS/arch tokens so `index.html` can match them:
 
-- `property-manager-windows-x64.zip` (or `.exe` installer)
-- `property-manager-linux-x64.tar.gz` / `.AppImage`
-- `property-manager-macos-x64.tar.gz`
-- `property-manager-macos-arm64.tar.gz`
+- `spms-windows-x64.zip` (or `.exe` installer)
+- `spms-linux-x64.tar.gz` / `.AppImage`
+- `spms-macos-x64.tar.gz`
+- `spms-macos-arm64.tar.gz`
 - Include checksums (e.g. `SHA256SUMS.txt`)
 
 ## GitHub Actions (automated builds on tag/release)

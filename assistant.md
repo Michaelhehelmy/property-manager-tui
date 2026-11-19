@@ -1,6 +1,6 @@
 # AI Manager Assistant — Capabilities, Operations & Evolution
 
-**Project:** `property-manager-tui` (shared `src/app_core/` backend with FastAPI/HTMX web `ui/web`)  
+**Project:** `spms` (shared `src/app_core/` backend with FastAPI/HTMX web `ui/web`)  
 **Assistant focus:** grounded, **read-only** manager/business-partner helper over real backend data  
 **Effort credited to:** Michael Helmy (`Michaelhehelmy`) — design, implementation, iteration, and integration across backend, web UI, NLU/learning, and deployment.  
 **Document date:** 2026-11-13  
@@ -119,4 +119,4 @@ The table below summarizes cumulative effort to build and mature the assistant a
 
 ---
 
-*Maintained as part of `property-manager-tui` (`assistant.md`). Credit: assistant evolution and integration effort led and delivered by **Michael Helmy**.*
+*Maintained as part of `spms` (`assistant.md`). Credit: assistant evolution and integration effort led and delivered by **Michael Helmy**.*

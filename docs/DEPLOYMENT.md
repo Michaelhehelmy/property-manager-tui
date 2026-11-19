@@ -119,21 +119,21 @@ server {
 
 ### 6.1 systemd (Linux, example)
 
-`/etc/systemd/system/property-manager-web.service`:
+`/etc/systemd/system/spms-web.service`:
 ```ini
 [Unit]
-Description=Property Manager Web UI
+Description=SPMS Web UI
 After=network.target
 
 [Service]
 Type=simple
 User=pmapp
 Group=pmapp
-WorkingDirectory=/opt/property-manager-tui
-Environment=PYTHONPATH=/opt/property-manager-tui/src:/opt/property-manager-tui
+WorkingDirectory=/opt/spms
+Environment=PYTHONPATH=/opt/spms/src:/opt/spms
 Environment=PM_WEB_SECRET_KEY=replace-with-strong-random-secret
 Environment=PM_DATA_DIR=/var/lib/property-manager
-ExecStart=/opt/property-manager-tui/.venv/bin/python -m uvicorn ui.web.server:app --host 127.0.0.1 --port 8000 --workers 1
+ExecStart=/opt/spms/.venv/bin/python -m uvicorn ui.web.server:app --host 127.0.0.1 --port 8000 --workers 1
 Restart=on-failure
 RestartSec=5
 # Optional hardening examples (validate paths/perms first):

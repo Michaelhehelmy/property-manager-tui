@@ -3,9 +3,9 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "property-manager"
+name = "spms"
 version = "1.2.0"
-description = "Local-first property manager with FastAPI/HTMX web UI (shared core, SQLite-safe single-worker web)."
+description = "SPMS (Super Property Management System) — local-first property management with FastAPI/HTMX web UI (shared core, SQLite-safe single-worker web)."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "Proprietary" }

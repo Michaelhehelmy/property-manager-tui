@@ -1,6 +1,6 @@
-# Property Manager (Web UI)
+# SPMS (Super Property Management System)
 
-Local-first property management system with a shared backend and a web frontend:
+SPMS (Super Property Management System) — local-first property management with a shared backend and a web frontend:
 
 - **Web UI:** FastAPI + HTMX server (`ui.web.server:app`, `launcher.py`, `main.py`) for browser access on desktop/mobile, LAN, or behind a reverse proxy.
 
@@ -132,7 +132,7 @@ Run the server on a capable host (Mac/Linux/Windows/Termux/RPi/VPS) and open fro
 
 ```bash
 git clone https://github.com/Michaelhehelmy/property-manager-tui.git
-cd property-manager-tui
+cd spms
 python3 -m venv .venv
 # activate: Unix `. .venv/bin/activate` | PowerShell `.\\.venv\\Scripts\\Activate.ps1` | cmd `.venv\\Scripts\\activate.bat`
 pip install -r requirements.txt

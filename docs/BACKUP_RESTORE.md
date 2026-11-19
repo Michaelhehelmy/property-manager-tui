@@ -1,6 +1,6 @@
 # Backup, Verify, Restore & Disaster Recovery
 
-This runbook covers **data preservation**, backup creation/verification, and **manual offline restore** for Property Manager.
+This runbook covers **data preservation**, backup creation/verification, and **manual offline restore** for SPMS.
 
 ## 1) Data locations and what to protect
 

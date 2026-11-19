@@ -1,5 +1,5 @@
 #!/bin/sh
-# Dynamic setup/deploy script for Property Manager (web-only).
+# Dynamic setup/deploy script for SPMS (Super Property Management System, web-only).
 # Detects environment (iSH/Alpine, Termux, Debian/Ubuntu, macOS, generic Linux)
 # and installs dependencies + prepares/runs the Web UI.
 #
@@ -19,7 +19,7 @@
 set -eu
 
 REPO_URL="${REPO_URL:-https://github.com/Michaelhehelmy/property-manager-tui.git}"
-INSTALL_DIR="${INSTALL_DIR:-$HOME/property-manager-tui}"
+INSTALL_DIR="${INSTALL_DIR:-$HOME/spms}"
 BRANCH="${BRANCH:-main}"
 GIT_REF="${GIT_REF:-${TAG:-${COMMIT:-$BRANCH}}}"
 MODE="${MODE:-auto}"                # web (legacy values map to web)
@@ -77,7 +77,7 @@ detect_env() {
 
   if [ "$SKIP_WEB" = "auto" ]; then SKIP_WEB=0; fi
   # Legacy mode values mapped to web-only
-  case "$MODE" in auto|web|tui|both|"") MODE="web" ;; esac
+  case "$MODE" in auto|web|web|both|"") MODE="web" ;; esac
   log "Environment: OS=$OS ARCH=$ARCH pkg=$PMGR ish=$IS_ISH alpine=$IS_ALPINE termux=$IS_TERMUX debian=$IS_DEBIAN mac=$IS_MAC"
   log "Selected: MODE=$MODE ACTION=$ACTION SKIP_WEB=$SKIP_WEB HOST=$HOST PORT=$PORT ref=$GIT_REF"
 }
@@ -272,7 +272,7 @@ run_deploy() {
   export PYTHONPATH="$INSTALL_DIR/src:$INSTALL_DIR${PYTHONPATH:+:$PYTHONPATH}"
   validate_web_target
   case "$MODE" in
-    web|auto|tui|both)
+    web|auto|web|both)
       if [ "$SKIP_WEB" = "1" ]; then
         err "Web dependencies are not installed/skipped; cannot start web UI. Re-run with SKIP_WEB=0 ACTION=setup."
         exit 1

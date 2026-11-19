@@ -301,7 +301,7 @@ def test_doctor_helpers_and_health(clean_db, tmp_path, monkeypatch):
     report = doctor.collect_health(check_updates=False)
     assert "paths" in report and "backup_restore" in report
     txt = doctor.format_health_report(report)
-    assert "Property Manager Doctor" in txt
+    assert "SPMS Doctor" in txt
 
     rc = doctor.main(["--verify-backup", str(out), "--json"])
     assert rc in (0, 1)

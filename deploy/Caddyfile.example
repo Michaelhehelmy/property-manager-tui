@@ -1,4 +1,4 @@
-# Example Caddy reverse proxy for Property Manager Web UI (automatic HTTPS/TLS).
+# Example Caddy reverse proxy for SPMS Web UI (automatic HTTPS/TLS).
 # Assumes the app is bound to 127.0.0.1:8000 with --workers 1 (see systemd/docker examples).
 #
 # 1) Replace pm.example.com with your domain (DNS must point to this host).

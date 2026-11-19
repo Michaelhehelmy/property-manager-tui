@@ -29,7 +29,7 @@ export async function onRequestPost(context) {
       return Response.json({ ok: false, error: 'Invalid report format.' }, { status: 400 });
     }
     if (!data.report_kind && !data.diagnostics && !data.client_device && !data.user_report) {
-      return Response.json({ ok: false, error: 'Report does not look like a Property Manager issue report (missing expected fields).' }, { status: 400 });
+      return Response.json({ ok: false, error: 'Report does not look like a SPMS issue report (missing expected fields).' }, { status: 400 });
     }
 
     const token = env.REPORT_GITHUB_TOKEN || env.GITHUB_TOKEN;
@@ -90,7 +90,7 @@ export async function onRequestPost(context) {
       headers: {
         'Authorization': `Bearer ${token}`,
         'Accept': 'application/vnd.github+json',
-        'User-Agent': 'property-manager-landing-report',
+        'User-Agent': 'spms-landing-report',
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ title, body, labels }),

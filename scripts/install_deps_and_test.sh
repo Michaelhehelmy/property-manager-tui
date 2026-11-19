@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install runtime + web + dev dependencies and run tests for Property Manager.
+# Install runtime + web + dev dependencies and run tests for SPMS.
 # Works on Linux/Termux. Uses the active Python (activate a venv first if desired).
 set -euo pipefail
 

@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-Dynamic setup/deploy script for Property Manager on Windows (web-only).
+Dynamic setup/deploy script for SPMS on Windows (web-only).
 
 .DESCRIPTION
 Auto-bootstraps prerequisites (best-effort winget), clones/updates repo (optional pinned ref),
@@ -32,7 +32,7 @@ param(
   [string]$Action = $(if ($env:ACTION) { $env:ACTION } else { 'setup' }),
   [string]$Mode = $(if ($env:MODE) { $env:MODE } else { 'auto' }),
   [string]$SkipWeb = $(if ($env:SKIP_WEB) { $env:SKIP_WEB } else { 'auto' }),
-  [string]$InstallDir = $(if ($env:INSTALL_DIR) { $env:INSTALL_DIR } else { (Join-Path $HOME 'property-manager-tui') }),
+  [string]$InstallDir = $(if ($env:INSTALL_DIR) { $env:INSTALL_DIR } else { (Join-Path $HOME 'spms') }),
   [string]$RepoUrl = $(if ($env:REPO_URL) { $env:REPO_URL } else { 'https://github.com/Michaelhehelmy/property-manager-tui.git' }),
   [string]$Branch = $(if ($env:BRANCH) { $env:BRANCH } else { 'main' }),
   [string]$GitRef = $(if ($env:GIT_REF) { $env:GIT_REF } elseif ($env:TAG) { $env:TAG } elseif ($env:COMMIT) { $env:COMMIT } elseif ($env:BRANCH) { $env:BRANCH } else { 'main' }),
@@ -352,12 +352,12 @@ function Run-Deploy {
 try {
   if ($SkipWeb -eq 'auto') { $SkipWeb = '0' }
   # Legacy mode values mapped to web-only
-  if ($Mode -eq 'auto' -or $Mode -eq 'web' -or $Mode -eq 'tui' -or $Mode -eq 'both' -or -not $Mode) { $Mode = 'web' }
+  if ($Mode -eq 'auto' -or $Mode -eq 'web' -or $Mode -eq 'web' -or $Mode -eq 'both' -or -not $Mode) { $Mode = 'web' }
   $script:SkipWeb = $SkipWeb
   $script:Mode = $Mode
   $script:InstallDir = $InstallDir
 
-  Log "Windows setup for Property Manager (web-only)"
+  Log "Windows setup for SPMS (Super Property Management System, web-only)"
   Log "Action=$Action Mode=$Mode SkipWeb=$SkipWeb Host=$BindHost Port=$Port Ref=$GitRef"
   Log "InstallDir=$InstallDir"
   Validate-WebTarget
@@ -390,7 +390,7 @@ try {
     }
     'setup' {
       $scriptRoot = if ($PSScriptRoot) { Split-Path -Parent $PSScriptRoot } else { '' }
-      $defaultInstall = Join-Path $HOME 'property-manager-tui'
+      $defaultInstall = Join-Path $HOME 'spms'
       if ($scriptRoot -and (Test-Path (Join-Path $scriptRoot 'launcher.py')) -and ($InstallDir -eq $defaultInstall)) {
         $InstallDir = $scriptRoot
         $script:InstallDir = $InstallDir
@@ -428,7 +428,7 @@ try {
     }
     'deploy' {
       $scriptRoot = if ($PSScriptRoot) { Split-Path -Parent $PSScriptRoot } else { '' }
-      $defaultInstall = Join-Path $HOME 'property-manager-tui'
+      $defaultInstall = Join-Path $HOME 'spms'
       if ($scriptRoot -and (Test-Path (Join-Path $scriptRoot 'launcher.py')) -and (-not (Test-Path (Join-Path $InstallDir '.git'))) -and ($InstallDir -eq $defaultInstall)) {
         $InstallDir = $scriptRoot
         $script:InstallDir = $InstallDir

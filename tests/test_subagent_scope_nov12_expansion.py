@@ -305,7 +305,7 @@ def test_doctor_collect_and_backup_verify_helpers(tmp_path, monkeypatch):
     assert "schema" in report
     assert isinstance(report.get("notes"), list)
     text = doctor.format_health_report(report)
-    assert "Property Manager Doctor" in text
+    assert "SPMS Doctor" in text
     assert "Backup/restore guidance" in text
 
     # monkeypatch: simulate printer/config checks not crashing and remote update off

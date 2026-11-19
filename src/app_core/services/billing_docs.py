@@ -35,7 +35,7 @@ def _write_confined_invoice_file(filename: str, text):
 
 
 def build_invoice_text(reservation, nights, accom, pos_items, payments, *, currency="EGP", usd_to_egp=1.0,
-                       display_name="Property Manager", address="", phone="", footer_text="", traceability_text_fn=None,
+                       display_name="SPMS", address="", phone="", footer_text="", traceability_text_fn=None,
                        services=None, discounts=None):
     traceability_text_fn = traceability_text_fn or _default_traceability_text
     W = 72

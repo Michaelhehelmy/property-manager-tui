@@ -1,5 +1,5 @@
 #!/bin/sh
-# One-line bootstrap installer for Property Manager Web UI (Unix-like OSes).
+# One-line bootstrap installer for SPMS Web UI (Unix-like OSes).
 # - Idempotent clone/update (git) with optional pinned ref (branch/tag/commit)
 # - Preserves runtime data (DB/exports/invoices/PM_DATA_DIR) across updates/runs
 # - Safe defaults: Web runs with --workers 1 (SQLite); strong secret + HTTPS for non-local use
@@ -23,7 +23,7 @@
 set -eu
 
 REPO_URL="${REPO_URL:-https://github.com/Michaelhehelmy/property-manager-tui.git}"
-INSTALL_DIR="${INSTALL_DIR:-$HOME/property-manager-tui}"
+INSTALL_DIR="${INSTALL_DIR:-$HOME/spms}"
 BRANCH="${BRANCH:-main}"
 # Pinned ref support: GIT_REF wins, then TAG, then COMMIT, else BRANCH.
 GIT_REF="${GIT_REF:-${TAG:-${COMMIT:-$BRANCH}}}"
@@ -115,7 +115,7 @@ fetch_setup_if_needed() {
     return 0
   fi
   # If local setup.sh missing (e.g. piped and clone failed), try to fetch from pinned ref/branch.
-  TMP_SETUP="${TMPDIR:-/tmp}/property-manager-tui-setup.sh.$$"
+  TMP_SETUP="${TMPDIR:-/tmp}/spms-setup.sh.$$"
   FETCH_REF="$GIT_REF"
   [ -n "$FETCH_REF" ] || FETCH_REF="$BRANCH"
   SETUP_URL="https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/${FETCH_REF}/scripts/setup.sh"
@@ -132,7 +132,7 @@ fetch_setup_if_needed() {
 }
 
 main() {
-  log "Property Manager web bootstrap installer"
+  log "SPMS web bootstrap installer"
   log "repo=$REPO_URL dir=$INSTALL_DIR ref=$GIT_REF mode=$MODE action=$ACTION skip_web=$SKIP_WEB host=$HOST port=$PORT"
 
   install_bootstrap_deps

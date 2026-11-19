@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Safe runtime backup/verify/restore helper for Property Manager.
+"""Safe runtime backup/verify/restore helper for SPMS.
 
 Creates or verifies SQLite DB backups without deleting runtime data.
 Always preserves DB/exports/invoices and configured data dir (PM_DATA_DIR).

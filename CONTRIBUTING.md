@@ -1,4 +1,4 @@
-# Contributing to Property Manager (Web)
+# Contributing to SPMS (Super Property Management System)
 
 Thanks for your interest in contributing, forking, or extending this project.
 
@@ -33,7 +33,7 @@ This repository is a **local-first property management app** with:
 ## Getting started (local dev)
 ```bash
 git clone https://github.com/Michaelhehelmy/property-manager-tui.git
-cd property-manager-tui
+cd property-manager-tui  # repository directory (project branded as SPMS)
 python3 -m venv .venv
 . .venv/bin/activate  # Windows: .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt -r requirements-web.txt -r requirements-dev.txt

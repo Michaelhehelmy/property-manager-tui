@@ -23,7 +23,7 @@ foreach ($cand in @((Join-Path $Root '.venv\Scripts\python.exe'), (Join-Path $Ro
 if (-not $Py) { Warn 'Python not found. Install Python 3.10+ and retry.'; exit 1 }
 
 $arch = if ($env:PROCESSOR_ARCHITECTURE -match 'ARM64' -or $env:PROCESSOR_ARCHITEW6432 -match 'ARM64') { 'arm64' } else { 'x64' }
-$artifactBase = "property-manager-windows-$arch"
+$artifactBase = "spms-windows-$arch"
 $distDir = Join-Path $Root 'dist\community-native'
 $nuitkaOut = Join-Path $Root 'dist\nuitka-community'
 $logFile = Join-Path $distDir 'build.log'

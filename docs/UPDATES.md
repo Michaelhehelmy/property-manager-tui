@@ -1,6 +1,6 @@
 # Updates, Releases & Rollback
 
-This guide covers how to update a git-based Property Manager installation safely, what is automated, and how to roll back operationally.
+This guide covers how to update a git-based SPMS installation safely, what is automated, and how to roll back operationally.
 
 ## 1) Update model (current implementation)
 
@@ -74,7 +74,7 @@ These flows are for **git-based installs** (recommended). Runtime data (**DB, ex
    # Built-in recovery for dirty/stuck git checkout (e.g. reset/checkout/pull errors)
    $env:REPAIR='1'; irm https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install_windows.ps1 | iex
    ```
-   Defaults: installs/updates to `%USERPROFILE%\property-manager-tui` (override `INSTALL_DIR`), refreshes `.venv`/deps, and runs per mode. CMD bootstrap: download/run `scripts/install_windows.cmd`.
+   Defaults: installs/updates to `%USERPROFILE%\spms` (override `INSTALL_DIR`), refreshes `.venv`/deps, and runs per mode. CMD bootstrap: download/run `scripts/install_windows.cmd`.
 2. **From existing local checkout (manual):**
    ```powershell
    # recommended: backup first (Settings -> Backup now or scripts/backup_runtime.py --backup)
@@ -110,7 +110,7 @@ pkg install -y git python curl ca-certificates
 3. **If web dependencies cannot be built/installed on this device (constrained):** the app is web-only. Install build deps/toolchain for required wheels or run the web UI on a supported host. You may run `SKIP_WEB=1 ACTION=setup sh scripts/setup.sh` for core dependency setup only, but web UI will not start until web deps are installed.
 4. **Run (if not auto-launched):**
    ```bash
-   cd ~/property-manager-tui
+   cd ~/spms
    PYTHONPATH=src .venv/bin/python launcher.py --web
    # or
    export PM_WEB_SECRET_KEY='(long-random-secret)'

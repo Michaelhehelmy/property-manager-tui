@@ -1,4 +1,4 @@
-# Deployment examples (Property Manager)
+# Deployment examples (SPMS)
 
 These examples are minimal starting points for running the **Web UI** safely.
 
@@ -9,7 +9,7 @@ These examples are minimal starting points for running the **Web UI** safely.
 - **Data persistence:** runtime data (DB, exports, invoices, and `PM_DATA_DIR`) must be preserved across updates/restarts. Back up before upgrades.
 
 ## Files
-- `property-manager-web.service.example` — systemd service template (venv/checkout, persistent `PM_DATA_DIR`, local bind + reverse proxy).
+- `spms-web.service.example` — systemd service template (venv/checkout, persistent `PM_DATA_DIR`, local bind + reverse proxy).
 - `Caddyfile.example` — Caddy reverse proxy with automatic HTTPS.
 - `nginx.conf.example` — Nginx HTTPS reverse-proxy snippet.
 - `../Dockerfile`, `../docker-compose.yml` — containerized web deployment with persistent volume.

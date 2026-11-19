@@ -6,7 +6,7 @@
 # Usage:
 #   sh scripts/update_and_run_web.sh
 #   HOST=0.0.0.0 PORT=8000 PM_WEB_SECRET_KEY="$(openssl rand -hex 32)" sh scripts/update_and_run_web.sh
-#   INSTALL_DIR=~/property-manager-tui GIT_REF=main sh scripts/update_and_run_web.sh
+#   INSTALL_DIR=~/spms GIT_REF=main sh scripts/update_and_run_web.sh
 #
 # Notes:
 # - For shared/non-local access, set a strong PM_WEB_SECRET_KEY and use HTTPS via reverse proxy.
@@ -38,7 +38,7 @@ validate_web_target() {
 
 if [ ! -d "$INSTALL_DIR" ]; then
   err "Install directory not found: $INSTALL_DIR"
-  err "Set INSTALL_DIR=/path/to/property-manager-tui and re-run (or run scripts/install.sh/setup.sh first)."
+  err "Set INSTALL_DIR=/path/to/spms and re-run (or run scripts/install.sh/setup.sh first)."
   exit 1
 fi
 

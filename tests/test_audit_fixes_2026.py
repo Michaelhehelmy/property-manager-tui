@@ -65,7 +65,7 @@ def test_restock_and_receive_batch_accept_session_sentinel(temp_db):
     assert len(batches) >= 1
 
     services.create_inventory_batch(
-        item_id, 5, unit_cost=2.5, supplier="S", reference="R", password="__session__", actor="tui"
+        item_id, 5, unit_cost=2.5, supplier="S", reference="R", password="__session__", actor="web"
     )
     item = db.connect().execute("SELECT stock_qty FROM inventory WHERE id=?", (item_id,)).fetchone()
     assert float(item["stock_qty"]) == 15.0

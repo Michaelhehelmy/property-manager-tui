@@ -21,7 +21,7 @@ if str(ROOT) not in sys.path:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="main.py", description="Property Manager Web UI entry point")
+    parser = argparse.ArgumentParser(prog="main.py", description="SPMS Web UI entry point")
     parser.add_argument("--host", default=os.environ.get("HOST", "127.0.0.1"), help="Web host (default: 127.0.0.1)")
     parser.add_argument("--port", type=int, default=int(os.environ.get("PORT", "8000")), help="Web port (default: 8000)")
     parser.add_argument("--no-browser", action="store_true", help="Compatibility flag (ignored; no browser auto-open)")
@@ -37,7 +37,7 @@ def main(argv: list[str] | None = None) -> int:
 
     host = args.host or "127.0.0.1"
     port = int(args.port or 8000)
-    print(f"Starting Property Manager Web UI at http://{host}:{port} (--workers 1)")
+    print(f"Starting SPMS Web UI at http://{host}:{port} (--workers 1)")
     print("Note: this project is now web-only. Use launcher.py or uvicorn directly for more options.")
     try:
         uvicorn.run(web_app, host=host, port=port, workers=1)

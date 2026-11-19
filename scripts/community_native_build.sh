@@ -30,7 +30,7 @@ case "$ARCH" in
   arm64|aarch64) arch_name=arm64 ;;
   *) arch_name="$ARCH" ;;
 esac
-ARTIFACT_BASENAME="property-manager-${os_name}-${arch_name}"
+ARTIFACT_BASENAME="spms-${os_name}-${arch_name}"
 DIST_DIR="$ROOT_DIR/dist/community-native"
 NUITKA_OUT="$ROOT_DIR/dist/nuitka-community"
 LOG_FILE="$DIST_DIR/build.log"

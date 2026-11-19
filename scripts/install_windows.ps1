@@ -1,5 +1,5 @@
 <#
-One-command Windows installer/bootstrap for Property Manager (web-only).
+One-command Windows installer/bootstrap for SPMS (Super Property Management System, web-only).
 - Best-effort installs Python 3.12 and Git via winget if missing
 - Idempotent clone/update with optional pinned ref (branch/tag/commit)
 - Preserves runtime data (DB/exports/invoices/PM_DATA_DIR)
@@ -22,7 +22,7 @@ param(
   [string]$Action = $(if ($env:ACTION) { $env:ACTION } else { 'deploy' }),
   [string]$Mode = $(if ($env:MODE) { $env:MODE } else { 'auto' }),
   [string]$SkipWeb = $(if ($env:SKIP_WEB) { $env:SKIP_WEB } else { 'auto' }),
-  [string]$InstallDir = $(if ($env:INSTALL_DIR) { $env:INSTALL_DIR } else { (Join-Path $HOME 'property-manager-tui') }),
+  [string]$InstallDir = $(if ($env:INSTALL_DIR) { $env:INSTALL_DIR } else { (Join-Path $HOME 'spms') }),
   [string]$RepoUrl = $(if ($env:REPO_URL) { $env:REPO_URL } else { 'https://github.com/Michaelhehelmy/property-manager-tui.git' }),
   [string]$Branch = $(if ($env:BRANCH) { $env:BRANCH } else { 'main' }),
   [string]$GitRef = $(if ($env:GIT_REF) { $env:GIT_REF } elseif ($env:TAG) { $env:TAG } elseif ($env:COMMIT) { $env:COMMIT } elseif ($env:BRANCH) { $env:BRANCH } else { 'main' }),
@@ -87,9 +87,9 @@ function Checkout-RequestedRef {
 
 try {
   # Legacy mode values mapped to web-only
-  if ($Mode -eq 'tui' -or $Mode -eq 'both' -or $Mode -eq 'auto' -or -not $Mode) { $Mode = 'web' }
+  if ($Mode -eq 'web' -or $Mode -eq 'both' -or $Mode -eq 'auto' -or -not $Mode) { $Mode = 'web' }
 
-  Log "Property Manager Windows bootstrap (web-only, Action=$Action Mode=$Mode Ref=$GitRef InstallDir=$InstallDir)"
+  Log "SPMS Windows bootstrap (web-only, Action=$Action Mode=$Mode Ref=$GitRef InstallDir=$InstallDir)"
   if (($BindHost -eq '0.0.0.0' -or $BindHost -eq '::') -and -not $env:PM_WEB_SECRET_KEY) {
     Warn "Non-local bind requested without PM_WEB_SECRET_KEY. Set a strong random secret for shared/LAN deployments."
   }

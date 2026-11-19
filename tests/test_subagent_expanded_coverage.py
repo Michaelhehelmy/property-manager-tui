@@ -528,7 +528,7 @@ def test_doctor_collect_and_format_health(fresh_db):
     assert 'paths' in report and 'schema' in report and 'integrity' in report
     assert report['schema'].get('expected_version') == db.SCHEMA_VERSION
     txt = doctor.format_health_report(report)
-    assert 'Property Manager Doctor' in txt
+    assert 'SPMS Doctor' in txt
     assert str(db.SCHEMA_VERSION) in txt
 
 

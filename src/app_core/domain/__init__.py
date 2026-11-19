@@ -1,4 +1,4 @@
-"""Domain primitives for Property Manager (Phase 0 foundations).
+"""Domain primitives for SPMS (Phase 0 foundations).
 
 This package contains additive, side-effect-free helpers (money/date/tax/
 availability/metrics primitives) intended for reuse by future business logic.

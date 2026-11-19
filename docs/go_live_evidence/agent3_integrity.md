@@ -4,7 +4,7 @@
 - Phase: Started (baseline checks available; staging dataset validation pending)
 
 ## Baseline evidence
-- Full regression (current session, HEAD 0e58f8d): `844 passed, 1 warning, 0 failed` (`cd property-manager-tui && PYTHONPATH=src PM_WEB_SECRET_KEY=test-secret python3 -m pytest tests -q`, ~113s).
+- Full regression (current session, HEAD 0e58f8d): `844 passed, 1 warning, 0 failed` (`cd spms && PYTHONPATH=src PM_WEB_SECRET_KEY=test-secret python3 -m pytest tests -q`, ~113s).
 - FEFO expiry-block fix verified in `src/app_core/services/_monolith.py` (`Insufficient non-expired batch stock available for the requested quantity.` when blocked shortfall).
 - Quality/invariant coverage exists in `tests/test_quality_gate_foundations.py`, inventory/recipes/payments/reservations suites (to be re-run on RC and on staging dataset copies).
 

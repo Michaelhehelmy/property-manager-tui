@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unified entry point for Property Manager Web UI.
+"""Unified entry point for SPMS Web UI.
 
 Web-only launcher with safe defaults (SQLite requires --workers 1).
 Runtime data (DB/exports/invoices/PM_DATA_DIR) is preserved across updates/restarts.
@@ -246,7 +246,7 @@ def menu_loop(default_host: str = "127.0.0.1", default_port: int = 8000) -> int:
         is_non_local = host not in ("127.0.0.1", "localhost", "::1")
         secret_set = bool((os.environ.get("PM_WEB_SECRET_KEY") or "").strip())
         print("=" * 56)
-        print("  Property Manager — Web Launcher")
+        print("  SPMS — Web Launcher")
         print("=" * 56)
         print("  [1] Start Web UI (browser, --workers 1)")
         print("  [s] Web settings (host/port)")
@@ -297,7 +297,7 @@ def menu_loop(default_host: str = "127.0.0.1", default_port: int = 8000) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="launcher.py", description="Property Manager Web launcher")
+    parser = argparse.ArgumentParser(prog="launcher.py", description="SPMS Web Launcher")
     parser.add_argument("mode", nargs="?", help="web | menu (default: menu)")
     parser.add_argument("--web", action="store_true", help="Launch Web UI directly")
     parser.add_argument("--host", default=os.environ.get("HOST", "127.0.0.1"), help="Web host (default: 127.0.0.1)")
@@ -310,7 +310,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.serve_web:
         return _serve_web_foreground(args.host, args.port)
     # Web-only app: direct launch for web/legacy mode args (backward-compatible)
-    if args.web or (args.mode and args.mode.lower() in {"web", "1", "w", "tui", "t", "2"}):
+    if args.web or (args.mode and args.mode.lower() in {"web", "1", "w", "t", "2"}):
         return run_web(host=args.host, port=args.port, open_browser=not args.no_browser)
     return menu_loop(default_host=args.host, default_port=args.port)
 

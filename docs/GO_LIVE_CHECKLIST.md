@@ -1,6 +1,6 @@
 # Go-Live Checklist (Operational)
 
-Use this checklist to move Property Manager from setup/testing to production-like operation. Items marked **(Automated/tooling available)** have in-app/CLI/script support; others are **operational/manual** and must be owned by operators.
+Use this checklist to move SPMS from setup/testing to production-like operation. Items marked **(Automated/tooling available)** have in-app/CLI/script support; others are **operational/manual** and must be owned by operators.
 
 ## 1) Scope, ownership, and readiness
 

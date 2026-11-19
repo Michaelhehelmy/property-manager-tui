@@ -4708,7 +4708,7 @@ def generate_walkin_receipt_text(receipt_items, total_gross, method, payment_id=
     from . import billing_docs
     return billing_docs.build_walkin_receipt_text(
         receipt_items, total_gross, method, payment_id=payment_id, when=when,
-        display_name=get_app_display_name() or "Property Manager",
+        display_name=get_app_display_name() or "SPMS",
         traceability_text_fn=_traceability_text,
     )
 

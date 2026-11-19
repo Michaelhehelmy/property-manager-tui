@@ -15,7 +15,7 @@ This guide is for contributors, maintainers, and developers forking/extending th
 
 ```bash
 git clone https://github.com/Michaelhehelmy/property-manager-tui.git
-cd property-manager-tui
+cd spms
 
 python3 -m venv .venv
 # Linux/macOS/Termux:

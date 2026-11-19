@@ -1,4 +1,4 @@
-# Minimal container for Property Manager Web UI (FastAPI/HTMX).
+# Minimal container for SPMS Web UI (FastAPI/HTMX).
 # - SQLite-safe: ALWAYS run uvicorn with --workers 1
 # - Runtime data is persisted via PM_DATA_DIR (/data) volume mount
 # - Put a reverse proxy (Caddy/Nginx/Traefik) in front for HTTPS/TLS in production

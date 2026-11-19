@@ -1,4 +1,4 @@
-"""Operational health/doctor checks for Property Manager.
+"""Operational health/doctor checks for SPMS.
 
 Provides a read-only snapshot of runtime paths, DB/schema/integrity status,
 data directories, update/config/printer readiness, and backup/restore guidance.
@@ -527,7 +527,7 @@ def collect_health(check_updates: bool = False) -> dict[str, Any]:
 
 def format_health_report(report: dict[str, Any]) -> str:
     lines = []
-    lines.append(f"Property Manager Doctor — {report.get('checked_at','')}")
+    lines.append(f"SPMS Doctor — {report.get('checked_at','')}")
     lines.append(f"Overall: {'OK' if report.get('ok') else 'ISSUES DETECTED'}")
     p = report.get("paths", {})
     lines.append("\nPaths:")
@@ -625,7 +625,7 @@ def format_health_report(report: dict[str, Any]) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="python -m app_core.doctor", description="Property Manager health/doctor checks and safe backup helpers")
+    ap = argparse.ArgumentParser(prog="python -m app_core.doctor", description="SPMS health/doctor checks and safe backup helpers")
     ap.add_argument("--json", action="store_true", help="Output JSON report/result")
     ap.add_argument("--check-updates", action="store_true", help="Also query GitHub for update status (network)")
     ap.add_argument("--strict", action="store_true", help="Exit non-zero on warnings-level risks in batch consistency/printer checks where applicable")
