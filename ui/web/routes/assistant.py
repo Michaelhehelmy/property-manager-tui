@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
 
 from app_core import assistant, services
 from app_core.assistant.actions import create_proposal, execute_pending_action
