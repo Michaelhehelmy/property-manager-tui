@@ -223,9 +223,35 @@ async def assistant_ask(request: Request):
             result = assistant.chat(message, history=history_for_chat, ui_context=chat_ctx)
         except TypeError:
             # backward compat if chat signature not yet updated
-            result = assistant.chat(message, history=history_for_chat)
+            try:
+                result = assistant.chat(message, history=history_for_chat)
+            except Exception:
+                logger.exception("assistant_ask_failed")
+                if want_json:
+                    return {
+                        "ok": False,
+                        "answer": "Sorry, the assistant encountered an error while processing your request. Please try again.",
+                        "intent": "error",
+                        "confidence": 0.0,
+                        "tools_used": [],
+                        "source": "error",
+                        "slots": {},
+                        "ui_actions": [],
+                    }
+                result = {"ok": False, "answer": "Sorry, the assistant encountered an error while processing your request. Please try again.", "intent": "error", "confidence": 0.0, "tools_used": [], "source": "error", "ui_actions": []}
         except Exception:
             logger.exception("assistant_ask_failed")
+            if want_json:
+                return {
+                    "ok": False,
+                    "answer": "Sorry, the assistant encountered an error while processing your request. Please try again.",
+                    "intent": "error",
+                    "confidence": 0.0,
+                    "tools_used": [],
+                    "source": "error",
+                    "slots": {},
+                    "ui_actions": [],
+                }
             result = {"ok": False, "answer": "Sorry, the assistant encountered an error while processing your request. Please try again.", "intent": "error", "confidence": 0.0, "tools_used": [], "source": "error", "ui_actions": []}
 
         if not isinstance(result, dict):
@@ -298,6 +324,20 @@ async def assistant_ask(request: Request):
                 safe_cur = _json_safe_value(cur)
                 if isinstance(safe_cur, dict):
                     payload["pending_action"] = safe_cur
+        # Final JSON round-trip to ensure a clean, JSON-serializable response object.
+        try:
+            payload = json.loads(json.dumps(payload, default=lambda _o: "internal_error"))
+        except Exception:
+            payload = {
+                "ok": False,
+                "answer": "Sorry, the assistant encountered an error while processing your request. Please try again.",
+                "intent": "error",
+                "confidence": 0.0,
+                "tools_used": [],
+                "source": "error",
+                "slots": {},
+                "ui_actions": [],
+            }
         return payload
 
     shown = _history(request)[-20:]
