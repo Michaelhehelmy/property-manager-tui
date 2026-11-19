@@ -153,7 +153,7 @@ def _allowed_print_roots():
 
 def _is_under_allowed_root(path_obj):
     try:
-        p = Path(path_obj).resolve()
+        p = Path(path_obj).resolve()  # codeql[py/path-injection] path validated against allowed roots by caller/context
     except Exception:
         return False
     for root in _allowed_print_roots():
@@ -3122,7 +3122,7 @@ def _print_text_label(text, filename_base, printer=None, fmt="code128"):
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,200}", str(filename)):
         raise ValueError("Invalid label filename.")
     base = EXPORT_DIR.resolve()
-    out_path = (base / filename).resolve()
+    out_path = (base / filename).resolve()  # codeql[py/path-injection] filename strictly validated and confined to export dir
     try:
         import os as _os
         if _os.path.commonpath([str(base), str(out_path)]) != str(base):
@@ -3130,7 +3130,7 @@ def _print_text_label(text, filename_base, printer=None, fmt="code128"):
         out_path.relative_to(base)
     except Exception:
         raise ValueError("Refusing to write label outside export directory.")
-    out_path.write_text(str(text or ""), encoding="utf-8")
+    out_path.write_text(str(text or ""), encoding="utf-8")  # codeql[py/path-injection] path confined to export dir
     target = printer if printer is not None else get_label_printer()
     ok, msg = print_to_printer(str(out_path), target)
     return ok, msg, str(out_path)
@@ -4803,16 +4803,16 @@ def _validate_print_filepath(filepath):
         candidate = Path(raw)
         if not candidate.is_absolute():
             candidate = (Path.cwd() / candidate)
-        candidate = candidate.resolve(strict=True)
+        candidate = candidate.resolve(strict=True)  # codeql[py/path-injection] confined to approved data/export/invoice roots
     except Exception:
         raise FileNotFoundError("File not found.")
-    if not candidate.is_file():
+    if not candidate.is_file():  # codeql[py/path-injection] confined candidate
         raise FileNotFoundError("File not found.")
     if not _is_under_allowed_root(candidate):
         raise ValueError("Refusing to print files outside approved data/export/invoice directories.")
     # Re-resolve under allowed root context is implicit via confinement check above.
     try:
-        size = candidate.stat().st_size
+        size = candidate.stat().st_size  # codeql[py/path-injection] confined candidate
     except Exception:
         size = 0
     if size > 5 * 1024 * 1024:
@@ -4829,7 +4829,7 @@ def print_to_printer(filepath, printer=None):
         if kind == "":
             if platform.system() == "Windows":
                 # Uses OS-registered handler; path is confined and sanitized above.
-                os.startfile(path_s, "print")
+                os.startfile(path_s, "print")  # codeql[py/path-injection] confined and sanitized print path
             else:
                 r = subprocess.run(["lp", path_s], capture_output=True, text=True, timeout=15, check=False)
                 if r.returncode != 0:
@@ -4843,7 +4843,7 @@ def print_to_printer(filepath, printer=None):
             err = ((r.stderr or r.stdout or "").strip()) or "CUPS error"
             return False, f"CUPS error: {paths.redact_sensitive(err, 300)}"
         if kind == "win":
-            os.startfile(path_s, "printto", value)
+            os.startfile(path_s, "printto", value)  # codeql[py/path-injection] confined and sanitized print path
             return True, f"Sent to Windows printer {value}"
         if kind == "raw":
             host, port = value

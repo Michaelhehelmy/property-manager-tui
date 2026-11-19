@@ -39,7 +39,7 @@ def _write_confined_invoice_file(filename: str, text):
     ):
         raise ValueError("Invalid invoice filename.")
     base = invoice_dir.resolve()
-    out_path = (base / safe_name).resolve()
+    out_path = (base / safe_name).resolve()  # codeql[py/path-injection] filename strictly validated and confined to invoice dir
     try:
         import os as _os
         if _os.path.commonpath([str(base), str(out_path)]) != str(base):
@@ -47,7 +47,7 @@ def _write_confined_invoice_file(filename: str, text):
         out_path.relative_to(base)
     except Exception:
         raise ValueError("Refusing to write file outside invoice directory.")
-    out_path.write_text(str(text or ""), encoding="utf-8")
+    out_path.write_text(str(text or ""), encoding="utf-8")  # codeql[py/path-injection] path confined to invoice dir
     return str(out_path)
 
 

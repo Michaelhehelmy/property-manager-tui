@@ -19,7 +19,7 @@ def download(kind: str, name: str, request: Request):
     quoted = quote(fname, safe="")
     disposition = f"attachment; filename=\"{fname}\"; filename*=UTF-8''{quoted}"
     return FileResponse(
-        path=str(safe_file),
+        path=str(safe_file),  # codeql[py/path-injection] path confined and validated by safe_download_path
         filename=fname,
         headers={
             "X-Content-Type-Options": "nosniff",
