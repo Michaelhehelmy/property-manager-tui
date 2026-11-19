@@ -32,8 +32,8 @@ This repository is a **local-first property management app** with:
 
 ## Getting started (local dev)
 ```bash
-git clone https://github.com/Michaelhehelmy/property-manager-tui.git
-cd property-manager-tui  # repository directory (project branded as SPMS)
+git clone https://github.com/Michaelhehelmy/spms.git
+cd spms  # repository directory
 python3 -m venv .venv
 . .venv/bin/activate  # Windows: .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt -r requirements-web.txt -r requirements-dev.txt

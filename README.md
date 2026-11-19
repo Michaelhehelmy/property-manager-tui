@@ -64,12 +64,12 @@ These commands are intended for **first-time install and later re-runs** on git-
 
 | OS / Environment | One-line command | Notes |
 |---|---|---|
-| **Linux / macOS / WSL / generic Unix** (curl) | `curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh \| sh` | Detects environment/package manager, installs/updates, and launches the web app. Re-run anytime. |
-| **Linux / macOS / WSL** (wget) | `wget -qO- https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh \| sh` | Fallback if `curl` is unavailable. |
-| **Web server for LAN (trusted network)** | `curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh \| MODE=web HOST=0.0.0.0 PORT=8000 PM_WEB_SECRET_KEY="$(openssl rand -hex 32)" sh` | `--workers 1` required (SQLite). Use HTTPS reverse proxy/VPN for shared/remote access. |
-| **Android (Termux)** | `pkg update -y && pkg install -y curl && curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh \| sh` | Installs/updates and launches web app. For LAN web add `MODE=web HOST=0.0.0.0 PORT=8000 PM_WEB_SECRET_KEY=...` (use HTTPS/proxy for shared access). |
-| **Windows (PowerShell, bootstrap)** | `irm https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install_windows.ps1 \| iex` | Uses winget when available to install Python/Git if missing, then clones/updates and runs setup/deploy. Customize via `$env:ACTION/$env:MODE/$env:HOST/$env:PORT/$env:PM_WEB_SECRET_KEY`. |
-| **Windows (CMD bootstrap)** | `curl -fsSL -o install_windows.cmd https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install_windows.cmd && install_windows.cmd -Action deploy -Mode auto` | Downloads/runs bootstrap wrapper (uses PowerShell script). |
+| **Linux / macOS / WSL / generic Unix** (curl) | `curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/spms/main/scripts/install.sh \| sh` | Detects environment/package manager, installs/updates, and launches the web app. Re-run anytime. |
+| **Linux / macOS / WSL** (wget) | `wget -qO- https://raw.githubusercontent.com/Michaelhehelmy/spms/main/scripts/install.sh \| sh` | Fallback if `curl` is unavailable. |
+| **Web server for LAN (trusted network)** | `curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/spms/main/scripts/install.sh \| MODE=web HOST=0.0.0.0 PORT=8000 PM_WEB_SECRET_KEY="$(openssl rand -hex 32)" sh` | `--workers 1` required (SQLite). Use HTTPS reverse proxy/VPN for shared/remote access. |
+| **Android (Termux)** | `pkg update -y && pkg install -y curl && curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/spms/main/scripts/install.sh \| sh` | Installs/updates and launches web app. For LAN web add `MODE=web HOST=0.0.0.0 PORT=8000 PM_WEB_SECRET_KEY=...` (use HTTPS/proxy for shared access). |
+| **Windows (PowerShell, bootstrap)** | `irm https://raw.githubusercontent.com/Michaelhehelmy/spms/main/scripts/install_windows.ps1 \| iex` | Uses winget when available to install Python/Git if missing, then clones/updates and runs setup/deploy. Customize via `$env:ACTION/$env:MODE/$env:HOST/$env:PORT/$env:PM_WEB_SECRET_KEY`. |
+| **Windows (CMD bootstrap)** | `curl -fsSL -o install_windows.cmd https://raw.githubusercontent.com/Michaelhehelmy/spms/main/scripts/install_windows.cmd && install_windows.cmd -Action deploy -Mode auto` | Downloads/runs bootstrap wrapper (uses PowerShell script). |
 
 **Common env vars / parameters (Unix installer/setup):** `INSTALL_DIR`, `REPO_URL`, `BRANCH`, `GIT_REF`/`TAG`/`COMMIT` (pinned ref), `MODE` (`web`; legacy values map to web), `ACTION` (`auto|setup|run|deploy`), `SKIP_WEB` (`auto|0|1`), `HOST`, `PORT`, `PYTHON`, `INSTALL_DEV`, `RUN_TESTS`, `PM_DATA_DIR`, `PM_WEB_SECRET_KEY`. **Windows:** pass `-GitRef`/`-Action`/`-Mode`/`-BindHost`/`-Port` or set corresponding env vars (`GIT_REF`/`TAG`/`COMMIT`, etc.).
 
@@ -80,7 +80,7 @@ These commands are intended for **first-time install and later re-runs** on git-
 ### Pinned/reproducible installs
 
 - Install/update to a specific tag/commit/branch: `GIT_REF=<tag-or-commit-or-branch> sh` (Unix) or `-GitRef <...>` / `$env:GIT_REF=<...>` (Windows). Aliases: `TAG`, `COMMIT`.
-- **Pinned bootstrap script URL:** use the raw script at the same ref to ensure installer logic is reproducible, e.g. `https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/<tag-or-commit>/scripts/install.sh` (Unix) or `.../<tag-or-commit>/scripts/install_windows.ps1` (Windows).
+- **Pinned bootstrap script URL:** use the raw script at the same ref to ensure installer logic is reproducible, e.g. `https://raw.githubusercontent.com/Michaelhehelmy/spms/<tag-or-commit>/scripts/install.sh` (Unix) or `.../<tag-or-commit>/scripts/install_windows.ps1` (Windows).
 - Existing checkouts: `GIT_REF=<tag> ACTION=setup sh scripts/setup.sh` (or Windows setup script) checks out the requested ref; when on a branch, scripts may fast-forward as applicable. Runtime data is preserved.
 - For immutable production-like deployments, prefer pinning to a release tag/commit and recording the resolved commit (`git -C <install-dir> rev-parse HEAD`) alongside backups/change records.
 
@@ -100,14 +100,14 @@ These commands are intended for **first-time install and later re-runs** on git-
 ### Android (Termux)
 ```sh
 pkg update && pkg install -y git python curl
-curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/spms/main/scripts/install.sh | sh
 # or web on LAN (trusted network): add MODE=web HOST=0.0.0.0 PORT=8000 and PM_WEB_SECRET_KEY
 ```
 
 ### iOS (iSH / Alpine)
 ```sh
 apk add --no-cache curl
-curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh | MODE=web sh
+curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/spms/main/scripts/install.sh | MODE=web sh
 ```
 If web dependencies cannot be built on-device, run the Web UI on a supported host and access it from the browser.
 
@@ -117,7 +117,7 @@ Run the server on a capable host (Mac/Linux/Windows/Termux/RPi/VPS) and open fro
 ### Windows (10/11, Server)
 - **Bootstrap (recommended):** PowerShell (Admin recommended for winget):
   ```powershell
-  irm https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install_windows.ps1 | iex
+  irm https://raw.githubusercontent.com/Michaelhehelmy/spms/main/scripts/install_windows.ps1 | iex
   ```
   Customize: `$env:ACTION='deploy'; $env:MODE='web'; $env:HOST='127.0.0.1'; $env:PORT='8000'; $env:PM_WEB_SECRET_KEY='...'; irm ... | iex`
 - **From existing checkout:**
@@ -131,7 +131,7 @@ Run the server on a capable host (Mac/Linux/Windows/Termux/RPi/VPS) and open fro
 ### Manual install (any OS with Python)
 
 ```bash
-git clone https://github.com/Michaelhehelmy/property-manager-tui.git
+git clone https://github.com/Michaelhehelmy/spms.git
 cd spms
 python3 -m venv .venv
 # activate: Unix `. .venv/bin/activate` | PowerShell `.\\.venv\\Scripts\\Activate.ps1` | cmd `.venv\\Scripts\\activate.bat`

@@ -56,23 +56,23 @@ These flows are for **git-based installs** (recommended). Runtime data (**DB, ex
 
 1. **First-time install/update (recommended, idempotent):** rerun anytime to update.
    ```powershell
-   irm https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install_windows.ps1 | iex
+   irm https://raw.githubusercontent.com/Michaelhehelmy/spms/main/scripts/install_windows.ps1 | iex
    ```
    Examples:
    ```powershell
    # Setup/update and launch
-   $env:ACTION='deploy'; $env:MODE='auto'; irm https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install_windows.ps1 | iex
+   $env:ACTION='deploy'; $env:MODE='auto'; irm https://raw.githubusercontent.com/Michaelhehelmy/spms/main/scripts/install_windows.ps1 | iex
 
    # Web UI (localhost, SQLite-safe) — set strong secret for non-local/shared use
    $env:ACTION='deploy'; $env:MODE='web'; $env:HOST='127.0.0.1'; $env:PORT='8000'
    $env:PM_WEB_SECRET_KEY='(long-random-secret)'
-   irm https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install_windows.ps1 | iex
+   irm https://raw.githubusercontent.com/Michaelhehelmy/spms/main/scripts/install_windows.ps1 | iex
 
    # Pinned ref for reproducibility
-   $env:GIT_REF='vX.Y.Z'; irm https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install_windows.ps1 | iex
+   $env:GIT_REF='vX.Y.Z'; irm https://raw.githubusercontent.com/Michaelhehelmy/spms/main/scripts/install_windows.ps1 | iex
 
    # Built-in recovery for dirty/stuck git checkout (e.g. reset/checkout/pull errors)
-   $env:REPAIR='1'; irm https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install_windows.ps1 | iex
+   $env:REPAIR='1'; irm https://raw.githubusercontent.com/Michaelhehelmy/spms/main/scripts/install_windows.ps1 | iex
    ```
    Defaults: installs/updates to `%USERPROFILE%\spms` (override `INSTALL_DIR`), refreshes `.venv`/deps, and runs per mode. CMD bootstrap: download/run `scripts/install_windows.cmd`.
 2. **From existing local checkout (manual):**
@@ -94,16 +94,16 @@ pkg install -y git python curl ca-certificates
 
 1. **Install/update and run Web UI (recommended on capable Termux setups):**
    ```bash
-   curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh | MODE=web sh
+   curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/spms/main/scripts/install.sh | MODE=web sh
    ```
 2. **LAN or explicit local web (SQLite-safe):**
    ```bash
    # Localhost
-   curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh \
+   curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/spms/main/scripts/install.sh \
      | MODE=web HOST=127.0.0.1 PORT=8000 PM_WEB_SECRET_KEY="$(openssl rand -hex 32)" sh
 
    # LAN (trusted/private network only)
-   curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh \
+   curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/spms/main/scripts/install.sh \
      | MODE=web HOST=0.0.0.0 PORT=8000 PM_WEB_SECRET_KEY="$(openssl rand -hex 32)" sh
    ```
    Always **`--workers 1`**. Set strong `PM_WEB_SECRET_KEY` for non-local/shared use and prefer **HTTPS** (reverse proxy/VPN/tunnel) for shared/remote access.

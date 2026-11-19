@@ -14,7 +14,7 @@ This guide is for contributors, maintainers, and developers forking/extending th
 ## Clone and environment setup
 
 ```bash
-git clone https://github.com/Michaelhehelmy/property-manager-tui.git
+git clone https://github.com/Michaelhehelmy/spms.git
 cd spms
 
 python3 -m venv .venv

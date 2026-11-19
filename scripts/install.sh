@@ -5,8 +5,8 @@
 # - Safe defaults: Web runs with --workers 1 (SQLite); strong secret + HTTPS for non-local use
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh | sh
-#   wget -qO-  https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/spms/main/scripts/install.sh | sh
+#   wget -qO-  https://raw.githubusercontent.com/Michaelhehelmy/spms/main/scripts/install.sh | sh
 #
 # Examples:
 #   curl -fsSL .../install.sh | MODE=web sh
@@ -22,7 +22,7 @@
 # ACTION: auto|setup|run|deploy (default: auto). MODE: web (legacy values map to web).
 set -eu
 
-REPO_URL="${REPO_URL:-https://github.com/Michaelhehelmy/property-manager-tui.git}"
+REPO_URL="${REPO_URL:-https://github.com/Michaelhehelmy/spms.git}"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/spms}"
 BRANCH="${BRANCH:-main}"
 # Pinned ref support: GIT_REF wins, then TAG, then COMMIT, else BRANCH.
@@ -118,7 +118,7 @@ fetch_setup_if_needed() {
   TMP_SETUP="${TMPDIR:-/tmp}/spms-setup.sh.$$"
   FETCH_REF="$GIT_REF"
   [ -n "$FETCH_REF" ] || FETCH_REF="$BRANCH"
-  SETUP_URL="https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/${FETCH_REF}/scripts/setup.sh"
+  SETUP_URL="https://raw.githubusercontent.com/Michaelhehelmy/spms/${FETCH_REF}/scripts/setup.sh"
   if have curl; then
     curl -fsSL "$SETUP_URL" -o "$TMP_SETUP" || return 1
   elif have wget; then

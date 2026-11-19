@@ -2,7 +2,7 @@
  * Cloudflare Pages Function: receive user report JSON and create a GitHub issue.
  * Configure secrets in Cloudflare Pages dashboard (Settings → Environment variables / Secrets):
  *   REPORT_GITHUB_TOKEN  (required) - GitHub PAT with issues:write on the repo
- *   REPORT_GITHUB_REPO   (optional) - e.g. "Michaelhehelmy/property-manager-tui"
+ *   REPORT_GITHUB_REPO   (optional) - e.g. "Michaelhehelmy/spms"
  *   REPORT_GITHUB_LABELS (optional) - comma-separated, default "user-report"
  *   REPORT_MAX_BYTES     (optional) - default 500000
  */
@@ -36,7 +36,7 @@ export async function onRequestPost(context) {
     if (!token) {
       return Response.json({ ok: false, error: 'Report uploads are not configured on this server. Please download the report file and open an issue on GitHub manually.' }, { status: 503 });
     }
-    const repo = (env.REPORT_GITHUB_REPO || 'Michaelhehelmy/property-manager-tui').trim();
+    const repo = (env.REPORT_GITHUB_REPO || 'Michaelhehelmy/spms').trim();
     const labelsRaw = env.REPORT_GITHUB_LABELS || 'user-report,from-landing';
     const labels = labelsRaw.split(',').map(s => s.trim()).filter(Boolean).slice(0, 10);
 

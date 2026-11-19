@@ -18,7 +18,7 @@ from typing import Any
 from . import db, paths
 
 REPORT_VERSION = 1
-DEFAULT_REPO = "Michaelhehelmy/property-manager-tui"
+DEFAULT_REPO = "Michaelhehelmy/spms"
 DEFAULT_ISSUES_URL = f"https://github.com/{DEFAULT_REPO}/issues/new"
 
 _SENSITIVE_KEY_RE = re.compile(

@@ -21,7 +21,7 @@ from typing import Any
 from . import paths
 
 APP_VERSION = "1.2.0"
-REPO_SLUG = "Michaelhehelmy/property-manager-tui"
+REPO_SLUG = "Michaelhehelmy/spms"
 REPO_URL = f"https://github.com/{REPO_SLUG}"
 API_COMMITS_URL = f"https://api.github.com/repos/{REPO_SLUG}/commits"
 DEFAULT_BRANCH = "main"

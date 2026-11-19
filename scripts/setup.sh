@@ -18,7 +18,7 @@
 #   ACTION=run MODE=web sh scripts/setup.sh
 set -eu
 
-REPO_URL="${REPO_URL:-https://github.com/Michaelhehelmy/property-manager-tui.git}"
+REPO_URL="${REPO_URL:-https://github.com/Michaelhehelmy/spms.git}"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/spms}"
 BRANCH="${BRANCH:-main}"
 GIT_REF="${GIT_REF:-${TAG:-${COMMIT:-$BRANCH}}}"

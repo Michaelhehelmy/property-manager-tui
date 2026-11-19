@@ -129,7 +129,7 @@ if [ -n "$ISSUE_URL" ]; then
     if [ -t 0 ]; then read -r ans; elif [ -r /dev/tty ]; then read -r ans < /dev/tty; fi
     case "$ans" in
       y|Y|yes|YES)
-        gh issue create --repo "Michaelhehelmy/property-manager-tui" --title "$TITLE" --body-file "$REPORT_FILE" --label "community-build" || warn "gh issue create failed (auth/permissions?). You can still use the prefilled URL above."
+        gh issue create --repo "Michaelhehelmy/spms" --title "$TITLE" --body-file "$REPORT_FILE" --label "community-build" || warn "gh issue create failed (auth/permissions?). You can still use the prefilled URL above."
         ;;
     esac
   else

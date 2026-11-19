@@ -58,9 +58,9 @@
       <h1>Local-first SPMS (Super Property Management System)</h1>
       <p>Install and run the <strong class="k">Web UI</strong> locally, on a server, or on your LAN and access it from any browser on desktop, tablet, or phone (or via VPN/HTTPS). This page auto-detects your device and recommends the best install/download option. Runtime data (DB/exports/invoices) is preserved.</p>
       <div class="row">
-        <a href="https://github.com/Michaelhehelmy/property-manager-tui/releases/latest" target="_blank" rel="noopener"><button type="button" class="primary">Latest Release</button></a>
-        <a href="https://github.com/Michaelhehelmy/property-manager-tui" target="_blank" rel="noopener"><button type="button">View on GitHub</button></a>
-        <a href="https://github.com/Michaelhehelmy/property-manager-tui#readme" target="_blank" rel="noopener"><button type="button">Documentation</button></a>
+        <a href="https://github.com/Michaelhehelmy/spms/releases/latest" target="_blank" rel="noopener"><button type="button" class="primary">Latest Release</button></a>
+        <a href="https://github.com/Michaelhehelmy/spms" target="_blank" rel="noopener"><button type="button">View on GitHub</button></a>
+        <a href="https://github.com/Michaelhehelmy/spms#readme" target="_blank" rel="noopener"><button type="button">Documentation</button></a>
       </div>
     </section>
 
@@ -90,15 +90,15 @@
         <div class="tag">Windows 10/11</div>
         <h2>Native build or PowerShell installer</h2>
         <p class="muted">If a native Windows build is published in Releases, download and run it. Otherwise use the one-liner installer (PowerShell 5.1+/7+, bootstraps Python/Git via winget when needed). Re-run to update.</p>
-        <pre><code>irm https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install_windows.ps1 | iex</code></pre>
+        <pre><code>irm https://raw.githubusercontent.com/Michaelhehelmy/spms/main/scripts/install_windows.ps1 | iex</code></pre>
         <p class="muted" style="margin-top:8px;">Recovery: <code>$env:REPAIR='1'; irm ... | iex</code>. Web (local): set <code>$env:MODE='web'; $env:HOST='127.0.0.1'; $env:PORT='8000'; $env:PM_WEB_SECRET_KEY='&lt;strong-random&gt;'</code>.</p>
       </article>
 
       <article class="card os-card" data-os="linux">
         <div class="tag">Linux / macOS / WSL</div>
         <h2>Native build or script installer</h2>
-        <pre><code>curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh | sh</code></pre>
-        <pre><code>wget -qO- https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh | sh</code></pre>
+        <pre><code>curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/spms/main/scripts/install.sh | sh</code></pre>
+        <pre><code>wget -qO- https://raw.githubusercontent.com/Michaelhehelmy/spms/main/scripts/install.sh | sh</code></pre>
         <p class="muted" style="margin-top:8px;">Re-run to update. Recovery: <code>REPAIR=1</code>. Web (local): <code>| MODE=web HOST=127.0.0.1 PORT=8000 PM_WEB_SECRET_KEY="$(openssl rand -hex 32)" sh</code>.</p>
       </article>
 
@@ -106,7 +106,7 @@
         <div class="tag">Android (Termux)</div>
         <h2>Script install (Termux)</h2>
         <pre><code>pkg update -y &amp;&amp; pkg install -y curl
-curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh | sh</code></pre>
+curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/spms/main/scripts/install.sh | sh</code></pre>
         <p class="muted" style="margin-top:8px;">Native Android APK packaging is separate from desktop release builds. If web dependencies fail to build, install required build deps/toolchain or run the Web UI on a supported host. Recovery: <code>REPAIR=1</code>.</p>
       </article>
 
@@ -114,7 +114,7 @@ curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui
         <div class="tag">iOS (iSH / SSH / Web)</div>
         <h2>Run on a host and access in browser</h2>
         <pre><code>apk add --no-cache curl
-curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh | MODE=web sh</code></pre>
+curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/spms/main/scripts/install.sh | MODE=web sh</code></pre>
         <p class="muted" style="margin-top:8px;">No native iOS app package is provided; run the Web UI on iSH or another host, then open it over LAN/VPN/HTTPS (or via SSH port forwarding).</p>
       </article>
     </section>
@@ -140,20 +140,20 @@ curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui
           <input id="report-file" type="file" accept=".json,application/json" style="width:100%; margin-top:4px; color:var(--text);"/>
         </label>
         <button type="button" id="upload-report" class="primary">Upload &amp; send report</button>
-        <a class="btn" href="https://github.com/Michaelhehelmy/property-manager-tui/issues/new" target="_blank" rel="noopener">Open GitHub issue manually</a>
+        <a class="btn" href="https://github.com/Michaelhehelmy/spms/issues/new" target="_blank" rel="noopener">Open GitHub issue manually</a>
       </div>
       <p id="report-upload-status" class="muted" style="margin-top:10px;" aria-live="polite"></p>
       <p class="muted" style="margin-top:6px; font-size:.9rem;">Privacy: review the report before uploading. It should not contain passwords, secrets, tokens, session/recovery codes, or database/guest/payment records. Upload delivery depends on site configuration (Cloudflare Pages Function + GitHub token); if unavailable, download/attach the report to a GitHub issue manually.</p>
     </section>
 
     <footer>
-      SPMS (Super Property Management System). Repo: <a href="https://github.com/Michaelhehelmy/property-manager-tui">Michaelhehelmy/property-manager-tui</a>. Latest: <a href="https://github.com/Michaelhehelmy/property-manager-tui/releases/latest">GitHub Releases</a>. This page auto-detects OS/arch and checks latest release assets client-side.
+      SPMS (Super Property Management System). Repo: <a href="https://github.com/Michaelhehelmy/spms">Michaelhehelmy/spms</a>. Latest: <a href="https://github.com/Michaelhehelmy/spms/releases/latest">GitHub Releases</a>. This page auto-detects OS/arch and checks latest release assets client-side.
     </footer>
   </div>
 
   <script>
     (function () {
-      var REPO = 'Michaelhehelmy/property-manager-tui';
+      var REPO = 'Michaelhehelmy/spms';
       var API_LATEST = 'https://api.github.com/repos/' + REPO + '/releases/latest';
       var RELEASES_URL = 'https://github.com/' + REPO + '/releases/latest';
 
@@ -183,31 +183,31 @@ curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui
         windows: {
           title: 'Windows — install / update / launch',
           desc: 'Use a native Windows build from Releases when available, or the PowerShell installer (5.1+/7+, bootstraps Python/Git via winget when needed). Re-run to update. Use REPAIR=1 for stuck git checkouts.',
-          cmd: 'irm https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install_windows.ps1 | iex',
+          cmd: 'irm https://raw.githubusercontent.com/Michaelhehelmy/spms/main/scripts/install_windows.ps1 | iex',
           alt: 'Native: download the Windows asset below (if published). Recovery: $env:REPAIR=\'1\'; irm ... | iex  |  Web (local): default  |  Web (LAN): $env:MODE=\'web\'; $env:HOST=\'0.0.0.0\'; $env:PORT=\'8000\'; $env:PM_WEB_SECRET_KEY=\'<strong-random>\''
         },
         linux: {
           title: 'Linux / macOS / WSL — install / update / launch',
           desc: 'Use a native build from Releases when available, or the script installer. Re-run to update. Use REPAIR=1 for stuck git checkouts.',
-          cmd: 'curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh | sh',
+          cmd: 'curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/spms/main/scripts/install.sh | sh',
           alt: 'wget fallback available. Recovery: REPAIR=1. Web: ... | MODE=web HOST=127.0.0.1 PORT=8000 PM_WEB_SECRET_KEY="$(openssl rand -hex 32)" sh'
         },
         macos: {
           title: 'macOS — install / update / launch',
           desc: 'Use a native macOS build from Releases when available (x64/arm64), or the script installer. Re-run to update. Use REPAIR=1 for stuck git checkouts.',
-          cmd: 'curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh | sh',
+          cmd: 'curl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/spms/main/scripts/install.sh | sh',
           alt: 'Native: download the macOS asset below (if published), or use the script installer above.'
         },
         android: {
           title: 'Android (Termux) — install / update / launch',
           desc: 'Script install in Termux (native Android APK packaging is separate). Re-run to update. If web deps fail to build, install required build deps/toolchain or run the web UI on a supported host. Recovery: REPAIR=1.',
-          cmd: 'pkg update -y && pkg install -y curl\ncurl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh | sh',
+          cmd: 'pkg update -y && pkg install -y curl\ncurl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/spms/main/scripts/install.sh | sh',
           alt: 'Recovery: REPAIR=1 curl -fsSL .../install.sh | sh  |  Web/LAN: set MODE=web HOST=0.0.0.0 PORT=8000 PM_WEB_SECRET_KEY=<strong-random>'
         },
         ios: {
           title: 'iPhone/iPad — run on a host, access in browser',
           desc: 'No native iOS app package is provided; run the Web UI on iSH or another host, then open it in Safari over LAN/VPN/HTTPS.',
-          cmd: 'apk add --no-cache curl\ncurl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/property-manager-tui/main/scripts/install.sh | MODE=web sh',
+          cmd: 'apk add --no-cache curl\ncurl -fsSL https://raw.githubusercontent.com/Michaelhehelmy/spms/main/scripts/install.sh | MODE=web sh',
           alt: 'Run the server on a reachable host and browse http://<host-ip>:8000 (use --workers 1, strong PM_WEB_SECRET_KEY, HTTPS for shared/remote access).'
         }
       };

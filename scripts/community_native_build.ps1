@@ -99,7 +99,7 @@ if ($issueUrl) {
   if (Have gh) {
     $ans = Read-Host 'GitHub CLI (gh) detected. Create an issue automatically now? [y/N]'
     if ($ans -match '^(y|yes)$') {
-      try { gh issue create --repo "Michaelhehelmy/property-manager-tui" --title $title --body-file $reportFile --label 'community-build' } catch { Warn 'gh issue create failed (auth/permissions?). You can still use the prefilled URL above.' }
+      try { gh issue create --repo "Michaelhehelmy/spms" --title $title --body-file $reportFile --label 'community-build' } catch { Warn 'gh issue create failed (auth/permissions?). You can still use the prefilled URL above.' }
     }
   } else {
     Log 'Tip: install and authenticate GitHub CLI (gh) to auto-file; otherwise submit via the prefilled URL and attach/share the artifact+checksum if you wish.'

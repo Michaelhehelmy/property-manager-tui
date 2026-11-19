@@ -34,9 +34,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/Michaelhehelmy/property-manager-tui"
-Repository = "https://github.com/Michaelhehelmy/property-manager-tui"
-Issues = "https://github.com/Michaelhehelmy/property-manager-tui/issues"
+Homepage = "https://github.com/Michaelhehelmy/spms"
+Repository = "https://github.com/Michaelhehelmy/spms"
+Issues = "https://github.com/Michaelhehelmy/spms/issues"
 
 [project.optional-dependencies]
 # Optional local intent-routing ML (sklearn/SetFit). Install only if you train/use ML NLU.
