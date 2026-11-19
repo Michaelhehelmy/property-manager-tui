@@ -1,54 +1,46 @@
-# Local/runtime data (do not commit)
-property_manager.db
-property_manager.db-*
-*.db-shm
-*.db-wal
-exports/
-invoices/
-*.log
-
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.coverage
-.coverage.*
-htmlcov/
-coverage.xml
-*.egg-info/
-dist/
-build/
-.eggs/
-pip-wheel-metadata/
-.venv/
-venv/
-ENV/
-
-# Local/generated assistant models (trained artifacts; keep lightweight repo)
-models/
-
-# OS / editor
-.DS_Store
-Thumbs.db
-.idea/
-.vscode/
-*.swp
-*.swo
-*~
-
-# Restructured data dir (runtime)
-data/property_manager.db
-data/property_manager.db-*
-data/exports/
-data/invoices/
 
 # Dev/test generated artifacts (keep test/dev source tracked; exclude generated outputs)
-.pytest_cache/
+# Local/generated assistant models (trained artifacts; keep lightweight repo)
+# Local/runtime data (do not commit)
+# OS / editor
+# Python
+# Restructured data dir (runtime)
+*$py.class
+*.db-shm
+*.db-wal
+*.egg-info/
+*.log
+*.py[cod]
+*.swo
+*.swp
+*~
+.DS_Store
 .coverage
 .coverage.*
-htmlcov/
+.eggs/
+.idea/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.venv/
+.vscode/
+ENV/
+Thumbs.db
+__pycache__/
+build/
+coverage.json
 coverage.xml
+data/exports/
+data/invoices/
+data/property_manager.db
+data/property_manager.db-*
+dist/
+exports/
+htmlcov/
+invoices/
+models/
+pip-wheel-metadata/
+property_manager.db
+property_manager.db-*
 test-results/
+venv/
