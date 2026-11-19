@@ -260,6 +260,19 @@ async def assistant_ask(request: Request):
         pending_action = get_pending_action(request)
 
     if want_json:
+        # Error responses: return fixed safe payload to avoid any exception/trace exposure.
+        if not bool(result.get("ok", True)) and str(result.get("source") or "") == "error":
+            return {
+                "ok": False,
+                "answer": "Sorry, the assistant encountered an error while processing your request. Please try again.",
+                "intent": "error",
+                "confidence": 0.0,
+                "tools_used": [],
+                "source": "error",
+                "slots": {},
+                "ui_actions": [],
+            }
+
         # Return only sanitized, JSON-safe fields (no exception/trace data).
         safe_slots = _json_safe_value(result.get("slots") if isinstance(result.get("slots"), dict) else {})
         safe_ui_actions = _json_safe_value(result.get("ui_actions") if isinstance(result.get("ui_actions"), list) else [])
