@@ -115,7 +115,9 @@ def test_assistant_json_locked_and_chat_fallback(client, monkeypatch):
     assert r.status_code == 200
     j = r.json()
     assert j["ok"] is False
-    assert "Assistant error" in j["answer"]
+    assert "encountered an error" in j["answer"].lower()
+    assert "boom" not in j["answer"]
+    assert "RuntimeError" not in j["answer"]
 
 
 def test_assistant_action_confirm_and_cancel_json(client, monkeypatch):
