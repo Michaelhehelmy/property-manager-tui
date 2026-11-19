@@ -190,8 +190,30 @@ setup_venv_and_deps() {
   python -m pip install --require-hashes -r requirements/ci-bootstrap-tools.txt || warn "pip bootstrap upgrade failed; continuing..."
 
   log "Installing runtime dependencies (web-only app)..."
+  _pyver="$(python - <<'PY'
+import sys
+print(f"{sys.version_info.major}.{sys.version_info.minor}")
+PY
+)"
+  _rt_lock=""
+  _dev_lock=""
+  case "$(uname -s 2>/dev/null || echo unknown):$(uname -m 2>/dev/null || echo unknown):${_pyver}" in
+    Linux:x86_64:3.10) _rt_lock="requirements/runtime-linux-cp310.txt"; _dev_lock="requirements/dev-linux-cp310.txt" ;;
+    Linux:x86_64:3.11) _rt_lock="requirements/runtime-linux-cp311.txt"; _dev_lock="requirements/dev-linux-cp311.txt" ;;
+    Linux:x86_64:3.12) _rt_lock="requirements/runtime-linux-cp312.txt"; _dev_lock="requirements/dev-linux-cp312.txt" ;;
+  esac
   if [ "$SKIP_WEB" = "1" ]; then
     log "Skipping runtime dependency install (SKIP_WEB=1). SPMS is web-only and will be unavailable until dependencies are installed."
+  elif [ -n "$_rt_lock" ] && [ -f "$_rt_lock" ]; then
+    if ! python -m pip install --require-hashes -r "$_rt_lock"; then
+      warn "Hash-pinned runtime dependency installation failed; falling back to requirements.txt."
+      if [ -f requirements.txt ] && ! python -m pip install -r requirements.txt; then
+        warn "Runtime dependency installation failed. SPMS requires web dependencies (FastAPI/Uvicorn/Jinja2/etc.)."
+        warn "Constrained environments (iSH/Termux/older CPU archs, limited build toolchains): some packages (e.g. pydantic-core) may require Rust/cargo or a prebuilt wheel for your Python version/architecture."
+        warn "Install build deps/Rust and retry, or run on a supported host. To continue setup without runtime deps, rerun with SKIP_WEB=1 ACTION=setup."
+        SKIP_WEB=1
+      fi
+    fi
   elif [ -f requirements.txt ]; then
     if ! python -m pip install -r requirements.txt; then
       warn "Runtime dependency installation failed. SPMS requires web dependencies (FastAPI/Uvicorn/Jinja2/etc.)."
@@ -205,7 +227,9 @@ setup_venv_and_deps() {
 
   if [ "$INSTALL_DEV" = "1" ]; then
     log "Installing dev/test dependencies..."
-    if [ -f requirements-dev.txt ]; then
+    if [ -n "$_dev_lock" ] && [ -f "$_dev_lock" ]; then
+      python -m pip install --require-hashes -r "$_dev_lock" || warn "Dev dependency install had issues."
+    elif [ -f requirements-dev.txt ]; then
       python -m pip install -r requirements-dev.txt || warn "Dev dependency install had issues."
     else
       python -m pip install "pytest>=7.0" "httpx>=0.24" || warn "Dev dependency install had issues."

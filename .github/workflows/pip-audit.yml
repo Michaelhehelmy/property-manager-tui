@@ -48,7 +48,7 @@ jobs:
           python -m pip install --require-hashes -r requirements/ci-bootstrap-tools.txt
           python -m pip install --require-hashes -r requirements/ci-pip-audit.txt
           python -m pip install --require-hashes -r requirements/runtime-linux-cp312.txt -r requirements/dev-linux-cp312.txt
-          python -m pip install --no-deps -e .
+          python -m pip install --no-deps .
 
       - name: Run pip-audit
         run: |

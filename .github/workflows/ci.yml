@@ -35,9 +35,9 @@ jobs:
             3.10) python -m pip install --require-hashes -r requirements/runtime-linux-cp310.txt -r requirements/dev-linux-cp310.txt ;;
             3.11) python -m pip install --require-hashes -r requirements/runtime-linux-cp311.txt -r requirements/dev-linux-cp311.txt ;;
             3.12) python -m pip install --require-hashes -r requirements/runtime-linux-cp312.txt -r requirements/dev-linux-cp312.txt ;;
-            *) python -m pip install -r requirements.txt -r requirements-dev.txt ;;
+            *) echo "Unsupported Python version for hash-pinned CI deps: ${{ matrix.python-version }}" >&2; exit 1 ;;
           esac
-          python -m pip install --no-deps -e .
+          python -m pip install --no-deps .
 
       - name: Basic syntax check
         run: |
