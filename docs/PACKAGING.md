@@ -47,7 +47,7 @@ This document defines the practical packaging and modularization strategy for **
 
 ## Publishing & credentials (manual/external)
 
-- **PyPI publish:** configure **Trusted Publishing** (recommended: PyPI project → Publishing → add GitHub Actions publisher for `Michaelhehelmy/spms`, workflow `release-python-package.yml`, environment `pypi`) or add repository secret `PYPI_API_TOKEN`. The workflow supports both (`id-token: write` enabled). Create/tag a release (e.g. `v1.2.1`) to trigger build/publish. Verify package name availability (`spms`) before first publish.
+- **PyPI publish:** configure **Trusted Publishing** (recommended: PyPI project → Publishing → add GitHub Actions publisher for `Michaelhehelmy/spms`, workflow `release-python-package.yml`, environment `pypi`) or add repository secret `PYPI_API_TOKEN`. The workflow supports both (`id-token: write` enabled). Create/tag a release (e.g. `v1.2.2`) to trigger build/publish. Verify package name availability (`spms`) before first publish.
 - **GHCR/container:** uses `GITHUB_TOKEN` in workflow (already configured pattern); package visibility/permissions managed in GitHub.
 - **Signing/notarization:** Windows code signing, macOS notarization, Android signing keys require external certificates/keystores.
 - **GitHub Packages cleanup:** deleting old packages (e.g. `property-manager-tui`) requires token scopes such as `read:packages` and `delete:packages` (or owner action in GitHub UI). See README/operations notes.

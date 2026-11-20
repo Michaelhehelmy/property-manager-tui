@@ -299,10 +299,18 @@ jobs:
                       # find executable inside .app bundle
                       macos_dir = app_dst / "Contents" / "MacOS"
                       if macos_dir.exists():
-                          exes = [p for p in macos_dir.iterdir() if p.is_file()]
+                          exes = [p for p in macos_dir.iterdir() if p.is_file() and os.access(p, os.X_OK)]
                           if exes:
+                              preferred_names = {"spms", "launcher", "SPMS", "Launcher", artifact}
+                              def _macos_score(p: pathlib.Path):
+                                  if p.name in preferred_names:
+                                      return (0, p.name)
+                                  if p.suffix in (".so", ".dylib", ".py", ".pyc"):
+                                      return (2, p.name)
+                                  return (1, p.name)
+                              exes.sort(key=_macos_score)
                               return exes[0]
-                      candidates = [p for p in app_dst.rglob("*") if p.is_file() and os.access(p, os.X_OK)]
+                      candidates = [p for p in app_dst.rglob("*") if p.is_file() and os.access(p, os.X_OK) and p.suffix not in (".so", ".dylib", ".py", ".pyc")]
               else:
                   raise RuntimeError(f"Unknown platform: {build_platform}")
               if not candidates:

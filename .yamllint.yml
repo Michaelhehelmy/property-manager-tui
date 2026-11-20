@@ -1,5 +1,12 @@
 extends: default
 
+ignore: |
+  deploy/helm/spms/templates/
+  .venv/
+  venv/
+  dist/
+  htmlcov/
+
 rules:
   document-start: disable
   line-length:

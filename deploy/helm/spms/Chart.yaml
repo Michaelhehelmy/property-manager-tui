@@ -3,4 +3,4 @@ name: spms
 description: SPMS (Super Property Management System) web app - single-replica SQLite deployment
 type: application
 version: 0.1.0
-appVersion: "1.2.1"
+appVersion: "1.2.2"

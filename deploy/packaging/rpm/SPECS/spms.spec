@@ -1,5 +1,5 @@
 Name:           spms
-Version:        1.2.1
+Version:        1.2.2
 Release:        1%{?dist}
 Summary:        SPMS (Super Property Management System) web application
 
@@ -88,6 +88,8 @@ echo "Edit /etc/spms/spms.env then: systemctl enable --now spms-web"
 /usr/lib/systemd/system/spms-web.service
 
 %changelog
+* Fri Nov 20 2026 SPMS Maintainers <noreply@example.com> - 1.2.2-1
+- CI/build fixes (yamllint, native smoke test, container hash pin) and version bump
 * Fri Nov 20 2026 SPMS Maintainers <noreply@example.com> - 1.2.1-1
 - Version bump and packaging/modularity updates
 * Fri Nov 20 2026 SPMS Maintainers <noreply@example.com> - 1.2.0-1

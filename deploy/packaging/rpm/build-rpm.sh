@@ -7,7 +7,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 SPEC_SRC="$ROOT_DIR/deploy/packaging/rpm/SPECS/spms.spec"
-VERSION="${1:-${SPMS_VERSION:-1.2.1}}"
+VERSION="${1:-${SPMS_VERSION:-1.2.2}}"
 NAME="spms"
 TOPDIR="${RPM_TOPDIR:-$ROOT_DIR/dist/rpm/rpmbuild}"
 TARBALL_DIR="$TOPDIR/SOURCES"
