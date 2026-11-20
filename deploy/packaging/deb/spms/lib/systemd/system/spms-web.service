@@ -1,0 +1,21 @@
+[Unit]
+Description=SPMS Web UI (FastAPI/HTMX, SQLite-safe)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=spms
+Group=spms
+WorkingDirectory=/opt/spms
+EnvironmentFile=/etc/spms/spms.env
+Environment=PYTHONPATH=/opt/spms/src:/opt/spms
+ExecStart=/opt/spms/.venv/bin/python -m uvicorn ui.web.server:app --host ${HOST} --port ${PORT} --workers 1
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

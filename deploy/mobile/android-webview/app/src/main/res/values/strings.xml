@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">SPMS</string>
+    <!-- Set to your SPMS server URL (local Termux, LAN, or HTTPS remote) -->
+    <string name="spms_url">http://127.0.0.1:8000</string>
+</resources>

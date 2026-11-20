@@ -20,8 +20,8 @@ This document defines the practical packaging and modularization strategy for **
 | **Container image (GHCR)** | ✅ Existing | `.github/workflows/release-container.yml` publishes multi-arch `ghcr.io/michaelhehelmy/spms` on tags/dispatch (`--workers 1`, persistent `/data`). |
 | **Native binaries (Nuitka)** | ✅ Existing | `.github/workflows/release-native.yml` and `docs/NATIVE_BUILDS.md` (Windows `.exe`, Linux binary/AppImage path, macOS `.dmg`). |
 | **PWA installability** | ✅ Implemented/Existing | `ui/web/static/manifest.webmanifest`, icons, base template meta/links, and minimal service worker (`ui/web/static/sw.js`) registered for static app-shell caching (network-first for navigations; no caching of transactional POST/HTML data). |
-| **Android app package** | Planned (recommended: wrapper) | Best fit: thin WebView/TWA wrapper APK/AAB pointing to local/LAN SPMS URL (reuses web UI). Full Kivy rewrite is a separate product effort. |
-| **Linux OS packages (`.deb`/`.rpm`)** | Planned | Recommended for Raspberry Pi/server appliances with systemd unit and `PM_DATA_DIR` conventions. |
+| **Android app package** | ✅ Implemented (scaffold) | `deploy/mobile/android-webview/` minimal WebView wrapper app pointing to configurable SPMS URL (reuses web UI). Can be extended to TWA/signing/distribution. |
+| **Linux OS packages (`.deb`)** | ✅ Implemented (scaffold) | `deploy/packaging/deb/build-deb.sh` builds a `.deb` installing app under `/opt/spms` with `spms-web` systemd unit and `/etc/spms/spms.env`. RPM planned. |
 | **Windows/macOS installers** | Planned | MSI/Inno Setup for Windows, signed/notarized `.pkg`/improved `.dmg` for macOS. |
 | **Helm chart (Kubernetes)** | ✅ Implemented (skeleton) | `deploy/helm/spms` chart for single-replica SQLite-safe deployment (Recreate strategy, `--workers 1`, PVC, health/readiness probes, secret/config). |
 
@@ -30,9 +30,10 @@ This document defines the practical packaging and modularization strategy for **
 1. **Stabilize canonical build/package metadata (done):** ensure `pyproject.toml` produces complete wheels/sdists including web assets and entry points.
 2. **Automate distributable artifacts (done/ongoing):** CI builds for Python package, container, and native binaries on tagged releases.
 3. **Improve client installability (done):** PWA manifest/icons/service worker for “install to home screen” on mobile/desktop/LAN screens.
-4. **Harden deployment packages (next):** `.deb`/systemd package for Raspberry Pi/Ubuntu, improved Docker Compose examples, health/readiness docs alignment.
-5. **Platform-specific installers (next):** Windows installer, macOS signing/notarization, optional Android WebView/TWA wrapper.
-6. **Deeper modular boundaries (incremental):** keep `app_core` UI-agnostic, keep assistant/integrations optional via extras and lazy loading, avoid premature repo splits.
+4. **Harden deployment packages (done - scaffolds):** `.deb`/systemd package scaffold (`deploy/packaging/deb/`), Helm chart (`deploy/helm/spms`), Docker Compose + `.env.example`, health/readiness probes alignment.
+5. **Platform/mobile wrappers (done - scaffold / planned hardening):** Android WebView wrapper scaffold (`deploy/mobile/android-webview/`); TWA/signing/store packaging and iOS wrapper remain optional follow-ups.
+6. **Platform-specific installers (next/external):** RPM package, Windows installer (MSI/Inno), macOS signing/notarization, signed release artifacts.
+7. **Deeper modular boundaries (incremental):** keep `app_core` UI-agnostic, keep assistant/integrations optional via extras and lazy loading, avoid premature repo splits.
 
 ## Modularity boundaries (target architecture)
 

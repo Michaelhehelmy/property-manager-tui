@@ -232,7 +232,9 @@ See `docs/TROUBLESHOOTING.md`.
 - **Native binaries:** Nuitka builds via `.github/workflows/release-native.yml` (Windows `.exe`, Linux binary/AppImage path, macOS `.dmg`). See `docs/NATIVE_BUILDS.md`.
 - **PWA / installable web app:** manifest, icons, and a minimal service worker are served from `ui/web/static/` for “Add to Home Screen / Install app” (best over HTTPS for non-localhost).
 - **Kubernetes/Helm:** chart skeleton in `deploy/helm/spms` (single-replica, SQLite-safe `--workers 1`, persistent data volume, probes).
-- **Planned/optional:** `.deb`/RPM + systemd appliance packages, Windows/macOS installers, Android WebView/TWA wrapper. Details and roadmap: `docs/PACKAGING.md`.
+- **Debian/Ubuntu (`.deb`) package scaffold:** `deploy/packaging/deb/build-deb.sh` (installs under `/opt/spms`, `spms-web` systemd service, `/etc/spms/spms.env`).
+- **Android WebView wrapper scaffold:** `deploy/mobile/android-webview/` (configurable SPMS URL; reuse web UI/PWA).
+- **Planned/optional (external/signing/hardening):** RPM, Windows/macOS installers (signed/notarized), TWA/store packaging. Details and roadmap: `docs/PACKAGING.md`.
 
 ## More documentation
 
