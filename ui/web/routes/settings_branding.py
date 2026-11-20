@@ -11,15 +11,19 @@ from ui.web.route_utils import flash_redirect
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+
 @router.get("/unlock")
 def unlock_page(request: Request, next: str = "/"):
     from ui.web.route_utils import safe_local_path
+
     return render(request, "unlock.html", {"title": "Unlock", "next": safe_local_path(next, "/")})
+
 
 @router.post("/unlock")
 async def unlock_post(request: Request):
     from urllib.parse import quote
     from ui.web.route_utils import safe_local_path
+
     form = await deps.get_form(request)
     nxt = safe_local_path(form.get("next"), "/")
     try:
@@ -36,6 +40,7 @@ async def unlock_post(request: Request):
 @router.get("/unlock/recovery")
 def unlock_recovery_page(request: Request, next: str = "/"):
     from ui.web.route_utils import safe_local_path
+
     return render(request, "unlock_recovery.html", {"title": "Recover Access", "next": safe_local_path(next, "/")})
 
 
@@ -43,6 +48,7 @@ def unlock_recovery_page(request: Request, next: str = "/"):
 async def unlock_recovery_post(request: Request):
     from urllib.parse import quote
     from ui.web.route_utils import safe_local_path
+
     form = await deps.get_form(request)
     nxt = safe_local_path(form.get("next"), "/")
     try:
@@ -60,11 +66,13 @@ async def unlock_recovery_post(request: Request):
             deps.record_auth_failure(request, "recovery", window_sec=900)
         return flash_redirect(request, "/unlock/recovery?next=" + quote(nxt, safe="/"), msg, "error")
 
+
 @router.post("/lock")
 async def lock_post(request: Request):
     form = await deps.get_form(request)
     deps.lock(request)
     return flash_redirect(request, "/", "Locked", "info")
+
 
 def _detect_lan_ipv4s_web() -> list[str]:
     ips: list[str] = []
@@ -101,9 +109,10 @@ def settings(request: Request, tab: str = "general"):
         update_local = {}
     update_check = deps.get_session(request).pop("last_update_check", None)
     update_apply = deps.get_session(request).pop("last_update_apply", None)
-    allowed = {"general","data","rooms","updates"}
+    allowed = {"general", "data", "rooms", "updates"}
     tab = (tab or "general").strip().lower()
-    if tab not in allowed: tab = "general"
+    if tab not in allowed:
+        tab = "general"
     lan_ips = _detect_lan_ipv4s_web()
     try:
         req_host = request.url.hostname or ""
@@ -112,15 +121,32 @@ def settings(request: Request, tab: str = "general"):
         req_host, req_port = "", 8000
     lan_urls = [f"http://{ip}:{req_port}" for ip in lan_ips]
     is_local_access = req_host in {"127.0.0.1", "localhost", "::1", ""}
-    return render(request, "settings/index.html", {"title":"Settings / Branding",
-        "catalog": services.SETTINGS_CATALOG, "values": services.get_all_settings(),
-        "rooms": rooms, "demo_presets": demo_presets,
-        "update_local": update_local, "update_check": update_check, "update_apply": update_apply,
-        "active_tab": tab,
-        "lan_urls": lan_urls, "lan_ips": lan_ips, "current_access_host": req_host, "is_local_access": is_local_access,
-        "brand": {"name": services.get_app_display_name(), "tagline": services.get_app_tagline(),
-                  "animation": services.get_loading_animation(), "configured": services.is_branding_configured(),
-                  "gift": services.get_gift_attribution()}})
+    return render(
+        request,
+        "settings/index.html",
+        {
+            "title": "Settings / Branding",
+            "catalog": services.SETTINGS_CATALOG,
+            "values": services.get_all_settings(),
+            "rooms": rooms,
+            "demo_presets": demo_presets,
+            "update_local": update_local,
+            "update_check": update_check,
+            "update_apply": update_apply,
+            "active_tab": tab,
+            "lan_urls": lan_urls,
+            "lan_ips": lan_ips,
+            "current_access_host": req_host,
+            "is_local_access": is_local_access,
+            "brand": {
+                "name": services.get_app_display_name(),
+                "tagline": services.get_app_tagline(),
+                "animation": services.get_loading_animation(),
+                "configured": services.is_branding_configured(),
+                "gift": services.get_gift_attribution(),
+            },
+        },
+    )
 
 
 @router.get("/setup")
@@ -145,7 +171,9 @@ async def setup_wizard_post(request: Request):
         name = (form.get("display_name", "") or "").strip()
         if not name:
             raise ValueError("Display name is required.")
-        services.apply_branding_settings(name, form.get("tagline", ""), form.get("animation", "reveal"), sync_property_name=True)
+        services.apply_branding_settings(
+            name, form.get("tagline", ""), form.get("animation", "reveal"), sync_property_name=True
+        )
         deps.add_flash(request, "Setup saved. Welcome!", "success")
         r = deps.redirect("/")
     except Exception as e:
@@ -154,14 +182,21 @@ async def setup_wizard_post(request: Request):
     deps.save_session(r, deps.get_session(request))
     return r
 
+
 @router.post("/settings/branding")
 async def branding(request: Request):
     form = await deps.require_unlocked_form(request, permission="settings.manage")
     try:
-        services.apply_branding_settings(form.get("display_name",""), form.get("tagline",""), form.get("animation","reveal"))
+        services.apply_branding_settings(
+            form.get("display_name", ""), form.get("tagline", ""), form.get("animation", "reveal")
+        )
         deps.add_flash(request, "Branding updated", "success")
-    except Exception as e: deps.add_flash(request, str(e), "error")
-    r=deps.redirect("/settings?tab=general"); deps.save_session(r, deps.get_session(request)); return r
+    except Exception as e:
+        deps.add_flash(request, str(e), "error")
+    r = deps.redirect("/settings?tab=general")
+    deps.save_session(r, deps.get_session(request))
+    return r
+
 
 @router.post("/settings/save")
 async def save_settings(request: Request):
@@ -172,10 +207,16 @@ async def save_settings(request: Request):
             changes[k] = form.get(k)
     try:
         count, errs = services.save_settings(changes, deps.service_password(request, form))
-        if errs: deps.add_flash(request, "; ".join(errs), "error")
-        else: deps.add_flash(request, f"Saved {count} settings", "success")
-    except Exception as e: deps.add_flash(request, str(e), "error")
-    r=deps.redirect("/settings?tab=general"); deps.save_session(r, deps.get_session(request)); return r
+        if errs:
+            deps.add_flash(request, "; ".join(errs), "error")
+        else:
+            deps.add_flash(request, f"Saved {count} settings", "success")
+    except Exception as e:
+        deps.add_flash(request, str(e), "error")
+    r = deps.redirect("/settings?tab=general")
+    deps.save_session(r, deps.get_session(request))
+    return r
+
 
 @router.post("/settings/backup")
 async def backup(request: Request):
@@ -187,16 +228,27 @@ async def backup(request: Request):
     except Exception as e:
         deps.add_flash(request, str(e), "error")
         logger.warning("web_backup_event event=backup_failure error=%s", str(e)[:240])
-    r=deps.redirect("/settings?tab=general"); deps.save_session(r, deps.get_session(request)); return r
+    r = deps.redirect("/settings?tab=general")
+    deps.save_session(r, deps.get_session(request))
+    return r
+
 
 @router.post("/settings/demo-preset")
 async def demo_preset(request: Request):
     form = await deps.require_unlocked_form(request, permission="settings.manage")
     try:
-        res = services.apply_demo_data_preset(form.get("preset","analysis_small"), deps.service_password(request, form), form.get("confirm",""), allow_existing=False)
+        res = services.apply_demo_data_preset(
+            form.get("preset", "analysis_small"),
+            deps.service_password(request, form),
+            form.get("confirm", ""),
+            allow_existing=False,
+        )
         deps.add_flash(request, f"Demo preset applied: {res['created']}", "success")
-    except Exception as e: deps.add_flash(request, str(e), "error")
-    r=deps.redirect("/settings?tab=data"); deps.save_session(r, deps.get_session(request)); return r
+    except Exception as e:
+        deps.add_flash(request, str(e), "error")
+    r = deps.redirect("/settings?tab=data")
+    deps.save_session(r, deps.get_session(request))
+    return r
 
 
 @router.post("/settings/reset")
@@ -209,7 +261,9 @@ async def reset_settings(request: Request):
         deps.add_flash(request, "Settings reset to defaults (schema/language preserved).", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
-    r=deps.redirect("/settings?tab=data"); deps.save_session(r, deps.get_session(request)); return r
+    r = deps.redirect("/settings?tab=data")
+    deps.save_session(r, deps.get_session(request))
+    return r
 
 
 @router.get("/settings/rate-plans")
@@ -229,29 +283,41 @@ def rate_plans(request: Request):
         room_types = sorted({(r["room_type"] or "").strip() for r in services.get_all_rooms()} - {""})
     except Exception:
         room_types = []
-    return render(request, "settings/rate_plans.html", {"title": "Rate Plans & Pricing Rules", "plans": plans, "rules": rules, "room_types": room_types})
+    return render(
+        request,
+        "settings/rate_plans.html",
+        {"title": "Rate Plans & Pricing Rules", "plans": plans, "rules": rules, "room_types": room_types},
+    )
 
 
 @router.post("/settings/rate-plans/add")
 async def rate_plan_add(request: Request):
     form = await deps.require_unlocked_form(request, permission="settings.manage")
     try:
-        services.add_rate_plan(form.get("name", ""), float(form.get("modifier") or 0), deps.service_password(request, form))
+        services.add_rate_plan(
+            form.get("name", ""), float(form.get("modifier") or 0), deps.service_password(request, form)
+        )
         deps.add_flash(request, "Rate plan added.", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
-    r = deps.redirect("/settings/rate-plans"); deps.save_session(r, deps.get_session(request)); return r
+    r = deps.redirect("/settings/rate-plans")
+    deps.save_session(r, deps.get_session(request))
+    return r
 
 
 @router.post("/settings/rate-plans/{plan_id}/edit")
 async def rate_plan_edit(request: Request, plan_id: int):
     form = await deps.require_unlocked_form(request, permission="settings.manage")
     try:
-        services.update_rate_plan(plan_id, form.get("name", ""), float(form.get("modifier") or 0), deps.service_password(request, form))
+        services.update_rate_plan(
+            plan_id, form.get("name", ""), float(form.get("modifier") or 0), deps.service_password(request, form)
+        )
         deps.add_flash(request, "Rate plan updated.", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
-    r = deps.redirect("/settings/rate-plans"); deps.save_session(r, deps.get_session(request)); return r
+    r = deps.redirect("/settings/rate-plans")
+    deps.save_session(r, deps.get_session(request))
+    return r
 
 
 @router.post("/settings/rate-plans/{plan_id}/delete")
@@ -262,7 +328,9 @@ async def rate_plan_delete(request: Request, plan_id: int):
         deps.add_flash(request, "Rate plan deleted.", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
-    r = deps.redirect("/settings/rate-plans"); deps.save_session(r, deps.get_session(request)); return r
+    r = deps.redirect("/settings/rate-plans")
+    deps.save_session(r, deps.get_session(request))
+    return r
 
 
 @router.post("/settings/rate-rules/add")
@@ -287,7 +355,9 @@ async def rate_rule_add(request: Request):
         deps.add_flash(request, "Rate rule added.", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
-    r = deps.redirect("/settings/rate-plans"); deps.save_session(r, deps.get_session(request)); return r
+    r = deps.redirect("/settings/rate-plans")
+    deps.save_session(r, deps.get_session(request))
+    return r
 
 
 @router.post("/settings/rate-rules/{rule_id}/edit")
@@ -313,8 +383,9 @@ async def rate_rule_edit(request: Request, rule_id: int):
         deps.add_flash(request, "Rate rule updated.", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
-    r = deps.redirect("/settings/rate-plans"); deps.save_session(r, deps.get_session(request)); return r
-
+    r = deps.redirect("/settings/rate-plans")
+    deps.save_session(r, deps.get_session(request))
+    return r
 
 
 @router.post("/settings/users/login")
@@ -327,13 +398,27 @@ async def settings_users_login(request: Request):
         else:
             deps.set_current_user(request, user)
             try:
-                services._audit("user_session_login", "user", user.get("id"), user.get("username"), actor=user.get("username"), actor_user_id=user.get("id"), actor_role=user.get("role") or "")
+                services._audit(
+                    "user_session_login",
+                    "user",
+                    user.get("id"),
+                    user.get("username"),
+                    actor=user.get("username"),
+                    actor_user_id=user.get("id"),
+                    actor_role=user.get("role") or "",
+                )
             except Exception:
                 pass
-            deps.add_flash(request, f"Logged in as {user.get('display_name') or user.get('username')} ({user.get('role')}). Audit actor context updated for this session.", "success")
+            deps.add_flash(
+                request,
+                f"Logged in as {user.get('display_name') or user.get('username')} ({user.get('role')}). Audit actor context updated for this session.",
+                "success",
+            )
     except Exception as e:
         deps.add_flash(request, str(e), "error")
-    r = deps.redirect("/settings/users"); deps.save_session(r, deps.get_session(request)); return r
+    r = deps.redirect("/settings/users")
+    deps.save_session(r, deps.get_session(request))
+    return r
 
 
 @router.post("/settings/users/logout")
@@ -344,13 +429,23 @@ async def settings_users_logout(request: Request):
         deps.clear_current_user(request)
         if u:
             try:
-                services._audit("user_session_logout", "user", u.get("id"), u.get("username"), actor=u.get("username"), actor_user_id=u.get("id"), actor_role=u.get("role") or "")
+                services._audit(
+                    "user_session_logout",
+                    "user",
+                    u.get("id"),
+                    u.get("username"),
+                    actor=u.get("username"),
+                    actor_user_id=u.get("id"),
+                    actor_role=u.get("role") or "",
+                )
             except Exception:
                 pass
         deps.add_flash(request, "User session cleared. Existing unlock flow unchanged.", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
-    r = deps.redirect("/settings/users"); deps.save_session(r, deps.get_session(request)); return r
+    r = deps.redirect("/settings/users")
+    deps.save_session(r, deps.get_session(request))
+    return r
 
 
 @router.get("/settings/health")
@@ -388,7 +483,9 @@ async def settings_users_add(request: Request):
         deps.add_flash(request, "User created (RBAC groundwork; existing unlock flow unchanged).", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
-    r = deps.redirect("/settings/users"); deps.save_session(r, deps.get_session(request)); return r
+    r = deps.redirect("/settings/users")
+    deps.save_session(r, deps.get_session(request))
+    return r
 
 
 @router.post("/settings/users/{user_id}/edit")
@@ -405,8 +502,9 @@ async def settings_users_edit(request: Request, user_id: int):
         deps.add_flash(request, "User updated.", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
-    r = deps.redirect("/settings/users"); deps.save_session(r, deps.get_session(request)); return r
-
+    r = deps.redirect("/settings/users")
+    deps.save_session(r, deps.get_session(request))
+    return r
 
 
 @router.post("/settings/seed/export")
@@ -416,12 +514,17 @@ async def seed_export(request: Request):
     try:
         path = services.export_seed_config()
         name = Path(path).name
-        deps.add_flash(request, f"Seed config exported: {name}. Download it, edit JSON, then upload for first-time seed.", "success")
+        deps.add_flash(
+            request,
+            f"Seed config exported: {name}. Download it, edit JSON, then upload for first-time seed.",
+            "success",
+        )
         r = deps.redirect(f"/files/export/{name}")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
         r = deps.redirect("/settings?tab=data")
-    deps.save_session(r, deps.get_session(request)); return r
+    deps.save_session(r, deps.get_session(request))
+    return r
 
 
 @router.post("/settings/seed/import")
@@ -438,12 +541,18 @@ async def seed_import(request: Request):
             raise ValueError("Seed config must be a .json or .csv file.")
         ctype = (getattr(upload, "content_type", "") or "").lower()
         allowed = {
-            "application/json", "text/json", "text/plain", "application/octet-stream",
-            "text/csv", "application/csv", "application/vnd.ms-excel",
+            "application/json",
+            "text/json",
+            "text/plain",
+            "application/octet-stream",
+            "text/csv",
+            "application/csv",
+            "application/vnd.ms-excel",
         }
         if ctype and ctype not in allowed:
             raise ValueError("Invalid upload content type for seed config.")
         import tempfile
+
         suffix = ".csv" if lower.endswith(".csv") else ".json"
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
             data = await upload.read()
@@ -455,8 +564,12 @@ async def seed_import(request: Request):
             tmp_path = tmp.name
         try:
             res = services.import_seed_config(tmp_path, deps.service_password(request, form), form.get("confirm", ""))
-            msg_kind = "Inventory CSV seed" if lower.endswith('.csv') else "Seed config"
-            deps.add_flash(request, f"{msg_kind} applied (first-time setup, pre-operational DB): {res.get('summary', {})}", "success")
+            msg_kind = "Inventory CSV seed" if lower.endswith(".csv") else "Seed config"
+            deps.add_flash(
+                request,
+                f"{msg_kind} applied (first-time setup, pre-operational DB): {res.get('summary', {})}",
+                "success",
+            )
         finally:
             try:
                 Path(tmp_path).unlink()
@@ -464,7 +577,9 @@ async def seed_import(request: Request):
                 pass
     except Exception as e:
         deps.add_flash(request, str(e), "error")
-    r = deps.redirect("/settings?tab=data"); deps.save_session(r, deps.get_session(request)); return r
+    r = deps.redirect("/settings?tab=data")
+    deps.save_session(r, deps.get_session(request))
+    return r
 
 
 @router.post("/settings/seed/export-inventory-csv")
@@ -480,19 +595,29 @@ async def seed_export_inventory_csv(request: Request):
     except Exception as e:
         deps.add_flash(request, str(e), "error")
         r = deps.redirect("/settings?tab=data")
-    deps.save_session(r, deps.get_session(request)); return r
+    deps.save_session(r, deps.get_session(request))
+    return r
 
 
 @router.post("/settings/rooms/add")
 async def room_add(request: Request):
     form = await deps.require_unlocked_form(request, permission="settings.manage")
     try:
-        rid = services.add_room(form.get("room_number", ""), form.get("room_type", ""), form.get("base_price", 0), form.get("housekeeping_status", "Clean"))
+        rid = services.add_room(
+            form.get("room_number", ""),
+            form.get("room_type", ""),
+            form.get("base_price", 0),
+            form.get("housekeeping_status", "Clean"),
+        )
         deps.add_flash(request, f"Room added (#{rid}).", "success")
-        r = deps.redirect("/settings?tab=rooms"); deps.save_session(r, deps.get_session(request)); return r
+        r = deps.redirect("/settings?tab=rooms")
+        deps.save_session(r, deps.get_session(request))
+        return r
     except Exception as e:
         deps.add_flash(request, str(e), "error")
-        r = deps.redirect("/settings?tab=rooms"); deps.save_session(r, deps.get_session(request)); return r
+        r = deps.redirect("/settings?tab=rooms")
+        deps.save_session(r, deps.get_session(request))
+        return r
 
 
 @router.post("/settings/rooms/{room_id}/delete")
@@ -503,8 +628,9 @@ async def room_delete(request: Request, room_id: int):
         deps.add_flash(request, "Room deleted.", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
-    r = deps.redirect("/settings?tab=rooms"); deps.save_session(r, deps.get_session(request)); return r
-
+    r = deps.redirect("/settings?tab=rooms")
+    deps.save_session(r, deps.get_session(request))
+    return r
 
 
 @router.post("/settings/test-label")
@@ -515,7 +641,9 @@ async def test_label(request: Request):
         deps.add_flash(request, f"Test label: {msg} ({p})", "success" if ok else "warning")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
-    r = deps.redirect("/settings?tab=general"); deps.save_session(r, deps.get_session(request)); return r
+    r = deps.redirect("/settings?tab=general")
+    deps.save_session(r, deps.get_session(request))
+    return r
 
 
 @router.post("/settings/updates/check")
@@ -529,16 +657,26 @@ async def updates_check(request: Request):
             logger.warning("web_update_event event=check_error error=%s", str(result.get("error"))[:240])
         elif result.get("update_available"):
             n = result.get("commits_behind")
-            deps.add_flash(request, f"Update available ({n} commit(s) behind). Review changelog, back up/verify runtime data, then apply during a maintenance window." if n is not None else "Update available. Review changelog and back up runtime data before applying.", "info")
+            deps.add_flash(
+                request,
+                f"Update available ({n} commit(s) behind). Review changelog, back up/verify runtime data, then apply during a maintenance window."
+                if n is not None
+                else "Update available. Review changelog and back up runtime data before applying.",
+                "info",
+            )
             logger.info("web_update_event event=check_available commits_behind=%s", n)
         else:
-            deps.add_flash(request, "You are up to date. Runtime data (DB/exports/invoices) remains preserved.", "success")
+            deps.add_flash(
+                request, "You are up to date. Runtime data (DB/exports/invoices) remains preserved.", "success"
+            )
             logger.info("web_update_event event=check_up_to_date")
     except Exception as e:
         deps.get_session(request)["last_update_check"] = {"ok": False, "error": str(e)}
         deps.add_flash(request, f"Update check failed: {e}", "error")
         logger.warning("web_update_event event=check_exception error=%s", str(e)[:240])
-    r = deps.redirect("/settings?tab=updates"); deps.save_session(r, deps.get_session(request)); return r
+    r = deps.redirect("/settings?tab=updates")
+    deps.save_session(r, deps.get_session(request))
+    return r
 
 
 @router.post("/settings/updates/apply")
@@ -550,19 +688,27 @@ async def updates_apply(request: Request):
         result = updater.apply_update()
         deps.get_session(request)["last_update_apply"] = result
         if result.get("ok"):
-            deps.add_flash(request, "Update applied (git fast-forward). Runtime data (DB/exports/invoices/PM_DATA_DIR) was preserved. Restart the app/service to use the new version and run doctor/health checks after restart.", "success")
+            deps.add_flash(
+                request,
+                "Update applied (git fast-forward). Runtime data (DB/exports/invoices/PM_DATA_DIR) was preserved. Restart the app/service to use the new version and run doctor/health checks after restart.",
+                "success",
+            )
             logger.info("web_update_event event=apply_success")
         else:
-            deps.add_flash(request, result.get("error") or "Update failed. Runtime data was not deleted; review git status/logs before retrying.", "error")
+            deps.add_flash(
+                request,
+                result.get("error")
+                or "Update failed. Runtime data was not deleted; review git status/logs before retrying.",
+                "error",
+            )
             logger.warning("web_update_event event=apply_failure error=%s", str(result.get("error") or "unknown")[:240])
     except Exception as e:
         deps.get_session(request)["last_update_apply"] = {"ok": False, "error": str(e)}
         deps.add_flash(request, str(e), "error")
         logger.warning("web_update_event event=apply_exception error=%s", str(e)[:240])
-    r = deps.redirect("/settings?tab=updates"); deps.save_session(r, deps.get_session(request)); return r
-
-
-
+    r = deps.redirect("/settings?tab=updates")
+    deps.save_session(r, deps.get_session(request))
+    return r
 
 
 @router.get("/settings/vouchers")
@@ -593,7 +739,9 @@ async def voucher_add(request: Request):
         deps.add_flash(request, "Voucher created.", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
-    r = deps.redirect("/settings/vouchers"); deps.save_session(r, deps.get_session(request)); return r
+    r = deps.redirect("/settings/vouchers")
+    deps.save_session(r, deps.get_session(request))
+    return r
 
 
 @router.post("/settings/vouchers/{voucher_id}/edit")
@@ -616,8 +764,9 @@ async def voucher_edit(request: Request, voucher_id: int):
         deps.add_flash(request, "Voucher updated.", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
-    r = deps.redirect("/settings/vouchers"); deps.save_session(r, deps.get_session(request)); return r
-
+    r = deps.redirect("/settings/vouchers")
+    deps.save_session(r, deps.get_session(request))
+    return r
 
 
 @router.get("/settings/service-catalog")
@@ -644,7 +793,9 @@ async def service_catalog_add(request: Request):
         deps.add_flash(request, "Service catalog item created.", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
-    r = deps.redirect("/settings/service-catalog"); deps.save_session(r, deps.get_session(request)); return r
+    r = deps.redirect("/settings/service-catalog")
+    deps.save_session(r, deps.get_session(request))
+    return r
 
 
 @router.post("/settings/service-catalog/{item_id}/edit")
@@ -663,8 +814,9 @@ async def service_catalog_edit(request: Request, item_id: int):
         deps.add_flash(request, "Service catalog item updated.", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
-    r = deps.redirect("/settings/service-catalog"); deps.save_session(r, deps.get_session(request)); return r
-
+    r = deps.redirect("/settings/service-catalog")
+    deps.save_session(r, deps.get_session(request))
+    return r
 
 
 @router.get("/settings/packages")
@@ -677,7 +829,9 @@ def packages(request: Request):
         catalog = services.list_service_catalog(active_only=True)
     except Exception:
         catalog = []
-    return render(request, "settings/packages.html", {"title": "Packages & Bundles", "packages": pkgs, "catalog": catalog})
+    return render(
+        request, "settings/packages.html", {"title": "Packages & Bundles", "packages": pkgs, "catalog": catalog}
+    )
 
 
 @router.post("/settings/packages/add")
@@ -688,18 +842,24 @@ async def package_add(request: Request):
         deps.add_flash(request, "Package created.", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
-    r = deps.redirect("/settings/packages"); deps.save_session(r, deps.get_session(request)); return r
+    r = deps.redirect("/settings/packages")
+    deps.save_session(r, deps.get_session(request))
+    return r
 
 
 @router.post("/settings/packages/{package_id}/edit")
 async def package_edit(request: Request, package_id: int):
     form = await deps.require_unlocked_form(request, permission="settings.manage")
     try:
-        services.update_package(package_id, name=form.get("name"), description=form.get("description"), active=bool(form.get("active")))
+        services.update_package(
+            package_id, name=form.get("name"), description=form.get("description"), active=bool(form.get("active"))
+        )
         deps.add_flash(request, "Package updated.", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
-    r = deps.redirect("/settings/packages"); deps.save_session(r, deps.get_session(request)); return r
+    r = deps.redirect("/settings/packages")
+    deps.save_session(r, deps.get_session(request))
+    return r
 
 
 @router.post("/settings/packages/{package_id}/items/add")
@@ -709,7 +869,7 @@ async def package_item_add(request: Request, package_id: int):
         sid = form.get("service_id") or None
         up = form.get("unit_price")
         tax_raw = form.get("taxable")
-        taxable = None if tax_raw in (None, "", "inherit") else (str(tax_raw) in ("1","true","on","yes"))
+        taxable = None if tax_raw in (None, "", "inherit") else (str(tax_raw) in ("1", "true", "on", "yes"))
         services.add_package_item(
             package_id,
             service_id=int(sid) if sid not in (None, "", "0") else None,
@@ -722,7 +882,9 @@ async def package_item_add(request: Request, package_id: int):
         deps.add_flash(request, "Package item added.", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
-    r = deps.redirect("/settings/packages"); deps.save_session(r, deps.get_session(request)); return r
+    r = deps.redirect("/settings/packages")
+    deps.save_session(r, deps.get_session(request))
+    return r
 
 
 @router.post("/settings/packages/items/{item_id}/delete")
@@ -733,9 +895,9 @@ async def package_item_delete(request: Request, item_id: int):
         deps.add_flash(request, "Package item removed.", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
-    r = deps.redirect("/settings/packages"); deps.save_session(r, deps.get_session(request)); return r
-
-
+    r = deps.redirect("/settings/packages")
+    deps.save_session(r, deps.get_session(request))
+    return r
 
 
 @router.get("/settings/approvals")
@@ -745,11 +907,15 @@ def settings_approvals(request: Request, status: str = ""):
         approvals = services.list_approvals(status=status or "", limit=200)
     except Exception:
         approvals = []
-    return render(request, "settings/approvals.html", {
-        "title": "Approvals",
-        "approvals": approvals,
-        "status_filter": status or "",
-    })
+    return render(
+        request,
+        "settings/approvals.html",
+        {
+            "title": "Approvals",
+            "approvals": approvals,
+            "status_filter": status or "",
+        },
+    )
 
 
 @router.post("/settings/approvals/request")
@@ -774,7 +940,9 @@ async def settings_approvals_request(request: Request):
         deps.add_flash(request, f"Approval request #{aid} created (pending).", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
-    r = deps.redirect("/settings/approvals"); deps.save_session(r, deps.get_session(request)); return r
+    r = deps.redirect("/settings/approvals")
+    deps.save_session(r, deps.get_session(request))
+    return r
 
 
 @router.post("/settings/approvals/{approval_id}/decide")
@@ -791,9 +959,8 @@ async def settings_approvals_decide(request: Request, approval_id: int):
         deps.add_flash(request, str(e), "error")
     status = form.get("status_filter", "")
     r = deps.redirect("/settings/approvals" + (f"?status={status}" if status else ""))
-    deps.save_session(r, deps.get_session(request)); return r
-
-
+    deps.save_session(r, deps.get_session(request))
+    return r
 
 
 @router.post("/settings/approvals/{approval_id}/execute")
@@ -813,7 +980,8 @@ async def settings_approvals_execute(request: Request, approval_id: int):
         deps.add_flash(request, str(e), "error")
     status = form.get("status_filter", "")
     r = deps.redirect("/settings/approvals" + (f"?status={status}" if status else ""))
-    deps.save_session(r, deps.get_session(request)); return r
+    deps.save_session(r, deps.get_session(request))
+    return r
 
 
 @router.post("/updates/dismiss")
@@ -830,11 +998,13 @@ async def updates_dismiss(request: Request):
     nxt = str(form.get("next") or "").strip() or "/"
     try:
         from ui.web.route_utils import safe_local_path
+
         resolved = safe_local_path(nxt, "")
         if not resolved:
             ref = (request.headers.get("referer") or "").strip()
             if ref:
                 from urllib.parse import urlsplit
+
                 parts = urlsplit(ref)
                 if parts.scheme in ("", "http", "https") and parts.netloc in ("", str(request.url.netloc)):
                     cand = (parts.path or "/") + (("?" + parts.query) if parts.query else "")
@@ -861,6 +1031,7 @@ async def updates_apply_now(request: Request):
             pass
     except Exception as e:
         from urllib.parse import quote
+
         nxt_unlock = "/settings?tab=updates"
         r = deps.redirect(f"/unlock?next={quote(nxt_unlock, safe='/')}", status_code=303)
         deps.add_flash(request, "Unlock required to update the app.", "warning")
@@ -879,32 +1050,63 @@ async def updates_apply_now(request: Request):
         if local.get("is_git_repo"):
             # Require a clean tree for safety (same as settings apply).
             if local.get("dirty"):
-                deps.add_flash(request, "Automatic update cannot run because local source changes are present. Open Settings → Updates to review and apply safely.", "warning")
-                r = deps.redirect("/settings?tab=updates"); deps.save_session(r, deps.get_session(request)); return r
+                deps.add_flash(
+                    request,
+                    "Automatic update cannot run because local source changes are present. Open Settings → Updates to review and apply safely.",
+                    "warning",
+                )
+                r = deps.redirect("/settings?tab=updates")
+                deps.save_session(r, deps.get_session(request))
+                return r
             result = updater.apply_update()
             deps.get_session(request)["last_update_apply"] = result
             if result.get("ok"):
-                deps.add_flash(request, "Update applied successfully. Restart the app/server to load the new version (runtime data was preserved).", "success")
+                deps.add_flash(
+                    request,
+                    "Update applied successfully. Restart the app/server to load the new version (runtime data was preserved).",
+                    "success",
+                )
                 logger.info("web_update_event event=apply_now_success")
             else:
-                deps.add_flash(request, result.get("error") or "Automatic update failed. Open Settings → Updates for details.", "error")
-                logger.warning("web_update_event event=apply_now_failure error=%s", str(result.get("error") or "unknown")[:240])
-            r = deps.redirect("/settings?tab=updates"); deps.save_session(r, deps.get_session(request)); return r
+                deps.add_flash(
+                    request,
+                    result.get("error") or "Automatic update failed. Open Settings → Updates for details.",
+                    "error",
+                )
+                logger.warning(
+                    "web_update_event event=apply_now_failure error=%s", str(result.get("error") or "unknown")[:240]
+                )
+            r = deps.redirect("/settings?tab=updates")
+            deps.save_session(r, deps.get_session(request))
+            return r
 
         # Native/release or non-git installs: in-place self-replacement is not safely supported.
-        url = (notice.get("url") or updater.REPO_URL + "/releases/latest") if isinstance(notice, dict) else (updater.REPO_URL + "/releases/latest")
+        url = (
+            (notice.get("url") or updater.REPO_URL + "/releases/latest")
+            if isinstance(notice, dict)
+            else (updater.REPO_URL + "/releases/latest")
+        )
         deps.get_session(request)["last_update_apply"] = {
             "ok": False,
             "guided": True,
             "url": url,
             "error": "Automatic in-place update is not supported for this installation type.",
         }
-        deps.add_flash(request, "Automatic in-place update is not supported for this install (native/release/non-git). Download the latest release for your platform and restart the app. Your data directory/DB is preserved.", "info")
-        logger.info("web_update_event event=apply_now_guided kind=%s", (notice.get("kind") if isinstance(notice, dict) else None))
+        deps.add_flash(
+            request,
+            "Automatic in-place update is not supported for this install (native/release/non-git). Download the latest release for your platform and restart the app. Your data directory/DB is preserved.",
+            "info",
+        )
+        logger.info(
+            "web_update_event event=apply_now_guided kind=%s",
+            (notice.get("kind") if isinstance(notice, dict) else None),
+        )
         r = deps.redirect("/settings?tab=updates")
-        deps.save_session(r, deps.get_session(request)); return r
+        deps.save_session(r, deps.get_session(request))
+        return r
     except Exception as e:
         deps.add_flash(request, f"Update action failed: {e}", "error")
         logger.warning("web_update_event event=apply_now_exception error=%s", str(e)[:240])
-        r = deps.redirect("/settings?tab=updates"); deps.save_session(r, deps.get_session(request)); return r
-
+        r = deps.redirect("/settings?tab=updates")
+        deps.save_session(r, deps.get_session(request))
+        return r

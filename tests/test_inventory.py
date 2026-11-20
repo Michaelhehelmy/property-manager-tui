@@ -1,4 +1,5 @@
 """Inventory: CRUD, restock, warnings, soft delete."""
+
 import pytest
 from app_core import services
 from app_core.db import connect
@@ -24,6 +25,7 @@ def test_update_item(clean_db):
 
 def test_delete_zero_stock_item(clean_db):
     from app_core.db import transaction
+
     with transaction() as c:
         c.execute("INSERT INTO inventory (item_name, category, stock_qty, unit) VALUES ('Empty', 'Test', 0, 'pcs')")
         iid = c.execute("SELECT last_insert_rowid()").fetchone()[0]
@@ -46,17 +48,19 @@ def test_restock_increases_stock(clean_db):
 
 def test_restock_creates_asset_in(clean_db):
     services.restock_inventory(1, 10, 3.0, "testpass")
-    row = connect().execute(
-        "SELECT net FROM general_ledger WHERE entry_type='ASSET_IN' ORDER BY id DESC LIMIT 1"
-    ).fetchone()
+    row = (
+        connect()
+        .execute("SELECT net FROM general_ledger WHERE entry_type='ASSET_IN' ORDER BY id DESC LIMIT 1")
+        .fetchone()
+    )
     assert row["net"] == pytest.approx(30.0)
 
 
 def test_restock_creates_inventory_log(clean_db):
     services.restock_inventory(1, 10, 3.0, "testpass")
-    log = connect().execute(
-        "SELECT change_type FROM inventory_logs WHERE item_id=1 ORDER BY id DESC LIMIT 1"
-    ).fetchone()
+    log = (
+        connect().execute("SELECT change_type FROM inventory_logs WHERE item_id=1 ORDER BY id DESC LIMIT 1").fetchone()
+    )
     assert log["change_type"] == "IN_RECEIVE"
 
 
@@ -80,6 +84,7 @@ def test_weighted_average_cost(clean_db):
 
 def test_warnings_low_stock(clean_db):
     from app_core.db import transaction
+
     with transaction() as c:
         c.execute("UPDATE inventory SET stock_qty=2 WHERE id=1")  # Water below threshold
     warns = services.get_inventory_warnings()
@@ -88,6 +93,7 @@ def test_warnings_low_stock(clean_db):
 
 def test_warnings_negative_stock(clean_db):
     from app_core.db import transaction
+
     with transaction() as c:
         c.execute("UPDATE inventory SET stock_qty=-5 WHERE id=1")
     warns = services.get_inventory_warnings()
@@ -96,6 +102,7 @@ def test_warnings_negative_stock(clean_db):
 
 def test_warnings_overstock(clean_db):
     from app_core.db import transaction
+
     with transaction() as c:
         c.execute("UPDATE inventory SET stock_qty=500 WHERE id=1")
     warns = services.get_inventory_warnings()
@@ -115,6 +122,7 @@ def test_search_inventory_filters_category(clean_db):
 
 def test_search_inventory_filters_negative_stock(clean_db):
     from app_core.db import transaction
+
     with transaction() as c:
         c.execute("UPDATE inventory SET stock_qty=-5 WHERE id=1")
     rows = services.search_inventory("", "", "Negative")
@@ -123,6 +131,7 @@ def test_search_inventory_filters_negative_stock(clean_db):
 
 def test_soft_deleted_hidden_from_search(clean_db):
     from app_core.db import transaction
+
     with transaction() as c:
         c.execute("INSERT INTO inventory (item_name, category, stock_qty, unit) VALUES ('Temp', 'Test', 0, 'pcs')")
         iid = c.execute("SELECT last_insert_rowid()").fetchone()[0]

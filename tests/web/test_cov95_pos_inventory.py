@@ -10,8 +10,21 @@ def _insert_inventory_item(name="Cov Item", sku="COV-SKU", barcode="COV-BAR"):
     # use real service signature when possible (requires super password "testpass" in web_env)
     try:
         return services.add_inventory_item(
-            name, "General", "ea", 0, 1.0, 2.0, 0, 0, "testpass",
-            sku=sku, barcode=barcode, barcode_type="code128", track_batches=1, shelf_life_days=30, default_supplier="",
+            name,
+            "General",
+            "ea",
+            0,
+            1.0,
+            2.0,
+            0,
+            0,
+            "testpass",
+            sku=sku,
+            barcode=barcode,
+            barcode_type="code128",
+            track_batches=1,
+            shelf_life_days=30,
+            default_supplier="",
         )
     except Exception:
         pass
@@ -44,7 +57,9 @@ def test_pos_inventory_enrich_and_trace_missing_branches():
 
     # _enrich_pos_rows: batch_ids path + enrichment copy (29-51)
     uniq = uuid.uuid4().hex[:8]
-    item_id = _insert_inventory_item(name=f"Cov Enrich Item {uniq}", sku=f"COV-ENR-SKU-{uniq}", barcode=f"COV-ENR-BAR-{uniq}")
+    item_id = _insert_inventory_item(
+        name=f"Cov Enrich Item {uniq}", sku=f"COV-ENR-SKU-{uniq}", barcode=f"COV-ENR-BAR-{uniq}"
+    )
     lot = f"LOT-ENR-{uniq}"
     bid = _insert_batch(item_id, lot=lot, expiry_date="2099-01-01")
     rows = [{"id": 1, "desc": "x", "batch_id": bid}]
@@ -61,15 +76,21 @@ def test_pos_inventory_enrich_and_trace_missing_branches():
     assert t_by_lot.get("lot_code") == lot
 
     # _cart_view copies pre-existing trace fields (118)
-    cart = [{
-        "desc": "Item", "qty": 1, "price": 1.0, "inv_id": item_id,
-        "batch_id": bid, "lot_code": "LOT-ENR",
-        "batch_received_at": "2099-01-01 10:00:00",
-        "batch_expiry_date": "2099-01-01",
-        "batch_expiry_state": "ok",
-        "batch_days_to_expiry": 10,
-        "batch_supplier": "Sup",
-    }]
+    cart = [
+        {
+            "desc": "Item",
+            "qty": 1,
+            "price": 1.0,
+            "inv_id": item_id,
+            "batch_id": bid,
+            "lot_code": "LOT-ENR",
+            "batch_received_at": "2099-01-01 10:00:00",
+            "batch_expiry_date": "2099-01-01",
+            "batch_expiry_state": "ok",
+            "batch_days_to_expiry": 10,
+            "batch_supplier": "Sup",
+        }
+    ]
     lines, total = pr._cart_view(cart)
     assert lines[0]["batch_received_at"] == "2099-01-01 10:00:00"
     assert lines[0]["batch_supplier"] == "Sup"
@@ -86,34 +107,42 @@ def test_pos_add_route_success_and_error(client, monkeypatch):
         calls.append((rid, desc, qty, price, inv_id, batch_id, lot_code))
 
     monkeypatch.setattr(pr.services, "add_pos_item", fake_add_pos_item)
-    r = client.post("/pos/add", data={
-        "csrf": token,
-        "reservation_id": "5",
-        "inv_id": "7",
-        "batch_id": "9",
-        "lot_code": " L9 ",
-        "desc": "Coffee",
-        "qty": "2",
-        "price": "3.5",
-        "next": "/pos?tab=history",
-    }, follow_redirects=False)
+    r = client.post(
+        "/pos/add",
+        data={
+            "csrf": token,
+            "reservation_id": "5",
+            "inv_id": "7",
+            "batch_id": "9",
+            "lot_code": " L9 ",
+            "desc": "Coffee",
+            "qty": "2",
+            "price": "3.5",
+            "next": "/pos?tab=history",
+        },
+        follow_redirects=False,
+    )
     assert r.status_code in (302, 303)
     assert "/pos?tab=history" in (r.headers.get("location") or "")
     assert calls and calls[-1] == (5, "Coffee", 2, 3.5, 7, 9, "L9")
 
     # invalid/empty optionals + error flash branch
     monkeypatch.setattr(pr.services, "add_pos_item", lambda *a, **k: (_ for _ in ()).throw(ValueError("boom")))
-    r = client.post("/pos/add", data={
-        "csrf": token,
-        "reservation_id": "",
-        "inv_id": "",
-        "batch_id": "",
-        "lot_code": "",
-        "desc": "Item",
-        "qty": "1",
-        "price": "1.0",
-        "next": "http://evil.invalid/x",  # should be sanitized by safe_local_path
-    }, follow_redirects=False)
+    r = client.post(
+        "/pos/add",
+        data={
+            "csrf": token,
+            "reservation_id": "",
+            "inv_id": "",
+            "batch_id": "",
+            "lot_code": "",
+            "desc": "Item",
+            "qty": "1",
+            "price": "1.0",
+            "next": "http://evil.invalid/x",  # should be sanitized by safe_local_path
+        },
+        follow_redirects=False,
+    )
     assert r.status_code in (302, 303)
     loc = r.headers.get("location") or ""
     assert "/pos?tab=sell" in loc or loc.startswith("/")
@@ -121,5 +150,9 @@ def test_pos_add_route_success_and_error(client, monkeypatch):
     # legacy-safe: ensure route requires unlock/csrf handled by dependency/middleware; unlocked session already set
     # success path with "None" style batch id parsing
     monkeypatch.setattr(pr.services, "add_pos_item", fake_add_pos_item)
-    r = client.post("/pos/add", data={"csrf": token, "reservation_id": "1", "desc": "X", "qty": "1", "price": "0", "batch_id": "None"}, follow_redirects=True)
+    r = client.post(
+        "/pos/add",
+        data={"csrf": token, "reservation_id": "1", "desc": "X", "qty": "1", "price": "0", "batch_id": "None"},
+        follow_redirects=True,
+    )
     assert r.status_code == 200

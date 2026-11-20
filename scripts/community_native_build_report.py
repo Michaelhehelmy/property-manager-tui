@@ -4,6 +4,7 @@
 Privacy-first: reuses app_core.support redaction/sanitization. No secrets, DB data,
 or runtime records are included. Review before sharing.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -85,14 +86,24 @@ def main(argv=None) -> int:
     try:
         diag = bundle.get("diagnostics") or {}
         diag = dict(diag)
-        diag["community_native_build"] = support.sanitize_for_report(extra["community_native_build"], "community_native_build")
+        diag["community_native_build"] = support.sanitize_for_report(
+            extra["community_native_build"], "community_native_build"
+        )
         diag["sharing_guidance"] = extra["sharing_guidance"]
         bundle["diagnostics"] = diag
         # rebuild markdown/issue with extra section
         md = support.format_support_report_markdown(diag, user={"title": args.title, "actual": args.notes or ""})
         # append explicit build section for readability
         b = diag.get("community_native_build") or {}
-        lines = [md.rstrip(), "", "### Community native build details", "```json", json.dumps(b, ensure_ascii=False, indent=2, sort_keys=True), "```", ""]
+        lines = [
+            md.rstrip(),
+            "",
+            "### Community native build details",
+            "```json",
+            json.dumps(b, ensure_ascii=False, indent=2, sort_keys=True),
+            "```",
+            "",
+        ]
         md = "\n".join(lines)
         bundle["markdown"] = md
         bundle["issue"] = support.build_github_issue_url(title=args.title or "Community native build report", body=md)
@@ -105,7 +116,17 @@ def main(argv=None) -> int:
         outp.write_text(bundle.get("markdown") or "", encoding="utf-8")
 
     if args.json:
-        print(json.dumps({"issue_url": (bundle.get("issue") or {}).get("url"), "report_path": args.out, "artifact": Path(args.artifact).name if args.artifact else "", "checksum": args.checksum}, ensure_ascii=False))
+        print(
+            json.dumps(
+                {
+                    "issue_url": (bundle.get("issue") or {}).get("url"),
+                    "report_path": args.out,
+                    "artifact": Path(args.artifact).name if args.artifact else "",
+                    "checksum": args.checksum,
+                },
+                ensure_ascii=False,
+            )
+        )
     else:
         print((bundle.get("issue") or {}).get("url") or "")
     return 0

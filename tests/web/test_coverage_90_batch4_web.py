@@ -22,13 +22,23 @@ def test_server_runtime_readiness_and_middleware_edges(web_env, monkeypatch):
     monkeypatch.setattr(paths, "check_runtime_permissions", lambda: (_ for _ in ()).throw(RuntimeError("boom")))
     out = srv._runtime_readiness(include_checks=True)
     assert out["ready"] is False
-    monkeypatch.setattr(paths, "check_runtime_permissions", lambda: {"data_dir": {"writable": True, "exists": True}, "db_path": {"writable": True}, "export_dir": {"writable": True}, "invoice_dir": {"writable": True}})
+    monkeypatch.setattr(
+        paths,
+        "check_runtime_permissions",
+        lambda: {
+            "data_dir": {"writable": True, "exists": True},
+            "db_path": {"writable": True},
+            "export_dir": {"writable": True},
+            "invoice_dir": {"writable": True},
+        },
+    )
     monkeypatch.setattr(db, "is_initialized", lambda: (_ for _ in ()).throw(RuntimeError("db")))
     out = srv._runtime_readiness(include_checks=True)
     assert out["db_initialized"] is False and "checks" in out
 
     # create_app startup warning branches
     import app_core.services as services
+
     monkeypatch.setenv("HOST", "0.0.0.0")
     monkeypatch.delenv("PM_WEB_SECRET_KEY", raising=False)
     monkeypatch.setattr(paths, "check_runtime_permissions", lambda: {"data_dir": {"writable": False}})
@@ -42,6 +52,7 @@ def test_server_runtime_readiness_and_middleware_edges(web_env, monkeypatch):
     # startup exception branch
     def boom_perm():
         raise RuntimeError("permboom")
+
     monkeypatch.setattr(paths, "check_runtime_permissions", boom_perm)
     app2 = srv.create_app(init_db=True, run_startup=True)
     assert app2 is not None
@@ -81,14 +92,18 @@ def test_server_runtime_readiness_and_middleware_edges(web_env, monkeypatch):
 
     # request logging exception branch (best-effort) - monkeypatch logger.info to raise
     app = srv.create_app(init_db=False, run_startup=False)
+
     @app.get("/_oklog")
     def oklog():
         return {"ok": True}
+
     orig_info = srv.logger.info
+
     def flaky_info(msg, *a, **k):
         if isinstance(msg, str) and msg.startswith("web_request "):
             raise RuntimeError("logfail")
         return orig_info(msg, *a, **k)
+
     monkeypatch.setattr(srv.logger, "info", flaky_info)
     with TestClient(app, raise_server_exceptions=False) as c:
         r = c.get("/_oklog")
@@ -101,10 +116,14 @@ def test_settings_routes_coverage_edges(client, monkeypatch):
     import app_core.services as services
 
     # recovery unlock failure branch
-    monkeypatch.setattr(sbr.services, "use_recovery_code", lambda c,n,cf: None)
+    monkeypatch.setattr(sbr.services, "use_recovery_code", lambda c, n, cf: None)
     monkeypatch.setattr(deps, "unlock", lambda request, password: False)
-    page = client.get("/unlock/recovery"); csrf = get_csrf(page.text)
-    r = client.post("/unlock/recovery", data={"csrf": csrf, "code": "c", "new_password": "np", "confirm_password": "np", "next": "/settings"})
+    page = client.get("/unlock/recovery")
+    csrf = get_csrf(page.text)
+    r = client.post(
+        "/unlock/recovery",
+        data={"csrf": csrf, "code": "c", "new_password": "np", "confirm_password": "np", "next": "/settings"},
+    )
     assert r.status_code == 303 and "/unlock/recovery" in r.headers["location"]
 
     # settings page exception branches for demo_presets and update_local
@@ -118,8 +137,11 @@ def test_settings_routes_coverage_edges(client, monkeypatch):
     r = client.get("/setup")
     assert r.status_code == 303
     monkeypatch.setattr(sbr.services, "is_branding_configured", lambda: False)
-    page = client.get("/setup"); csrf = get_csrf(page.text)
-    monkeypatch.setattr(sbr.services, "apply_branding_settings", lambda *a, **k: (_ for _ in ()).throw(ValueError("bad")))
+    page = client.get("/setup")
+    csrf = get_csrf(page.text)
+    monkeypatch.setattr(
+        sbr.services, "apply_branding_settings", lambda *a, **k: (_ for _ in ()).throw(ValueError("bad"))
+    )
     r = client.post("/setup", data={"csrf": csrf, "display_name": "X"})
     assert r.status_code == 303 and r.headers["location"] == "/setup"
     monkeypatch.setattr(sbr.services, "apply_branding_settings", lambda *a, **k: None)
@@ -129,8 +151,12 @@ def test_settings_routes_coverage_edges(client, monkeypatch):
     # rate plans page exception branches
     token = set_session(client, unlocked=True)
     monkeypatch.setattr(sbr.services, "get_all_rate_plans", lambda: [{"id": 1, "name": "A", "price_modifier": 1}])
-    monkeypatch.setattr(sbr.services, "count_reservations_using_plan", lambda pid: (_ for _ in ()).throw(RuntimeError("x")))
-    monkeypatch.setattr(sbr.services, "list_rate_rules", lambda active_only=False: (_ for _ in ()).throw(RuntimeError("x")))
+    monkeypatch.setattr(
+        sbr.services, "count_reservations_using_plan", lambda pid: (_ for _ in ()).throw(RuntimeError("x"))
+    )
+    monkeypatch.setattr(
+        sbr.services, "list_rate_rules", lambda active_only=False: (_ for _ in ()).throw(RuntimeError("x"))
+    )
     monkeypatch.setattr(sbr.services, "get_all_rooms", lambda: (_ for _ in ()).throw(RuntimeError("x")))
     r = client.get("/settings/rate-plans")
     assert r.status_code == 200
@@ -138,7 +164,9 @@ def test_settings_routes_coverage_edges(client, monkeypatch):
     # rate plan/rule add/edit/delete exception branches
     token = set_session(client, unlocked=True, csrf="t1")
     monkeypatch.setattr(sbr.services, "add_rate_plan", lambda *a, **k: (_ for _ in ()).throw(ValueError("e")))
-    r = client.post("/settings/rate-plans/add", data={"csrf": "t1", "name": "A", "modifier": "1", "password": "testpass"})
+    r = client.post(
+        "/settings/rate-plans/add", data={"csrf": "t1", "name": "A", "modifier": "1", "password": "testpass"}
+    )
     assert r.status_code == 303
     monkeypatch.setattr(sbr.services, "update_rate_plan", lambda *a, **k: (_ for _ in ()).throw(ValueError("e")))
     r = client.post("/settings/rate-plans/1/edit", data={"csrf": "t1", "name": "B", "password": "testpass"})
@@ -154,16 +182,18 @@ def test_settings_routes_coverage_edges(client, monkeypatch):
     assert r.status_code == 303
 
     # users login/logout branches
-    page = client.get("/settings/users"); csrf = get_csrf(page.text)
-    monkeypatch.setattr(sbr.services, "verify_user_password", lambda u,p: None)
+    page = client.get("/settings/users")
+    csrf = get_csrf(page.text)
+    monkeypatch.setattr(sbr.services, "verify_user_password", lambda u, p: None)
     r = client.post("/settings/users/login", data={"csrf": csrf, "username": "u", "user_password": "p"})
     assert r.status_code == 303
     user = {"id": 1, "username": "u", "display_name": "U", "role": "staff"}
-    monkeypatch.setattr(sbr.services, "verify_user_password", lambda u,p: user)
+    monkeypatch.setattr(sbr.services, "verify_user_password", lambda u, p: user)
     monkeypatch.setattr(sbr.services, "_audit", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("x")))
     r = client.post("/settings/users/login", data={"csrf": csrf, "username": "u", "user_password": "p"})
     assert r.status_code == 303
-    page = client.get("/settings/users"); csrf = get_csrf(page.text)
+    page = client.get("/settings/users")
+    csrf = get_csrf(page.text)
     monkeypatch.setattr(sbr.services, "_audit", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("x")))
     r = client.post("/settings/users/logout", data={"csrf": csrf})
     assert r.status_code == 303
@@ -178,7 +208,11 @@ def test_settings_routes_coverage_edges(client, monkeypatch):
     monkeypatch.setattr(sbr.services, "list_roles", lambda: (_ for _ in ()).throw(RuntimeError("x")))
     r = client.get("/settings/users")
     assert r.status_code == 200
-    monkeypatch.setattr(sbr.services, "verify_ledger_integrity", lambda: {"ok": True, "stats": {}, "issues": [], "warnings": [], "checked_at": "now", "note": ""})
+    monkeypatch.setattr(
+        sbr.services,
+        "verify_ledger_integrity",
+        lambda: {"ok": True, "stats": {}, "issues": [], "warnings": [], "checked_at": "now", "note": ""},
+    )
     r = client.get("/settings/health")
     assert r.status_code == 200
 
@@ -201,26 +235,46 @@ def test_settings_routes_coverage_edges(client, monkeypatch):
     assert r.status_code == 303
     r = client.post("/settings/seed/import", data={"csrf": "t4"}, files={"seed_file": ("x.txt", b"{}", "text/plain")})
     assert r.status_code == 303
-    r = client.post("/settings/seed/import", data={"csrf": "t4"}, files={"seed_file": ("x.json", b"{}", "application/pdf")})
+    r = client.post(
+        "/settings/seed/import", data={"csrf": "t4"}, files={"seed_file": ("x.json", b"{}", "application/pdf")}
+    )
     assert r.status_code == 303
-    r = client.post("/settings/seed/import", data={"csrf": "t4"}, files={"seed_file": ("x.json", b"x" * (5*1024*1024 + 1), "application/json")})
+    r = client.post(
+        "/settings/seed/import",
+        data={"csrf": "t4"},
+        files={"seed_file": ("x.json", b"x" * (5 * 1024 * 1024 + 1), "application/json")},
+    )
     assert r.status_code == 303
     monkeypatch.setattr(sbr.services, "import_seed_config", lambda *a, **k: {"summary": {"ok": 1}})
-    r = client.post("/settings/seed/import", data={"csrf": "t4", "confirm": "x"}, files={"seed_file": ("x.json", b"{}", "application/json")})
+    r = client.post(
+        "/settings/seed/import",
+        data={"csrf": "t4", "confirm": "x"},
+        files={"seed_file": ("x.json", b"{}", "application/json")},
+    )
     assert r.status_code == 303
-    r = client.post("/settings/seed/import", data={"csrf": "t4", "confirm": "x"}, files={"seed_file": ("x.csv", b"a,b\n1,2", "text/csv")})
+    r = client.post(
+        "/settings/seed/import",
+        data={"csrf": "t4", "confirm": "x"},
+        files={"seed_file": ("x.csv", b"a,b\n1,2", "text/csv")},
+    )
     assert r.status_code == 303
-    monkeypatch.setattr(sbr.services, "export_inventory_seed_csv", lambda template=False: (_ for _ in ()).throw(ValueError("e")))
+    monkeypatch.setattr(
+        sbr.services, "export_inventory_seed_csv", lambda template=False: (_ for _ in ()).throw(ValueError("e"))
+    )
     r = client.post("/settings/seed/export-inventory-csv", data={"csrf": "t4", "template": "1"})
     assert r.status_code == 303
 
     # rooms add exception
     monkeypatch.setattr(sbr.services, "add_room", lambda *a, **k: (_ for _ in ()).throw(ValueError("e")))
-    r = client.post("/settings/rooms/add", data={"csrf": "t4", "room_number": "1", "room_type": "T", "base_price": "10"})
+    r = client.post(
+        "/settings/rooms/add", data={"csrf": "t4", "room_number": "1", "room_type": "T", "base_price": "10"}
+    )
     assert r.status_code == 303
 
     # vouchers pages and exception branches
-    monkeypatch.setattr(sbr.services, "list_discount_vouchers", lambda active_only=False: (_ for _ in ()).throw(RuntimeError("x")))
+    monkeypatch.setattr(
+        sbr.services, "list_discount_vouchers", lambda active_only=False: (_ for _ in ()).throw(RuntimeError("x"))
+    )
     r = client.get("/settings/vouchers")
     assert r.status_code == 200
     monkeypatch.setattr(sbr.services, "create_discount_voucher", lambda *a, **k: (_ for _ in ()).throw(ValueError("e")))
@@ -231,19 +285,29 @@ def test_settings_routes_coverage_edges(client, monkeypatch):
     assert r.status_code == 303
 
     # service catalog and packages exception branches
-    monkeypatch.setattr(sbr.services, "list_service_catalog", lambda active_only=False: (_ for _ in ()).throw(RuntimeError("x")))
+    monkeypatch.setattr(
+        sbr.services, "list_service_catalog", lambda active_only=False: (_ for _ in ()).throw(RuntimeError("x"))
+    )
     r = client.get("/settings/service-catalog")
     assert r.status_code == 200
-    monkeypatch.setattr(sbr.services, "create_service_catalog_item", lambda *a, **k: (_ for _ in ()).throw(ValueError("e")))
+    monkeypatch.setattr(
+        sbr.services, "create_service_catalog_item", lambda *a, **k: (_ for _ in ()).throw(ValueError("e"))
+    )
     r = client.post("/settings/service-catalog/add", data={"csrf": "t4", "name": "S", "unit_price": "1"})
     assert r.status_code == 303
-    monkeypatch.setattr(sbr.services, "update_service_catalog_item", lambda *a, **k: (_ for _ in ()).throw(ValueError("e")))
+    monkeypatch.setattr(
+        sbr.services, "update_service_catalog_item", lambda *a, **k: (_ for _ in ()).throw(ValueError("e"))
+    )
     r = client.post("/settings/service-catalog/1/edit", data={"csrf": "t4", "name": "S", "unit_price": "1"})
     assert r.status_code == 303
-    monkeypatch.setattr(sbr.services, "list_packages", lambda active_only=False: (_ for _ in ()).throw(RuntimeError("x")))
+    monkeypatch.setattr(
+        sbr.services, "list_packages", lambda active_only=False: (_ for _ in ()).throw(RuntimeError("x"))
+    )
     r = client.get("/settings/packages")
     assert r.status_code == 200
-    monkeypatch.setattr(sbr.services, "list_service_catalog", lambda active_only=True: (_ for _ in ()).throw(RuntimeError("x")))
+    monkeypatch.setattr(
+        sbr.services, "list_service_catalog", lambda active_only=True: (_ for _ in ()).throw(RuntimeError("x"))
+    )
     monkeypatch.setattr(sbr.services, "list_packages", lambda active_only=False: [])
     r = client.get("/settings/packages")
     assert r.status_code == 200

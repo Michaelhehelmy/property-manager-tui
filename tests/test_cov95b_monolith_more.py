@@ -22,8 +22,12 @@ def test_run_night_audit_exception_branches(clean_db, monkeypatch):
     # housekeeping/blocks/tasks queries may or may not exist; let DB state drive them
     try:
         with db.transaction() as conn:
-            conn.execute("INSERT INTO housekeeping_tasks (room_id, task_type, status, priority, due_at) VALUES (1, 'clean', 'in_progress', 1, datetime('now','localtime'))")
-            conn.execute("INSERT OR IGNORE INTO room_blocks (room_id, block_type, start_date, end_date, reason, status) VALUES (1, 'OOS', '2000-01-01', '2999-01-01', 'x', 'active')")
+            conn.execute(
+                "INSERT INTO housekeeping_tasks (room_id, task_type, status, priority, due_at) VALUES (1, 'clean', 'in_progress', 1, datetime('now','localtime'))"
+            )
+            conn.execute(
+                "INSERT OR IGNORE INTO room_blocks (room_id, block_type, start_date, end_date, reason, status) VALUES (1, 'OOS', '2000-01-01', '2999-01-01', 'x', 'active')"
+            )
     except Exception:
         pass
     rid = services.run_night_audit(business_date="2099-05-01", notes="", run_by="")
@@ -32,7 +36,9 @@ def test_run_night_audit_exception_branches(clean_db, monkeypatch):
     assert runs and int(runs[0]["id"]) == int(rid)
 
     # get_open_cash_shift exception branch
-    monkeypatch.setattr(m, "get_front_desk_ops", lambda d: {"counts": {}, "exceptions": [], "in_house": [], "departures": []})
+    monkeypatch.setattr(
+        m, "get_front_desk_ops", lambda d: {"counts": {}, "exceptions": [], "in_house": [], "departures": []}
+    )
     monkeypatch.setattr(m, "get_general_ledger_summary", lambda: {})
     monkeypatch.setattr(m, "get_open_cash_shift", lambda: (_ for _ in ()).throw(RuntimeError("boom")))
     rid2 = services.run_night_audit(business_date="2099-05-02")
@@ -41,14 +47,25 @@ def test_run_night_audit_exception_branches(clean_db, monkeypatch):
 
 def test_reports_and_group_extra_branches(clean_db, monkeypatch):
     # group report/list branches
-    gid = services.create_reservation_group("G1", group_type="tour", contact_name="C", contact_phone="P", contact_email="E", notes="N")
+    gid = services.create_reservation_group(
+        "G1", group_type="tour", contact_name="C", contact_phone="P", contact_email="E", notes="N"
+    )
     rid = _mk_res(guest="GG", room_id=1, ci="2099-03-01", co="2099-03-03")
     services.add_reservation_to_group(gid, rid, role="leader", notes="n")
     groups = services.list_reservation_groups(status="active")
     assert any(g["id"] == gid for g in groups)
     assert services.list_reservation_groups(status="")  # no status filter
     # update and folio
-    services.update_reservation_group(gid, name="G1b", group_type="corp", contact_name="C2", contact_phone="", contact_email="", notes="", status="active")
+    services.update_reservation_group(
+        gid,
+        name="G1b",
+        group_type="corp",
+        contact_name="C2",
+        contact_phone="",
+        contact_email="",
+        notes="",
+        status="active",
+    )
     with pytest.raises(ValueError):
         services.update_reservation_group(gid, name="")
     with pytest.raises(ValueError):
@@ -119,7 +136,9 @@ def test_printer_and_label_more_branches(clean_db, monkeypatch, tmp_path):
     inside.write_text("hi", encoding="utf-8")
     ok, msg = m.print_to_printer(str(inside), "nonsense")
     assert ok is False
-    monkeypatch.setattr(m.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a[0], 1, stdout="", stderr="err"))
+    monkeypatch.setattr(
+        m.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a[0], 1, stdout="", stderr="err")
+    )
     ok, msg = m.print_to_printer(str(inside), "cups:Q1")
     assert ok is False
     monkeypatch.setattr(m.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a[0], 0, stdout="", stderr=""))
@@ -127,11 +146,21 @@ def test_printer_and_label_more_branches(clean_db, monkeypatch, tmp_path):
     assert ok is True
 
     class DummySock:
-        def __enter__(self): return self
-        def __exit__(self, *a): return False
-        def settimeout(self, t): pass
-        def connect(self, addr): pass
-        def sendall(self, data): pass
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def settimeout(self, t):
+            pass
+
+        def connect(self, addr):
+            pass
+
+        def sendall(self, data):
+            pass
+
     monkeypatch.setattr(m.socket, "socket", lambda *a, **k: DummySock())
     ok, msg = m.print_to_printer(str(inside), "raw:127.0.0.1:9100")
     assert ok is True
@@ -140,6 +169,7 @@ def test_printer_and_label_more_branches(clean_db, monkeypatch, tmp_path):
     cwd = Path.cwd()
     try:
         import os
+
         os.chdir(Path(services.EXPORT_DIR))
         rel = Path("x.txt")
         vp = m._validate_print_filepath(str(rel))
@@ -156,6 +186,7 @@ def test_printer_and_label_more_branches(clean_db, monkeypatch, tmp_path):
     monkeypatch.setattr(m, "INVOICE_DIR", Path(services.INVOICE_DIR))
     monkeypatch.setattr(m, "DATA_DIR", Path(services.EXPORT_DIR) / "data_only")
     from app_core import paths as core_paths
+
     monkeypatch.setattr(core_paths, "EXPORT_DIR", Path(services.EXPORT_DIR))
     monkeypatch.setattr(core_paths, "INVOICE_DIR", Path(services.INVOICE_DIR))
     monkeypatch.setattr(core_paths, "DATA_DIR", Path(services.EXPORT_DIR) / "data_only")

@@ -1,4 +1,5 @@
 """100% coverage tests for app_core.assistant (CORE deterministic + optional LLM)."""
+
 from __future__ import annotations
 
 import builtins
@@ -16,8 +17,10 @@ from conftest import make_reservation
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
+
 class FakeDate(date):
     """datetime/date stand-in with controllable today()."""
+
     _today = date(2026, 6, 15)
 
     @classmethod
@@ -41,6 +44,7 @@ class FakeDatetime(datetime):
 
 class FakeDTModule:
     """Module-like object to monkeypatch `assistant.datetime`."""
+
     def __init__(self, today_date):
         self._today_date = today_date
         self.timedelta = timedelta
@@ -69,16 +73,21 @@ def llm_response(content=None, tool_calls=None):
 
 
 def set_llm(monkeypatch, *, base="http://llm/v1", model="m", key="", provider="auto", mode="talking"):
-    monkeypatch.setattr(services, "get_setting", lambda k, d="": {
-        "assistant_provider": provider,
-        "assistant_response_mode": mode,
-        "assistant_llm_base_url": base,
-        "assistant_llm_model": model,
-        "assistant_llm_api_key": key,
-    }.get(k, d))
+    monkeypatch.setattr(
+        services,
+        "get_setting",
+        lambda k, d="": {
+            "assistant_provider": provider,
+            "assistant_response_mode": mode,
+            "assistant_llm_base_url": base,
+            "assistant_llm_model": model,
+            "assistant_llm_api_key": key,
+        }.get(k, d),
+    )
 
 
 # ── Basic utilities ──────────────────────────────────────────────────────────
+
 
 def test_today_iso_safe_int(monkeypatch):
     freeze_today(monkeypatch, date(2026, 2, 3))
@@ -92,30 +101,35 @@ def test_today_iso_safe_int(monkeypatch):
 
 # ── Date range parsing (all branches) ───────────────────────────────────────
 
-@pytest.mark.parametrize("text,expected", [
-    ("report 2026-01-01 2026-01-31", ("2026-01-01", "2026-01-31")),
-    ("on 2026-01-15", ("2026-01-15", "2026-01-15")),
-    ("for 2026-01-15", ("2026-01-15", "2026-01-15")),
-    ("today", ("2026-06-15", "2026-06-15")),
-    ("yesterday", ("2026-06-14", "2026-06-14")),
-    ("this week", ("2026-06-15", "2026-06-15")),  # 2026-06-15 is Monday
-    ("last 7 days", ("2026-06-09", "2026-06-15")),
-    ("past 7 days", ("2026-06-09", "2026-06-15")),
-    ("last 30 days", ("2026-05-17", "2026-06-15")),
-    ("past 30 days", ("2026-05-17", "2026-06-15")),
-    ("this month", ("2026-06-01", "2026-06-15")),
-    ("last month", ("2026-05-01", "2026-05-31")),
-    ("2026-04-10", ("2026-04-10", "2026-04-10")),  # single date, no on/for
-    ("something else", ("2026-06-01", "2026-06-15")),  # default month-to-date
-    ("", ("2026-06-01", "2026-06-15")),
-    (None, ("2026-06-01", "2026-06-15")),
-])
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("report 2026-01-01 2026-01-31", ("2026-01-01", "2026-01-31")),
+        ("on 2026-01-15", ("2026-01-15", "2026-01-15")),
+        ("for 2026-01-15", ("2026-01-15", "2026-01-15")),
+        ("today", ("2026-06-15", "2026-06-15")),
+        ("yesterday", ("2026-06-14", "2026-06-14")),
+        ("this week", ("2026-06-15", "2026-06-15")),  # 2026-06-15 is Monday
+        ("last 7 days", ("2026-06-09", "2026-06-15")),
+        ("past 7 days", ("2026-06-09", "2026-06-15")),
+        ("last 30 days", ("2026-05-17", "2026-06-15")),
+        ("past 30 days", ("2026-05-17", "2026-06-15")),
+        ("this month", ("2026-06-01", "2026-06-15")),
+        ("last month", ("2026-05-01", "2026-05-31")),
+        ("2026-04-10", ("2026-04-10", "2026-04-10")),  # single date, no on/for
+        ("something else", ("2026-06-01", "2026-06-15")),  # default month-to-date
+        ("", ("2026-06-01", "2026-06-15")),
+        (None, ("2026-06-01", "2026-06-15")),
+    ],
+)
 def test_parse_date_range(monkeypatch, text, expected):
     freeze_today(monkeypatch, date(2026, 6, 15))
     assert assistant._parse_date_range(text) == expected
 
 
 # ── _format_data ─────────────────────────────────────────────────────────────
+
 
 def test_format_data_normal_and_truncation():
     out = assistant._format_data("T", {"a": 1})
@@ -130,12 +144,14 @@ def test_format_data_fallback_str():
     class Bad:
         def __str__(self):
             return "BADOBJ"
+
     # json.dumps will use default=str for unknown, so force via default path? actually
     # default=str handles most; to trigger except, make dumps itself fail.
     orig = json.dumps
 
     def boom(*a, **k):
         raise TypeError("nope")
+
     try:
         json.dumps = boom
         assert "BADOBJ" in assistant._format_data("T", Bad())
@@ -145,19 +161,23 @@ def test_format_data_fallback_str():
 
 # ── Tools: capabilities / basic errors ───────────────────────────────────────
 
+
 def test_tool_list_capabilities():
     d = assistant.tool_list_capabilities()
     assert "capabilities" in d and d["notes"]
 
 
-@pytest.mark.parametrize("fn,args,err", [
-    (assistant.tool_get_guest_profile, {}, "guest_id is required"),
-    (assistant.tool_get_guest_profile, {"guest_id": "x"}, "guest_id is required"),
-    (assistant.tool_get_guest_last_visit, {}, "guest_id is required"),
-    (assistant.tool_get_guest_top_items_last_visit, {}, "guest_id is required"),
-    (assistant.tool_get_reservation_summary, {}, "reservation_id is required"),
-    (assistant.tool_get_guest_balance, {}, "reservation_id is required"),
-])
+@pytest.mark.parametrize(
+    "fn,args,err",
+    [
+        (assistant.tool_get_guest_profile, {}, "guest_id is required"),
+        (assistant.tool_get_guest_profile, {"guest_id": "x"}, "guest_id is required"),
+        (assistant.tool_get_guest_last_visit, {}, "guest_id is required"),
+        (assistant.tool_get_guest_top_items_last_visit, {}, "guest_id is required"),
+        (assistant.tool_get_reservation_summary, {}, "reservation_id is required"),
+        (assistant.tool_get_guest_balance, {}, "reservation_id is required"),
+    ],
+)
 def test_tool_missing_id_errors(fn, args, err):
     assert fn(args)["error"] == err
 
@@ -168,6 +188,7 @@ def test_execute_tool_unknown_and_exception(monkeypatch):
 
     def boom(args=None):
         raise RuntimeError("kapow")
+
     monkeypatch.setitem(assistant.TOOLS, "boom", {"fn": boom, "description": "x", "parameters": {}})
     try:
         res2 = assistant.execute_tool("boom", {})
@@ -177,6 +198,7 @@ def test_execute_tool_unknown_and_exception(monkeypatch):
 
 
 # ── Tools backed by real services (clean_db) ─────────────────────────────────
+
 
 def test_guest_tools_with_real_data(clean_db):
     gid, _, _ = services.find_or_create_guest("Alice Wonderland", phone="12345")
@@ -214,6 +236,7 @@ def test_reservation_and_balance_tools(clean_db):
 
     def bad_balance(_rid):
         raise ValueError("no balance")
+
     orig = services.calculate_guest_balance
     services.calculate_guest_balance = bad_balance
     try:
@@ -226,10 +249,21 @@ def test_reservation_and_balance_tools(clean_db):
 def test_report_tools_all_kinds_and_errors(clean_db, monkeypatch):
     freeze_today(monkeypatch, date(2026, 6, 15))
     # kinds with explicit dates
-    for kind, key in [("pl", "pl"), ("pnl", "pl"), ("profit", "pl"), ("profit_and_loss", "pl"),
-                      ("cash", "cash_flow"), ("cash_flow", "cash_flow"), ("cashflow", "cash_flow"),
-                      ("vat", "vat"), ("tax", "vat"), ("payment_methods", "payment_methods"), ("payments", "payment_methods"),
-                      ("occupancy", "occupancy"), ("occ", "occupancy")]:
+    for kind, key in [
+        ("pl", "pl"),
+        ("pnl", "pl"),
+        ("profit", "pl"),
+        ("profit_and_loss", "pl"),
+        ("cash", "cash_flow"),
+        ("cash_flow", "cash_flow"),
+        ("cashflow", "cash_flow"),
+        ("vat", "vat"),
+        ("tax", "vat"),
+        ("payment_methods", "payment_methods"),
+        ("payments", "payment_methods"),
+        ("occupancy", "occupancy"),
+        ("occ", "occupancy"),
+    ]:
         r = assistant.tool_get_report({"kind": kind, "start": "2026-06-01", "end": "2026-06-15"})
         assert r["kind"] == key and "report" in r
     # daily_ops uses end/start
@@ -291,6 +325,7 @@ def test_rate_plans_and_integrity_exception_branches(monkeypatch):
 
 # ── _resolve_guest_from_text ─────────────────────────────────────────────────
 
+
 def test_resolve_guest_from_text(clean_db):
     gid, _, _ = services.find_or_create_guest("Bob Smith")
     # explicit id
@@ -312,6 +347,7 @@ def test_resolve_guest_from_text(clean_db):
 
 # ── deterministic_route ──────────────────────────────────────────────────────
 
+
 def test_deterministic_route_empty_and_capabilities(monkeypatch):
     freeze_today(monkeypatch, date(2026, 6, 15))
     assert assistant.deterministic_route("") is None
@@ -329,7 +365,11 @@ def test_deterministic_route_reservation(clean_db, monkeypatch):
     assert r2["tools_used"] == ["get_reservation_summary"]
     r3 = assistant.deterministic_route(f"reservation #{rid}")  # has reservation keyword
     assert r3 is not None
-    assert "get_reservation_summary" in r3.get("tools_used", []) or r3.get("intent") in ("reservation_summary", "reservation_balance", "ambiguous_needs_clarification")
+    assert "get_reservation_summary" in r3.get("tools_used", []) or r3.get("intent") in (
+        "reservation_summary",
+        "reservation_balance",
+        "ambiguous_needs_clarification",
+    )
 
 
 def test_deterministic_route_guest_flows(clean_db, monkeypatch):
@@ -347,20 +387,32 @@ def test_deterministic_route_guest_flows(clean_db, monkeypatch):
 
     # single by explicit id - most ordered
     r = assistant.deterministic_route(f"what did guest #{gid} order most on last visit?")
-    assert "get_guest_top_items_last_visit" in r.get("tools_used", []) or "get_guest_last_visit" in r.get("tools_used", [])
+    assert "get_guest_top_items_last_visit" in r.get("tools_used", []) or "get_guest_last_visit" in r.get(
+        "tools_used", []
+    )
     # last visit
     r2 = assistant.deterministic_route(f"guest #{gid} last stay")
     assert r2["tools_used"] == ["get_guest_last_visit"]
     # profile
     r3 = assistant.deterministic_route(f"guest #{gid}")
     assert r3 is not None
-    assert "get_guest_profile" in r3.get("tools_used", []) or r3.get("intent") in ("guest_profile", "guest_portfolio", "ambiguous_needs_clarification")
+    assert "get_guest_profile" in r3.get("tools_used", []) or r3.get("intent") in (
+        "guest_profile",
+        "guest_portfolio",
+        "ambiguous_needs_clarification",
+    )
 
     # multiple candidates (Carol) -> disambiguation/clarification
     rm = assistant.deterministic_route("guest Carol last visit")
     assert rm is not None
     ans = rm.get("answer", "").lower()
-    assert rm.get("needs_clarification") or "search_guests" in rm.get("tools_used", []) or "which guest" in ans or "multiple" in ans or "guest id" in ans
+    assert (
+        rm.get("needs_clarification")
+        or "search_guests" in rm.get("tools_used", [])
+        or "which guest" in ans
+        or "multiple" in ans
+        or "guest id" in ans
+    )
 
     # find guest query (resolver extracts "Xyznone" but finds no guest -> hits 316-320)
     rf = assistant.deterministic_route("find guest Zzznone")
@@ -393,7 +445,10 @@ def test_deterministic_route_reports_decision_etc(monkeypatch):
         if text == "daily ops arrivals today":
             assert "get_report" in r["tools_used"] or "get_today_ops" in r["tools_used"], (text, r)
         elif text == "run ledger integrity health check":
-            assert "verify_ledger_integrity" in r["tools_used"] or "get_health_diagnostics" in r["tools_used"], (text, r)
+            assert "verify_ledger_integrity" in r["tools_used"] or "get_health_diagnostics" in r["tools_used"], (
+                text,
+                r,
+            )
         else:
             assert tool in r["tools_used"], (text, r)
 
@@ -411,6 +466,7 @@ def test_deterministic_route_guest_keyword_but_no_resolution_and_search_regex(mo
 
 # ── Local-only LLM config / rephrase / routing ────────────────────────────────
 
+
 def test_llm_config(monkeypatch):
     # Public API: local-only config has no external endpoints and returns expected keys.
     c = assistant.get_llm_config()
@@ -418,8 +474,12 @@ def test_llm_config(monkeypatch):
     assert c.get("external") is False
     assert isinstance(c.get("local_available"), bool)
     assert isinstance(c.get("enabled"), bool)
-    assert c.get("provider") in ("auto", "deterministic_only", "local", "local_gguf") or isinstance(c.get("provider"), str)
-    assert c.get("response_mode") in ("talking", "core", "full_llm", "auto", "local") or isinstance(c.get("response_mode"), str)
+    assert c.get("provider") in ("auto", "deterministic_only", "local", "local_gguf") or isinstance(
+        c.get("provider"), str
+    )
+    assert c.get("response_mode") in ("talking", "core", "full_llm", "auto", "local") or isinstance(
+        c.get("response_mode"), str
+    )
 
 
 def test_talking_rephrase_local(monkeypatch):
@@ -439,12 +499,16 @@ def test_talking_rephrase_local(monkeypatch):
 
 def test_llm_route_local_grounded(monkeypatch):
     # Local-only route always returns a grounded result (never None), even without local model.
-    r = assistant.llm_route("what can you do?", config={"enabled": False, "local_available": False, "response_mode": "talking"})
+    r = assistant.llm_route(
+        "what can you do?", config={"enabled": False, "local_available": False, "response_mode": "talking"}
+    )
     assert isinstance(r, dict)
     assert r.get("ok") is True
     assert "tools_used" in r and "data" in r
     assert isinstance(r.get("answer", ""), str) and r["answer"].strip()
-    assert r.get("source") in ("local_grounded_core", "local_grounded", "local_llm+local_grounded") or "local" in str(r.get("source"))
+    assert r.get("source") in ("local_grounded_core", "local_grounded", "local_llm+local_grounded") or "local" in str(
+        r.get("source")
+    )
 
     # Unknown/gibberish should still produce a grounded clarification/help response, not crash.
     r2 = assistant.llm_route("zzzz unmatchable gibberish qqq", config={"enabled": False})
@@ -453,12 +517,19 @@ def test_llm_route_local_grounded(monkeypatch):
 
 def test_llm_route_with_local_polish(monkeypatch):
     monkeypatch.setattr(assistant, "_local_llm_generate", lambda *a, **k: "Polished local")
-    r = assistant.llm_route("what can you do?", config={"enabled": True, "local_available": True, "response_mode": "talking"})
+    r = assistant.llm_route(
+        "what can you do?", config={"enabled": True, "local_available": True, "response_mode": "talking"}
+    )
     assert isinstance(r, dict)
-    assert r.get("answer") in ("Polished local", "Polished local".strip()) or r.get("talking_model") == "local_gguf" or "local" in str(r.get("source"))
+    assert (
+        r.get("answer") in ("Polished local", "Polished local".strip())
+        or r.get("talking_model") == "local_gguf"
+        or "local" in str(r.get("source"))
+    )
 
 
 # ── chat entrypoint ──────────────────────────────────────────────────────────
+
 
 def test_chat_empty_and_touch_exception(monkeypatch):
     r0 = assistant.chat("   ")
@@ -473,7 +544,17 @@ def test_chat_empty_and_touch_exception(monkeypatch):
 
 
 def test_chat_full_llm_mode_local(monkeypatch):
-    monkeypatch.setattr(assistant, "_llm_config", lambda: {"provider": "auto", "response_mode": "full_llm", "enabled": False, "local_available": False, "external": False})
+    monkeypatch.setattr(
+        assistant,
+        "_llm_config",
+        lambda: {
+            "provider": "auto",
+            "response_mode": "full_llm",
+            "enabled": False,
+            "local_available": False,
+            "external": False,
+        },
+    )
     r = assistant.chat("what can you do?")
     assert isinstance(r, dict)
     assert r.get("ok") is True
@@ -482,14 +563,34 @@ def test_chat_full_llm_mode_local(monkeypatch):
 
 def test_chat_core_and_talking_modes(monkeypatch):
     # core mode: deterministic grounded answer
-    monkeypatch.setattr(assistant, "_llm_config", lambda: {"provider": "deterministic_only", "response_mode": "core", "enabled": False, "local_available": False, "external": False})
+    monkeypatch.setattr(
+        assistant,
+        "_llm_config",
+        lambda: {
+            "provider": "deterministic_only",
+            "response_mode": "core",
+            "enabled": False,
+            "local_available": False,
+            "external": False,
+        },
+    )
     r = assistant.chat("what can you do?")
     assert r["ok"] is True
     assert r.get("response_mode") == "core"
     assert "tools_used" in r and isinstance(r.get("answer", ""), str)
 
     # talking mode: deterministic local polish/fallback allowed, no external calls
-    monkeypatch.setattr(assistant, "_llm_config", lambda: {"provider": "auto", "response_mode": "talking", "enabled": False, "local_available": False, "external": False})
+    monkeypatch.setattr(
+        assistant,
+        "_llm_config",
+        lambda: {
+            "provider": "auto",
+            "response_mode": "talking",
+            "enabled": False,
+            "local_available": False,
+            "external": False,
+        },
+    )
     r2 = assistant.chat("what can you do?")
     assert r2["ok"] is True
     assert r2.get("response_mode") == "talking"
@@ -498,11 +599,20 @@ def test_chat_core_and_talking_modes(monkeypatch):
 
 def test_chat_fallback_and_assisted_retrieval(monkeypatch):
     # vague/low-confidence input should return a grounded clarification or capabilities/help response locally
-    monkeypatch.setattr(assistant, "_llm_config", lambda: {"provider": "auto", "response_mode": "talking", "enabled": False, "local_available": False, "external": False})
+    monkeypatch.setattr(
+        assistant,
+        "_llm_config",
+        lambda: {
+            "provider": "auto",
+            "response_mode": "talking",
+            "enabled": False,
+            "local_available": False,
+            "external": False,
+        },
+    )
     r = assistant.chat("something vague zzz qqq")
     assert isinstance(r, dict)
     assert r.get("ok") in (True, False)
     assert isinstance(r.get("answer", ""), str)
     # must stay local (no external sources)
     assert "openai" not in str(r.get("source", "")).lower()
-

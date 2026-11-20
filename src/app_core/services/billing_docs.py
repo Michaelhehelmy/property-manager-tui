@@ -1,4 +1,5 @@
 """Billing/document helpers extracted from services monolith (invoice/receipt text & files)."""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -39,6 +40,7 @@ def _write_confined_invoice_file(filename: str, text):
     ):
         raise ValueError("Invalid invoice filename.")
     import os as _os
+
     base = invoice_dir.resolve()
     # Write using dir_fd + validated basename to confine operation to invoice directory.
     dir_fd = None
@@ -67,9 +69,23 @@ def _write_confined_invoice_file(filename: str, text):
     return str((base / safe_name).resolve())
 
 
-def build_invoice_text(reservation, nights, accom, pos_items, payments, *, currency="EGP", usd_to_egp=1.0,
-                       display_name="SPMS", address="", phone="", footer_text="", traceability_text_fn=None,
-                       services=None, discounts=None):
+def build_invoice_text(
+    reservation,
+    nights,
+    accom,
+    pos_items,
+    payments,
+    *,
+    currency="EGP",
+    usd_to_egp=1.0,
+    display_name="SPMS",
+    address="",
+    phone="",
+    footer_text="",
+    traceability_text_fn=None,
+    services=None,
+    discounts=None,
+):
     traceability_text_fn = traceability_text_fn or _default_traceability_text
     W = 72
     m = lambda v: _money_fmt(v, currency, usd_to_egp)
@@ -134,7 +150,9 @@ def build_invoice_text(reservation, nights, accom, pos_items, payments, *, curre
             if lot_code and f"[lot {lot_code}]" in desc and trace:
                 desc_trace = trace.replace(f"lot {lot_code}", "").strip(", ").strip()
                 trace_s = f" [{desc_trace}]" if desc_trace else ""
-            lines.append(f"  {desc}{trace_s} x{p.get('quantity')} @ {m(p.get('unit_price'))} = {m(p.get('gross') or 0)}")
+            lines.append(
+                f"  {desc}{trace_s} x{p.get('quantity')} @ {m(p.get('unit_price'))} = {m(p.get('gross') or 0)}"
+            )
     else:
         lines.append("  (none)")
 
@@ -181,7 +199,8 @@ def build_invoice_text(reservation, nights, accom, pos_items, payments, *, curre
         f"  Discounts:    -{m(discounts_gross)}",
         f"  Total Charges: {m(total_charges)}",
         f"  Balance Due:   {m(balance)}",
-        "=" * W, "",
+        "=" * W,
+        "",
         footer_text or "Thank you for staying with us!",
         "=" * W,
     ]
@@ -195,14 +214,28 @@ def save_invoice_file(text, reservation_id, currency):
     return _write_confined_invoice_file(filename, text)
 
 
-def build_walkin_receipt_text(receipt_items, total_gross, method, payment_id=None, when=None,
-                              display_name="PROPERTY MANAGER", traceability_text_fn=None):
+def build_walkin_receipt_text(
+    receipt_items,
+    total_gross,
+    method,
+    payment_id=None,
+    when=None,
+    display_name="PROPERTY MANAGER",
+    traceability_text_fn=None,
+):
     traceability_text_fn = traceability_text_fn or _default_traceability_text
     W = 60
     when = when or datetime.now()
     ref = f"Payment #{payment_id}" if payment_id else "Walk-in"
-    lines = ["=" * W, f"{str(display_name).upper()} — WALK-IN RECEIPT".center(W), "=" * W,
-             when.strftime("%Y-%m-%d %H:%M"), f"Ref: {ref}", "-" * W, "ITEMS (traceable when batched)"]
+    lines = [
+        "=" * W,
+        f"{str(display_name).upper()} — WALK-IN RECEIPT".center(W),
+        "=" * W,
+        when.strftime("%Y-%m-%d %H:%M"),
+        f"Ref: {ref}",
+        "-" * W,
+        "ITEMS (traceable when batched)",
+    ]
     for it in receipt_items or []:
         desc = it.get("desc") or it.get("item_description") or "Item"
         qty = it.get("qty", it.get("quantity", 1))
@@ -220,7 +253,8 @@ def build_walkin_receipt_text(receipt_items, total_gross, method, payment_id=Non
             except Exception:
                 gross = 0.0
         trace = traceability_text_fn(
-            lot_code=it.get("lot_code"), batch_id=it.get("batch_id"),
+            lot_code=it.get("lot_code"),
+            batch_id=it.get("batch_id"),
             expiry_date=it.get("expiry_date") or it.get("batch_expiry_date"),
             received_at=it.get("received_at") or it.get("batch_received_at"),
         )

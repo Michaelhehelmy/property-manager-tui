@@ -1,4 +1,5 @@
 """Expenses: record, void."""
+
 import pytest
 from app_core import services
 from app_core.db import connect
@@ -12,9 +13,9 @@ def test_record_expense(clean_db):
 
 def test_record_expense_creates_ledger(clean_db):
     services.record_operational_expense(1, "Electric", 500.0, 0.0, "")
-    row = connect().execute(
-        "SELECT net, entry_type, category FROM general_ledger WHERE entry_type='EXPENSE'"
-    ).fetchone()
+    row = (
+        connect().execute("SELECT net, entry_type, category FROM general_ledger WHERE entry_type='EXPENSE'").fetchone()
+    )
     assert row["net"] == 500.0
     assert row["category"] == "Operating"
 
@@ -41,8 +42,7 @@ def test_void_expense_reverses_ledger(clean_db):
     services.record_operational_expense(1, "X", 100.0)
     eid = connect().execute("SELECT id FROM operational_expenses ORDER BY id DESC LIMIT 1").fetchone()["id"]
     services.void_expense(eid, "testpass")
-    reversals = connect().execute(
-        "SELECT COUNT(*) FROM general_ledger WHERE entry_type='VOID_EXPENSE'").fetchone()[0]
+    reversals = connect().execute("SELECT COUNT(*) FROM general_ledger WHERE entry_type='VOID_EXPENSE'").fetchone()[0]
     assert reversals == 1
 
 

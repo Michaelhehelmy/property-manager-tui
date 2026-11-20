@@ -1,4 +1,5 @@
 """Closes remaining reachable branches."""
+
 import pytest
 from unittest.mock import patch, MagicMock
 from app_core import services
@@ -9,6 +10,7 @@ from conftest import make_reservation
 # ═══════════════════════════════════════════════════════════════════════════
 # list_printers — every OS branch with mocks
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def test_list_printers_cups_full(clean_db):
     v_mock = MagicMock(returncode=0, stdout="device for Office: ipp://x\ndevice for R2: ipp://y")
@@ -30,8 +32,7 @@ def test_list_printers_linux_no_cups(clean_db):
 
 
 def test_list_printers_windows(clean_db):
-    with patch("services.subprocess.run",
-               return_value=MagicMock(returncode=0, stdout="P1\nP2\n")):
+    with patch("services.subprocess.run", return_value=MagicMock(returncode=0, stdout="P1\nP2\n")):
         with patch("services.platform.system", return_value="Windows"):
             r = services.list_printers()
     assert r["queues"] == ["P1", "P2"]
@@ -49,41 +50,47 @@ def test_list_printers_exception(clean_db):
 # print_to_printer — every branch
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def test_print_file_missing(clean_db):
     ok, msg = services.print_to_printer("/nope.txt")
     assert ok is False
 
 
 def test_print_cups_success(clean_db, tmp_path):
-    f = tmp_path / "x.txt"; f.write_text("x")
+    f = tmp_path / "x.txt"
+    f.write_text("x")
     with patch("services.subprocess.run", return_value=MagicMock(returncode=0)):
         ok, msg = services.print_to_printer(str(f), "cups:MyPrinter")
     assert ok is True
 
 
 def test_print_cups_fail(clean_db, tmp_path):
-    f = tmp_path / "x.txt"; f.write_text("x")
+    f = tmp_path / "x.txt"
+    f.write_text("x")
     with patch("services.subprocess.run", return_value=MagicMock(returncode=1, stderr="err")):
         ok, msg = services.print_to_printer(str(f), "cups:X")
     assert ok is False
 
 
 def test_print_win_success(clean_db, tmp_path):
-    f = tmp_path / "x.txt"; f.write_text("x")
+    f = tmp_path / "x.txt"
+    f.write_text("x")
     with patch.object(services.os, "startfile", create=True):
         ok, msg = services.print_to_printer(str(f), "win:Printer")
     assert ok is True
 
 
 def test_print_raw_success(clean_db, tmp_path):
-    f = tmp_path / "x.txt"; f.write_text("x")
+    f = tmp_path / "x.txt"
+    f.write_text("x")
     with patch("services.socket.socket"):
         ok, msg = services.print_to_printer(str(f), "raw:1.2.3.4:9100")
     assert ok is True
 
 
 def test_print_default_linux(clean_db, tmp_path):
-    f = tmp_path / "x.txt"; f.write_text("x")
+    f = tmp_path / "x.txt"
+    f.write_text("x")
     with patch("services.platform.system", return_value="Linux"):
         with patch("services.subprocess.run", return_value=MagicMock(returncode=0)):
             ok, _ = services.print_to_printer(str(f), "")
@@ -91,7 +98,8 @@ def test_print_default_linux(clean_db, tmp_path):
 
 
 def test_print_default_linux_fail(clean_db, tmp_path):
-    f = tmp_path / "x.txt"; f.write_text("x")
+    f = tmp_path / "x.txt"
+    f.write_text("x")
     with patch("services.platform.system", return_value="Linux"):
         with patch("services.subprocess.run", return_value=MagicMock(returncode=1, stderr="e")):
             ok, _ = services.print_to_printer(str(f), "")
@@ -99,7 +107,8 @@ def test_print_default_linux_fail(clean_db, tmp_path):
 
 
 def test_print_default_windows(clean_db, tmp_path):
-    f = tmp_path / "x.txt"; f.write_text("x")
+    f = tmp_path / "x.txt"
+    f.write_text("x")
     with patch("services.platform.system", return_value="Windows"):
         with patch.object(services.os, "startfile", create=True):
             ok, _ = services.print_to_printer(str(f), "")
@@ -107,13 +116,15 @@ def test_print_default_windows(clean_db, tmp_path):
 
 
 def test_print_unknown_target(clean_db, tmp_path):
-    f = tmp_path / "x.txt"; f.write_text("x")
+    f = tmp_path / "x.txt"
+    f.write_text("x")
     ok, msg = services.print_to_printer(str(f), "weird:format")
     assert ok is False
 
 
 def test_print_raw_exception(clean_db, tmp_path):
-    f = tmp_path / "x.txt"; f.write_text("x")
+    f = tmp_path / "x.txt"
+    f.write_text("x")
     with patch("services._print_raw_socket", side_effect=Exception("fail")):
         ok, msg = services.print_to_printer(str(f), "raw:1.2.3.4:9100")
     assert ok is False
@@ -129,12 +140,13 @@ def test_test_print(clean_db):
 # backup_now
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def test_backup_sqlite_valid(clean_db):
     path = services.backup_now()
     import sqlite3
+
     conn = sqlite3.connect(path)
-    tables = [r[0] for r in conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
+    tables = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
     conn.close()
     assert "reservations" in tables
     assert "general_ledger" in tables
@@ -144,10 +156,12 @@ def test_backup_sqlite_valid(clean_db):
 # verify_password — lockout expiry branch
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def test_verify_lockout_expires(clean_db):
     """Lockout timestamp in the past = not locked."""
     from app_core.db import transaction
     from datetime import datetime, timedelta
+
     with transaction() as c:
         past = (datetime.now() - timedelta(hours=1)).isoformat()
         c.execute("INSERT OR REPLACE INTO app_metadata (key, value) VALUES ('lockout_until', ?)", (past,))
@@ -157,6 +171,7 @@ def test_verify_lockout_expires(clean_db):
 def test_verify_lockout_bad_format(clean_db):
     """Corrupt lockout_until is ignored."""
     from app_core.db import transaction
+
     with transaction() as c:
         c.execute("INSERT OR REPLACE INTO app_metadata (key, value) VALUES ('lockout_until', 'garbage')")
     assert services.verify_password("testpass") is True
@@ -165,6 +180,7 @@ def test_verify_lockout_bad_format(clean_db):
 # ═══════════════════════════════════════════════════════════════════════════
 # Reservation — remaining branches
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def test_create_reservation_none_plan(clean_db):
     rid = services.create_reservation("X", "Direct", 1, None, 100, "2026-12-01", "2026-12-03")
@@ -187,6 +203,7 @@ def test_update_status_checkedout_from_reserved_fails(clean_db):
 # POS — remaining branches
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def test_add_pos_zero_qty(clean_db):
     rid = make_reservation()
     with pytest.raises(ValueError):
@@ -208,6 +225,7 @@ def test_void_nonexistent_pos(clean_db):
 # Expenses
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def test_expense_negative_vat(clean_db):
     with pytest.raises(ValueError):
         services.record_operational_expense(1, "X", 100.0, -5.0)
@@ -221,6 +239,7 @@ def test_void_expense_nonexistent(clean_db):
 # ═══════════════════════════════════════════════════════════════════════════
 # Settings — export/import edge
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def test_import_settings_invalid_json(clean_db, tmp_path):
     p = tmp_path / "bad.json"
@@ -236,6 +255,7 @@ def test_import_settings_missing_file(clean_db):
 
 def test_import_settings_skips_unknown_keys(clean_db, tmp_path):
     import json
+
     p = tmp_path / "s.json"
     p.write_text(json.dumps({"unknown_key": "x", "vat_rate": "0.15"}))
     result = services.import_settings_from_json(str(p), "testpass")
@@ -247,6 +267,7 @@ def test_import_settings_skips_unknown_keys(clean_db, tmp_path):
 # ═══════════════════════════════════════════════════════════════════════════
 # Auth — recovery codes
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def test_generate_recovery_codes_requires_password(clean_db):
     with pytest.raises(PermissionError):
@@ -262,8 +283,10 @@ def test_recovery_code_wrong(clean_db):
 # Attribution — tamper detection
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def test_attribution_tampered(clean_db):
     from app_core.db import transaction
+
     with transaction() as c:
         c.execute("UPDATE app_metadata SET value='Hacked' WHERE key='gift_attribution'")
     ok, msg = services.verify_app_attribution()
@@ -274,6 +297,7 @@ def test_attribution_tampered(clean_db):
 # Audit log
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def test_get_audit_log_returns_entries(clean_db):
     make_reservation()
     log = services.get_audit_log(10)
@@ -283,6 +307,7 @@ def test_get_audit_log_returns_entries(clean_db):
 # ═══════════════════════════════════════════════════════════════════════════
 # Invariant: never assume — cover empty states
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def test_balance_breakdown_cancelled(clean_db):
     rid = make_reservation()

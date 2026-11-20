@@ -1,4 +1,5 @@
 """Invoice generation — all scenarios, EGP and USD."""
+
 import os
 import pytest
 from app_core import services

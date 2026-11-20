@@ -4,6 +4,7 @@ Preserves runtime/user data: DB, exports, invoices, and configured data dirs liv
 under paths.DATA_DIR / PM_DATA_DIR and are ignored or untracked by git in normal
 installs. Updates only fast-forward tracked source files.
 """
+
 from __future__ import annotations
 
 import json
@@ -31,7 +32,6 @@ _SAFE_REF_RE = re.compile(r"^[A-Za-z0-9._/\-]+$")
 _UPDATE_CACHE: dict[str, Any] = {"checked_at_ts": 0.0, "result": None}
 
 
-
 def _validate_ref(name: str, value: str) -> str:
     v = str(value or "").strip()
     if not v or not _SAFE_REF_RE.match(v) or v.startswith("-") or ".." in v or v.endswith(".lock"):
@@ -45,6 +45,7 @@ def _project_root() -> Path:
     except Exception:
         try:
             import sys
+
             if bool(getattr(sys, "frozen", False)) or "__compiled__" in globals():
                 exe = Path(getattr(sys, "executable", "") or "").resolve()
                 if str(exe):
@@ -157,7 +158,6 @@ def _github_get(url: str, timeout: int = 12) -> Any:
     return json.loads(data)
 
 
-
 def _parse_version_tag(tag: str | None) -> tuple:
     """Best-effort semantic-ish version parser for tags like v1.2.3."""
     s = str(tag or "").strip()
@@ -209,6 +209,7 @@ def _default_update_interval_sec() -> int:
     try:
         # optional setting; fall back to 6h
         from .services import get_setting
+
         v = get_setting("auto_update_check_interval_hours", "6")
         hours = float(v)
         if hours <= 0:
@@ -221,6 +222,7 @@ def _default_update_interval_sec() -> int:
 def auto_update_checks_enabled() -> bool:
     try:
         from .services import get_setting
+
         v = str(get_setting("auto_check_updates", "true") or "true").strip().lower()
         return v in ("1", "true", "yes", "on")
     except Exception:
@@ -275,7 +277,9 @@ def get_cached_update_notice(force: bool = False, timeout: int = 8) -> dict[str,
                 n = git.get("commits_behind")
                 notice["update_available"] = True
                 notice["kind"] = "git"
-                notice["message"] = f"Update available ({n} commit(s) behind)." if n is not None else "Update available."
+                notice["message"] = (
+                    f"Update available ({n} commit(s) behind)." if n is not None else "Update available."
+                )
                 notice["url"] = git.get("compare_url") or notice["url"]
             elif not git.get("ok") and git.get("error"):
                 notice["error"] = git.get("error")
@@ -303,7 +307,12 @@ def get_cached_update_notice(force: bool = False, timeout: int = 8) -> dict[str,
                     notice["update_available"] = True
                     notice["kind"] = "release"
                     notice["message"] = f"New release available: {latest_tag}."
-                elif remote_v == (0,) and local_v == (0,) and str(latest_tag).strip() and str(latest_tag).strip() not in (APP_VERSION, ""):
+                elif (
+                    remote_v == (0,)
+                    and local_v == (0,)
+                    and str(latest_tag).strip()
+                    and str(latest_tag).strip() not in (APP_VERSION, "")
+                ):
                     notice["update_available"] = True
                     notice["kind"] = "release"
                     notice["message"] = f"New release available: {latest_tag}."
@@ -313,7 +322,9 @@ def get_cached_update_notice(force: bool = False, timeout: int = 8) -> dict[str,
         if not notice.get("error"):
             notice["error"] = str(e)
 
-    notice["ok"] = bool(notice.get("update_available") or not notice.get("error") or notice.get("git") or notice.get("latest_release"))
+    notice["ok"] = bool(
+        notice.get("update_available") or not notice.get("error") or notice.get("git") or notice.get("latest_release")
+    )
     _UPDATE_CACHE["checked_at_ts"] = now
     _UPDATE_CACHE["result"] = notice
     return notice
@@ -335,7 +346,9 @@ def check_for_updates(branch: str = DEFAULT_BRANCH, limit: int = 20, timeout: in
         "error": None,
         "notes": [],
     }
-    result["notes"].append("Runtime data (DB, exports, invoices, PM_DATA_DIR/DATA_DIR) is preserved during updates/backups/restores.")
+    result["notes"].append(
+        "Runtime data (DB, exports, invoices, PM_DATA_DIR/DATA_DIR) is preserved during updates/backups/restores."
+    )
     try:
         branch = _validate_ref("branch", branch)
         result["remote_branch"] = branch
@@ -352,9 +365,13 @@ def check_for_updates(branch: str = DEFAULT_BRANCH, limit: int = 20, timeout: in
     except Exception as e:
         result["ok"] = False
         result["error"] = f"Could not check for updates: {e}"
-        result["notes"].append("Update check needs network access to GitHub (or configure GITHUB_TOKEN/GH_TOKEN if rate-limited).")
+        result["notes"].append(
+            "Update check needs network access to GitHub (or configure GITHUB_TOKEN/GH_TOKEN if rate-limited)."
+        )
         if not local.get("is_git_repo"):
-            result["notes"].append("Not a git-based install: auto-update/apply is unavailable; reinstall from the latest release/installer to update source while preserving runtime data.")
+            result["notes"].append(
+                "Not a git-based install: auto-update/apply is unavailable; reinstall from the latest release/installer to update source while preserving runtime data."
+            )
         return result
 
     if not isinstance(commits, list) or not commits:
@@ -388,15 +405,17 @@ def check_for_updates(branch: str = DEFAULT_BRANCH, limit: int = 20, timeout: in
         msg = (c.get("commit") or {}).get("message") or ""
         subject = (msg.splitlines() or [""])[0].strip()
         body_lines = [ln.rstrip() for ln in (msg.splitlines()[1:] if len(msg.splitlines()) > 1 else []) if ln.strip()]
-        changelog.append({
-            "commit": sha,
-            "commit_short": sha[:7] if sha else "",
-            "date": (((c.get("commit") or {}).get("author") or {}).get("date")),
-            "author": (((c.get("commit") or {}).get("author") or {}).get("name")),
-            "subject": subject,
-            "details": body_lines[:6],
-            "url": c.get("html_url"),
-        })
+        changelog.append(
+            {
+                "commit": sha,
+                "commit_short": sha[:7] if sha else "",
+                "date": (((c.get("commit") or {}).get("author") or {}).get("date")),
+                "author": (((c.get("commit") or {}).get("author") or {}).get("name")),
+                "subject": subject,
+                "details": body_lines[:6],
+                "url": c.get("html_url"),
+            }
+        )
 
     if local_commit and latest_sha and local_commit == latest_sha:
         result["update_available"] = False
@@ -452,13 +471,19 @@ def apply_update(branch: str = DEFAULT_BRANCH) -> dict[str, Any]:
         res["error"] = str(e)
         return res
     if not local.get("is_git_repo"):
-        res["error"] = "Not a git installation; cannot auto-update. Reinstall/update from a supported release while preserving runtime data (DB/exports/invoices/PM_DATA_DIR)."
+        res["error"] = (
+            "Not a git installation; cannot auto-update. Reinstall/update from a supported release while preserving runtime data (DB/exports/invoices/PM_DATA_DIR)."
+        )
         return res
     if local.get("dirty"):
-        res["error"] = "Local source has uncommitted changes. Commit/stash/discard them before updating to avoid conflicts or data/source drift."
+        res["error"] = (
+            "Local source has uncommitted changes. Commit/stash/discard them before updating to avoid conflicts or data/source drift."
+        )
         return res
     if local.get("branch") and local.get("branch") not in ("HEAD", branch):
-        res["notes"].append(f"Current branch is '{local.get('branch')}'; update will fetch/pull origin/{branch} via fast-forward only.")
+        res["notes"].append(
+            f"Current branch is '{local.get('branch')}'; update will fetch/pull origin/{branch} via fast-forward only."
+        )
 
     for name, args in [
         ("fetch", ["fetch", "--prune", "origin", branch, "--tags"]),

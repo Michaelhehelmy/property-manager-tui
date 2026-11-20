@@ -3,6 +3,7 @@
 These functions compute metrics from provided values/records without DB access,
 so they can be reused by services, reports, and future business logic.
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterable
@@ -47,8 +48,9 @@ def reservation_nights(check_in: Any, check_out: Any) -> int:
     return stay_nights_exclusive(check_in, check_out)
 
 
-def room_nights_sold(reservations: Iterable[dict[str, Any]], start: Any = None, end: Any = None,
-                     active_statuses: set[str] | None = None) -> int:
+def room_nights_sold(
+    reservations: Iterable[dict[str, Any]], start: Any = None, end: Any = None, active_statuses: set[str] | None = None
+) -> int:
     """Sum occupied room-nights for reservations, optionally clipped to [start,end).
 
     `start`/`end` use hotel-style exclusive end semantics when provided.
@@ -72,8 +74,7 @@ def room_nights_sold(reservations: Iterable[dict[str, Any]], start: Any = None, 
     return int(total)
 
 
-def count_arrivals(reservations: Iterable[dict[str, Any]], on_date: Any,
-                   statuses: set[str] | None = None) -> int:
+def count_arrivals(reservations: Iterable[dict[str, Any]], on_date: Any, statuses: set[str] | None = None) -> int:
     day = parse_date(on_date)
     if not day:
         return 0
@@ -87,8 +88,7 @@ def count_arrivals(reservations: Iterable[dict[str, Any]], on_date: Any,
     return n
 
 
-def count_departures(reservations: Iterable[dict[str, Any]], on_date: Any,
-                     statuses: set[str] | None = None) -> int:
+def count_departures(reservations: Iterable[dict[str, Any]], on_date: Any, statuses: set[str] | None = None) -> int:
     day = parse_date(on_date)
     if not day:
         return 0
@@ -102,8 +102,7 @@ def count_departures(reservations: Iterable[dict[str, Any]], on_date: Any,
     return n
 
 
-def count_in_house(reservations: Iterable[dict[str, Any]], on_date: Any,
-                   statuses: set[str] | None = None) -> int:
+def count_in_house(reservations: Iterable[dict[str, Any]], on_date: Any, statuses: set[str] | None = None) -> int:
     day = parse_date(on_date)
     if not day:
         return 0

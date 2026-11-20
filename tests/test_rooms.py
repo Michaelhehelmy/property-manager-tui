@@ -1,4 +1,5 @@
 """Rooms + rate plans — every function, every branch."""
+
 import pytest
 from app_core import services
 from app_core.db import connect
@@ -7,6 +8,7 @@ from app_core.db import connect
 # ═══════════════════════════════════════════════════════════════════════════
 # ROOMS
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def test_get_all_rooms(clean_db):
     rooms = services.get_all_rooms()
@@ -77,6 +79,7 @@ def test_update_room_type_wrong_password(clean_db):
 # ═══════════════════════════════════════════════════════════════════════════
 # RATE PLANS
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def test_get_all_rate_plans(clean_db):
     plans = services.get_all_rate_plans()
@@ -160,8 +163,7 @@ def test_delete_rate_plan_in_use(clean_db):
     """Cannot delete a plan referenced by a reservation."""
     plans = services.get_all_rate_plans()
     pid = plans[0]["id"]
-    services.create_reservation("Test", "Direct", 1, pid, 100,
-                                "2026-12-01", "2026-12-03")
+    services.create_reservation("Test", "Direct", 1, pid, 100, "2026-12-01", "2026-12-03")
     with pytest.raises(ValueError, match="Cannot delete"):
         services.delete_rate_plan(pid, "testpass")
 

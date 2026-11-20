@@ -3,6 +3,7 @@
 Pure, additive helpers aligned with the app's common ISO date format (%Y-%m-%d).
 No existing behavior is modified.
 """
+
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta

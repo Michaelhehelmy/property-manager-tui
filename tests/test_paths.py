@@ -1,4 +1,5 @@
 """Coverage tests for app_core.paths (module-level detection + ensure_data_dirs)."""
+
 from __future__ import annotations
 
 import importlib

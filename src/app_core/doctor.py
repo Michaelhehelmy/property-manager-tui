@@ -4,6 +4,7 @@ Provides a read-only snapshot of runtime paths, DB/schema/integrity status,
 data directories, update/config/printer readiness, and backup/restore guidance.
 Safe to run as: `python -m app_core.doctor`
 """
+
 from __future__ import annotations
 
 import argparse
@@ -19,11 +20,26 @@ from typing import Any
 from . import db, paths
 
 _EXPECTED_TABLES = [
-    "settings", "rooms", "rate_plans", "guests", "reservations", "inventory",
-    "inventory_batches", "inventory_logs", "recipe_components", "meals",
-    "meal_ingredients", "activities", "pos_tabs", "expense_categories",
-    "operational_expenses", "payments", "general_ledger", "audit_log",
-    "app_metadata", "assistant_feedback",
+    "settings",
+    "rooms",
+    "rate_plans",
+    "guests",
+    "reservations",
+    "inventory",
+    "inventory_batches",
+    "inventory_logs",
+    "recipe_components",
+    "meals",
+    "meal_ingredients",
+    "activities",
+    "pos_tabs",
+    "expense_categories",
+    "operational_expenses",
+    "payments",
+    "general_ledger",
+    "audit_log",
+    "app_metadata",
+    "assistant_feedback",
 ]
 
 
@@ -46,7 +62,7 @@ def _db_integrity_summary(conn: sqlite3.Connection, *, max_details: int = 10) ->
         rows = conn.execute("PRAGMA integrity_check").fetchall()
         vals = [r[0] for r in rows] if rows else []
         out["integrity_check"] = vals[:max_details] if vals else []
-        out["ok_integrity"] = (len(vals) == 1 and str(vals[0]).lower() == "ok")
+        out["ok_integrity"] = len(vals) == 1 and str(vals[0]).lower() == "ok"
     except Exception as e:
         out["integrity_error"] = str(e)
         out["ok_integrity"] = False
@@ -97,11 +113,15 @@ def _batch_stock_consistency(conn: sqlite3.Connection) -> dict[str, Any]:
             stock = float(r["stock_qty"] or 0)
             br = float(r["batch_remaining"] or 0)
             if abs(stock - br) > 1e-6:
-                mismatches.append({
-                    "item_id": r["id"], "item_name": r["item_name"],
-                    "stock_qty": stock, "batch_remaining_active": br,
-                    "track_batches": int(r["track_batches"] or 0),
-                })
+                mismatches.append(
+                    {
+                        "item_id": r["id"],
+                        "item_name": r["item_name"],
+                        "stock_qty": stock,
+                        "batch_remaining_active": br,
+                        "track_batches": int(r["track_batches"] or 0),
+                    }
+                )
         return {
             "ok": len(mismatches) == 0,
             "checked": True,
@@ -120,6 +140,7 @@ def _printer_readiness() -> dict[str, Any]:
     try:
         if getattr(db, "_conn", None) is not None:
             from . import services
+
             mode = (services.get_setting("printer_mode", "file") or "file").strip().lower()
             target = (services.get_setting("printer_target", "") or "").strip()
             out["configured"] = bool(mode)
@@ -127,14 +148,34 @@ def _printer_readiness() -> dict[str, Any]:
             out["target_set"] = bool(target)
             if mode in ("tcp", "network", "raw"):
                 if not target or ":" not in target:
-                    out["checks"].append({"severity": "warn", "code": "printer_target_invalid", "message": "TCP printer target should be host:port"})
+                    out["checks"].append(
+                        {
+                            "severity": "warn",
+                            "code": "printer_target_invalid",
+                            "message": "TCP printer target should be host:port",
+                        }
+                    )
                     out["ok"] = False
             elif mode in ("file", ""):
-                out["checks"].append({"severity": "info", "code": "printer_file_mode", "message": "Printer mode is file/offline; raw device not required"})
+                out["checks"].append(
+                    {
+                        "severity": "info",
+                        "code": "printer_file_mode",
+                        "message": "Printer mode is file/offline; raw device not required",
+                    }
+                )
         else:
-            out["checks"].append({"severity": "info", "code": "printer_check_skipped", "message": "Printer settings check skipped (app DB not initialized in this process)"})
+            out["checks"].append(
+                {
+                    "severity": "info",
+                    "code": "printer_check_skipped",
+                    "message": "Printer settings check skipped (app DB not initialized in this process)",
+                }
+            )
     except Exception as e:
-        out["checks"].append({"severity": "warn", "code": "printer_check_error", "message": paths.redact_sensitive(e, 300)})
+        out["checks"].append(
+            {"severity": "warn", "code": "printer_check_error", "message": paths.redact_sensitive(e, 300)}
+        )
     return out
 
 
@@ -158,7 +199,9 @@ def verify_backup_file(backup_path: str | Path) -> dict[str, Any]:
         conn = sqlite3.connect(f"file:{p}?mode=ro", uri=True, timeout=5.0)
         conn.row_factory = sqlite3.Row
         out.update(_inspect_db_conn(conn))
-        out["ok"] = bool(((out.get("integrity") or {}).get("sqlite") or {}).get("ok")) and bool((((out.get("schema") or {}).get("tables") or {}).get("ok", True)))
+        out["ok"] = bool(((out.get("integrity") or {}).get("sqlite") or {}).get("ok")) and bool(
+            (((out.get("schema") or {}).get("tables") or {}).get("ok", True))
+        )
         return out
     except Exception as e:
         out["error"] = paths.redact_sensitive(e, 300)
@@ -278,17 +321,23 @@ def _detect_backup_files() -> dict[str, Any]:
                 if "property_manager" not in name and "backup" not in name and not name.endswith(".bak"):
                     continue
                 st = p.stat()
-                backups.append({
-                    "name": p.name,
-                    "path": str(p),
-                    "size_bytes": st.st_size,
-                    "modified_at": datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
-                    "age_hours": round(max(0.0, (time.time() - st.st_mtime) / 3600.0), 2),
-                })
+                backups.append(
+                    {
+                        "name": p.name,
+                        "path": str(p),
+                        "size_bytes": st.st_size,
+                        "modified_at": datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
+                        "age_hours": round(max(0.0, (time.time() - st.st_mtime) / 3600.0), 2),
+                    }
+                )
             except Exception:
                 continue
         backups.sort(key=lambda x: x.get("age_hours", 1e12))
-        return {"found": len(backups), "recent_backups": backups[:5], "latest_age_hours": (backups[0]["age_hours"] if backups else None)}
+        return {
+            "found": len(backups),
+            "recent_backups": backups[:5],
+            "latest_age_hours": (backups[0]["age_hours"] if backups else None),
+        }
     except Exception as e:
         return {"found": 0, "error": paths.redact_sensitive(e, 200)}
 
@@ -330,7 +379,9 @@ def _backup_restore_guidance() -> dict[str, Any]:
         "readiness": {
             "db_exists": db_path.exists(),
             "data_dir_exists": data_dir.exists(),
-            "data_dir_writable": os.access(str(data_dir), os.W_OK) if data_dir.exists() else os.access(str(data_dir.parent), os.W_OK),
+            "data_dir_writable": os.access(str(data_dir), os.W_OK)
+            if data_dir.exists()
+            else os.access(str(data_dir.parent), os.W_OK),
             "detected_backups": _detect_backup_files(),
             "recommendation": "Verify backups before restore and never delete runtime data during update/backup/restore operations.",
         },
@@ -343,44 +394,111 @@ def _config_issues() -> list[dict[str, str]]:
         if getattr(db, "_conn", None):
             try:
                 from . import services
+
                 allow_neg = (services.get_setting("allow_negative_stock", "true") or "true").lower() == "true"
                 if allow_neg:
-                    issues.append({"severity": "info", "code": "negative_stock_allowed", "message": "Negative stock is allowed by configuration."})
+                    issues.append(
+                        {
+                            "severity": "info",
+                            "code": "negative_stock_allowed",
+                            "message": "Negative stock is allowed by configuration.",
+                        }
+                    )
             except Exception:
                 pass
         else:
-            issues.append({"severity": "info", "code": "db_not_open", "message": "DB connection not open in this process; config/printer/ledger checks limited."})
+            issues.append(
+                {
+                    "severity": "info",
+                    "code": "db_not_open",
+                    "message": "DB connection not open in this process; config/printer/ledger checks limited.",
+                }
+            )
     except Exception as e:
-        issues.append({"severity": "warn", "code": "config_check_error", "message": paths.redact_sensitive(f"Could not evaluate some config checks: {e}", 300)})
+        issues.append(
+            {
+                "severity": "warn",
+                "code": "config_check_error",
+                "message": paths.redact_sensitive(f"Could not evaluate some config checks: {e}", 300),
+            }
+        )
     # Path/permission checks
     try:
         perm = paths.check_runtime_permissions() if hasattr(paths, "check_runtime_permissions") else {}
         for label, key in [("data_dir", "data_dir"), ("export_dir", "export_dir"), ("invoice_dir", "invoice_dir")]:
             info = perm.get(key) or {}
             if info.get("exists") and not info.get("writable", True):
-                issues.append({"severity": "error", "code": "path_not_writable", "message": f"{label} is not writable: {info.get('path','')}"})
+                issues.append(
+                    {
+                        "severity": "error",
+                        "code": "path_not_writable",
+                        "message": f"{label} is not writable: {info.get('path', '')}",
+                    }
+                )
         if perm.get("data_dir_world_writable"):
-            issues.append({"severity": "warn", "code": "data_dir_world_writable", "message": "Runtime data directory is world-writable; restrict permissions for shared hosts."})
+            issues.append(
+                {
+                    "severity": "warn",
+                    "code": "data_dir_world_writable",
+                    "message": "Runtime data directory is world-writable; restrict permissions for shared hosts.",
+                }
+            )
         dbi = perm.get("db_path") or {}
         if dbi.get("exists") and not dbi.get("writable", True):
-            issues.append({"severity": "error", "code": "db_not_writable", "message": f"Database file is not writable: {dbi.get('path','')}"})
+            issues.append(
+                {
+                    "severity": "error",
+                    "code": "db_not_writable",
+                    "message": f"Database file is not writable: {dbi.get('path', '')}",
+                }
+            )
     except Exception as e:
-        issues.append({"severity": "warn", "code": "path_check_error", "message": paths.redact_sensitive(f"Path checks failed: {e}", 300)})
+        issues.append(
+            {
+                "severity": "warn",
+                "code": "path_check_error",
+                "message": paths.redact_sensitive(f"Path checks failed: {e}", 300),
+            }
+        )
     # Web/runtime secret and cookie warnings (detectable env only; no values exposed)
     try:
         secret = os.environ.get("PM_WEB_SECRET_KEY")
-        host_hint = (os.environ.get("HOST") or os.environ.get("PM_WEB_HOST") or "127.0.0.1")
+        host_hint = os.environ.get("HOST") or os.environ.get("PM_WEB_HOST") or "127.0.0.1"
         non_local = host_hint not in ("127.0.0.1", "localhost", "::1")
         if not secret:
             sev = "error" if non_local else "warn"
-            issues.append({"severity": sev, "code": "web_secret_missing", "message": "PM_WEB_SECRET_KEY is not set; set a strong random secret for web deployments (required for non-local)."})
+            issues.append(
+                {
+                    "severity": sev,
+                    "code": "web_secret_missing",
+                    "message": "PM_WEB_SECRET_KEY is not set; set a strong random secret for web deployments (required for non-local).",
+                }
+            )
         elif len(secret) < 32:
-            issues.append({"severity": "warn", "code": "web_secret_weak", "message": "PM_WEB_SECRET_KEY appears short (<32 chars); use a strong random secret."})
+            issues.append(
+                {
+                    "severity": "warn",
+                    "code": "web_secret_weak",
+                    "message": "PM_WEB_SECRET_KEY appears short (<32 chars); use a strong random secret.",
+                }
+            )
         cookie_secure = os.environ.get("PM_WEB_COOKIE_SECURE", "").strip().lower() in ("1", "true", "yes", "on")
         if non_local and not cookie_secure:
-            issues.append({"severity": "warn", "code": "cookie_secure_disabled", "message": "PM_WEB_COOKIE_SECURE is not enabled for a non-local host hint; enable Secure cookies behind HTTPS."})
+            issues.append(
+                {
+                    "severity": "warn",
+                    "code": "cookie_secure_disabled",
+                    "message": "PM_WEB_COOKIE_SECURE is not enabled for a non-local host hint; enable Secure cookies behind HTTPS.",
+                }
+            )
         if os.environ.get("PM_WEB_ALLOW_INSECURE_DEV") == "1":
-            issues.append({"severity": "warn", "code": "insecure_dev_override", "message": "PM_WEB_ALLOW_INSECURE_DEV=1 is set; do not use in production."})
+            issues.append(
+                {
+                    "severity": "warn",
+                    "code": "insecure_dev_override",
+                    "message": "PM_WEB_ALLOW_INSECURE_DEV=1 is set; do not use in production.",
+                }
+            )
     except Exception:
         pass
     # Backup recency warning (best-effort)
@@ -388,11 +506,23 @@ def _config_issues() -> list[dict[str, str]]:
         detected = _detect_backup_files()
         latest_age = detected.get("latest_age_hours")
         if not detected.get("found"):
-            issues.append({"severity": "warn", "code": "backup_missing", "message": "No backup files detected in runtime data dir; create and verify a backup."})
+            issues.append(
+                {
+                    "severity": "warn",
+                    "code": "backup_missing",
+                    "message": "No backup files detected in runtime data dir; create and verify a backup.",
+                }
+            )
         elif latest_age is not None:
             try:
                 if float(latest_age) > 168:  # 7 days
-                    issues.append({"severity": "warn", "code": "backup_stale", "message": f"Latest detected backup is ~{float(latest_age):.1f}h old; verify backup recency/retention."})
+                    issues.append(
+                        {
+                            "severity": "warn",
+                            "code": "backup_stale",
+                            "message": f"Latest detected backup is ~{float(latest_age):.1f}h old; verify backup recency/retention.",
+                        }
+                    )
             except Exception:
                 pass
     except Exception:
@@ -468,7 +598,9 @@ def collect_health(check_updates: bool = False) -> dict[str, Any]:
                 report["integrity"].update(inspected.get("integrity") or {})
                 report["consistency"].update(inspected.get("consistency") or {})
                 try:
-                    report["db"]["table_count"] = len([r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()])
+                    report["db"]["table_count"] = len(
+                        [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
+                    )
                 except Exception:
                     pass
                 try:
@@ -489,17 +621,21 @@ def collect_health(check_updates: bool = False) -> dict[str, Any]:
         if db_path.exists() and getattr(db, "_conn", None) is not None:
             try:
                 from . import services
+
                 if hasattr(services, "verify_ledger_integrity"):
                     report["integrity"]["ledger"] = services.verify_ledger_integrity()
             except Exception as e:
                 report["integrity"]["ledger_error"] = str(e)
         elif db_path.exists():
-            report["notes"].append("Ledger integrity check skipped (app DB not initialized in this process). Run from app context for ledger-level checks.")
+            report["notes"].append(
+                "Ledger integrity check skipped (app DB not initialized in this process). Run from app context for ledger-level checks."
+            )
     except Exception as e:
         report["notes"].append(f"Ledger integrity check unavailable: {e}")
 
     try:
         from . import updater
+
         report["update"]["local"] = updater.get_local_state()
         if check_updates:
             try:
@@ -516,18 +652,20 @@ def collect_health(check_updates: bool = False) -> dict[str, Any]:
 
     sqlite_ok = ((report.get("integrity") or {}).get("sqlite") or {}).get("ok", True)
     schema_ok = (report.get("schema") or {}).get("matches_expected", True)
-    tables_ok = (((report.get("schema") or {}).get("tables") or {}).get("ok", True))
+    tables_ok = ((report.get("schema") or {}).get("tables") or {}).get("ok", True)
     severe = [i for i in report["config_issues"] if i.get("severity") == "error"]
     if (db_path.exists() and (not sqlite_ok or not schema_ok or not tables_ok)) or severe:
         report["ok"] = False
     # operator guidance notes
-    report["notes"].append("Web/server ops: always run uvicorn with --workers 1; runtime data (DB/exports/invoices/PM_DATA_DIR) must be preserved across updates/backups/restores.")
+    report["notes"].append(
+        "Web/server ops: always run uvicorn with --workers 1; runtime data (DB/exports/invoices/PM_DATA_DIR) must be preserved across updates/backups/restores."
+    )
     return report
 
 
 def format_health_report(report: dict[str, Any]) -> str:
     lines = []
-    lines.append(f"SPMS Doctor — {report.get('checked_at','')}")
+    lines.append(f"SPMS Doctor — {report.get('checked_at', '')}")
     lines.append(f"Overall: {'OK' if report.get('ok') else 'ISSUES DETECTED'}")
     p = report.get("paths", {})
     lines.append("\nPaths:")
@@ -540,10 +678,13 @@ def format_health_report(report: dict[str, Any]) -> str:
         for k, v in ddirs.items():
             state = "exists" if v.get("exists") else "missing"
             extra = []
-            if v.get("is_dir"): extra.append("dir")
-            if v.get("is_file"): extra.append("file")
-            if "writable" in v: extra.append("writable" if v["writable"] else "not-writable")
-            lines.append(f"  - {k}: {state}" + (f" ({', '.join(extra)})" if extra else "") + f" — {v.get('path','')}")
+            if v.get("is_dir"):
+                extra.append("dir")
+            if v.get("is_file"):
+                extra.append("file")
+            if "writable" in v:
+                extra.append("writable" if v["writable"] else "not-writable")
+            lines.append(f"  - {k}: {state}" + (f" ({', '.join(extra)})" if extra else "") + f" — {v.get('path', '')}")
     sch = report.get("schema", {})
     lines.append("\nSchema:")
     lines.append(f"  - user_version: {sch.get('user_version')}")
@@ -551,7 +692,9 @@ def format_health_report(report: dict[str, Any]) -> str:
     lines.append(f"  - matches_expected: {sch.get('matches_expected')}")
     t = sch.get("tables") or {}
     if t:
-        lines.append(f"  - tables_ok: {t.get('ok')} (present={t.get('present_count')}, missing={len(t.get('missing_tables') or [])})")
+        lines.append(
+            f"  - tables_ok: {t.get('ok')} (present={t.get('present_count')}, missing={len(t.get('missing_tables') or [])})"
+        )
         if t.get("missing_tables"):
             lines.append(f"  - missing_tables: {t.get('missing_tables')}")
     integ = (report.get("integrity") or {}).get("sqlite") or {}
@@ -560,62 +703,83 @@ def format_health_report(report: dict[str, Any]) -> str:
         lines.append(f"  - integrity_check: {integ.get('integrity_check')}")
         lines.append(f"  - foreign_key_violations: {len(integ.get('foreign_key_violations') or [])}")
         for k in ("integrity_error", "foreign_key_error"):
-            if integ.get(k): lines.append(f"  - {k}: {integ.get(k)}")
+            if integ.get(k):
+                lines.append(f"  - {k}: {integ.get(k)}")
     dbi = report.get("db") or {}
     if dbi.get("journal_mode") is not None or dbi.get("busy_timeout") is not None:
-        lines.append(f"  - db: journal_mode={dbi.get('journal_mode')} foreign_keys={dbi.get('foreign_keys')} busy_timeout={dbi.get('busy_timeout')}")
+        lines.append(
+            f"  - db: journal_mode={dbi.get('journal_mode')} foreign_keys={dbi.get('foreign_keys')} busy_timeout={dbi.get('busy_timeout')}"
+        )
     ledger = (report.get("integrity") or {}).get("ledger")
     if ledger is not None:
         lines.append(f"  - ledger_integrity: {ledger}")
     cons = (report.get("consistency") or {}).get("batch_stock") or {}
     if cons:
         lines.append("\nBatch/stock consistency:")
-        lines.append(f"  - ok: {cons.get('ok')} checked={cons.get('checked')} mismatches={cons.get('mismatch_count', 0)}")
-        if cons.get("error"): lines.append(f"  - error: {cons.get('error')}")
+        lines.append(
+            f"  - ok: {cons.get('ok')} checked={cons.get('checked')} mismatches={cons.get('mismatch_count', 0)}"
+        )
+        if cons.get("error"):
+            lines.append(f"  - error: {cons.get('error')}")
         if cons.get("mismatches"):
             for m in (cons.get("mismatches") or [])[:5]:
-                lines.append(f"  - item {m.get('item_id')} {m.get('item_name')}: stock={m.get('stock_qty')} active_batch_remaining={m.get('batch_remaining_active')}")
-    pr = ((report.get("readiness") or {}).get("printer") or {})
+                lines.append(
+                    f"  - item {m.get('item_id')} {m.get('item_name')}: stock={m.get('stock_qty')} active_batch_remaining={m.get('batch_remaining_active')}"
+                )
+    pr = (report.get("readiness") or {}).get("printer") or {}
     if pr:
         lines.append("\nPrinter readiness:")
-        lines.append(f"  - configured: {pr.get('configured')} mode={pr.get('mode','')} target_set={pr.get('target_set', False)}")
-        for c in (pr.get("checks") or []):
-            lines.append(f"  - [{c.get('severity','info')}] {c.get('code')}: {c.get('message')}")
+        lines.append(
+            f"  - configured: {pr.get('configured')} mode={pr.get('mode', '')} target_set={pr.get('target_set', False)}"
+        )
+        for c in pr.get("checks") or []:
+            lines.append(f"  - [{c.get('severity', 'info')}] {c.get('code')}: {c.get('message')}")
     upd = report.get("update") or {}
     local = upd.get("local") or {}
     if local:
         lines.append("\nUpdate status (local):")
         for k in ("app_version", "branch", "commit_short", "dirty", "is_git_repo"):
-            if k in local: lines.append(f"  - {k}: {local.get(k)}")
+            if k in local:
+                lines.append(f"  - {k}: {local.get(k)}")
         if local.get("remote"):
             try:
                 from . import paths as _paths
+
                 lines.append(f"  - remote: {_paths.redact_sensitive(local.get('remote'), 200)}")
             except Exception:
                 pass
     remote = upd.get("remote")
     if isinstance(remote, dict):
         lines.append("  - remote_update_available: " + str(remote.get("update_available")))
-        if remote.get("error"): lines.append(f"  - remote_error: {remote.get('error')}")
+        if remote.get("error"):
+            lines.append(f"  - remote_error: {remote.get('error')}")
     issues = report.get("config_issues") or []
     lines.append(f"\nConfig issues: {len(issues)}")
     for iss in issues:
-        lines.append(f"  - [{iss.get('severity','info')}] {iss.get('code')}: {iss.get('message')}")
+        lines.append(f"  - [{iss.get('severity', 'info')}] {iss.get('code')}: {iss.get('message')}")
     br = report.get("backup_restore") or {}
     if br:
         lines.append("\nBackup/restore guidance:")
         lines.append("  - Runtime data preserved: " + ", ".join(br.get("runtime_data_preserved") or []))
         b = br.get("backup") or {}
         if b:
-            lines.append(f"  - Backup: stop_app={b.get('stop_app_first')} db={b.get('copy_db_file')} suggested={b.get('suggested_backup_path')}")
+            lines.append(
+                f"  - Backup: stop_app={b.get('stop_app_first')} db={b.get('copy_db_file')} suggested={b.get('suggested_backup_path')}"
+            )
             if b.get("wal_exists") or b.get("shm_exists"):
-                lines.append(f"  - WAL/SHM present: wal={bool(b.get('wal_exists'))} shm={bool(b.get('shm_exists'))} (prefer consistent backup/stop app)")
+                lines.append(
+                    f"  - WAL/SHM present: wal={bool(b.get('wal_exists'))} shm={bool(b.get('shm_exists'))} (prefer consistent backup/stop app)"
+                )
         r = br.get("restore") or {}
         if r:
-            lines.append(f"  - Restore: stop_app={r.get('stop_app_first')} replace_db={r.get('replace_db_file')} verify={r.get('verify_helper')}")
+            lines.append(
+                f"  - Restore: stop_app={r.get('stop_app_first')} replace_db={r.get('replace_db_file')} verify={r.get('verify_helper')}"
+            )
         rd = br.get("readiness") or {}
         if rd:
-            lines.append(f"  - Readiness: db_exists={rd.get('db_exists')} data_dir_writable={rd.get('data_dir_writable')}")
+            lines.append(
+                f"  - Readiness: db_exists={rd.get('db_exists')} data_dir_writable={rd.get('data_dir_writable')}"
+            )
     notes = report.get("notes") or []
     if notes:
         lines.append("\nNotes:")
@@ -625,11 +789,19 @@ def format_health_report(report: dict[str, Any]) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="python -m app_core.doctor", description="SPMS health/doctor checks and safe backup helpers")
+    ap = argparse.ArgumentParser(
+        prog="python -m app_core.doctor", description="SPMS health/doctor checks and safe backup helpers"
+    )
     ap.add_argument("--json", action="store_true", help="Output JSON report/result")
     ap.add_argument("--check-updates", action="store_true", help="Also query GitHub for update status (network)")
-    ap.add_argument("--strict", action="store_true", help="Exit non-zero on warnings-level risks in batch consistency/printer checks where applicable")
-    ap.add_argument("--backup", action="store_true", help="Create a safe backup copy of the SQLite DB (no runtime data deletion)")
+    ap.add_argument(
+        "--strict",
+        action="store_true",
+        help="Exit non-zero on warnings-level risks in batch consistency/printer checks where applicable",
+    )
+    ap.add_argument(
+        "--backup", action="store_true", help="Create a safe backup copy of the SQLite DB (no runtime data deletion)"
+    )
     ap.add_argument("--backup-to", help="Destination path for --backup/backup creation")
     ap.add_argument("--verify-backup", help="Verify a SQLite backup/candidate DB file (integrity/schema checks)")
     args = ap.parse_args(argv)
@@ -643,7 +815,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  - path: {result.get('path')}")
             if result.get("error"):
                 print(f"  - error: {result.get('error')}")
-            integ = ((result.get("integrity") or {}).get("sqlite") or {})
+            integ = (result.get("integrity") or {}).get("sqlite") or {}
             if integ:
                 print(f"  - integrity_check: {integ.get('integrity_check')}")
                 print(f"  - foreign_key_violations: {len(integ.get('foreign_key_violations') or [])}")
@@ -676,7 +848,7 @@ def main(argv: list[str] | None = None) -> int:
         print(format_health_report(report))
     ok = bool(report.get("ok"))
     if args.strict and ok:
-        cons = ((report.get("consistency") or {}).get("batch_stock") or {})
+        cons = (report.get("consistency") or {}).get("batch_stock") or {}
         if cons.get("checked") and not cons.get("ok"):
             ok = False
     return 0 if ok else 1

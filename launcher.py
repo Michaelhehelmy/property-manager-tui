@@ -4,6 +4,7 @@
 Web-only launcher with safe defaults (SQLite requires --workers 1).
 Runtime data (DB/exports/invoices/PM_DATA_DIR) is preserved across updates/restarts.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -187,16 +188,21 @@ def _print_lan_access_hints(host: str, port: int) -> None:
         if ips:
             for ip in ips:
                 print(f"  - http://{ip}:{port}")
-            print("Tip: for a PWA installed on a phone/tablet to auto-connect reliably, use the same LAN URL/IP and keep the server host IP + port stable.")
-            print("     (Set a static/DHCP-reserved IP for this machine on your router/OS so the address does not change.)")
+            print(
+                "Tip: for a PWA installed on a phone/tablet to auto-connect reliably, use the same LAN URL/IP and keep the server host IP + port stable."
+            )
+            print(
+                "     (Set a static/DHCP-reserved IP for this machine on your router/OS so the address does not change.)"
+            )
         else:
             print(f"  - http://<this-machine-LAN-IP>:{port}")
             print("Could not auto-detect LAN IP; check your OS network settings (Wi-Fi/Ethernet IPv4 address).")
-        print("Security: LAN/remote access should use a strong PM_WEB_SECRET_KEY; prefer HTTPS/reverse proxy or VPN outside trusted networks.")
+        print(
+            "Security: LAN/remote access should use a strong PM_WEB_SECRET_KEY; prefer HTTPS/reverse proxy or VPN outside trusted networks."
+        )
     elif host not in {"127.0.0.1", "localhost", "::1"}:
         print(f"\nNetwork access URL: http://{host}:{port}")
         print("Ensure this address is reachable on your network and that firewall rules allow the port.")
-
 
 
 def _is_frozen_build() -> bool:
@@ -239,8 +245,21 @@ def _serve_web_foreground(host: str = "127.0.0.1", port: int = 8000) -> int:
         print(f"\nFailed to start Web UI: {e}")
         # Best-effort crash report for packaged/server mode
         try:
-            dummy = argparse.Namespace(host=host, port=port, mode=None, web=True, serve_web=True, no_browser=True, debug=_DEBUG_ENABLED, diagnostics=False, save_report="__DEFAULT__", open_issue=False)
-            _handle_diagnostics_cli(dummy, error=e, tb_text=tb, context={"phase": "serve_web_foreground"}, exit_after=False)
+            dummy = argparse.Namespace(
+                host=host,
+                port=port,
+                mode=None,
+                web=True,
+                serve_web=True,
+                no_browser=True,
+                debug=_DEBUG_ENABLED,
+                diagnostics=False,
+                save_report="__DEFAULT__",
+                open_issue=False,
+            )
+            _handle_diagnostics_cli(
+                dummy, error=e, tb_text=tb, context={"phase": "serve_web_foreground"}, exit_after=False
+            )
         except Exception:
             pass
         return 1
@@ -284,13 +303,16 @@ def run_web(host: str = "127.0.0.1", port: int = 8000, open_browser: bool = True
     print("Press Ctrl+C to stop and return to menu.\n")
 
     if open_browser:
+
         def _open():
             try:
                 webbrowser.open(url)
             except Exception:
                 pass
+
         try:
             import threading
+
             threading.Timer(1.0, _open).start()
         except Exception:
             pass
@@ -301,10 +323,16 @@ def run_web(host: str = "127.0.0.1", port: int = 8000, open_browser: bool = True
         cmd = [sys.executable, "--serve-web", "--host", host, "--port", str(port)]
     else:
         cmd = [
-            sys.executable, "-m", "uvicorn", "ui.web.server:app",
-            "--host", host,
-            "--port", str(port),
-            "--workers", "1",
+            sys.executable,
+            "-m",
+            "uvicorn",
+            "ui.web.server:app",
+            "--host",
+            host,
+            "--port",
+            str(port),
+            "--workers",
+            "1",
         ]
     try:
         _debug(f"Starting web process: {' '.join(cmd[:3])} ... (cwd={ROOT.name})")
@@ -334,8 +362,21 @@ def run_web(host: str = "127.0.0.1", port: int = 8000, open_browser: bool = True
             print("\nuvicorn is not available in this Python environment.")
             print(f"Install: {_install_web_deps_hint()}")
         try:
-            dummy = argparse.Namespace(host=host, port=port, mode="web", web=True, serve_web=False, no_browser=not open_browser, debug=_DEBUG_ENABLED, diagnostics=False, save_report="__DEFAULT__", open_issue=False)
-            _handle_diagnostics_cli(dummy, error=e, tb_text=tb, context={"phase": "run_web_spawn", "frozen": frozen}, exit_after=False)
+            dummy = argparse.Namespace(
+                host=host,
+                port=port,
+                mode="web",
+                web=True,
+                serve_web=False,
+                no_browser=not open_browser,
+                debug=_DEBUG_ENABLED,
+                diagnostics=False,
+                save_report="__DEFAULT__",
+                open_issue=False,
+            )
+            _handle_diagnostics_cli(
+                dummy, error=e, tb_text=tb, context={"phase": "run_web_spawn", "frozen": frozen}, exit_after=False
+            )
         except Exception:
             pass
         return 1
@@ -347,12 +388,24 @@ def run_web(host: str = "127.0.0.1", port: int = 8000, open_browser: bool = True
         if not frozen:
             print(f"Try: {sys.executable} -m uvicorn ui.web.server:app --host {host} --port {port} --workers 1")
         try:
-            dummy = argparse.Namespace(host=host, port=port, mode="web", web=True, serve_web=False, no_browser=not open_browser, debug=_DEBUG_ENABLED, diagnostics=False, save_report="__DEFAULT__", open_issue=False)
-            _handle_diagnostics_cli(dummy, error=e, tb_text=tb, context={"phase": "run_web_spawn", "frozen": frozen}, exit_after=False)
+            dummy = argparse.Namespace(
+                host=host,
+                port=port,
+                mode="web",
+                web=True,
+                serve_web=False,
+                no_browser=not open_browser,
+                debug=_DEBUG_ENABLED,
+                diagnostics=False,
+                save_report="__DEFAULT__",
+                open_issue=False,
+            )
+            _handle_diagnostics_cli(
+                dummy, error=e, tb_text=tb, context={"phase": "run_web_spawn", "frozen": frozen}, exit_after=False
+            )
         except Exception:
             pass
         return 1
-
 
 
 # --- Debug / diagnostics / issue reporting (privacy-safe) ---------------------
@@ -376,6 +429,7 @@ def _debug(msg: str) -> None:
 
 def _safe_env_summary() -> dict:
     """Return presence/flags only for selected env vars (never secret values)."""
+
     def _present(name: str) -> bool:
         return bool((os.environ.get(name) or "").strip())
 
@@ -384,9 +438,12 @@ def _safe_env_summary() -> dict:
     return {
         "PM_DATA_DIR_set": _present("PM_DATA_DIR"),
         "PM_WEB_SECRET_KEY_set": _present("PM_WEB_SECRET_KEY"),
-        "PM_WEB_COOKIE_SECURE": (os.environ.get("PM_WEB_COOKIE_SECURE") or "").strip().lower() in ("1", "true", "yes", "on"),
+        "PM_WEB_COOKIE_SECURE": (os.environ.get("PM_WEB_COOKIE_SECURE") or "").strip().lower()
+        in ("1", "true", "yes", "on"),
         "PM_WEB_ALLOW_INSECURE_DEV": (os.environ.get("PM_WEB_ALLOW_INSECURE_DEV") or "").strip() == "1",
-        "HOST": host if host in {"127.0.0.1", "0.0.0.0", "localhost", "::1", "[::]", "::"} else ("<set>" if host else ""),
+        "HOST": host
+        if host in {"127.0.0.1", "0.0.0.0", "localhost", "::1", "[::]", "::"}
+        else ("<set>" if host else ""),
         "PORT": port if (port.isdigit() and len(port) <= 5) else ("<set>" if port else ""),
         "GITHUB_TOKEN_set": _present("GITHUB_TOKEN") or _present("GH_TOKEN"),
         "frozen": _is_frozen_build(),
@@ -401,6 +458,7 @@ def _try_import_app_core():
             sys.path.insert(0, str(ROOT))
         from app_core import paths as ac_paths  # type: ignore
         from app_core import support as ac_support  # type: ignore
+
         return ac_paths, ac_support
     except Exception as e:
         _debug(f"app_core import unavailable: {e}")
@@ -446,7 +504,9 @@ def _default_report_dir() -> Path:
         return Path.cwd()
 
 
-def _collect_launcher_debug_info(*, error: BaseException | None = None, tb_text: str | None = None, context: dict | None = None, args=None) -> dict:
+def _collect_launcher_debug_info(
+    *, error: BaseException | None = None, tb_text: str | None = None, context: dict | None = None, args=None
+) -> dict:
     ctx = dict(context or {})
     info = {
         "launcher": {
@@ -484,7 +544,15 @@ def _collect_launcher_debug_info(*, error: BaseException | None = None, tb_text:
     return info
 
 
-def _build_launcher_report(*, error: BaseException | None = None, tb_text: str | None = None, context: dict | None = None, args=None, title_hint: str = "", notes_hint: str = "") -> tuple[dict, str, str | None]:
+def _build_launcher_report(
+    *,
+    error: BaseException | None = None,
+    tb_text: str | None = None,
+    context: dict | None = None,
+    args=None,
+    title_hint: str = "",
+    notes_hint: str = "",
+) -> tuple[dict, str, str | None]:
     """Return (report_json, markdown_text, issue_url_or_none). Never raises fatally."""
     ac_paths, ac_support = _try_import_app_core()
     debug_info = _collect_launcher_debug_info(error=error, tb_text=tb_text, context=context, args=args)
@@ -494,10 +562,14 @@ def _build_launcher_report(*, error: BaseException | None = None, tb_text: str |
                 "title": title_hint or ("SPMS launcher error (native app)" if error else "SPMS launcher diagnostics"),
                 "category": "Bug" if error else "Support",
                 "severity": "High" if error else "Medium",
-                "actual": _sanitize_text(error, 1000) if error else notes_hint or "Launcher diagnostics report generated on user request.",
+                "actual": _sanitize_text(error, 1000)
+                if error
+                else notes_hint or "Launcher diagnostics report generated on user request.",
                 "notes": notes_hint or "Auto-generated by launcher debug/report feature. Review before sharing.",
             }
-            bundle = ac_support.generate_support_bundle(context={"source": "launcher", **(context or {})}, user=user, include_update_check=False)
+            bundle = ac_support.generate_support_bundle(
+                context={"source": "launcher", **(context or {})}, user=user, include_update_check=False
+            )
             report = json.loads(json.dumps(bundle.get("diagnostics") or {}, default=str))
             markdown = str(bundle.get("markdown") or "")
             issue_url = None
@@ -511,7 +583,11 @@ def _build_launcher_report(*, error: BaseException | None = None, tb_text: str |
                 "report_version": 1,
                 "generated_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
                 "app": {"app_version": "unknown", "note": "app_core.support unavailable"},
-                "runtime": {"platform": platform.platform(), "python": sys.version.split()[0], "executable": Path(sys.executable).name if sys.executable else None},
+                "runtime": {
+                    "platform": platform.platform(),
+                    "python": sys.version.split()[0],
+                    "executable": Path(sys.executable).name if sys.executable else None,
+                },
                 "environment": {},
                 "client_context": {"source": "launcher"},
                 "redaction": {"notes": ["Sensitive values should be redacted/excluded. Review before sharing."]},
@@ -545,7 +621,8 @@ def _build_launcher_report(*, error: BaseException | None = None, tb_text: str |
         "steps_to_reproduce": "1. Launch native app / launcher\n2. Observe error\n3. Attach this report",
         "expected_behavior": "Launcher/Web UI should start normally.",
         "actual_behavior": _sanitize_text(error, 1500) if error else (notes_hint or "Diagnostics collected."),
-        "notes": notes_hint or "Auto-generated by SPMS launcher. Upload this JSON on the landing page report form or attach to a GitHub issue. Review before sharing.",
+        "notes": notes_hint
+        or "Auto-generated by SPMS launcher. Upload this JSON on the landing page report form or attach to a GitHub issue. Review before sharing.",
     }
     report["user_report"] = user_report
     report["client_device"] = {
@@ -564,7 +641,15 @@ def _build_launcher_report(*, error: BaseException | None = None, tb_text: str |
 
     # Rebuild markdown to include launcher debug block when possible
     try:
-        md_lines = [markdown.rstrip(), "", "### Launcher debug (sanitized)", "```json", json.dumps(debug_info, indent=2, default=str)[:12000], "```", ""]
+        md_lines = [
+            markdown.rstrip(),
+            "",
+            "### Launcher debug (sanitized)",
+            "```json",
+            json.dumps(debug_info, indent=2, default=str)[:12000],
+            "```",
+            "",
+        ]
         markdown = "\n".join(md_lines)
     except Exception:
         pass
@@ -620,12 +705,23 @@ def _print_report_guidance(saved: dict, issue_url: str | None = None) -> None:
         print("If possible, run: python3 -m app_core.support --out spms-support-report.md")
 
 
-def _handle_diagnostics_cli(args, *, error: BaseException | None = None, tb_text: str | None = None, context: dict | None = None, exit_after: bool = True) -> int:
+def _handle_diagnostics_cli(
+    args,
+    *,
+    error: BaseException | None = None,
+    tb_text: str | None = None,
+    context: dict | None = None,
+    exit_after: bool = True,
+) -> int:
     title_hint = "SPMS native launcher error" if error else "SPMS launcher diagnostics"
-    report, markdown, issue_url = _build_launcher_report(error=error, tb_text=tb_text, context=context, args=args, title_hint=title_hint)
+    report, markdown, issue_url = _build_launcher_report(
+        error=error, tb_text=tb_text, context=context, args=args, title_hint=title_hint
+    )
     # default save location if requested or if crash
     out_path = getattr(args, "save_report", None)
-    should_save = bool(getattr(args, "save_report", None) is not None or getattr(args, "diagnostics", False) or error is not None)
+    should_save = bool(
+        getattr(args, "save_report", None) is not None or getattr(args, "diagnostics", False) or error is not None
+    )
     saved = {"ok": False}
     if should_save:
         if out_path == "__DEFAULT__" or out_path is True:
@@ -694,9 +790,13 @@ def menu_loop(default_host: str = "127.0.0.1", default_port: int = 8000) -> int:
         print("  Health:  python3 -m app_core.doctor --json   |   /health, /healthz, /readyz")
         print("  Backup:  python3 scripts/backup_runtime.py --backup | --verify <backup.db>")
         print("  Support: python3 -m app_core.support  |  Web: /support/report")
-        print("  Updates: Settings → App updates (git ff-only) or git pull --ff-only + rerun setup; restart after apply.")
+        print(
+            "  Updates: Settings → App updates (git ff-only) or git pull --ff-only + rerun setup; restart after apply."
+        )
         print("  Debug:   if native app/launcher crashes or fails to start, use [d] or --debug/--save-report.")
-        print("  PWA/LAN: install/open PWA from the same LAN URL (same IP+port). Keep host IP stable (router DHCP reservation/static IP) for auto-reconnect.")
+        print(
+            "  PWA/LAN: install/open PWA from the same LAN URL (same IP+port). Keep host IP stable (router DHCP reservation/static IP) for auto-reconnect."
+        )
         if is_non_local and not secret_set:
             print("  WARNING: set PM_WEB_SECRET_KEY (strong random) for non-local/shared access.")
         if is_non_local:
@@ -802,12 +902,23 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("mode", nargs="?", help="web | menu | diagnostics (default: menu)")
     parser.add_argument("--web", action="store_true", help="Launch Web UI directly")
     parser.add_argument("--host", default=os.environ.get("HOST", "127.0.0.1"), help="Web host (default: 127.0.0.1)")
-    parser.add_argument("--port", type=int, default=int(os.environ.get("PORT", "8000")), help="Web port (default: 8000)")
+    parser.add_argument(
+        "--port", type=int, default=int(os.environ.get("PORT", "8000")), help="Web port (default: 8000)"
+    )
     parser.add_argument("--no-browser", action="store_true", help="Do not auto-open browser for web mode")
-    parser.add_argument("--debug", action="store_true", help="Enable verbose debug output and save diagnostic info on errors")
+    parser.add_argument(
+        "--debug", action="store_true", help="Enable verbose debug output and save diagnostic info on errors"
+    )
     parser.add_argument("--diagnostics", action="store_true", help="Print sanitized diagnostics and exit")
-    parser.add_argument("--save-report", nargs="?", const="__DEFAULT__", help="Save a sanitized support report (JSON+Markdown) to PATH or default location")
-    parser.add_argument("--open-issue", action="store_true", help="Open prefilled GitHub issue URL in browser when generating a report")
+    parser.add_argument(
+        "--save-report",
+        nargs="?",
+        const="__DEFAULT__",
+        help="Save a sanitized support report (JSON+Markdown) to PATH or default location",
+    )
+    parser.add_argument(
+        "--open-issue", action="store_true", help="Open prefilled GitHub issue URL in browser when generating a report"
+    )
     parser.add_argument("--serve-web", action="store_true", help=argparse.SUPPRESS)
     try:
         args = parser.parse_args(argv)
@@ -817,7 +928,18 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as e:
         tb = traceback.format_exc()
         _set_debug(True)
-        dummy = argparse.Namespace(host="127.0.0.1", port=8000, mode=None, web=False, serve_web=False, no_browser=True, debug=True, diagnostics=False, save_report="__DEFAULT__", open_issue=False)
+        dummy = argparse.Namespace(
+            host="127.0.0.1",
+            port=8000,
+            mode=None,
+            web=False,
+            serve_web=False,
+            no_browser=True,
+            debug=True,
+            diagnostics=False,
+            save_report="__DEFAULT__",
+            open_issue=False,
+        )
         _handle_diagnostics_cli(dummy, error=e, tb_text=tb, context={"phase": "argparse"}, exit_after=False)
         return 2
 
@@ -831,11 +953,17 @@ def main(argv: list[str] | None = None) -> int:
             tb = traceback.format_exc()
             if _DEBUG_ENABLED:
                 print(tb)
-            _handle_diagnostics_cli(args, error=e, tb_text=tb, context={"phase": "serve_web_dispatch"}, exit_after=False)
+            _handle_diagnostics_cli(
+                args, error=e, tb_text=tb, context={"phase": "serve_web_dispatch"}, exit_after=False
+            )
             return 1
 
     # Diagnostics/report-only mode
-    if args.diagnostics or args.save_report is not None or (args.mode and str(args.mode).lower() in {"diagnostics", "diag", "doctor"}):
+    if (
+        args.diagnostics
+        or args.save_report is not None
+        or (args.mode and str(args.mode).lower() in {"diagnostics", "diag", "doctor"})
+    ):
         try:
             return _handle_diagnostics_cli(args, context={"phase": "diagnostics_cli"})
         except Exception as e:

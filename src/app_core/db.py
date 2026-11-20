@@ -7,6 +7,7 @@ Safety notes:
 - Migrations are idempotent and guarded by PRAGMA user_version and provenance markers.
 - Runtime data (DB/exports/invoices under paths.DATA_DIR) is never deleted by this module.
 """
+
 import sqlite3
 import threading
 from contextlib import contextmanager
@@ -163,7 +164,7 @@ def integrity_check(max_errors=20):
             fk = [tuple(r) for r in conn.execute("PRAGMA foreign_key_check").fetchall()]
         except Exception as e:
             return False, ic[:max_errors] + [f"foreign_key_check error: {e}"]
-    ok = (len(ic) == 1 and str(ic[0]).lower() == "ok" and len(fk) == 0)
+    ok = len(ic) == 1 and str(ic[0]).lower() == "ok" and len(fk) == 0
     details = list(ic[:max_errors])
     if fk:
         details.append(f"foreign_key_violations={len(fk)}")
@@ -194,7 +195,7 @@ def _record_migration_meta(conn, status: str, from_version: int | None = None, t
         if not _table_exists(conn, "app_metadata"):
             return
         now = conn.execute("SELECT datetime('now','localtime')").fetchone()[0]
-        current_ver = conn.execute('PRAGMA user_version').fetchone()[0]
+        current_ver = conn.execute("PRAGMA user_version").fetchone()[0]
         pairs = [
             ("schema_version", str(to_version if to_version is not None else current_ver)),
             ("schema_migration_status", str(status)),
@@ -922,8 +923,12 @@ def _migrate_to_9(conn):
             ("default_supplier", "TEXT NOT NULL DEFAULT ''"),
         ):
             _ensure_column(conn, "inventory", col, decl, inv_cols)
-        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_inventory_sku ON inventory(sku) WHERE sku IS NOT NULL AND sku <> ''")
-        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_inventory_barcode ON inventory(barcode) WHERE barcode IS NOT NULL AND barcode <> ''")
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_inventory_sku ON inventory(sku) WHERE sku IS NOT NULL AND sku <> ''"
+        )
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_inventory_barcode ON inventory(barcode) WHERE barcode IS NOT NULL AND barcode <> ''"
+        )
 
 
 def _migrate_to_10(conn):
@@ -942,7 +947,9 @@ def _migrate_to_10(conn):
             pass
         # Backfill booking_notes from legacy notes where empty (idempotent, additive)
         try:
-            conn.execute("UPDATE reservations SET booking_notes = COALESCE(notes,'') WHERE (booking_notes IS NULL OR booking_notes = '') AND COALESCE(notes,'') <> ''")
+            conn.execute(
+                "UPDATE reservations SET booking_notes = COALESCE(notes,'') WHERE (booking_notes IS NULL OR booking_notes = '') AND COALESCE(notes,'') <> ''"
+            )
         except Exception:
             pass
 
@@ -1008,9 +1015,12 @@ def _migrate_to_10(conn):
                 continue
             received_at = ""
             if has_logs_table:
-                received_at = conn.execute(
-                    "SELECT MIN(at) AS at FROM inventory_logs WHERE item_id=?", (it["id"],)
-                ).fetchone()["at"] or ""
+                received_at = (
+                    conn.execute("SELECT MIN(at) AS at FROM inventory_logs WHERE item_id=?", (it["id"],)).fetchone()[
+                        "at"
+                    ]
+                    or ""
+                )
             received_at = received_at or it["created_at"] or ""
             lot_code = f"LEGACY-{it['id']}"
             # ensure uniqueness
@@ -1021,18 +1031,30 @@ def _migrate_to_10(conn):
                    (item_id, lot_code, barcode_value, barcode_type, quantity_received, quantity_remaining,
                     unit_cost, received_at, expiry_date, supplier, reference, notes, status, payload_json)
                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                (it["id"], lot_code, lot_code, "code128", qty, qty, float(it["unit_cost"] or 0),
-                 received_at or "1970-01-01 00:00:00", None, "", "legacy",
-                 f"Opening/legacy stock backfill [{backfill_marker}]", "active", "{}")
+                (
+                    it["id"],
+                    lot_code,
+                    lot_code,
+                    "code128",
+                    qty,
+                    qty,
+                    float(it["unit_cost"] or 0),
+                    received_at or "1970-01-01 00:00:00",
+                    None,
+                    "",
+                    "legacy",
+                    f"Opening/legacy stock backfill [{backfill_marker}]",
+                    "active",
+                    "{}",
+                ),
             )
             bid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
             if has_logs_table:
                 conn.execute(
                     """INSERT INTO inventory_logs (item_id, change_type, quantity, reference, batch_id, unit_cost, balance_after)
                        VALUES (?, 'OPENING', ?, ?, ?, ?, ?)""",
-                    (it["id"], qty, legacy_ref, bid, float(it["unit_cost"] or 0), qty)
+                    (it["id"], qty, legacy_ref, bid, float(it["unit_cost"] or 0), qty),
                 )
-
 
 
 def _migrate_to_11(conn):
@@ -1075,6 +1097,7 @@ def _migrate_to_11(conn):
         CREATE INDEX IF NOT EXISTS idx_res_services_status ON reservation_services(status);
         """)
 
+
 def _migrate_to_12(conn):
     # P2: pricing snapshots and rate rules (additive)
     if _table_exists(conn, "reservations"):
@@ -1102,7 +1125,6 @@ def _migrate_to_12(conn):
         );
         CREATE INDEX IF NOT EXISTS idx_rate_rules_active ON rate_rules(active, priority);
         """)
-
 
 
 def _migrate_to_13(conn):
@@ -1159,7 +1181,6 @@ def _migrate_to_13(conn):
             pass
 
 
-
 def _migrate_to_14(conn):
     # P3: room blocks / out-of-order (additive)
     if not _table_exists(conn, "room_blocks"):
@@ -1179,7 +1200,6 @@ def _migrate_to_14(conn):
         );
         CREATE INDEX IF NOT EXISTS idx_room_blocks_room_dates ON room_blocks(room_id, start_date, end_date, status);
         """)
-
 
 
 def _migrate_to_15(conn):
@@ -1206,7 +1226,6 @@ def _migrate_to_15(conn):
         CREATE INDEX IF NOT EXISTS idx_housekeeping_tasks_room_status ON housekeeping_tasks(room_id, status);
         CREATE INDEX IF NOT EXISTS idx_housekeeping_tasks_due ON housekeeping_tasks(status, due_at);
         """)
-
 
 
 def _migrate_to_16(conn):
@@ -1261,7 +1280,6 @@ def _migrate_to_16(conn):
         """)
 
 
-
 def _migrate_to_17(conn):
     # P4: RBAC/user groundwork and actor attribution (additive, non-breaking)
     if _table_exists(conn, "audit_log"):
@@ -1296,16 +1314,30 @@ def _migrate_to_17(conn):
         try:
             defaults = [
                 ("admin", "Full access (maps to existing unlock/super-password authority)", '["*"]'),
-                ("manager", "Operational management", '["reservations.*","pos.*","inventory.*","housekeeping.*","reports.read","accounting.*"]'),
-                ("front_desk", "Front desk and reservations operations", '["reservations.*","guests.*","housekeeping.read","reports.read"]'),
+                (
+                    "manager",
+                    "Operational management",
+                    '["reservations.*","pos.*","inventory.*","housekeeping.*","reports.read","accounting.*"]',
+                ),
+                (
+                    "front_desk",
+                    "Front desk and reservations operations",
+                    '["reservations.*","guests.*","housekeeping.read","reports.read"]',
+                ),
                 ("housekeeping", "Housekeeping and room readiness", '["housekeeping.*","reservations.read"]'),
-                ("accounting", "Accounting, payments, and reports", '["accounting.*","reports.read","reservations.read"]'),
+                (
+                    "accounting",
+                    "Accounting, payments, and reports",
+                    '["accounting.*","reports.read","reservations.read"]',
+                ),
             ]
             for name, desc, perms in defaults:
-                conn.execute("INSERT OR IGNORE INTO roles (name, description, permissions_json) VALUES (?, ?, ?)", (name, desc, perms))
+                conn.execute(
+                    "INSERT OR IGNORE INTO roles (name, description, permissions_json) VALUES (?, ?, ?)",
+                    (name, desc, perms),
+                )
         except Exception:
             pass
-
 
 
 def _migrate_to_18(conn):
@@ -1339,7 +1371,6 @@ def _migrate_to_18(conn):
         );
         CREATE INDEX IF NOT EXISTS idx_res_group_members_group ON reservation_group_members(group_id);
         """)
-
 
 
 def _migrate_to_19(conn):
@@ -1405,7 +1436,6 @@ def _migrate_to_19(conn):
         );
         CREATE INDEX IF NOT EXISTS idx_res_pkg_lines_pkg ON reservation_package_lines(reservation_package_id);
         """)
-
 
 
 def _migrate_to_20(conn):

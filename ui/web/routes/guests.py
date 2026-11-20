@@ -18,10 +18,14 @@ def _batch_map(batch_ids):
     if not ids:
         return {}
     ph = ",".join("?" * len(ids))
-    rows = connect().execute(
-        f"SELECT id, lot_code, received_at, expiry_date, supplier FROM inventory_batches WHERE id IN ({ph})",
-        tuple(ids),
-    ).fetchall()
+    rows = (
+        connect()
+        .execute(
+            f"SELECT id, lot_code, received_at, expiry_date, supplier FROM inventory_batches WHERE id IN ({ph})",
+            tuple(ids),
+        )
+        .fetchall()
+    )
     warn = 7
     try:
         warn = int(services.get_setting("expiry_warn_days", "7") or 7)
@@ -38,7 +42,7 @@ def _batch_map(batch_ids):
 
 
 def _enrich_pos_items(items, bmap):
-    for it in (items or []):
+    for it in items or []:
         if not isinstance(it, dict):
             continue
         b = bmap.get(it.get("batch_id"))
@@ -58,29 +62,32 @@ def _enrich_portfolio(portfolio):
     if not portfolio:
         return portfolio
     batch_ids = set()
-    for trip in (portfolio.get("trips") or []):
-        for it in (trip.get("pos_items") or []):
+    for trip in portfolio.get("trips") or []:
+        for it in trip.get("pos_items") or []:
             if isinstance(it, dict) and it.get("batch_id"):
                 batch_ids.add(it.get("batch_id"))
-        for it in (trip.get("pos_active") or []):
+        for it in trip.get("pos_active") or []:
             if isinstance(it, dict) and it.get("batch_id"):
                 batch_ids.add(it.get("batch_id"))
-    for it in (portfolio.get("all_pos") or []):
+    for it in portfolio.get("all_pos") or []:
         if isinstance(it, dict) and it.get("batch_id"):
             batch_ids.add(it.get("batch_id"))
     bmap = _batch_map(batch_ids)
-    for trip in (portfolio.get("trips") or []):
+    for trip in portfolio.get("trips") or []:
         _enrich_pos_items(trip.get("pos_items") or [], bmap)
         _enrich_pos_items(trip.get("pos_active") or [], bmap)
     _enrich_pos_items(portfolio.get("all_pos") or [], bmap)
     return portfolio
 
+
 @router.get("/guests")
 def guests(request: Request, q: str = "", tab: str = "directory"):
     rows = services.get_all_guests(q)
     tab = (tab or "directory").strip().lower()
-    if tab not in {"directory"}: tab = "directory"
+    if tab not in {"directory"}:
+        tab = "directory"
     return render(request, "guests/list.html", {"title": "Guests", "q": q, "rows": rows, "active_tab": tab})
+
 
 @router.get("/guests/{gid}")
 def guest_detail(gid: int, request: Request):
@@ -92,11 +99,16 @@ def guest_detail(gid: int, request: Request):
     g = portfolio.get("guest") or {}
     if isinstance(g, dict) and "canonical_name" not in g and "name" in g:
         g = {**g, "canonical_name": g["name"]}
-    return render(request, "guests/detail.html", {
-        "title": f"Guest {g.get('canonical_name') or g.get('name') or gid}",
-        "g": g,
-        "p": portfolio,
-    })
+    return render(
+        request,
+        "guests/detail.html",
+        {
+            "title": f"Guest {g.get('canonical_name') or g.get('name') or gid}",
+            "g": g,
+            "p": portfolio,
+        },
+    )
+
 
 @router.post("/guests/{gid}/update")
 async def guest_update(gid: int, request: Request):

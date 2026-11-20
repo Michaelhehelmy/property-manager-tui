@@ -78,10 +78,12 @@ def test_paths_detect_data_dir_error_branches(monkeypatch, tmp_path):
     # NUL: cannot set in OS env on some platforms, so patch env lookup
     monkeypatch.delenv("PM_DATA_DIR", raising=False)
     real_get = os.environ.get
+
     def fake_get(key, default=None):
         if key == "PM_DATA_DIR":
             return "bad\x00path"
         return real_get(key, default)
+
     monkeypatch.setattr(os.environ, "get", fake_get)
     with pytest.raises(ValueError):
         paths._detect_data_dir()
@@ -89,8 +91,10 @@ def test_paths_detect_data_dir_error_branches(monkeypatch, tmp_path):
 
     # mkdir failure
     monkeypatch.setenv("PM_DATA_DIR", str(tmp_path / "x"))
+
     def boom_mkdir(self, *a, **k):
         raise OSError("nope")
+
     monkeypatch.setattr(Path, "mkdir", boom_mkdir)
     with pytest.raises(ValueError):
         paths._detect_data_dir()
@@ -115,17 +119,26 @@ def test_updater_helpers(monkeypatch, tmp_path):
     assert updater._parse_version_tag("v1.2.3") == (1, 2, 3)
     assert updater._parse_version_tag("release-2026-1") == (2026, 1)
     assert updater._parse_version_tag("") == (0,)
-    assert updater._shape_release_asset({"name": "a", "browser_download_url": "u", "size": 1, "content_type": "x", "extra": 1}) == {
-        "name": "a", "browser_download_url": "u", "size": 1, "content_type": "x"
-    }
+    assert updater._shape_release_asset(
+        {"name": "a", "browser_download_url": "u", "size": 1, "content_type": "x", "extra": 1}
+    ) == {"name": "a", "browser_download_url": "u", "size": 1, "content_type": "x"}
     assert updater._shape_release_asset("bad") is None
 
     # get_latest_release
-    monkeypatch.setattr(updater, "_github_get", lambda url, timeout=12: {
-        "tag_name": "v9.9.9", "name": "v9.9.9", "html_url": "https://x/r", "published_at": "now",
-        "body": "notes", "assets": [{"name": "a.bin", "browser_download_url": "d", "size": 1, "content_type": "bin"}],
-        "prerelease": False, "draft": False,
-    })
+    monkeypatch.setattr(
+        updater,
+        "_github_get",
+        lambda url, timeout=12: {
+            "tag_name": "v9.9.9",
+            "name": "v9.9.9",
+            "html_url": "https://x/r",
+            "published_at": "now",
+            "body": "notes",
+            "assets": [{"name": "a.bin", "browser_download_url": "d", "size": 1, "content_type": "bin"}],
+            "prerelease": False,
+            "draft": False,
+        },
+    )
     rel = updater.get_latest_release()
     assert rel["tag_name"] == "v9.9.9" and rel["assets"][0]["name"] == "a.bin"
     monkeypatch.setattr(updater, "_github_get", lambda url, timeout=12: [])
@@ -157,29 +170,45 @@ def test_updater_git_and_update_flows(monkeypatch, tmp_path):
         ("status", "--porcelain"): (0, " M x", ""),
         ("remote", "get-url", "origin"): (0, "https://user:tok@github.com/org/repo.git", ""),
     }
+
     def fake_run_git(args, cwd=None, timeout=20):
         return responses.get(tuple(args), (1, "", "err"))
+
     monkeypatch.setattr(updater, "_run_git", fake_run_git)
     st2 = updater.get_local_state()
     assert st2["commit_short"] == "abc1234" and st2["dirty"] is True and "<redacted>" in (st2["remote"] or "")
 
     # check_for_updates branches
     monkeypatch.setattr(updater, "get_local_state", lambda: {"commit": "same", "is_git_repo": True, "branch": "main"})
-    monkeypatch.setattr(updater, "_github_get", lambda url, timeout=12: [{"sha": "same", "commit": {"author": {"date": "d", "name": "n"}, "message": "subj\nbody"}, "html_url": "u"}])
+    monkeypatch.setattr(
+        updater,
+        "_github_get",
+        lambda url, timeout=12: [
+            {"sha": "same", "commit": {"author": {"date": "d", "name": "n"}, "message": "subj\nbody"}, "html_url": "u"}
+        ],
+    )
     r = updater.check_for_updates()
     assert r["ok"] and r["update_available"] is False and r["commits_behind"] == 0
 
     monkeypatch.setattr(updater, "get_local_state", lambda: {"commit": "old", "is_git_repo": True, "branch": "main"})
-    monkeypatch.setattr(updater, "_github_get", lambda url, timeout=12: [
-        {"sha": "new2", "commit": {"author": {"date": "d2", "name": "n2"}, "message": "s2\nb"}, "html_url": "u2"},
-        {"sha": "new1", "commit": {"author": {"date": "d1", "name": "n1"}, "message": "s1"}, "html_url": "u1"},
-        {"sha": "old", "commit": {"author": {"date": "d0", "name": "n0"}, "message": "s0"}, "html_url": "u0"},
-    ])
+    monkeypatch.setattr(
+        updater,
+        "_github_get",
+        lambda url, timeout=12: [
+            {"sha": "new2", "commit": {"author": {"date": "d2", "name": "n2"}, "message": "s2\nb"}, "html_url": "u2"},
+            {"sha": "new1", "commit": {"author": {"date": "d1", "name": "n1"}, "message": "s1"}, "html_url": "u1"},
+            {"sha": "old", "commit": {"author": {"date": "d0", "name": "n0"}, "message": "s0"}, "html_url": "u0"},
+        ],
+    )
     r = updater.check_for_updates()
     assert r["update_available"] is True and r["commits_behind"] == 2 and len(r["changelog"]) == 2
 
     # local commit not found in recent history
-    monkeypatch.setattr(updater, "_github_get", lambda url, timeout=12: [{"sha": "new", "commit": {"author": {"date": "d"}, "message": "s"}, "html_url": "u"}])
+    monkeypatch.setattr(
+        updater,
+        "_github_get",
+        lambda url, timeout=12: [{"sha": "new", "commit": {"author": {"date": "d"}, "message": "s"}, "html_url": "u"}],
+    )
     r = updater.check_for_updates()
     assert r["update_available"] is True and r["commits_behind"] is None
 
@@ -200,18 +229,26 @@ def test_updater_git_and_update_flows(monkeypatch, tmp_path):
     res = updater.apply_update()
     assert res["ok"] is False and "uncommitted" in (res.get("error") or "").lower()
 
-    states = iter([
-        {"is_git_repo": True, "dirty": False, "branch": "dev"},
-        {"is_git_repo": True, "dirty": False, "branch": "main", "commit_short": "new"},
-    ])
+    states = iter(
+        [
+            {"is_git_repo": True, "dirty": False, "branch": "dev"},
+            {"is_git_repo": True, "dirty": False, "branch": "main", "commit_short": "new"},
+        ]
+    )
     monkeypatch.setattr(updater, "get_local_state", lambda: next(states))
     cmds = []
+
     def ok_git(args, cwd=None, timeout=180):
         cmds.append(tuple(args))
         return 0, "ok", ""
+
     monkeypatch.setattr(updater, "_run_git", ok_git)
     res = updater.apply_update()
-    assert res["ok"] is True and res["restart_required"] is True and ("fetch", "--prune", "origin", "main", "--tags") in cmds
+    assert (
+        res["ok"] is True
+        and res["restart_required"] is True
+        and ("fetch", "--prune", "origin", "main", "--tags") in cmds
+    )
 
     # apply failure step
     monkeypatch.setattr(updater, "get_local_state", lambda: {"is_git_repo": True, "dirty": False, "branch": "main"})
@@ -226,7 +263,11 @@ def test_updater_cached_notice(monkeypatch):
     # disabled
     monkeypatch.setattr(updater, "auto_update_checks_enabled", lambda: False)
     monkeypatch.setattr(updater, "get_local_state", lambda: {"is_git_repo": False})
-    monkeypatch.setattr(updater, "get_latest_release", lambda timeout=8: {"tag_name": "v1.0.0", "html_url": "u", "name": "v1", "published_at": "p", "assets": []})
+    monkeypatch.setattr(
+        updater,
+        "get_latest_release",
+        lambda timeout=8: {"tag_name": "v1.0.0", "html_url": "u", "name": "v1", "published_at": "p", "assets": []},
+    )
     monkeypatch.setattr(updater, "_default_update_interval_sec", lambda: 3600)
     n = updater.get_cached_update_notice(force=False)
     assert "disabled" in (n.get("message") or "").lower() or n.get("update_available") in (False, True)
@@ -236,8 +277,29 @@ def test_updater_cached_notice(monkeypatch):
     updater._UPDATE_CACHE["result"] = None
     monkeypatch.setattr(updater, "auto_update_checks_enabled", lambda: True)
     monkeypatch.setattr(updater, "get_local_state", lambda: {"is_git_repo": True})
-    monkeypatch.setattr(updater, "check_for_updates", lambda timeout=8: {"ok": True, "update_available": True, "commits_behind": 3, "latest": {"commit_short": "abc"}, "compare_url": "cmp", "error": None})
-    monkeypatch.setattr(updater, "get_latest_release", lambda timeout=8: {"tag_name": "v1.2.3", "html_url": "rel", "name": "v1.2.3", "published_at": "p", "assets": []})
+    monkeypatch.setattr(
+        updater,
+        "check_for_updates",
+        lambda timeout=8: {
+            "ok": True,
+            "update_available": True,
+            "commits_behind": 3,
+            "latest": {"commit_short": "abc"},
+            "compare_url": "cmp",
+            "error": None,
+        },
+    )
+    monkeypatch.setattr(
+        updater,
+        "get_latest_release",
+        lambda timeout=8: {
+            "tag_name": "v1.2.3",
+            "html_url": "rel",
+            "name": "v1.2.3",
+            "published_at": "p",
+            "assets": [],
+        },
+    )
     monkeypatch.setattr(updater, "APP_VERSION", "0.1.0-dev", raising=False)
     n = updater.get_cached_update_notice(force=True)
     assert n["update_available"] is True and n["kind"] == "git"
@@ -254,7 +316,8 @@ def test_doctor_helpers_and_health(clean_db, tmp_path, monkeypatch):
     c = sqlite3.connect(str(db_path))
     c.execute("CREATE TABLE IF NOT EXISTS t(id INTEGER PRIMARY KEY)")
     c.execute("PRAGMA user_version=21")
-    c.commit(); c.close()
+    c.commit()
+    c.close()
 
     monkeypatch.setattr(paths, "DATA_DIR", data_dir)
     monkeypatch.setattr(paths, "DB_PATH", db_path)
@@ -297,7 +360,17 @@ def test_doctor_helpers_and_health(clean_db, tmp_path, monkeypatch):
     assert isinstance(pr, dict)
 
     # collect/format/main
-    monkeypatch.setattr(updater, "get_local_state", lambda redact_remote=True: {"app_version": "x", "is_git_repo": False, "branch": None, "commit_short": None, "dirty": False})
+    monkeypatch.setattr(
+        updater,
+        "get_local_state",
+        lambda redact_remote=True: {
+            "app_version": "x",
+            "is_git_repo": False,
+            "branch": None,
+            "commit_short": None,
+            "dirty": False,
+        },
+    )
     report = doctor.collect_health(check_updates=False)
     assert "paths" in report and "backup_restore" in report
     txt = doctor.format_health_report(report)
@@ -308,5 +381,21 @@ def test_doctor_helpers_and_health(clean_db, tmp_path, monkeypatch):
     rc = doctor.main(["--backup-to", str(data_dir / "cli-backup.db"), "--json"])
     assert rc in (0, 1)
     # health report path
-    monkeypatch.setattr(doctor, "collect_health", lambda check_updates=False: {"ok": True, "checked_at": "", "paths": {}, "data_dirs": {}, "schema": {}, "integrity": {}, "consistency": {}, "readiness": {}, "backup_restore": {}, "config_issues": [], "notes": []})
+    monkeypatch.setattr(
+        doctor,
+        "collect_health",
+        lambda check_updates=False: {
+            "ok": True,
+            "checked_at": "",
+            "paths": {},
+            "data_dirs": {},
+            "schema": {},
+            "integrity": {},
+            "consistency": {},
+            "readiness": {},
+            "backup_restore": {},
+            "config_issues": [],
+            "notes": [],
+        },
+    )
     assert doctor.main(["--json"]) == 0

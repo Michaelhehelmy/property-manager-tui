@@ -1,4 +1,5 @@
 """Final coverage closure — every reachable error branch."""
+
 import pytest
 from app_core import services
 from app_core.db import connect
@@ -8,6 +9,7 @@ from conftest import make_reservation
 # ═══════════════════════════════════════════════════════════════════════════
 # PAYMENT ERROR PATHS
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def test_payment_zero_amount(clean_db):
     rid = make_reservation()
@@ -81,6 +83,7 @@ def test_refund_more_than_paid(clean_db):
 # POS ERROR PATHS
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def test_pos_void_already_voided(clean_db):
     rid = make_reservation()
     result = services.add_pos_item(rid, "X", 1, 10, None)
@@ -138,8 +141,11 @@ def test_pos_nonexistent_inventory(clean_db):
 
 def test_pos_inactive_inventory(clean_db):
     from app_core.db import transaction
+
     with transaction() as c:
-        c.execute("INSERT INTO inventory (item_name, category, stock_qty, unit, active) VALUES ('Dead', 'X', 10, 'pcs', 0)")
+        c.execute(
+            "INSERT INTO inventory (item_name, category, stock_qty, unit, active) VALUES ('Dead', 'X', 10, 'pcs', 0)"
+        )
         iid = c.execute("SELECT last_insert_rowid()").fetchone()[0]
     rid = make_reservation()
     with pytest.raises(ValueError):
@@ -156,6 +162,7 @@ def test_pos_insufficient_stock(clean_db):
 # ═══════════════════════════════════════════════════════════════════════════
 # INVENTORY ERROR PATHS
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def test_restock_nonexistent_item(clean_db):
     with pytest.raises(ValueError):
@@ -219,6 +226,7 @@ def test_delete_inventory_nonzero_stock(clean_db):
 
 def test_delete_inventory_wrong_password(clean_db):
     from app_core.db import transaction
+
     with transaction() as c:
         c.execute("INSERT INTO inventory (item_name, category, stock_qty, unit) VALUES ('Empty', 'X', 0, 'pcs')")
         iid = c.execute("SELECT last_insert_rowid()").fetchone()[0]
@@ -229,6 +237,7 @@ def test_delete_inventory_wrong_password(clean_db):
 # ═══════════════════════════════════════════════════════════════════════════
 # EXPENSE ERROR PATHS
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def test_expense_zero_amount(clean_db):
     with pytest.raises(ValueError):
@@ -268,6 +277,7 @@ def test_void_expense_wrong_password(clean_db):
 # ═══════════════════════════════════════════════════════════════════════════
 # RESERVATION ERROR PATHS
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def test_reservation_empty_guest(clean_db):
     with pytest.raises(ValueError):
@@ -432,6 +442,7 @@ def test_modify_checked_out_reservation(clean_db):
 # ROOM + RATE PLAN ERROR PATHS
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def test_room_price_negative(clean_db):
     with pytest.raises(ValueError):
         services.update_room_price(1, -10, "testpass")
@@ -484,6 +495,7 @@ def test_rate_plan_delete_in_use(clean_db):
 # AUTH ERROR PATHS
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def test_change_password_wrong_current(clean_db):
     with pytest.raises(PermissionError):
         services.change_password("wrong", "newpass1", "newpass1")
@@ -518,6 +530,7 @@ def test_verify_recovery_wrong_code(clean_db):
 # SETTINGS ERROR PATHS
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def test_save_settings_wrong_password(clean_db):
     with pytest.raises(PermissionError):
         services.save_settings({"vat_rate": "0.15"}, "wrong")
@@ -543,6 +556,7 @@ def test_reset_wrong_password(clean_db):
 # ═══════════════════════════════════════════════════════════════════════════
 # GUEST ERROR PATHS
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def test_guest_empty_name(clean_db):
     with pytest.raises(ValueError):
@@ -584,6 +598,7 @@ def test_merge_nonexistent(clean_db):
 # INVOICE ERROR PATHS
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def test_invoice_not_found(clean_db):
     with pytest.raises(ValueError):
         services.generate_invoice_text(9999)
@@ -592,6 +607,7 @@ def test_invoice_not_found(clean_db):
 # ═══════════════════════════════════════════════════════════════════════════
 # BALANCE EDGE CASES
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def test_balance_nonexistent(clean_db):
     assert services.calculate_guest_balance(9999) == 0.0
@@ -617,8 +633,10 @@ def test_balance_noshow(clean_db):
 # ATTRIBUTION
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def test_attribution_tampered(clean_db):
     from app_core.db import transaction
+
     with transaction() as c:
         c.execute("UPDATE app_metadata SET value='X' WHERE key='gift_attribution'")
     ok, _ = services.verify_app_attribution()
@@ -627,6 +645,7 @@ def test_attribution_tampered(clean_db):
 
 def test_attribution_missing(clean_db):
     from app_core.db import transaction
+
     with transaction() as c:
         c.execute("DELETE FROM app_metadata WHERE key='gift_attribution'")
     ok, _ = services.verify_app_attribution()
@@ -636,6 +655,7 @@ def test_attribution_missing(clean_db):
 # ═══════════════════════════════════════════════════════════════════════════
 # SESSION
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def test_session_unlock_wrong_password(clean_db):
     assert services.unlock_session("wrong") is False
@@ -648,6 +668,7 @@ def test_touch_session_locked(clean_db):
 
 def test_session_expiry(clean_db):
     from datetime import timedelta
+
     services.set_setting("session_timeout_minutes", "1")
     services.unlock_session("testpass")
     services._session["last_activity"] -= timedelta(minutes=5)
@@ -657,6 +678,7 @@ def test_session_expiry(clean_db):
 # ═══════════════════════════════════════════════════════════════════════════
 # LANGUAGE
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def test_set_language_invalid(clean_db):
     services.set_language("fr")
@@ -672,6 +694,7 @@ def test_set_language_arabic(clean_db):
 # ═══════════════════════════════════════════════════════════════════════════
 # UI HELPERS
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def test_fmt_positive():
     assert services.fmt(1234.5) == "1,234.50 EGP"
@@ -689,8 +712,10 @@ def test_selected_id_empty_table():
     class T:
         row_count = 0
         cursor_row = 0
+
         def get_row_at(self, i):
             return ("x",)
+
     assert services.selected_id(T()) is None
 
 
@@ -698,8 +723,10 @@ def test_selected_id_valid():
     class T:
         row_count = 2
         cursor_row = 0
+
         def get_row_at(self, i):
             return ("42", "y")
+
     assert services.selected_id(T()) == 42
 
 
@@ -707,6 +734,8 @@ def test_selected_id_non_numeric():
     class T:
         row_count = 1
         cursor_row = 0
+
         def get_row_at(self, i):
             return ("abc",)
+
     assert services.selected_id(T()) is None

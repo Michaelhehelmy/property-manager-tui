@@ -3,6 +3,7 @@
 Covers: CSRF enforcement, unlock/authz gating on sensitive routes, unlock/recovery
 rate limiting behavior, and key operational flows with deterministic setup.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -29,8 +30,19 @@ def _seed_room_available(room_id: int = 1) -> int:
 
 def _seed_inventory_item(name: str = "Water", stock: float = 50.0) -> int:
     return services.add_inventory_item(
-        name, "Bar", "bottle", stock, 2.0, 5.0, 1.0, 0.0, "testpass",
-        sku=f"SKU-{name}", barcode=f"BAR-{name}", barcode_type="code128", track_batches=0,
+        name,
+        "Bar",
+        "bottle",
+        stock,
+        2.0,
+        5.0,
+        1.0,
+        0.0,
+        "testpass",
+        sku=f"SKU-{name}",
+        barcode=f"BAR-{name}",
+        barcode_type="code128",
+        track_batches=0,
     )
 
 
@@ -130,14 +142,28 @@ def test_unlock_and_recovery_rate_limiting_behavior(client: TestClient):
     with TestClient(client2_app, raise_server_exceptions=False, follow_redirects=True) as c2:
         for i in range(5):
             token = set_session(c2, unlocked=False)
-            r = c2.post("/unlock/recovery", data={
-                "csrf": token, "code": "BADCODE", "new_password": "newpass1", "confirm_password": "newpass1", "next": "/",
-            })
+            r = c2.post(
+                "/unlock/recovery",
+                data={
+                    "csrf": token,
+                    "code": "BADCODE",
+                    "new_password": "newpass1",
+                    "confirm_password": "newpass1",
+                    "next": "/",
+                },
+            )
             assert r.status_code == 200
         token = set_session(c2, unlocked=False)
-        r = c2.post("/unlock/recovery", data={
-            "csrf": token, "code": "BADCODE", "new_password": "newpass1", "confirm_password": "newpass1", "next": "/",
-        })
+        r = c2.post(
+            "/unlock/recovery",
+            data={
+                "csrf": token,
+                "code": "BADCODE",
+                "new_password": "newpass1",
+                "confirm_password": "newpass1",
+                "next": "/",
+            },
+        )
         assert r.status_code == 200
         assert "too many attempts" in r.text.lower()
 
@@ -145,7 +171,9 @@ def test_unlock_and_recovery_rate_limiting_behavior(client: TestClient):
 def test_unlock_success_and_recovery_success_flow(client: TestClient):
     # Successful unlock sets per-browser unlocked state and allows protected page
     token = set_session(client, unlocked=False)
-    r = client.post("/unlock", data={"csrf": token, "password": "testpass", "next": "/settings/health"}, follow_redirects=False)
+    r = client.post(
+        "/unlock", data={"csrf": token, "password": "testpass", "next": "/settings/health"}, follow_redirects=False
+    )
     assert r.status_code == 303
     assert r.headers.get("location") == "/settings/health"
     r = client.get("/settings/health")
@@ -155,9 +183,17 @@ def test_unlock_success_and_recovery_success_flow(client: TestClient):
     codes = services.generate_recovery_codes("testpass")
     assert codes
     token = set_session(client, unlocked=False)
-    r = client.post("/unlock/recovery", data={
-        "csrf": token, "code": codes[0], "new_password": "newpass123", "confirm_password": "newpass123", "next": "/settings/health",
-    }, follow_redirects=False)
+    r = client.post(
+        "/unlock/recovery",
+        data={
+            "csrf": token,
+            "code": codes[0],
+            "new_password": "newpass123",
+            "confirm_password": "newpass123",
+            "next": "/settings/health",
+        },
+        follow_redirects=False,
+    )
     assert r.status_code == 303
     assert r.headers.get("location") == "/settings/health"
     r = client.get("/settings/health")
@@ -179,22 +215,30 @@ def test_reservation_create_checkin_payment_invoice_flow(client: TestClient, web
 
     # Create reservation (web route; CSRF required). Route redirects to list; verify created in DB.
     token = set_session(client, unlocked=False)
-    r = client.post("/reservations/create", data={
-        "csrf": token,
-        "guest_name": "Go Live Guest",
-        "source": "Direct",
-        "room_id": str(room_id),
-        "rate_plan_id": "",
-        "rate": "120",
-        "check_in": ci,
-        "check_out": co,
-        "deposit": "0",
-    }, follow_redirects=False)
+    r = client.post(
+        "/reservations/create",
+        data={
+            "csrf": token,
+            "guest_name": "Go Live Guest",
+            "source": "Direct",
+            "room_id": str(room_id),
+            "rate_plan_id": "",
+            "rate": "120",
+            "check_in": ci,
+            "check_out": co,
+            "deposit": "0",
+        },
+        follow_redirects=False,
+    )
     assert r.status_code == 303
-    row = db.connect().execute(
-        "SELECT id, status FROM reservations WHERE guest_name=? ORDER BY id DESC LIMIT 1",
-        ("Go Live Guest",),
-    ).fetchone()
+    row = (
+        db.connect()
+        .execute(
+            "SELECT id, status FROM reservations WHERE guest_name=? ORDER BY id DESC LIMIT 1",
+            ("Go Live Guest",),
+        )
+        .fetchone()
+    )
     assert row is not None, "reservation should be created"
     rid = int(row["id"])
     assert services.get_reservation(rid) is not None
@@ -207,9 +251,17 @@ def test_reservation_create_checkin_payment_invoice_flow(client: TestClient, web
 
     # Record payment on reservation
     token = set_session(client, unlocked=False)
-    r = client.post(f"/reservations/{rid}/pay", data={
-        "csrf": token, "amount": "50", "method": "Cash", "notes": "partial", "payment_type": "Payment",
-    }, follow_redirects=False)
+    r = client.post(
+        f"/reservations/{rid}/pay",
+        data={
+            "csrf": token,
+            "amount": "50",
+            "method": "Cash",
+            "notes": "partial",
+            "payment_type": "Payment",
+        },
+        follow_redirects=False,
+    )
     assert r.status_code == 303
     bd = services.get_balance_breakdown(rid)
     assert float(bd.get("paid", 0) or bd.get("total_paid", 0) or 0) >= 50.0
@@ -235,13 +287,23 @@ def test_pos_walkin_cart_checkout_and_receipt_download_protection(client: TestCl
     item_id = _seed_inventory_item("Cola", stock=20.0)
     # Add to walk-in cart (CSRF required)
     token = set_session(client, unlocked=False, extra={"walkin_cart": []})
-    r = client.post("/pos/cart/add", data={
-        "csrf": token, "desc": "Cola", "qty": "2", "price": "5", "inv_id": str(item_id),
-    }, follow_redirects=False)
+    r = client.post(
+        "/pos/cart/add",
+        data={
+            "csrf": token,
+            "desc": "Cola",
+            "qty": "2",
+            "price": "5",
+            "inv_id": str(item_id),
+        },
+        follow_redirects=False,
+    )
     assert r.status_code == 303
 
     # Complete walk-in sale with deterministic cart contents
-    token = set_session(client, unlocked=False, extra={"walkin_cart": [{"desc": "Cola", "qty": 2, "price": 5.0, "inv_id": item_id}]})
+    token = set_session(
+        client, unlocked=False, extra={"walkin_cart": [{"desc": "Cola", "qty": 2, "price": 5.0, "inv_id": item_id}]}
+    )
     r = client.post("/pos/walkin", data={"csrf": token, "method": "Cash", "notes": "e2e"}, follow_redirects=False)
     assert r.status_code == 303
     loc = r.headers.get("location", "")
@@ -264,11 +326,38 @@ def test_batch_traceability_flow_visible_in_pos_or_data(client: TestClient):
     """Operational batch/traceability flow: create tracked item + batches, sell via service,
     and verify traceability data is present (DB-backed, deterministic)."""
     item_id = services.add_inventory_item(
-        "JuiceBatch", "Bar", "bottle", 0, 2.0, 6.0, 1.0, 0.0, "testpass",
-        sku="SKU-JB", barcode="BAR-JB", barcode_type="code128", track_batches=1,
+        "JuiceBatch",
+        "Bar",
+        "bottle",
+        0,
+        2.0,
+        6.0,
+        1.0,
+        0.0,
+        "testpass",
+        sku="SKU-JB",
+        barcode="BAR-JB",
+        barcode_type="code128",
+        track_batches=1,
     )
-    b1 = services.create_inventory_batch(item_id, 5, 2.0, received_at="2026-01-01 10:00:00", expiry_date="2030-01-01", lot_code="LOT-A", password="testpass")
-    b2 = services.create_inventory_batch(item_id, 5, 2.0, received_at="2026-01-02 10:00:00", expiry_date="2030-06-01", lot_code="LOT-B", password="testpass")
+    b1 = services.create_inventory_batch(
+        item_id,
+        5,
+        2.0,
+        received_at="2026-01-01 10:00:00",
+        expiry_date="2030-01-01",
+        lot_code="LOT-A",
+        password="testpass",
+    )
+    b2 = services.create_inventory_batch(
+        item_id,
+        5,
+        2.0,
+        received_at="2026-01-02 10:00:00",
+        expiry_date="2030-06-01",
+        lot_code="LOT-B",
+        password="testpass",
+    )
     assert b1 and b2
     # Reservation-backed sale allocates FEFO/specific batch and records batch linkage
     room_id = _seed_room_available()
@@ -287,5 +376,10 @@ def test_batch_traceability_flow_visible_in_pos_or_data(client: TestClient):
     # Web POS page may render batch/traceability context; rendering varies by environment, but data flow above must hold.
     token = set_session(client, unlocked=True)
     r = client.get("/pos")
-    assert r.status_code in (200, 302, 303, 500)  # UI render may be environment-sensitive; traceability data validated via services/DB
+    assert r.status_code in (
+        200,
+        302,
+        303,
+        500,
+    )  # UI render may be environment-sensitive; traceability data validated via services/DB
     assert r.status_code != 404

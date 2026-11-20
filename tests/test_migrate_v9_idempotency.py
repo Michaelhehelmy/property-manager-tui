@@ -43,7 +43,7 @@ def test_migrate_to_9_idempotent_backfill(tmp_path, monkeypatch):
     # full migrate/init also safe
     services.init_db()
     integ = services.verify_ledger_integrity()
-    assert 'stock_batch_drift' not in [i.get('type') for i in (integ.get('issues') or [])]
+    assert "stock_batch_drift" not in [i.get("type") for i in (integ.get("issues") or [])]
 
     try:
         db.close()

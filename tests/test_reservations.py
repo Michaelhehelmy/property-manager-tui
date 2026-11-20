@@ -1,4 +1,5 @@
 """Reservation lifecycle: create, status, modify, cancel, no-show, delete."""
+
 import pytest
 from app_core import services
 from app_core.db import connect
@@ -14,9 +15,14 @@ def test_create_reservation_success(clean_db):
 
 def test_create_reservation_creates_charge(clean_db):
     rid = make_reservation(rate=100.0)
-    charges = connect().execute(
-        "SELECT net, service, vat, gross FROM general_ledger WHERE ref_type='RES' AND ref_id=? AND entry_type='CHARGE'",
-        (rid,)).fetchall()
+    charges = (
+        connect()
+        .execute(
+            "SELECT net, service, vat, gross FROM general_ledger WHERE ref_type='RES' AND ref_id=? AND entry_type='CHARGE'",
+            (rid,),
+        )
+        .fetchall()
+    )
     assert len(charges) == 1
     charge = charges[0]
     assert charge["net"] == pytest.approx(200.0)  # 2 nights * 100
@@ -83,8 +89,7 @@ def test_overbooking_allowed_when_setting_true(clean_db):
 
 def test_create_with_deposit(clean_db):
     rid = make_reservation(deposit=50.0)
-    payments = connect().execute(
-        "SELECT amount, payment_type FROM payments WHERE reservation_id=?", (rid,)).fetchall()
+    payments = connect().execute("SELECT amount, payment_type FROM payments WHERE reservation_id=?", (rid,)).fetchall()
     assert len(payments) == 1
     assert payments[0]["amount"] == 50.0
     assert payments[0]["payment_type"] == "Deposit"
@@ -132,9 +137,11 @@ def test_cancel_reverses_charges(clean_db):
     after = count_ledger(entry_type="CHARGE", ref_type="RES")
     # Original not deleted, but reversal posted
     assert after == before  # CHARGE count same
-    reversals = connect().execute(
-        "SELECT COUNT(*) FROM general_ledger WHERE entry_type='VOID_CHARGE' AND ref_id=?",
-        (rid,)).fetchone()[0]
+    reversals = (
+        connect()
+        .execute("SELECT COUNT(*) FROM general_ledger WHERE entry_type='VOID_CHARGE' AND ref_id=?", (rid,))
+        .fetchone()[0]
+    )
     assert reversals == 1
 
 
@@ -142,9 +149,11 @@ def test_cancel_with_full_refund_policy(clean_db):
     services.set_setting("cancel_policy", "full_refund")
     rid = make_reservation(deposit=100.0)
     services.cancel_reservation(rid, "testpass")
-    refunds = connect().execute(
-        "SELECT amount FROM payments WHERE reservation_id=? AND payment_type='Refund'",
-        (rid,)).fetchall()
+    refunds = (
+        connect()
+        .execute("SELECT amount FROM payments WHERE reservation_id=? AND payment_type='Refund'", (rid,))
+        .fetchall()
+    )
     assert len(refunds) == 1
     # Refunds stored as negative amounts (money out)
     assert abs(refunds[0]["amount"]) == 100.0
@@ -154,9 +163,11 @@ def test_cancel_with_keep_deposit_policy(clean_db):
     services.set_setting("cancel_policy", "keep_deposit")
     rid = make_reservation(deposit=100.0)
     services.cancel_reservation(rid, "testpass")
-    refunds = connect().execute(
-        "SELECT amount FROM payments WHERE reservation_id=? AND payment_type='Refund'",
-        (rid,)).fetchall()
+    refunds = (
+        connect()
+        .execute("SELECT amount FROM payments WHERE reservation_id=? AND payment_type='Refund'", (rid,))
+        .fetchall()
+    )
     # Deposit kept -> no refund
     assert len(refunds) == 0
 
@@ -164,9 +175,11 @@ def test_cancel_with_keep_deposit_policy(clean_db):
 def test_cancel_no_payments_no_refund(clean_db):
     rid = make_reservation()
     services.cancel_reservation(rid, "testpass")
-    refunds = connect().execute(
-        "SELECT COUNT(*) FROM payments WHERE reservation_id=? AND payment_type='Refund'",
-        (rid,)).fetchone()[0]
+    refunds = (
+        connect()
+        .execute("SELECT COUNT(*) FROM payments WHERE reservation_id=? AND payment_type='Refund'", (rid,))
+        .fetchone()[0]
+    )
     assert refunds == 0
 
 
@@ -244,6 +257,7 @@ def test_modify_occupied_room_raises(clean_db):
     rid = make_reservation(ci="2026-12-01", co="2026-12-03", room_id=1)
     with pytest.raises(ValueError):
         services.modify_reservation(rid, 100.0, "2026-12-05", "2026-12-08", 2, "testpass")
+
 
 def test_cancel_paid_reservation_requires_password(clean_db):
     rid = make_reservation(deposit=100.0)

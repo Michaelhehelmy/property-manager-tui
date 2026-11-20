@@ -1,4 +1,5 @@
 """Reports: P&L, VAT, cash flow, occupancy."""
+
 import pytest
 from app_core import services
 from datetime import datetime
@@ -38,6 +39,7 @@ def test_vat_report_only_vat(clean_db):
     rid = make_reservation(rate=100.0)
     # Manually create a charge with known VAT
     from app_core.db import transaction
+
     text = services.report_vat(*_today_range())
     assert "Output VAT" in text
 

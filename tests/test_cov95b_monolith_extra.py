@@ -18,6 +18,7 @@ from app_core import barcodes
 # small helpers / local utils
 # ----------------------------
 
+
 def _mk_room(num, rtype="Std", price=100.0):
     return services.add_room(num, rtype, price)
 
@@ -29,6 +30,7 @@ def _mk_res(guest="G", ci="2099-01-01", co="2099-01-03", rate=100.0, room_id=1, 
 # ----------------------------
 # generic/internal helpers
 # ----------------------------
+
 
 def test_svc_attr_and_sanitize_and_rounding(clean_db, monkeypatch):
     # _svc_attr fallback and exception path
@@ -53,7 +55,9 @@ def test_svc_attr_and_sanitize_and_rounding(clean_db, monkeypatch):
     assert m._round_money(None) == 0.0
     assert m._round_qty("1.23456") == 1.2346
     assert m._qty_eq(1.0, 1.0 + 1e-12) is True
-    assert "lot A" in m._traceability_text(lot_code="A", batch_id=5, expiry_date="2099-01-01", received_at="2099-01-01 10:00:00")
+    assert "lot A" in m._traceability_text(
+        lot_code="A", batch_id=5, expiry_date="2099-01-01", received_at="2099-01-01 10:00:00"
+    )
 
 
 def test_allowed_roots_and_path_confine(clean_db, monkeypatch, tmp_path):
@@ -89,6 +93,7 @@ def test_safe_export_filename(clean_db):
 # ----------------------------
 # tax / barcode / inventory basics
 # ----------------------------
+
 
 def test_calculate_charge_tax_branches(clean_db):
     # non-taxable
@@ -126,7 +131,9 @@ def test_row_to_dict_and_resolve_barcode(clean_db):
     assert r["type"] == "unknown"
 
     # item by barcode/sku/name and inactive explicit branch
-    inv_id = services.add_inventory_item("Barcode Soda", "Drinks", "pcs", 5, 1.0, 2.0, 1, 50, "testpass", sku="SKU-SODA", barcode="BC123")
+    inv_id = services.add_inventory_item(
+        "Barcode Soda", "Drinks", "pcs", 5, 1.0, 2.0, 1, 50, "testpass", sku="SKU-SODA", barcode="BC123"
+    )
     r = m.resolve_barcode("BC123")
     assert r["type"] in ("item", "batch")
     r2 = m.resolve_barcode("SKU-SODA")
@@ -148,11 +155,39 @@ def test_row_to_dict_and_resolve_barcode(clean_db):
 
 
 def test_inventory_list_batch_and_label_helpers(clean_db, monkeypatch, tmp_path):
-    item_id = services.add_inventory_item("Tea", "Drinks", "pcs", 2, 1.0, 2.0, 1, 20, "testpass", sku="TEA1", barcode="TEA-BC", track_batches=1, shelf_life_days=30)
+    item_id = services.add_inventory_item(
+        "Tea",
+        "Drinks",
+        "pcs",
+        2,
+        1.0,
+        2.0,
+        1,
+        20,
+        "testpass",
+        sku="TEA1",
+        barcode="TEA-BC",
+        track_batches=1,
+        shelf_life_days=30,
+    )
     b1 = m.create_inventory_batch(item_id, 2, unit_cost=1.0, lot_code="TEA-LOT-1", expiry_date="2099-01-01")
-    b2 = m.create_inventory_batch(item_id, 1, unit_cost=1.0, lot_code="TEA-LOT-2", expiry_date=(datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d"))
+    b2 = m.create_inventory_batch(
+        item_id,
+        1,
+        unit_cost=1.0,
+        lot_code="TEA-LOT-2",
+        expiry_date=(datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d"),
+    )
     # filters (monolith uses local get_setting)
-    monkeypatch.setattr(m, "get_setting", lambda k, d=None: "30" if k == "expiry_warn_days" else ("5" if k == "low_stock_threshold" else ("100" if k == "overstock_threshold" else d)))
+    monkeypatch.setattr(
+        m,
+        "get_setting",
+        lambda k, d=None: (
+            "30"
+            if k == "expiry_warn_days"
+            else ("5" if k == "low_stock_threshold" else ("100" if k == "overstock_threshold" else d))
+        ),
+    )
     rows = services.get_inventory_items(query="Tea", category="Drinks", stock_filter="All", include_inactive=False)
     assert any(r["id"] == item_id for r in rows)
     _ = services.get_inventory_items(stock_filter="Expiring")
@@ -179,7 +214,9 @@ def test_inventory_list_batch_and_label_helpers(clean_db, monkeypatch, tmp_path)
     # print label helpers (mock printing and barcodes rendering), align monolith dirs
     monkeypatch.setattr(m, "EXPORT_DIR", Path(services.EXPORT_DIR))
     monkeypatch.setattr(m, "INVOICE_DIR", Path(services.INVOICE_DIR))
-    monkeypatch.setattr(m, "DATA_DIR", Path(services.DATA_DIR) if hasattr(services, "DATA_DIR") else Path(services.EXPORT_DIR).parent)
+    monkeypatch.setattr(
+        m, "DATA_DIR", Path(services.DATA_DIR) if hasattr(services, "DATA_DIR") else Path(services.EXPORT_DIR).parent
+    )
     monkeypatch.setattr(m, "print_to_printer", lambda path, printer=None: (True, "printed"))
     monkeypatch.setattr(barcodes, "render_label_for_print", lambda *a, **k: ("LABEL", None))
     ok, msg, path = m.print_item_label(item_id, printer="cups:X")
@@ -228,14 +265,18 @@ def test_create_inventory_batch_branches(clean_db, monkeypatch):
     # _create_opening_stock_batch exception path in shelf life parse and reference variants
     item_id2 = services.add_inventory_item("BatchItem2", "Misc", "pcs", 0, 1.0, 2.0, 0, 10, "testpass")
     conn = db.connect()
-    _ = m._create_opening_stock_batch(conn, item_id2, "BatchItem2", 1, 1.0, shelf_life_days="bad", reference="initial", lot_code="OPEN-TEST-BAD")
+    _ = m._create_opening_stock_batch(
+        conn, item_id2, "BatchItem2", 1, 1.0, shelf_life_days="bad", reference="initial", lot_code="OPEN-TEST-BAD"
+    )
     assert m._create_opening_stock_batch(conn, item_id2, "BatchItem2", 0, 1.0) is None
     assert m._opening_batch_lot("initial", 7) == "OPEN-7"
     assert m._opening_batch_lot("seed", 7) == "SEED-7"
 
+
 # ----------------------------
 # rooms / service / discounts / packages / groups / approvals / users / shifts
 # ----------------------------
+
 
 def test_room_add_delete_branches(clean_db):
     rid = services.add_room("Z-101", "Suite", 150.0, housekeeping_status="Clean")
@@ -337,7 +378,15 @@ def test_voucher_discount_and_package_branches(clean_db):
         services.create_discount_voucher("A", discount_type="percent", value=101)
     with pytest.raises(ValueError):
         services.create_discount_voucher("A", discount_type="amount", value="bad")
-    vid = services.create_discount_voucher("save5", discount_type="amount", value=5, max_uses=1, valid_from="2000-01-01", valid_to="2099-12-31", active=True)
+    vid = services.create_discount_voucher(
+        "save5",
+        discount_type="amount",
+        value=5,
+        max_uses=1,
+        valid_from="2000-01-01",
+        valid_to="2099-12-31",
+        active=True,
+    )
     with pytest.raises(ValueError):
         services.create_discount_voucher("SAVE5", value=1)
     assert any(v["active"] == 1 for v in services.list_discount_vouchers(active_only=True))
@@ -442,16 +491,21 @@ def test_voucher_discount_and_package_branches(clean_db):
         services.delete_package_item(999999)
     services.delete_package_item(item_id)
 
+
 # ----------------------------
 # users/roles/approvals/cash shifts/night audit/reports/groups
 # ----------------------------
+
 
 def test_users_roles_and_approvals_branches(clean_db, monkeypatch):
     # roles list and malformed json branch
     roles = services.list_roles()
     assert isinstance(roles, list)
     with db.transaction() as conn:
-        conn.execute("INSERT OR REPLACE INTO roles(name, description, permissions_json) VALUES (?,?,?)", ("badrole", "d", "{not-json"))
+        conn.execute(
+            "INSERT OR REPLACE INTO roles(name, description, permissions_json) VALUES (?,?,?)",
+            ("badrole", "d", "{not-json"),
+        )
     roles = services.list_roles()
     assert any(r.get("name") == "badrole" and r.get("permissions") == [] for r in roles)
 
@@ -479,7 +533,9 @@ def test_users_roles_and_approvals_branches(clean_db, monkeypatch):
     assert services.verify_user_password("alice", "newpw") is None
 
     # approvals extra branches
-    aid = services.create_approval_request("void_item", entity_type="pos", entity_id="1", payload={"a": 1}, requested_by="u")
+    aid = services.create_approval_request(
+        "void_item", entity_type="pos", entity_id="1", payload={"a": 1}, requested_by="u"
+    )
     ap = services.get_approval(aid)
     assert ap and ap["action_type"] == "void_item"
     assert services.get_approval(999999) is None
@@ -510,7 +566,7 @@ def test_cash_shifts_night_audit_and_reports_branches(clean_db, monkeypatch):
     with pytest.raises(ValueError):
         services.add_cash_movement(sid, movement_type="drop", amount="bad")
     services.add_cash_movement(sid, movement_type="cash_in", amount=-10)  # becomes abs
-    services.add_cash_movement(sid, movement_type="cash_out", amount=5)   # becomes negative
+    services.add_cash_movement(sid, movement_type="cash_out", amount=5)  # becomes negative
     assert services.list_cash_movements(sid)
     rec = services.get_cash_shift_reconciliation(sid)
     assert rec and rec["id"] == sid
@@ -519,19 +575,37 @@ def test_cash_shifts_night_audit_and_reports_branches(clean_db, monkeypatch):
     assert services.list_night_audit_runs() == [] or isinstance(services.list_night_audit_runs(), list)
 
     # night audit: force exceptions to hit many branches
-    monkeypatch.setattr(services, "get_front_desk_ops", lambda d: {
-        "counts": {"arrivals": 1},
-        "exceptions": [{"id": 1, "detail": "x"}],
-        "in_house": [{"id": 1, "guest_name": "G", "room_number": "101", "balance_due": 50.0}],
-        "departures": [{"id": 2, "guest_name": "D", "status": "Checked Out", "balance_due": 10.0}],
-    })
+    monkeypatch.setattr(
+        services,
+        "get_front_desk_ops",
+        lambda d: {
+            "counts": {"arrivals": 1},
+            "exceptions": [{"id": 1, "detail": "x"}],
+            "in_house": [{"id": 1, "guest_name": "G", "room_number": "101", "balance_due": 50.0}],
+            "departures": [{"id": 2, "guest_name": "D", "status": "Checked Out", "balance_due": 10.0}],
+        },
+    )
     monkeypatch.setattr(services, "get_general_ledger_summary", lambda: {"ok": True})
     monkeypatch.setattr(services, "get_open_cash_shift", lambda: {"id": sid})
-    monkeypatch.setattr(services, "get_cash_shift_reconciliation", lambda shift_id: {"id": shift_id, "reconciled_expected_cash": 1, "linked_net": 1, "counted_cash": None, "variance": None})
+    monkeypatch.setattr(
+        services,
+        "get_cash_shift_reconciliation",
+        lambda shift_id: {
+            "id": shift_id,
+            "reconciled_expected_cash": 1,
+            "linked_net": 1,
+            "counted_cash": None,
+            "variance": None,
+        },
+    )
     conn = db.connect()
     try:
-        conn.execute("INSERT OR IGNORE INTO housekeeping_tasks (room_id, task_type, status, priority, due_at) VALUES (1, 'clean', 'pending', 1, datetime('now','localtime'))")
-        conn.execute("INSERT OR IGNORE INTO room_blocks (room_id, block_type, start_date, end_date, reason, status) VALUES (1, 'OOO', '2000-01-01', '2999-01-01', 'x', 'active')")
+        conn.execute(
+            "INSERT OR IGNORE INTO housekeeping_tasks (room_id, task_type, status, priority, due_at) VALUES (1, 'clean', 'pending', 1, datetime('now','localtime'))"
+        )
+        conn.execute(
+            "INSERT OR IGNORE INTO room_blocks (room_id, block_type, start_date, end_date, reason, status) VALUES (1, 'OOO', '2000-01-01', '2999-01-01', 'x', 'active')"
+        )
         conn.commit()
     except Exception:
         pass
@@ -581,7 +655,9 @@ def test_cash_shifts_night_audit_and_reports_branches(clean_db, monkeypatch):
 def test_print_validation_helpers(clean_db, monkeypatch, tmp_path):
     # list_printers branches (mock subprocess)
     monkeypatch.setattr(m.platform, "system", lambda: "Windows")
-    monkeypatch.setattr(m.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a[0], 0, stdout="P1\nP2\n", stderr=""))
+    monkeypatch.setattr(
+        m.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a[0], 0, stdout="P1\nP2\n", stderr="")
+    )
     r = m.list_printers()
     assert "P1" in r.get("queues", []) or r.get("source") == "winspool"
 
@@ -592,6 +668,7 @@ def test_print_validation_helpers(clean_db, monkeypatch, tmp_path):
         if args[:2] == ["lpstat", "-d"]:
             return subprocess.CompletedProcess(args, 0, stdout="system default destination: Q1\n", stderr="")
         return subprocess.CompletedProcess(args, 1, stdout="", stderr="err")
+
     monkeypatch.setattr(m.platform, "system", lambda: "Linux")
     monkeypatch.setattr(m.subprocess, "run", fake_run)
     r = m.list_printers()
@@ -603,7 +680,15 @@ def test_print_validation_helpers(clean_db, monkeypatch, tmp_path):
     assert m._validate_print_target("win:Printer 1")[0] == "win"
     kind, val = m._validate_print_target("raw:127.0.0.1:9100")
     assert kind == "raw" and val[1] == 9100
-    for bad in ["x" * 201, "cups:bad name!", "win:bad/name", "raw:nocolon", "raw:host:notaport", "raw:host:70000", "nonsense"]:
+    for bad in [
+        "x" * 201,
+        "cups:bad name!",
+        "win:bad/name",
+        "raw:nocolon",
+        "raw:host:notaport",
+        "raw:host:70000",
+        "nonsense",
+    ]:
         with pytest.raises(ValueError):
             m._validate_print_target(bad)
 
@@ -626,7 +711,9 @@ def test_print_validation_helpers(clean_db, monkeypatch, tmp_path):
     monkeypatch.setattr(m.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a[0], 0, stdout="", stderr=""))
     ok, msg = m.print_to_printer(str(inside), "cups:Q1")
     assert ok is True
-    monkeypatch.setattr(m.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a[0], 1, stdout="", stderr="bad"))
+    monkeypatch.setattr(
+        m.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a[0], 1, stdout="", stderr="bad")
+    )
     ok, msg = m.print_to_printer(str(inside), "cups:Q1")
     assert ok is False
     ok, msg = m.print_to_printer(str(inside), "nonsense")
@@ -634,12 +721,23 @@ def test_print_validation_helpers(clean_db, monkeypatch, tmp_path):
 
     # raw socket helper with small payload
     sent = {}
+
     class DummySock:
-        def __enter__(self): return self
-        def __exit__(self, *a): return False
-        def settimeout(self, t): pass
-        def connect(self, addr): sent['addr']=addr
-        def sendall(self, data): sent['data']=data
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def settimeout(self, t):
+            pass
+
+        def connect(self, addr):
+            sent["addr"] = addr
+
+        def sendall(self, data):
+            sent["data"] = data
+
     monkeypatch.setattr(m.socket, "socket", lambda *a, **k: DummySock())
     m._print_raw_socket("127.0.0.1", 9100, str(inside))
-    assert sent.get('addr') == ("127.0.0.1", 9100)
+    assert sent.get("addr") == ("127.0.0.1", 9100)

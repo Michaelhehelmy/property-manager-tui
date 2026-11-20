@@ -18,6 +18,7 @@ Examples:
 
 Retention guidance hook: set PM_BACKUP_RETENTION_DAYS (operator/scheduler policy hint).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -44,7 +45,9 @@ def _print_restore_guidance() -> None:
     print("5. Copy the verified backup over the active DB file (preserve exports/invoices/PM_DATA_DIR).")
     print("6. Start the app - DB migrations run on startup (additive/idempotent).")
     print("7. Verify with: python3 -m app_core.doctor --json  (or this script --doctor).")
-    print("Retention: keep multiple verified backups off-host and prune per policy (PM_BACKUP_RETENTION_DAYS is an operator hint).")
+    print(
+        "Retention: keep multiple verified backups off-host and prune per policy (PM_BACKUP_RETENTION_DAYS is an operator hint)."
+    )
     print("Tip: Use --verify <backup> first to confirm integrity/schema before restoring.")
 
 
@@ -58,11 +61,17 @@ def main(argv: list[str] | None = None) -> int:
             "Restore: manual/offline only - see guidance below or README 'Backups & restore'."
         ),
     )
-    ap.add_argument("--backup", action="store_true", help="Create a safe SQLite backup (idempotent; no runtime data deleted)")
+    ap.add_argument(
+        "--backup", action="store_true", help="Create a safe SQLite backup (idempotent; no runtime data deleted)"
+    )
     ap.add_argument("--to", dest="backup_to", help="Destination backup path (optional)")
     ap.add_argument("--verify", dest="verify_path", help="Verify a backup/candidate DB file (read-only)")
     ap.add_argument("--verify-backup", dest="verify_backup_path", help="Alias for --verify")
-    ap.add_argument("--restore-precheck", dest="restore_precheck_path", help="Read-only restore precheck: verify backup + target data-dir/permission readiness (no writes)")
+    ap.add_argument(
+        "--restore-precheck",
+        dest="restore_precheck_path",
+        help="Read-only restore precheck: verify backup + target data-dir/permission readiness (no writes)",
+    )
     ap.add_argument("--doctor", action="store_true", help="Run doctor health checks (read-only)")
     ap.add_argument("--check-updates", action="store_true", help="With --doctor, query remote update status")
     ap.add_argument("--json", action="store_true", help="JSON output")
@@ -81,7 +90,11 @@ def main(argv: list[str] | None = None) -> int:
             if hasattr(doctor, "restore_precheck"):
                 res = doctor.restore_precheck(args.restore_precheck_path)
             else:
-                res = {"ok": False, "backup": doctor.verify_backup_file(args.restore_precheck_path), "error": "restore precheck helper unavailable"}
+                res = {
+                    "ok": False,
+                    "backup": doctor.verify_backup_file(args.restore_precheck_path),
+                    "error": "restore precheck helper unavailable",
+                }
         elif verify_path:
             res = doctor.verify_backup_file(verify_path)
         elif args.backup or args.backup_to:
@@ -117,7 +130,9 @@ def main(argv: list[str] | None = None) -> int:
                 tgt = res.get("target") or {}
                 if tgt:
                     print(f"  - target_db: {tgt.get('db_path')}")
-                    print(f"  - target_writable: {tgt.get('db_target_writable')} data_dir_writable: {tgt.get('data_dir_writable')}")
+                    print(
+                        f"  - target_writable: {tgt.get('db_target_writable')} data_dir_writable: {tgt.get('data_dir_writable')}"
+                    )
                 if res.get("error"):
                     print(f"  - error: {res.get('error')}")
                 _print_restore_guidance()
@@ -127,7 +142,7 @@ def main(argv: list[str] | None = None) -> int:
                     print(f"  - path: {res.get('path')}")
                 if res.get("error"):
                     print(f"  - error: {res.get('error')}")
-                integ = ((res.get("integrity") or {}).get("sqlite") or {})
+                integ = (res.get("integrity") or {}).get("sqlite") or {}
                 if integ:
                     print(f"  - integrity_check: {integ.get('integrity_check')}")
                     print(f"  - foreign_key_violations: {len(integ.get('foreign_key_violations') or [])}")

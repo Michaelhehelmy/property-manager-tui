@@ -3,6 +3,7 @@
 Local-first, no external dependencies (Tier 0). Designed to be portable and to
 integrate with existing printer/raw-socket output paths.
 """
+
 from __future__ import annotations
 
 import json
@@ -59,7 +60,7 @@ def sanitize_label_text(value, max_len: int = 120) -> str:
     # avoid command/control-like sequences and excessive punctuation runs
     s = re.sub(r"[^\w\s\-\.:/#()+=,]", " ", s, flags=re.UNICODE)
     s = re.sub(r"\s+", " ", s).strip()
-    return s[:max(1, min(int(max_len or 120), 512))]
+    return s[: max(1, min(int(max_len or 120), 512))]
 
 
 def make_lot_code(item_id: int, received_at: str | None = None, seq: int | None = None) -> str:
@@ -85,11 +86,13 @@ def make_lot_code(item_id: int, received_at: str | None = None, seq: int | None 
 
 def make_lot_payload(item, batch) -> dict:
     """Versioned, compact payload intended for QR/DataMatrix labels."""
+
     def _get(o, k, d=None):
         try:
             return o[k]
         except Exception:
             return getattr(o, k, d)
+
     return {
         "v": 1,
         "t": "lot",
@@ -236,13 +239,7 @@ def render_label_for_print(fmt: str, item, batch=None, include_payload: bool = T
         raw_code = _get_field(item, "barcode") or _get_field(item, "sku") or f"ITEM-{_get_field(item, 'id', '')}"
     code = sanitize_label_text(raw_code, max_len=80) or "CODE"
     if fmt == "zpl":
-        zpl = (
-            "^XA"
-            f"^FO30,30^A0N,30,30^FD{code}^FS"
-            "^FO30,70^BY2^BCN,80,Y,N,N"
-            f"^FD{code}^FS"
-            "^XZ\n"
-        )
+        zpl = f"^XA^FO30,30^A0N,30,30^FD{code}^FS^FO30,70^BY2^BCN,80,Y,N,N^FD{code}^FS^XZ\n"
         return zpl, False
     # escpos/text/qr/code128/tspl/epl/datamatrix: readable label content (safe for file/raw text output)
     return text_label, False

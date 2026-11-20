@@ -49,7 +49,9 @@ def test_db_helpers_and_queries(clean_db, tmp_path, monkeypatch):
     # migration meta: safe if table missing and works when present
     conn3 = sqlite3.connect(":memory:")
     db._record_migration_meta(conn3, "start", 1, 2)  # no app_metadata table, should not raise
-    conn3.executescript("CREATE TABLE app_metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL, hash_signature TEXT NOT NULL DEFAULT '')")
+    conn3.executescript(
+        "CREATE TABLE app_metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL, hash_signature TEXT NOT NULL DEFAULT '')"
+    )
     db._record_migration_meta(conn3, "done", 1, 2)
     rows = conn3.execute("SELECT key, value FROM app_metadata").fetchall()
     kv = {r[0]: r[1] for r in rows}

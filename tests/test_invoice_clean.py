@@ -1,4 +1,5 @@
 """Verify attribution is gone from invoice but preserved in metadata."""
+
 import pytest
 from app_core import services
 from conftest import make_reservation

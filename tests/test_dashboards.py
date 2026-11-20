@@ -1,4 +1,5 @@
 """Front desk + chart data + backup."""
+
 import os
 import pytest
 from app_core import services
@@ -17,6 +18,7 @@ def _tomorrow():
 # ═══════════════════════════════════════════════════════════════════════════
 # FRONT DESK
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def test_summary_empty_db(clean_db):
     s = services.get_front_desk_summary()
@@ -83,9 +85,13 @@ def test_report_occupancy(clean_db):
 def test_dashboard_day_snapshot_service(clean_db):
     rid = make_reservation(guest="Arriving Guest", ci=_today(), co=_tomorrow(), room_id=1)
     # reservation departing today (eligible for departures list)
-    dep_rid = make_reservation(guest="Departing Guest", ci=(datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d"), co=_today(), room_id=3)
+    dep_rid = make_reservation(
+        guest="Departing Guest", ci=(datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d"), co=_today(), room_id=3
+    )
     # create an in-house reservation (checked in, stays over)
-    inh_rid = make_reservation(guest="InHouse Guest", ci=_today(), co=(datetime.now() + timedelta(days=2)).strftime("%Y-%m-%d"), room_id=2)
+    inh_rid = make_reservation(
+        guest="InHouse Guest", ci=_today(), co=(datetime.now() + timedelta(days=2)).strftime("%Y-%m-%d"), room_id=2
+    )
     services.update_reservation_status(inh_rid, "Checked In")
     snap = services.get_dashboard_day_snapshot(_today())
     assert set(snap.keys()) >= {"date", "arrivals", "departures", "in_house"}
@@ -102,6 +108,7 @@ def test_dashboard_day_snapshot_service(clean_db):
 # ═══════════════════════════════════════════════════════════════════════════
 # CHART DATA
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def test_revenue_expense_series_empty(clean_db):
     series = services.get_daily_revenue_expense_series("2027-01-01", "2027-01-03")
@@ -161,6 +168,7 @@ def test_heatmap_with_booking(clean_db):
 # BACKUP
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def test_backup_creates_file(clean_db):
     path = services.backup_now()
     assert os.path.exists(path)
@@ -170,9 +178,9 @@ def test_backup_creates_file(clean_db):
 def test_backup_is_valid_sqlite(clean_db):
     path = services.backup_now()
     import sqlite3
+
     conn = sqlite3.connect(path)
-    tables = [r[0] for r in conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
+    tables = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
     conn.close()
     assert "reservations" in tables
     assert "general_ledger" in tables
@@ -182,6 +190,7 @@ def test_backup_contains_data(clean_db):
     make_reservation(guest="Backup Test")
     path = services.backup_now()
     import sqlite3
+
     conn = sqlite3.connect(path)
     rows = conn.execute("SELECT guest_name FROM reservations").fetchall()
     conn.close()

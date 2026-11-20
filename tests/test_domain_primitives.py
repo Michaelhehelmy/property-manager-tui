@@ -19,6 +19,7 @@ def test_domain_package_exports():
 
 # ── money ────────────────────────────────────────────────────────────────────
 
+
 def test_money_to_decimal_and_parse():
     assert money.to_decimal(None) == Decimal("0")
     assert money.to_decimal(None, None) is None
@@ -65,6 +66,7 @@ def test_money_allocate_proportionally():
 
 
 # ── dates ────────────────────────────────────────────────────────────────────
+
 
 def test_dates_parse_and_format():
     assert dates.parse_date(None) is None
@@ -126,6 +128,7 @@ def test_dates_nights_ranges_and_overlap():
 
 # ── tax ──────────────────────────────────────────────────────────────────────
 
+
 def test_tax_helpers():
     assert tax.tax_amount("100", 14) == Decimal("14.00")
     assert tax.gross_from_net("100", 14) == Decimal("114.00")
@@ -148,6 +151,7 @@ def test_tax_helpers():
 
 # ── availability ─────────────────────────────────────────────────────────────
 
+
 def test_availability_helpers():
     assert availability.is_window_valid("2026-11-18", "2026-11-20") is True
     assert availability.is_window_valid("2026-11-18", "2026-11-18", min_nights=1) is False
@@ -164,7 +168,9 @@ def test_availability_helpers():
     ]
     assert availability.is_room_available_for_window(existing, "2026-11-20", "2026-11-22") is True
     assert availability.is_room_available_for_window(existing, "2026-11-19", "2026-11-21") is False
-    assert availability.is_room_available_for_window(existing, "2026-11-19", "2026-11-21", ignore_reservation_id=1) is True
+    assert (
+        availability.is_room_available_for_window(existing, "2026-11-19", "2026-11-21", ignore_reservation_id=1) is True
+    )
     assert availability.is_room_available_for_window(None, "2026-11-18", "2026-11-19") is True
 
     occ = availability.occupied_night_dates("2026-11-18", "2026-11-20")
@@ -174,6 +180,7 @@ def test_availability_helpers():
 
 
 # ── metrics ──────────────────────────────────────────────────────────────────
+
 
 def test_metrics_formulas():
     assert metrics.occupancy_rate(5, 10) == 50.0

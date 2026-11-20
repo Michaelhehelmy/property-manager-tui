@@ -1,4 +1,5 @@
 """Go-live invariants, migration upgrades, and confinement helper contracts."""
+
 from __future__ import annotations
 
 import sqlite3
@@ -124,9 +125,13 @@ def test_money_ledger_invariants_payment_refund_void_and_ref_separation(clean_db
     before_pay = count_ledger(entry_type="PAYMENT")
     services.record_payment(rid, 100.0, "Cash", notes="part")
     assert count_ledger(entry_type="PAYMENT") == before_pay + 1
-    pay_row = db.connect().execute(
-        "SELECT ref_type, gross, net, vat, service, city_tax, description FROM general_ledger WHERE entry_type='PAYMENT' ORDER BY id DESC LIMIT 1"
-    ).fetchone()
+    pay_row = (
+        db.connect()
+        .execute(
+            "SELECT ref_type, gross, net, vat, service, city_tax, description FROM general_ledger WHERE entry_type='PAYMENT' ORDER BY id DESC LIMIT 1"
+        )
+        .fetchone()
+    )
     assert pay_row["ref_type"] == "PAY"
     # Payment amount should be reflected in ledger value fields (schema uses gross/net/tax columns)
     money_fields = [float(pay_row[c] or 0) for c in ("gross", "net", "vat", "service", "city_tax")]
@@ -145,17 +150,23 @@ def test_money_ledger_invariants_payment_refund_void_and_ref_separation(clean_db
     assert "ar_balance" in summary
 
     # cancellation/void does not delete original charge and preserves append-only history
-    charge_count_before_void = db.connect().execute(
-        "SELECT COUNT(*) FROM general_ledger WHERE ref_type='RES' AND entry_type='CHARGE'"
-    ).fetchone()[0]
+    charge_count_before_void = (
+        db.connect()
+        .execute("SELECT COUNT(*) FROM general_ledger WHERE ref_type='RES' AND entry_type='CHARGE'")
+        .fetchone()[0]
+    )
     services.cancel_reservation(rid, "testpass")
-    charge_count_after_void = db.connect().execute(
-        "SELECT COUNT(*) FROM general_ledger WHERE ref_type='RES' AND entry_type='CHARGE'"
-    ).fetchone()[0]
+    charge_count_after_void = (
+        db.connect()
+        .execute("SELECT COUNT(*) FROM general_ledger WHERE ref_type='RES' AND entry_type='CHARGE'")
+        .fetchone()[0]
+    )
     assert charge_count_after_void == charge_count_before_void
-    rev = db.connect().execute(
-        "SELECT reverses_id FROM general_ledger WHERE entry_type='VOID_CHARGE' ORDER BY id DESC LIMIT 1"
-    ).fetchone()
+    rev = (
+        db.connect()
+        .execute("SELECT reverses_id FROM general_ledger WHERE entry_type='VOID_CHARGE' ORDER BY id DESC LIMIT 1")
+        .fetchone()
+    )
     assert rev is not None and rev["reverses_id"] is not None
 
     # walk-in/POS ledger entries (ref_type POS) are not removed by reservation lifecycle operations
@@ -172,11 +183,38 @@ def test_money_ledger_invariants_payment_refund_void_and_ref_separation(clean_db
 def test_stock_batch_invariants_fefo_split_void_and_traceability(clean_db):
     # tracked item with batches: stock conservation across split sale and void restore
     item_id = services.add_inventory_item(
-        "BatchSoda", "Bar", "can", 0, 1.0, 3.0, 1.0, 0.0, "testpass",
-        sku="SKU-BS", barcode="BAR-BS", barcode_type="code128", track_batches=1,
+        "BatchSoda",
+        "Bar",
+        "can",
+        0,
+        1.0,
+        3.0,
+        1.0,
+        0.0,
+        "testpass",
+        sku="SKU-BS",
+        barcode="BAR-BS",
+        barcode_type="code128",
+        track_batches=1,
     )
-    b1 = services.create_inventory_batch(item_id, 2, 1.0, received_at="2026-01-01 10:00:00", expiry_date="2030-01-01", lot_code="LOT-1", password="testpass")
-    b2 = services.create_inventory_batch(item_id, 3, 1.0, received_at="2026-01-01 11:00:00", expiry_date="2030-02-01", lot_code="LOT-2", password="testpass")
+    b1 = services.create_inventory_batch(
+        item_id,
+        2,
+        1.0,
+        received_at="2026-01-01 10:00:00",
+        expiry_date="2030-01-01",
+        lot_code="LOT-1",
+        password="testpass",
+    )
+    b2 = services.create_inventory_batch(
+        item_id,
+        3,
+        1.0,
+        received_at="2026-01-01 11:00:00",
+        expiry_date="2030-02-01",
+        lot_code="LOT-2",
+        password="testpass",
+    )
     rid = make_reservation(rate=80.0, ci="2030-02-01", co="2030-02-02")
     services.update_reservation_status(rid, "Checked In")
     res = services.add_pos_item(rid, "BatchSoda", 4, 3.0, inv_id=item_id)
@@ -185,14 +223,22 @@ def test_stock_batch_invariants_fefo_split_void_and_traceability(clean_db):
     rows = services.get_pos_items(rid)
     assert {int(r["batch_id"]) for r in rows if r["batch_id"] is not None} == {int(b1["id"]), int(b2["id"])}
     stock_after_sale = db.connect().execute("SELECT stock_qty FROM inventory WHERE id=?", (item_id,)).fetchone()[0]
-    rem1 = db.connect().execute("SELECT quantity_remaining FROM inventory_batches WHERE id=?", (b1["id"],)).fetchone()[0]
-    rem2 = db.connect().execute("SELECT quantity_remaining FROM inventory_batches WHERE id=?", (b2["id"],)).fetchone()[0]
+    rem1 = (
+        db.connect().execute("SELECT quantity_remaining FROM inventory_batches WHERE id=?", (b1["id"],)).fetchone()[0]
+    )
+    rem2 = (
+        db.connect().execute("SELECT quantity_remaining FROM inventory_batches WHERE id=?", (b2["id"],)).fetchone()[0]
+    )
     assert float(stock_after_sale) == pytest.approx(float(rem1) + float(rem2))
 
     # void one line restores its batch qty and inventory stock consistently
     services.void_pos_item(int(pos_ids[0]), "testpass")
-    rem1b = db.connect().execute("SELECT quantity_remaining FROM inventory_batches WHERE id=?", (b1["id"],)).fetchone()[0]
-    rem2b = db.connect().execute("SELECT quantity_remaining FROM inventory_batches WHERE id=?", (b2["id"],)).fetchone()[0]
+    rem1b = (
+        db.connect().execute("SELECT quantity_remaining FROM inventory_batches WHERE id=?", (b1["id"],)).fetchone()[0]
+    )
+    rem2b = (
+        db.connect().execute("SELECT quantity_remaining FROM inventory_batches WHERE id=?", (b2["id"],)).fetchone()[0]
+    )
     stock_after_void = db.connect().execute("SELECT stock_qty FROM inventory WHERE id=?", (item_id,)).fetchone()[0]
     assert float(stock_after_void) == pytest.approx(float(rem1b) + float(rem2b))
     assert float(rem1b) + float(rem2b) > float(rem1) + float(rem2)

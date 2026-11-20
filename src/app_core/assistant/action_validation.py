@@ -146,6 +146,7 @@ def _is_expired(expires_at: Any, now: datetime | None = None) -> bool:
 
 # ── Entity resolution helpers (read-only) ────────────────────────────────────
 
+
 def resolve_reservation(args: Mapping[str, Any] | None, *, for_posting: bool = False) -> dict[str, Any]:
     out = {"ok": True, "errors": [], "warnings": [], "checks": [], "resolved": {}, "preview": {}}
     rid = _int_or_none(_get(args, "reservation_id", "rid", "res_id", "id"))
@@ -173,7 +174,10 @@ def resolve_reservation(args: Mapping[str, Any] | None, *, for_posting: bool = F
         allowed = status in ALLOWED_RES_STATUSES_FOR_POSTING
         _check(out, "reservation_status_allows_posting", allowed, status or "unknown")
         if not allowed:
-            _add_error(out, f"Reservation #{rid} status '{status or 'unknown'}' does not allow posting (allowed: Reserved, Checked In)")
+            _add_error(
+                out,
+                f"Reservation #{rid} status '{status or 'unknown'}' does not allow posting (allowed: Reserved, Checked In)",
+            )
     return out
 
 
@@ -198,7 +202,9 @@ def resolve_guest(args: Mapping[str, Any] | None) -> dict[str, Any]:
         return out
 
     if not name:
-        _add_warning(out, "No guest_id/guest_name provided; guest will be resolved/created by reservation flow if supported")
+        _add_warning(
+            out, "No guest_id/guest_name provided; guest will be resolved/created by reservation flow if supported"
+        )
         _check(out, "guest_resolved", False, "not provided")
         return out
 
@@ -286,7 +292,9 @@ def resolve_inventory_item(args: Mapping[str, Any] | None) -> dict[str, Any]:
             elif len(normed) == 1:
                 item = normed[0]
             elif len(normed) > 1:
-                _add_error(out, f"Inventory item '{name}' is ambiguous ({len(normed)} matches); specify item_id/sku/barcode")
+                _add_error(
+                    out, f"Inventory item '{name}' is ambiguous ({len(normed)} matches); specify item_id/sku/barcode"
+                )
             else:
                 _add_error(out, f"Inventory item '{name}' not found")
             _check(out, "item_lookup_by_name", bool(item), name)
@@ -339,7 +347,9 @@ def resolve_batch_or_lot(item: Mapping[str, Any] | None, args: Mapping[str, Any]
                 out["resolved"]["barcode_resolution"] = _row_to_dict(resolved)
         elif track_batches:
             _check(out, "batch_specified", False, "auto-allocation possible")
-            _add_warning(out, "Batch-tracked item without explicit batch/lot; service may auto-allocate available batches")
+            _add_warning(
+                out, "Batch-tracked item without explicit batch/lot; service may auto-allocate available batches"
+            )
     except Exception as e:
         logger.debug("resolve_batch_or_lot failed", exc_info=True)
         _add_error(out, f"Batch lookup failed: {e}")
@@ -360,7 +370,10 @@ def resolve_batch_or_lot(item: Mapping[str, Any] | None, args: Mapping[str, Any]
         rem = _float_or_none(batch.get("quantity_remaining"))
         if rem is not None:
             if requested_qty is not None and requested_qty > rem + 1e-9:
-                _add_warning(out, f"Requested qty {requested_qty} exceeds batch remaining {rem}; sale may fail or allocate across batches depending on service behavior")
+                _add_warning(
+                    out,
+                    f"Requested qty {requested_qty} exceeds batch remaining {rem}; sale may fail or allocate across batches depending on service behavior",
+                )
                 _check(out, "batch_has_requested_qty", False, f"remaining={rem}")
             else:
                 _check(out, "batch_has_requested_qty", True, f"remaining={rem}")
@@ -482,7 +495,10 @@ def check_availability(args: Mapping[str, Any] | None, room_id: int | None = Non
             _add_error(out, f"Room #{rid} is not available for {ci} to {co}")
         try:
             avail_rooms = services.get_rooms_available_between(ci, co) or []
-            avail_ids = {_int_or_none((r["id"] if hasattr(r, "keys") else r.get("id"))) for r in [_row_to_dict(x) for x in avail_rooms]}
+            avail_ids = {
+                _int_or_none((r["id"] if hasattr(r, "keys") else r.get("id")))
+                for r in [_row_to_dict(x) for x in avail_rooms]
+            }
             out["resolved"]["available_room_ids"] = sorted([i for i in avail_ids if i])
         except Exception:
             logger.debug("check_availability: get_rooms_available_between failed", exc_info=True)
@@ -494,6 +510,7 @@ def check_availability(args: Mapping[str, Any] | None, room_id: int | None = Non
 
 
 # ── Preview builders / prechecks ──────────────────────────────────────────────
+
 
 def _merge_child(out: dict[str, Any], child: Mapping[str, Any] | None, *, namespace: str | None = None) -> None:
     if not isinstance(child, Mapping):
@@ -606,15 +623,21 @@ def preview_add_pos_item(args: Mapping[str, Any] | None) -> dict[str, Any]:
     out["preview"] = {
         "type": "preview_add_pos_item",
         "reservation_id": rid,
-        "item_id": _int_or_none(item.get("id")) if isinstance(item, dict) else _int_or_none(_get(args, "item_id", "inv_id")),
+        "item_id": _int_or_none(item.get("id"))
+        if isinstance(item, dict)
+        else _int_or_none(_get(args, "item_id", "inv_id")),
         "item_name": (item.get("item_name") if isinstance(item, dict) else None) or desc or None,
         "description": desc or None,
         "qty": qty,
         "unit_price": _money_round(price_arg),
         "estimated_subtotal": subtotal,
         "tax_preview": tax_preview,
-        "batch_id": _int_or_none((batch or {}).get("id")) if isinstance(batch, dict) else _int_or_none(_get(args, "batch_id")),
-        "lot_code": _norm_str((batch or {}).get("lot_code")) if isinstance(batch, dict) else (_norm_str(_get(args, "lot_code")) or None),
+        "batch_id": _int_or_none((batch or {}).get("id"))
+        if isinstance(batch, dict)
+        else _int_or_none(_get(args, "batch_id")),
+        "lot_code": _norm_str((batch or {}).get("lot_code"))
+        if isinstance(batch, dict)
+        else (_norm_str(_get(args, "lot_code")) or None),
         "stock_qty": stock_qty,
         "allow_negative_stock": allow_negative,
     }
@@ -683,7 +706,9 @@ def preview_complete_walkin_sale(args: Mapping[str, Any] | None) -> dict[str, An
         batch_obj = batch_resolved.get("batch") if isinstance(batch_resolved.get("batch"), dict) else {}
         child_preview = {
             "index": idx,
-            "inv_id": _int_or_none((item or {}).get("id")) if isinstance(item, dict) else _int_or_none(_get(it, "inv_id", "item_id")),
+            "inv_id": _int_or_none((item or {}).get("id"))
+            if isinstance(item, dict)
+            else _int_or_none(_get(it, "inv_id", "item_id")),
             "desc": desc or None,
             "qty": qty,
             "price": _money_round(price),
@@ -694,9 +719,16 @@ def preview_complete_walkin_sale(args: Mapping[str, Any] | None) -> dict[str, An
             "warnings": list(child.get("warnings") or []),
         }
         normalized_items.append(child_preview)
-        out["errors"].extend([f"Item {idx + 1}: {e}" if not str(e).startswith("Item ") else str(e) for e in (child.get("errors") or [])])
-        out["warnings"].extend([f"Item {idx + 1}: {w}" if not str(w).startswith("Item ") else str(w) for w in (child.get("warnings") or [])])
-        for c in (child.get("checks") or []):
+        out["errors"].extend(
+            [f"Item {idx + 1}: {e}" if not str(e).startswith("Item ") else str(e) for e in (child.get("errors") or [])]
+        )
+        out["warnings"].extend(
+            [
+                f"Item {idx + 1}: {w}" if not str(w).startswith("Item ") else str(w)
+                for w in (child.get("warnings") or [])
+            ]
+        )
+        for c in child.get("checks") or []:
             cc = dict(c)
             cc["name"] = f"item[{idx}].{cc.get('name')}"
             out["checks"].append(cc)
@@ -742,7 +774,9 @@ def preview_record_payment(args: Mapping[str, Any] | None) -> dict[str, Any]:
         if rid:
             bd = services.get_balance_breakdown(rid)
             if isinstance(bd, dict):
-                balance = _float_or_none(bd.get("balance_due") if bd.get("balance_due") is not None else bd.get("balance"))
+                balance = _float_or_none(
+                    bd.get("balance_due") if bd.get("balance_due") is not None else bd.get("balance")
+                )
             elif bd is not None:
                 balance = _float_or_none(bd)
     except Exception:
@@ -762,7 +796,9 @@ def preview_record_payment(args: Mapping[str, Any] | None) -> dict[str, Any]:
         "payment_type": payment_type,
         "notes": notes or "",
         "current_balance_due": _money_round(balance),
-        "projected_balance_due": _money_round((balance - amount) if (balance is not None and amount is not None) else None),
+        "projected_balance_due": _money_round(
+            (balance - amount) if (balance is not None and amount is not None) else None
+        ),
     }
     return out
 
@@ -838,7 +874,9 @@ def preview_create_reservation(args: Mapping[str, Any] | None) -> dict[str, Any]
             base = _float_or_none(resolved_room.get("base_price"))
             if base is not None:
                 rate = base
-                _add_warning(out, "Rate not provided; using room base_price for preview (service may require explicit rate)")
+                _add_warning(
+                    out, "Rate not provided; using room base_price for preview (service may require explicit rate)"
+                )
     if rate is None:
         _add_error(out, "rate/agreed_nightly_rate is required")
         _check(out, "rate_present", False)
@@ -847,7 +885,7 @@ def preview_create_reservation(args: Mapping[str, Any] | None) -> dict[str, Any]
 
     avail_res = check_availability({"room_id": room_id, "check_in": ci, "check_out": co})
     _merge_child(out, avail_res)
-    nights = ((avail_res.get("preview") or {}).get("nights") if isinstance(avail_res.get("preview"), dict) else None)
+    nights = (avail_res.get("preview") or {}).get("nights") if isinstance(avail_res.get("preview"), dict) else None
     if ci and not _parse_iso(ci):
         _add_error(out, "check_in must be YYYY-MM-DD")
     if co and not _parse_iso(co):
@@ -858,7 +896,10 @@ def preview_create_reservation(args: Mapping[str, Any] | None) -> dict[str, Any]
     est_total = _money_round(rate * nights) if (rate is not None and isinstance(nights, int) and nights > 0) else None
     out["preview"] = {
         "type": "preview_create_reservation",
-        "guest_id": guest_id or (((out.get("resolved") or {}).get("guest_resolution") or {}).get("guest") or {}).get("id") if isinstance(out.get("resolved"), dict) else None,
+        "guest_id": guest_id
+        or (((out.get("resolved") or {}).get("guest_resolution") or {}).get("guest") or {}).get("id")
+        if isinstance(out.get("resolved"), dict)
+        else None,
         "guest_name": guest_name or None,
         "source": source,
         "room_id": room_id,
@@ -893,7 +934,9 @@ _PREVIEW_BUILDERS = {
 }
 
 
-def build_prechecks(action_type: str, args: Mapping[str, Any] | None = None, ui_context: Mapping[str, Any] | None = None) -> dict[str, Any]:
+def build_prechecks(
+    action_type: str, args: Mapping[str, Any] | None = None, ui_context: Mapping[str, Any] | None = None
+) -> dict[str, Any]:
     """Build read-only prechecks/preview for a supported action type."""
     action_type = _norm_str(action_type)
     args = dict(args or {})
@@ -935,7 +978,11 @@ def normalize_action_args(action_type: str, args: Mapping[str, Any] | None = Non
             if a.get(k) is not None:
                 a["reservation_id"] = _int_or_none(a.get(k)) or a.get(k)
                 break
-    if "guest_id" not in a and a.get("id") is not None and at in {"propose_create_reservation", "preview_create_reservation"}:
+    if (
+        "guest_id" not in a
+        and a.get("id") is not None
+        and at in {"propose_create_reservation", "preview_create_reservation"}
+    ):
         a["guest_id"] = _int_or_none(a.get("id")) or a.get("id")
     if at in {"propose_add_pos_item", "preview_add_pos_item", "execute_add_pos_item"}:
         if "item_id" not in a and a.get("inv_id") is not None:

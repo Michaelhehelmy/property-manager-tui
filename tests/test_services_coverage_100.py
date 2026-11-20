@@ -4,6 +4,7 @@ Covers missing ranges from baseline, including assistant helpers, recovery code 
 checkout/POS/walk-in branches, integrity checks, analytics/export, demo presets,
 branding/migration helpers, and miscellaneous defensive branches.
 """
+
 from __future__ import annotations
 
 import csv
@@ -47,6 +48,7 @@ def _raw_exec(sql, params=(), fk_off=False):
 
 
 # ── branding / misc helpers ────────────────────────────────────────────────
+
 
 def test_branding_and_misc_helpers(clean_db):
     services.set_setting("app_display_name", "")
@@ -92,6 +94,7 @@ def test_migrate_branding_branches(clean_db, monkeypatch):
 
     def boom(*a, **k):
         raise RuntimeError("x")
+
     monkeypatch.setattr(services, "get_setting", boom)
     services.migrate_branding_if_needed()  # swallowed
 
@@ -116,6 +119,7 @@ def test_net_types_string_branch(clean_db):
 
 # ── recovery codes ─────────────────────────────────────────────────────────
 
+
 def test_use_recovery_code_flow(unlocked):
     codes = services.generate_recovery_codes("testpass")
     assert len(codes) == 8
@@ -135,6 +139,7 @@ def test_use_recovery_code_flow(unlocked):
 
 
 # ── assistant helpers ──────────────────────────────────────────────────────
+
 
 def test_assistant_find_guests(clean_db):
     assert services.assistant_find_guests("") == []
@@ -183,12 +188,14 @@ def test_assistant_reservation_summary(clean_db, monkeypatch):
 
     def bad_balance(_rid):
         raise RuntimeError("boom")
+
     monkeypatch.setattr(services, "calculate_guest_balance", bad_balance)
     s2 = services.assistant_reservation_summary(rid)
     assert s2["balance"]["error"] == "boom"
 
 
 # ── checkout / estimate / POS / walk-in ───────────────────────────────────
+
 
 def test_estimate_cancellation_not_found(clean_db):
     assert services.estimate_cancellation_outcome(999999, "cancel") is None
@@ -227,33 +234,42 @@ def test_complete_walkin_sale_and_receipts(clean_db, fixed_now, monkeypatch, tmp
         services.complete_walkin_sale([{"desc": "A", "qty": 1, "price": 10}], "  ")
 
     orig_add = services._add_pos_item_tx
+
     def zero_gross(conn, reservation_id, desc, qty, price, inv_id=None, *a, **k):
         r = orig_add(conn, reservation_id, desc, qty, price, inv_id, *a, **k)
         r["gross"] = 0.0
         return r
+
     monkeypatch.setattr(services, "_add_pos_item_tx", zero_gross)
     with pytest.raises(ValueError, match="total must be positive"):
         services.complete_walkin_sale([{"desc": "A", "qty": 1, "price": 1.0}], "Cash")
     monkeypatch.setattr(services, "_add_pos_item_tx", orig_add)
 
     result = services.complete_walkin_sale(
-        [{"desc": "Water", "qty": 2, "price": 5.0}, {"desc": "Alt", "qty": 1, "price": 1.0}],
-        "Cash", "note", "Payment")
+        [{"desc": "Water", "qty": 2, "price": 5.0}, {"desc": "Alt", "qty": 1, "price": 1.0}], "Cash", "note", "Payment"
+    )
     assert result["payment_id"] > 0 and len(result["pos_ids"]) == 2
     assert Path(result["receipt_path"]).exists()
     assert "WALK-IN RECEIPT" in result["receipt_text"]
     assert result["receipt_name"].endswith(".txt")
 
-    monkeypatch.setattr(services, "save_walkin_receipt_file", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("disk")))
+    monkeypatch.setattr(
+        services, "save_walkin_receipt_file", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("disk"))
+    )
     res2 = services.complete_walkin_sale([{"desc": "Juice", "qty": 1, "price": 3.0}], "Card")
     assert res2["receipt_path"] == "" and res2["receipt_name"] == ""
 
 
 def test_receipt_text_branches_and_invoice_address(clean_db, fixed_now):
     text = services.generate_walkin_receipt_text(
-        [{"item_description": "Alt", "quantity": 2, "unit_price": 4.0, "gross": 0},
-         {"desc": "Weird", "qty": object(), "price": 1.0, "gross": 0}],
-        9.0, "Cash", payment_id=None)
+        [
+            {"item_description": "Alt", "quantity": 2, "unit_price": 4.0, "gross": 0},
+            {"desc": "Weird", "qty": object(), "price": 1.0, "gross": 0},
+        ],
+        9.0,
+        "Cash",
+        payment_id=None,
+    )
     assert "Alt" in text and "Walk-in" in text and "TOTAL" in text
     path0 = services.save_walkin_receipt_file("hi", None)
     assert Path(path0).exists() and "Pay0" in path0
@@ -278,6 +294,7 @@ def test_report_pl_expense_category_iteration(clean_db, unlocked):
 
 # ── walk-in lists / integrity ──────────────────────────────────────────────
 
+
 def test_list_walkin_helpers(clean_db, fixed_now):
     assert services.list_walkin_pos(limit=10) == [] or isinstance(services.list_walkin_pos(limit=10), list)
     assert isinstance(services.list_walkin_payments(limit=10), list)
@@ -296,26 +313,42 @@ def test_verify_ledger_integrity_clean_and_issue_branches(clean_db, monkeypatch)
     assert "stats" in rep and rep["note"]
 
     # orphan ledger POS ref
-    _raw_exec("INSERT INTO general_ledger (at, ref_type, ref_id, entry_type, category, net, service, vat, city_tax, gross, method, description, reverses_id) VALUES (datetime('now'), 'POS', 999991, 'CHARGE', 'F&B', 1,0,0,0,1,'','x',NULL)", fk_off=True)
+    _raw_exec(
+        "INSERT INTO general_ledger (at, ref_type, ref_id, entry_type, category, net, service, vat, city_tax, gross, method, description, reverses_id) VALUES (datetime('now'), 'POS', 999991, 'CHARGE', 'F&B', 1,0,0,0,1,'','x',NULL)",
+        fk_off=True,
+    )
     rep = services.verify_ledger_integrity()
     assert any(i["type"] == "orphan_ledger_pos_ref" for i in rep["issues"])
 
-    _raw_exec("INSERT INTO general_ledger (at, ref_type, ref_id, entry_type, category, net, service, vat, city_tax, gross, method, description, reverses_id) VALUES (datetime('now'), 'RES', 999992, 'CHARGE', 'Accommodation', 1,0,0,0,1,'','x',NULL)", fk_off=True)
+    _raw_exec(
+        "INSERT INTO general_ledger (at, ref_type, ref_id, entry_type, category, net, service, vat, city_tax, gross, method, description, reverses_id) VALUES (datetime('now'), 'RES', 999992, 'CHARGE', 'Accommodation', 1,0,0,0,1,'','x',NULL)",
+        fk_off=True,
+    )
     rep = services.verify_ledger_integrity()
     assert any(i["type"] == "orphan_ledger_res_ref" for i in rep["issues"])
 
-    _raw_exec("INSERT INTO general_ledger (at, ref_type, ref_id, entry_type, category, net, service, vat, city_tax, gross, method, description, reverses_id) VALUES (datetime('now'), 'PAY', 999993, 'PAYMENT', '', 0,0,0,0,1,'Cash','x',NULL)", fk_off=True)
+    _raw_exec(
+        "INSERT INTO general_ledger (at, ref_type, ref_id, entry_type, category, net, service, vat, city_tax, gross, method, description, reverses_id) VALUES (datetime('now'), 'PAY', 999993, 'PAYMENT', '', 0,0,0,0,1,'Cash','x',NULL)",
+        fk_off=True,
+    )
     rep = services.verify_ledger_integrity()
     assert any(i["type"] == "orphan_ledger_payment_ref" for i in rep["issues"])
 
-    _raw_exec("INSERT INTO pos_tabs (reservation_id, inventory_item_id, item_description, quantity, unit_price, tax_amount, cost_at_sale) VALUES (999994, NULL, 'orphan', 1, 1, 0, 0)", fk_off=True)
+    _raw_exec(
+        "INSERT INTO pos_tabs (reservation_id, inventory_item_id, item_description, quantity, unit_price, tax_amount, cost_at_sale) VALUES (999994, NULL, 'orphan', 1, 1, 0, 0)",
+        fk_off=True,
+    )
     rep = services.verify_ledger_integrity()
     assert any(i["type"] == "orphan_pos_reservation" for i in rep["issues"])
 
     # balance outlier warning
     monkeypatch.setattr(services, "calculate_guest_balance", lambda _rid: 10**9)
     rep = services.verify_ledger_integrity()
-    assert any(getattr(w, "get", lambda *_: None)("type") == "balance_outlier_sample" or (isinstance(w, dict) and w.get("type") == "balance_outlier_sample") for w in rep["warnings"])
+    assert any(
+        getattr(w, "get", lambda *_: None)("type") == "balance_outlier_sample"
+        or (isinstance(w, dict) and w.get("type") == "balance_outlier_sample")
+        for w in rep["warnings"]
+    )
 
 
 def test_verify_ledger_integrity_exception_branches(clean_db, monkeypatch):
@@ -325,6 +358,7 @@ def test_verify_ledger_integrity_exception_branches(clean_db, monkeypatch):
         def __init__(self, conn, mode):
             self._c = conn
             self._mode = mode
+
         def execute(self, sql, *a, **k):
             s = " ".join(str(sql).split())
             if self._mode == "stat" and "SELECT COUNT(*) FROM general_ledger" in s:
@@ -335,17 +369,26 @@ def test_verify_ledger_integrity_exception_branches(clean_db, monkeypatch):
                 raise RuntimeError("resfail")
             if self._mode == "pay" and "IN ('PAY','WALKIN_PAY')" in s and "NOT IN (SELECT id FROM payments)" in s:
                 raise RuntimeError("payfail")
-            if self._mode == "link" and "FROM pos_tabs p" in s and "p.reservation_id NOT IN (SELECT id FROM reservations)" in s:
+            if (
+                self._mode == "link"
+                and "FROM pos_tabs p" in s
+                and "p.reservation_id NOT IN (SELECT id FROM reservations)" in s
+            ):
                 raise RuntimeError("linkfail")
             if self._mode == "bal" and "SELECT id FROM reservations WHERE status IN" in s:
                 raise RuntimeError("balfail")
             return self._c.execute(sql, *a, **k)
+
         def __getattr__(self, n):
             return getattr(self._c, n)
 
     for mode, needle in [
-        ("stat", "stat ledger_rows"), ("pos", "pos ref check"), ("res", "res ref check"),
-        ("pay", "payment ref check"), ("link", "pos reservation check"), ("bal", "balance sample"),
+        ("stat", "stat ledger_rows"),
+        ("pos", "pos ref check"),
+        ("res", "res ref check"),
+        ("pay", "payment ref check"),
+        ("link", "pos reservation check"),
+        ("bal", "balance sample"),
     ]:
         monkeypatch.setattr(db, "connect", lambda m=mode: WrapConn(real_connect(), m))
         rep = services.verify_ledger_integrity()
@@ -354,6 +397,7 @@ def test_verify_ledger_integrity_exception_branches(clean_db, monkeypatch):
 
 
 # ── analytics / export / demo ──────────────────────────────────────────────
+
 
 def test_analytics_presets_and_metadata(clean_db, fixed_now):
     presets = services.list_analytics_presets()
@@ -380,8 +424,12 @@ def test_analytics_datasets_and_dispatch(clean_db, fixed_now):
     assert any(s["type"] == "cash" for s in ds["signals"])  # AR signal
     # negative profit / low occupancy signals: may or may not trigger depending on seeded data; force with monkeypatch
     monkeypatch = pytest.MonkeyPatch()
-    monkeypatch.setattr(services, "dataset_financial_daily", lambda s, e: [{"date":"2026-06-01","revenue_net_plus_service":1,"expenses_plus_cogs":2,"profit":-1}])
-    monkeypatch.setattr(services, "dataset_occupancy_daily", lambda s, e: [{"date":"2026-06-01","occupancy_pct":10}])
+    monkeypatch.setattr(
+        services,
+        "dataset_financial_daily",
+        lambda s, e: [{"date": "2026-06-01", "revenue_net_plus_service": 1, "expenses_plus_cogs": 2, "profit": -1}],
+    )
+    monkeypatch.setattr(services, "dataset_occupancy_daily", lambda s, e: [{"date": "2026-06-01", "occupancy_pct": 10}])
     monkeypatch.setattr(services, "get_general_ledger_summary", lambda: {"ar_balance": 5, "net_cash": 1})
     ds2 = services.dataset_decision_support_v1(start, end)
     assert any(s["type"] == "profit" for s in ds2["signals"])
@@ -391,8 +439,19 @@ def test_analytics_datasets_and_dispatch(clean_db, fixed_now):
     ml = services.dataset_ml_features_v1(start, end)
     assert isinstance(ml, list)
 
-    for name in ["financial_summary","financial_daily","occupancy","occupancy_daily","payment_methods",
-                 "decision_support_v1","ml_features_v1","pl","cash_flow","vat","daily_ops"]:
+    for name in [
+        "financial_summary",
+        "financial_daily",
+        "occupancy",
+        "occupancy_daily",
+        "payment_methods",
+        "decision_support_v1",
+        "ml_features_v1",
+        "pl",
+        "cash_flow",
+        "vat",
+        "daily_ops",
+    ]:
         assert services._dataset_by_name(name, start, end) is not None
     assert services._dataset_by_name("nope", start, end) is None
 
@@ -420,7 +479,9 @@ def test_write_csv_and_export_branches(clean_db, fixed_now, tmp_path, monkeypatc
 
     # export with formats including csv, exercising dict/list flattening
     make_reservation(ci="2026-06-10", co="2026-06-12")
-    out = services.export_analytics_preset("finance_monthly", "2026-06-01", "2026-06-15", formats=["json", "txt", "csv"])
+    out = services.export_analytics_preset(
+        "finance_monthly", "2026-06-01", "2026-06-15", formats=["json", "txt", "csv"]
+    )
     assert "json" in out["outputs"] and "txt" in out["outputs"]
     assert Path(out["outputs"]["json"]).exists()
     assert Path(out["outputs"]["txt"]).exists()
@@ -428,12 +489,14 @@ def test_write_csv_and_export_branches(clean_db, fixed_now, tmp_path, monkeypatc
 
     # force dict-with-nested-list and simple-row csv branches via custom dataset behavior
     orig = services._dataset_by_name
+
     def fake_dataset(name, s, e):
         if name == "financial_summary":
             return {"nested": [{"x": 1}], "scalar": 5, "plain": {"y": 2}}
         return orig(name, s, e)
+
     monkeypatch.setattr(services, "_dataset_by_name", fake_dataset)
-    spec = {"version":"1","label":"x","description":"x","datasets":["financial_summary"],"formats":["csv"]}
+    spec = {"version": "1", "label": "x", "description": "x", "datasets": ["financial_summary"], "formats": ["csv"]}
     monkeypatch.setitem(services.ANALYTICS_PRESETS, "cov_csv", spec)
     try:
         out2 = services.export_analytics_preset("cov_csv", "2026-06-01", "2026-06-15", formats=["csv"])
@@ -450,6 +513,7 @@ def test_write_csv_and_export_branches(clean_db, fixed_now, tmp_path, monkeypatc
 
 
 # ── demo presets ───────────────────────────────────────────────────────────
+
 
 def test_demo_preset_guards_and_flow(clean_db, fixed_now, monkeypatch):
     assert services.list_demo_data_presets()
@@ -488,10 +552,12 @@ def test_demo_preset_guards_and_flow(clean_db, fixed_now, monkeypatch):
 def test_demo_preset_success_and_exception_swallow(clean_db, fixed_now, monkeypatch):
     # fresh db from fixture has no operational data
     orig_update = services.update_reservation_status
+
     def flaky_update(rid, status):
         if status == "Checked In":
             raise RuntimeError("boom")
         return orig_update(rid, status)
+
     monkeypatch.setattr(services, "update_reservation_status", flaky_update)
     result = services.apply_demo_data_preset("analysis_small", "testpass", "APPLY DEMO DATA")
     assert result["preset"] == "analysis_small"
@@ -500,11 +566,13 @@ def test_demo_preset_success_and_exception_swallow(clean_db, fixed_now, monkeypa
 
     # second run needs allow_existing; trigger checkout exception branch, avoid date conflicts
     services.set_setting("allow_overbooking", "true")
+
     def flaky_checkout(rid, status):
         r = services.get_reservation(rid)
         if status == "Checked Out" and r and r["status"] == "Checked In":
             raise RuntimeError("boom2")
         return orig_update(rid, status)
+
     monkeypatch.setattr(services, "update_reservation_status", flaky_checkout)
     result2 = services.apply_demo_data_preset("analysis_small", "testpass", "APPLY DEMO DATA", allow_existing=True)
     assert result2["created"]["reservations"] >= 1

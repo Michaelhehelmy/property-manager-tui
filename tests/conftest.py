@@ -1,4 +1,5 @@
 """Fixtures: fresh DB + password per test (restructured package)."""
+
 import sys
 from pathlib import Path
 
@@ -66,8 +67,10 @@ def unlocked(clean_db):
 # Helper constructors
 # ─────────────────────────────────────────────────────────────────────────
 
-def make_reservation(rate=100.0, ci="2026-12-01", co="2026-12-03", room_id=1,
-                     guest="Test Guest", deposit=0.0, source="Direct"):
+
+def make_reservation(
+    rate=100.0, ci="2026-12-01", co="2026-12-03", room_id=1, guest="Test Guest", deposit=0.0, source="Direct"
+):
     """Create a reservation with sensible defaults. Room 1 = seed room 101."""
     return services.create_reservation(guest, source, room_id, None, rate, ci, co, deposit)
 

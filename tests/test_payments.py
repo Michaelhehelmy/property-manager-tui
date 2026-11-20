@@ -1,4 +1,5 @@
 """Payments: record, refund, balance."""
+
 import pytest
 from app_core import services
 from app_core.db import connect
@@ -8,8 +9,7 @@ from conftest import make_reservation
 def test_record_payment(clean_db):
     rid = make_reservation()
     services.record_payment(rid, 100.0, "Cash")
-    p = connect().execute(
-        "SELECT amount FROM payments WHERE reservation_id=?", (rid,)).fetchall()
+    p = connect().execute("SELECT amount FROM payments WHERE reservation_id=?", (rid,)).fetchall()
     assert len(p) == 1
     assert p[0]["amount"] == 100.0
 
@@ -17,8 +17,7 @@ def test_record_payment(clean_db):
 def test_record_payment_creates_ledger(clean_db):
     rid = make_reservation()
     services.record_payment(rid, 100.0, "Cash")
-    pay = connect().execute(
-        "SELECT gross, method FROM general_ledger WHERE entry_type='PAYMENT'").fetchone()
+    pay = connect().execute("SELECT gross, method FROM general_ledger WHERE entry_type='PAYMENT'").fetchone()
     assert pay["gross"] == 100.0
     assert pay["method"] == "Cash"
 
@@ -65,9 +64,11 @@ def test_refund_requires_password(clean_db):
 def test_refund_success(clean_db):
     rid = make_reservation(deposit=100.0)
     services.record_refund(rid, 50.0, "Cash", "partial", "testpass")
-    p = connect().execute(
-        "SELECT amount FROM payments WHERE reservation_id=? AND payment_type='Refund'",
-        (rid,)).fetchone()
+    p = (
+        connect()
+        .execute("SELECT amount FROM payments WHERE reservation_id=? AND payment_type='Refund'", (rid,))
+        .fetchone()
+    )
     assert p["amount"] == -50.0
 
 

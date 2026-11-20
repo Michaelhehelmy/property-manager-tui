@@ -2,6 +2,7 @@
 
 Additive primitives only; no existing behavior is modified.
 """
+
 from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP, getcontext
@@ -34,7 +35,7 @@ def to_decimal(value: Any, default: Decimal | None = ZERO) -> Decimal | None:
     s = s.replace(",", "").replace(" ", "")
     for prefix in ("EGP", "USD", "EUR", "GBP", "$", "€", "£"):
         if s.upper().startswith(prefix):
-            s = s[len(prefix):].strip()
+            s = s[len(prefix) :].strip()
             break
     try:
         return Decimal(s)

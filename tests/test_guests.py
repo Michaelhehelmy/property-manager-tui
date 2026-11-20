@@ -1,4 +1,5 @@
 """Guest CRM: matching, Arabic normalization, merge."""
+
 import pytest
 from app_core import services
 from conftest import get_guest_count
@@ -91,9 +92,9 @@ def test_duplicate_suggestions_bucketing(clean_db):
     services.find_or_create_guest("Ahmed Hassan")
     # Force second one with a slightly different spelling
     from app_core.db import transaction
+
     with transaction() as c:
-        c.execute("INSERT INTO guests (canonical_name, phone) VALUES (?, ?)",
-                  ("Ahmed Hasan", ""))
+        c.execute("INSERT INTO guests (canonical_name, phone) VALUES (?, ?)", ("Ahmed Hasan", ""))
     dupes = services.get_duplicate_suggestions()
     assert len(dupes) >= 1
 
@@ -101,13 +102,12 @@ def test_duplicate_suggestions_bucketing(clean_db):
 def test_merge_guests(clean_db):
     gid1, _, _ = services.find_or_create_guest("Ahmed Hassan")
     from app_core.db import transaction, connect
+
     with transaction() as c:
-        c.execute("INSERT INTO guests (canonical_name, phone) VALUES (?, ?)",
-                  ("Ahmed Hasan", ""))
+        c.execute("INSERT INTO guests (canonical_name, phone) VALUES (?, ?)", ("Ahmed Hasan", ""))
         gid2 = c.execute("SELECT last_insert_rowid()").fetchone()[0]
     # Create a reservation for gid2
-    rid = services.create_reservation("Ahmed Hasan", "Direct", 1, None, 100,
-                                       "2026-12-01", "2026-12-03", guest_id=gid2)
+    rid = services.create_reservation("Ahmed Hasan", "Direct", 1, None, 100, "2026-12-01", "2026-12-03", guest_id=gid2)
     moved = services.merge_guests(gid1, gid2, "testpass")
     assert moved == 1
     row = connect().execute("SELECT guest_id FROM reservations WHERE id=?", (rid,)).fetchone()

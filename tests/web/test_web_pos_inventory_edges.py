@@ -42,10 +42,12 @@ def test_pos_inventory_helpers_and_page_branches(client, monkeypatch):
 
     # simulate DB error in _batch_trace
     real_execute = db.connect().execute
+
     def bad_execute(sql, *a, **k):
         if "FROM inventory_batches" in str(sql):
             raise RuntimeError("db boom")
         return real_execute(sql, *a, **k)
+
     # monkeypatching sqlite connection method globally is risky; instead patch connect to object with failing execute in context
     # easier: monkeypatch pr.connect
     class BadConn:
@@ -53,6 +55,7 @@ def test_pos_inventory_helpers_and_page_branches(client, monkeypatch):
             if "FROM inventory_batches" in str(sql):
                 raise RuntimeError("db boom")
             return real_execute(sql, params)
+
     monkeypatch.setattr(pr, "connect", lambda: BadConn())
     assert pr._batch_trace(batch_id=123).get("lot_code", "") == ""
     monkeypatch.setattr(pr, "connect", db.connect)
@@ -63,10 +66,15 @@ def test_pos_inventory_helpers_and_page_branches(client, monkeypatch):
     assert lines and total >= 0
 
     # POS page branches: scan success/error, batch_item tab switch, invalid tab
-    monkeypatch.setattr(pr.services, "resolve_barcode", lambda code: {
-        "type": "item", "code": code,
-        "item": {"id": 1, "item_name": "Test Item", "sku": "SKU1", "barcode": code, "selling_price": 5.0},
-    })
+    monkeypatch.setattr(
+        pr.services,
+        "resolve_barcode",
+        lambda code: {
+            "type": "item",
+            "code": code,
+            "item": {"id": 1, "item_name": "Test Item", "sku": "SKU1", "barcode": code, "selling_price": 5.0},
+        },
+    )
     r = client.get("/pos?scan=ABC123&tab=unknown")
     assert r.status_code == 200
     monkeypatch.setattr(pr.services, "resolve_barcode", lambda code: (_ for _ in ()).throw(ValueError("bad scan")))
@@ -90,24 +98,38 @@ def test_pos_inventory_recipe_meal_activity_batch_label_and_scan_routes(client, 
 
     # recipe set/clear
     monkeypatch.setattr(pr.services, "set_recipe_components", lambda *a, **k: None)
-    r = client.post("/recipes/set", data={"csrf": token, "menu_item_id": "1", "components": "2,1.5\n#c\n3:2"}, follow_redirects=True)
+    r = client.post(
+        "/recipes/set", data={"csrf": token, "menu_item_id": "1", "components": "2,1.5\n#c\n3:2"}, follow_redirects=True
+    )
     assert r.status_code == 200
-    monkeypatch.setattr(pr.services, "set_recipe_components", lambda *a, **k: (_ for _ in ()).throw(ValueError("set fail")))
+    monkeypatch.setattr(
+        pr.services, "set_recipe_components", lambda *a, **k: (_ for _ in ()).throw(ValueError("set fail"))
+    )
     r = client.post("/recipes/set", data={"csrf": token, "item_id": "1", "components": "x"}, follow_redirects=True)
     assert r.status_code == 200
     monkeypatch.setattr(pr.services, "clear_recipe_components", lambda *a, **k: None)
     r = client.post("/recipes/clear", data={"csrf": token, "menu_item_id": "1"}, follow_redirects=True)
     assert r.status_code == 200
-    monkeypatch.setattr(pr.services, "clear_recipe_components", lambda *a, **k: (_ for _ in ()).throw(ValueError("clear fail")))
+    monkeypatch.setattr(
+        pr.services, "clear_recipe_components", lambda *a, **k: (_ for _ in ()).throw(ValueError("clear fail"))
+    )
     r = client.post("/recipes/clear", data={"csrf": token, "item_id": "1"}, follow_redirects=True)
     assert r.status_code == 200
 
     # meal save create/update and delete
     monkeypatch.setattr(pr.services, "create_meal", lambda *a, **k: {"linked_inventory_id": 123})
-    r = client.post("/meals/save", data={"csrf": token, "name": "Meal A", "selling_price": "50", "ingredients": "1,2,note\n2:1"}, follow_redirects=True)
+    r = client.post(
+        "/meals/save",
+        data={"csrf": token, "name": "Meal A", "selling_price": "50", "ingredients": "1,2,note\n2:1"},
+        follow_redirects=True,
+    )
     assert r.status_code == 200
     monkeypatch.setattr(pr.services, "update_meal", lambda *a, **k: None)
-    r = client.post("/meals/save", data={"csrf": token, "meal_id": "5", "name": "Meal A2", "selling_price": "55", "ingredients": ""}, follow_redirects=True)
+    r = client.post(
+        "/meals/save",
+        data={"csrf": token, "meal_id": "5", "name": "Meal A2", "selling_price": "55", "ingredients": ""},
+        follow_redirects=True,
+    )
     assert r.status_code == 200
     monkeypatch.setattr(pr.services, "create_meal", lambda *a, **k: (_ for _ in ()).throw(ValueError("meal fail")))
     r = client.post("/meals/save", data={"csrf": token, "name": "Bad", "selling_price": "1"}, follow_redirects=True)
@@ -121,10 +143,14 @@ def test_pos_inventory_recipe_meal_activity_batch_label_and_scan_routes(client, 
 
     # activities create/toggle
     monkeypatch.setattr(pr.services, "create_activity", lambda *a, **k: None)
-    r = client.post("/activities/create", data={"csrf": token, "name": "Trip", "unit_price": "10"}, follow_redirects=True)
+    r = client.post(
+        "/activities/create", data={"csrf": token, "name": "Trip", "unit_price": "10"}, follow_redirects=True
+    )
     assert r.status_code == 200
     monkeypatch.setattr(pr.services, "create_activity", lambda *a, **k: (_ for _ in ()).throw(ValueError("act fail")))
-    r = client.post("/activities/create", data={"csrf": token, "name": "Trip", "unit_price": "10"}, follow_redirects=True)
+    r = client.post(
+        "/activities/create", data={"csrf": token, "name": "Trip", "unit_price": "10"}, follow_redirects=True
+    )
     assert r.status_code == 200
 
     monkeypatch.setattr(pr.services, "get_activity", lambda aid: {"id": aid, "active": 1})
@@ -137,18 +163,34 @@ def test_pos_inventory_recipe_meal_activity_batch_label_and_scan_routes(client, 
     assert r.status_code == 200
 
     # batch receive
-    monkeypatch.setattr(pr.services, "receive_inventory_batch", lambda *a, **k: {"lot_code": "L1", "received_at": "2099-01-01", "expiry_date": "2099-12-31"})
-    r = client.post("/inventory/batch/receive", data={"csrf": token, "item_id": "1", "qty": "1", "unit_cost": "1"}, follow_redirects=True)
+    monkeypatch.setattr(
+        pr.services,
+        "receive_inventory_batch",
+        lambda *a, **k: {"lot_code": "L1", "received_at": "2099-01-01", "expiry_date": "2099-12-31"},
+    )
+    r = client.post(
+        "/inventory/batch/receive",
+        data={"csrf": token, "item_id": "1", "qty": "1", "unit_cost": "1"},
+        follow_redirects=True,
+    )
     assert r.status_code == 200
-    monkeypatch.setattr(pr.services, "receive_inventory_batch", lambda *a, **k: (_ for _ in ()).throw(ValueError("recv fail")))
-    r = client.post("/inventory/batch/receive", data={"csrf": token, "item_id": "1", "qty": "1", "unit_cost": "1"}, follow_redirects=True)
+    monkeypatch.setattr(
+        pr.services, "receive_inventory_batch", lambda *a, **k: (_ for _ in ()).throw(ValueError("recv fail"))
+    )
+    r = client.post(
+        "/inventory/batch/receive",
+        data={"csrf": token, "item_id": "1", "qty": "1", "unit_cost": "1"},
+        follow_redirects=True,
+    )
     assert r.status_code == 200
 
     # label printing item/batch success+error
     monkeypatch.setattr(pr.services, "print_item_label", lambda item_id: (True, "ok", "/tmp/item"))
     r = client.post("/inventory/label/item/1", data={"csrf": token, "next": "/pos?tab=batches"}, follow_redirects=True)
     assert r.status_code == 200
-    monkeypatch.setattr(pr.services, "print_item_label", lambda item_id: (_ for _ in ()).throw(ValueError("label fail")))
+    monkeypatch.setattr(
+        pr.services, "print_item_label", lambda item_id: (_ for _ in ()).throw(ValueError("label fail"))
+    )
     r = client.post("/inventory/label/item/1", data={"csrf": token, "next": "/pos?tab=batches"}, follow_redirects=True)
     assert r.status_code == 200
 

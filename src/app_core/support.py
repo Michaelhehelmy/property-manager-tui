@@ -3,6 +3,7 @@
 Read-only, privacy-first: collects safe operational context, redacts secrets/PII-like
 keys, formats a GitHub-friendly report, and builds prefilled issue URLs.
 """
+
 from __future__ import annotations
 
 import json
@@ -103,6 +104,7 @@ def _safe_readiness_summary() -> dict[str, Any]:
         perm = paths.check_runtime_permissions() if hasattr(paths, "check_runtime_permissions") else {}
     except Exception:
         perm = {}
+
     def _flags(info):
         if not isinstance(info, dict):
             return {}
@@ -112,6 +114,7 @@ def _safe_readiness_summary() -> dict[str, Any]:
             "is_dir": bool(info.get("is_dir")),
             "is_file": bool(info.get("is_file")),
         }
+
     out = {
         "db_initialized": False,
         "paths": {
@@ -122,7 +125,8 @@ def _safe_readiness_summary() -> dict[str, Any]:
         },
         "pm_data_dir_set": bool(os.environ.get("PM_DATA_DIR")),
         "pm_web_secret_key_set": bool(os.environ.get("PM_WEB_SECRET_KEY")),
-        "pm_web_cookie_secure": os.environ.get("PM_WEB_COOKIE_SECURE", "").strip().lower() in ("1", "true", "yes", "on"),
+        "pm_web_cookie_secure": os.environ.get("PM_WEB_COOKIE_SECURE", "").strip().lower()
+        in ("1", "true", "yes", "on"),
     }
     try:
         out["db_initialized"] = bool(db.is_initialized()) if hasattr(db, "is_initialized") else False
@@ -139,6 +143,7 @@ def _safe_doctor_summary(check_updates: bool = False) -> dict[str, Any]:
     """Best-effort compact doctor summary (sanitized, no raw sensitive details)."""
     try:
         from .doctor import collect_health
+
         h = collect_health(check_updates=bool(check_updates))
     except Exception as e:
         return {"ok": False, "error": paths.redact_sensitive(e, 300)}
@@ -185,11 +190,13 @@ def _safe_doctor_summary(check_updates: bool = False) -> dict[str, Any]:
     for issue in (h.get("config_issues") or [])[:15]:
         if not isinstance(issue, dict):
             continue
-        summary["config_issues"].append({
-            "severity": issue.get("severity"),
-            "code": issue.get("code"),
-            "message": paths.redact_sensitive(issue.get("message"), 240),
-        })
+        summary["config_issues"].append(
+            {
+                "severity": issue.get("severity"),
+                "code": issue.get("code"),
+                "message": paths.redact_sensitive(issue.get("message"), 240),
+            }
+        )
     upd = h.get("update") or {}
     local = upd.get("local") or {}
     remote = upd.get("remote") or {}
@@ -205,9 +212,13 @@ def _safe_doctor_summary(check_updates: bool = False) -> dict[str, Any]:
             "ok": remote.get("ok"),
             "update_available": remote.get("update_available"),
             "commits_behind": remote.get("commits_behind"),
-            "latest": (remote.get("latest") or {}).get("commit_short") if isinstance(remote.get("latest"), dict) else None,
+            "latest": (remote.get("latest") or {}).get("commit_short")
+            if isinstance(remote.get("latest"), dict)
+            else None,
             "error": paths.redact_sensitive(remote.get("error"), 200) if remote.get("error") else None,
-        } if remote else None,
+        }
+        if remote
+        else None,
         "remote_error": paths.redact_sensitive(upd.get("remote_error"), 200) if upd.get("remote_error") else None,
     }
     return summary
@@ -225,6 +236,7 @@ def collect_support_diagnostics(context: dict | None = None, include_update_chec
     app_state = {}
     try:
         from .updater import APP_VERSION, get_local_state, get_cached_update_notice
+
         local = get_local_state(redact_remote=True)
         app_state = {
             "app_version": APP_VERSION,
@@ -244,7 +256,11 @@ def collect_support_diagnostics(context: dict | None = None, include_update_chec
                     "update_available": bool(notice.get("update_available")),
                     "kind": notice.get("kind"),
                     "message": paths.redact_sensitive(notice.get("message"), 200),
-                    "latest_release_tag": ((notice.get("latest_release") or {}).get("tag_name") if isinstance(notice.get("latest_release"), dict) else None),
+                    "latest_release_tag": (
+                        (notice.get("latest_release") or {}).get("tag_name")
+                        if isinstance(notice.get("latest_release"), dict)
+                        else None
+                    ),
                 }
         except Exception:
             app_state["update_notice"] = None
@@ -255,11 +271,13 @@ def collect_support_diagnostics(context: dict | None = None, include_update_chec
         "report_version": REPORT_VERSION,
         "generated_at": _now_iso(),
         "app": sanitize_for_report(app_state),
-        "runtime": sanitize_for_report({
-            "platform": platform.platform(),
-            "python": sys.version.split()[0],
-            "executable": Path(sys.executable).name if sys.executable else None,
-        }),
+        "runtime": sanitize_for_report(
+            {
+                "platform": platform.platform(),
+                "python": sys.version.split()[0],
+                "executable": Path(sys.executable).name if sys.executable else None,
+            }
+        ),
         "environment": sanitize_for_report(_safe_readiness_summary()),
         "doctor": sanitize_for_report(_safe_doctor_summary(check_updates=include_update_check)),
         "client_context": safe_ctx,
@@ -294,7 +312,12 @@ def format_support_report_markdown(diag: dict[str, Any], user: dict[str, Any] | 
     lines.append("- " + "\n- ".join(meta))
     lines.append("")
 
-    for label, key in (("Steps to reproduce", "steps"), ("Expected behavior", "expected"), ("Actual behavior", "actual"), ("Additional notes", "notes")):
+    for label, key in (
+        ("Steps to reproduce", "steps"),
+        ("Expected behavior", "expected"),
+        ("Actual behavior", "actual"),
+        ("Additional notes", "notes"),
+    ):
         if safe_user.get(key):
             lines.append(f"### {label}")
             lines.append(safe_user[key].rstrip())
@@ -311,14 +334,18 @@ def format_support_report_markdown(diag: dict[str, Any], user: dict[str, Any] | 
     lines.append(payload)
     lines.append("```")
     lines.append("")
-    lines.append("> Review before posting. Remove any remaining sensitive/business data. Attach screenshot manually if needed.")
+    lines.append(
+        "> Review before posting. Remove any remaining sensitive/business data. Attach screenshot manually if needed."
+    )
     text = "\n".join(lines).rstrip() + "\n"
     if len(text) > _MAX_TEXT * 2:
         text = text[: _MAX_TEXT * 2] + "\n... (truncated)\n"
     return text
 
 
-def build_github_issue_url(title: str = "", body: str = "", labels: list[str] | None = None, repo: str | None = None) -> dict[str, Any]:
+def build_github_issue_url(
+    title: str = "", body: str = "", labels: list[str] | None = None, repo: str | None = None
+) -> dict[str, Any]:
     """Build a prefilled GitHub new-issue URL with safe truncation."""
     repo = (repo or DEFAULT_REPO).strip().strip("/")
     base = f"https://github.com/{repo}/issues/new"
@@ -326,7 +353,10 @@ def build_github_issue_url(title: str = "", body: str = "", labels: list[str] | 
     body = body or ""
     truncated = False
     if len(body) > _MAX_URL_BODY:
-        body = body[:_MAX_URL_BODY].rstrip() + "\n\n...(report truncated for URL length; paste/download full report and attach screenshot manually)"
+        body = (
+            body[:_MAX_URL_BODY].rstrip()
+            + "\n\n...(report truncated for URL length; paste/download full report and attach screenshot manually)"
+        )
         truncated = True
     params = {}
     if title:
@@ -347,7 +377,9 @@ def build_github_issue_url(title: str = "", body: str = "", labels: list[str] | 
     return {"url": url, "truncated": truncated, "repo": repo}
 
 
-def generate_support_bundle(context: dict | None = None, user: dict[str, Any] | None = None, include_update_check: bool = False) -> dict[str, Any]:
+def generate_support_bundle(
+    context: dict | None = None, user: dict[str, Any] | None = None, include_update_check: bool = False
+) -> dict[str, Any]:
     diag = collect_support_diagnostics(context=context or {}, include_update_check=include_update_check)
     md = format_support_report_markdown(diag, user=user or {})
     issue = build_github_issue_url(
@@ -361,7 +393,10 @@ def generate_support_bundle(context: dict | None = None, user: dict[str, Any] | 
 
 def _cli_main(argv: list[str] | None = None) -> int:
     import argparse
-    ap = argparse.ArgumentParser(prog="python -m app_core.support", description="Generate sanitized support/diagnostics report")
+
+    ap = argparse.ArgumentParser(
+        prog="python -m app_core.support", description="Generate sanitized support/diagnostics report"
+    )
     ap.add_argument("--out", help="Write Markdown report to file path")
     ap.add_argument("--json", dest="as_json", action="store_true", help="Print diagnostics JSON to stdout")
     ap.add_argument("--check-updates", action="store_true", help="Include remote update check (network)")

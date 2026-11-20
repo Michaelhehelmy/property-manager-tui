@@ -20,6 +20,7 @@ from app_core.assistant import runtime
 
 # ---------------- common ----------------
 
+
 def test_common_resolve_guest_compat_and_sim():
     # line 72 in common is in _sim body (return SequenceMatcher ratio) - ensure called
     assert common._sim("abc", "abc") == 1.0
@@ -28,19 +29,27 @@ def test_common_resolve_guest_compat_and_sim():
     assert isinstance(guests, list)
     assert explicit is None or isinstance(explicit, int)
     # history context user branch no-op (178,180)
-    ctx = common._context_from_history([
-        {"role": "user", "content": "hello"},
-        {"role": "assistant", "slots": {"guest_id": 5}, "intent": "guest_profile"},
-    ])
+    ctx = common._context_from_history(
+        [
+            {"role": "user", "content": "hello"},
+            {"role": "assistant", "slots": {"guest_id": 5}, "intent": "guest_profile"},
+        ]
+    )
     assert ctx.get("guest_id") == 5
 
 
 # ---------------- nlu ----------------
 
+
 def test_nlu_rule_refinements_branches():
     # occupancy summary branch (130)
     r = nlu.rule_classify("how occupied were we", {"report_kind": "occupancy"})
-    assert r["intent"] in {"occupancy_summary", "report_occupancy", "compound_multi_intent", "ambiguous_needs_clarification"}
+    assert r["intent"] in {
+        "occupancy_summary",
+        "report_occupancy",
+        "compound_multi_intent",
+        "ambiguous_needs_clarification",
+    }
 
     # guest last visit refinement from profile cues (134)
     r = nlu.rule_classify("when was the last time guest #1 stayed profile history", {"guest_id": 1})
@@ -58,21 +67,27 @@ def test_nlu_rule_refinements_branches():
 
 # ---------------- runtime ----------------
 
+
 def test_runtime_talking_rephrase_data_str_exception_and_chat_paths(monkeypatch):
     # lines 89-90: json.dumps of data fails -> str(data)
-    monkeypatch.setattr(runtime, "_llm_config", lambda: {"enabled": True, "local_available": True, "response_mode": "talking"})
+    monkeypatch.setattr(
+        runtime, "_llm_config", lambda: {"enabled": True, "local_available": True, "response_mode": "talking"}
+    )
     # exercise data serialization exception fallback (lines 89-90)
     seen = {"boom": 0}
     orig_dumps = runtime.json.dumps
+
     def boom(*a, **k):
         seen["boom"] += 1
         raise TypeError("boom")
+
     monkeypatch.setattr(runtime.json, "dumps", boom)
     try:
         # patch both local binding and package-level getter target
         monkeypatch.setattr(runtime, "_local_llm_generate", lambda *a, **k: "polished")
         try:
             import app_core.assistant as _pkg
+
             monkeypatch.setattr(_pkg, "_local_llm_generate", lambda *a, **k: "polished", raising=False)
         except Exception:
             pass
@@ -84,25 +99,48 @@ def test_runtime_talking_rephrase_data_str_exception_and_chat_paths(monkeypatch)
 
     # chat: ui_context None, resolved_guest_id propagation exception path (385-386)
     monkeypatch.setattr(runtime, "_ui_guidance", lambda *a, **k: None)
-    monkeypatch.setattr(runtime, "_llm_config", lambda: {"enabled": False, "response_mode": "core", "local_available": False})
+    monkeypatch.setattr(
+        runtime, "_llm_config", lambda: {"enabled": False, "response_mode": "core", "local_available": False}
+    )
     monkeypatch.setattr(runtime, "extract_slots", lambda *a, **k: {})
-    monkeypatch.setattr(runtime, "classify_intent", lambda *a, **k: {"intent": "guest_profile", "confidence": 0.9, "slots": {}})
+    monkeypatch.setattr(
+        runtime, "classify_intent", lambda *a, **k: {"intent": "guest_profile", "confidence": 0.9, "slots": {}}
+    )
+
     # return core with resolved_guest_id but slots as non-dict-ish? make setitem fail
     class BadSlots(dict):
         def setdefault(self, k, v=None):
             raise RuntimeError("bad")
-    core = {"ok": True, "intent": "guest_profile", "answer": "ok", "tools_used": [], "data": {}, "resolved_guest_id": 5, "slots": BadSlots()}
+
+    core = {
+        "ok": True,
+        "intent": "guest_profile",
+        "answer": "ok",
+        "tools_used": [],
+        "data": {},
+        "resolved_guest_id": 5,
+        "slots": BadSlots(),
+    }
     monkeypatch.setattr(runtime, "_execute_single", lambda *a, **k: core)
     out = runtime.chat("guest", history=None, ui_context=None)
     assert out.get("resolved_guest_id") == 5
 
     # chat: deterministic rephrase polishing path when mode talking and not clarification -> sets answer/source/model
-    monkeypatch.setattr(runtime, "_llm_config", lambda: {"enabled": False, "response_mode": "talking", "local_available": False})
+    monkeypatch.setattr(
+        runtime, "_llm_config", lambda: {"enabled": False, "response_mode": "talking", "local_available": False}
+    )
     monkeypatch.setattr(runtime, "extract_slots", lambda *a, **k: {})
-    monkeypatch.setattr(runtime, "classify_intent", lambda *a, **k: {"intent": "property_stats", "confidence": 0.9, "slots": {}})
-    monkeypatch.setattr(runtime, "_execute_single", lambda *a, **k: {"ok": True, "intent": "property_stats", "answer": "Core", "tools_used": [], "data": {}})
+    monkeypatch.setattr(
+        runtime, "classify_intent", lambda *a, **k: {"intent": "property_stats", "confidence": 0.9, "slots": {}}
+    )
+    monkeypatch.setattr(
+        runtime,
+        "_execute_single",
+        lambda *a, **k: {"ok": True, "intent": "property_stats", "answer": "Core", "tools_used": [], "data": {}},
+    )
     try:
         import app_core.assistant as _pkgmod
+
         monkeypatch.setattr(_pkgmod, "talking_rephrase", lambda *a, **k: "Friendly", raising=False)
     except Exception:
         pass
@@ -113,15 +151,24 @@ def test_runtime_talking_rephrase_data_str_exception_and_chat_paths(monkeypatch)
     # line 377: else branch (not polished / other modes) can be hit when mode core
     try:
         import app_core.assistant as _pkgmod
-        monkeypatch.setattr(_pkgmod, "_llm_config", lambda: {"enabled": False, "response_mode": "core", "local_available": False}, raising=False)
+
+        monkeypatch.setattr(
+            _pkgmod,
+            "_llm_config",
+            lambda: {"enabled": False, "response_mode": "core", "local_available": False},
+            raising=False,
+        )
     except Exception:
         pass
-    monkeypatch.setattr(runtime, "_llm_config", lambda: {"enabled": False, "response_mode": "core", "local_available": False})
+    monkeypatch.setattr(
+        runtime, "_llm_config", lambda: {"enabled": False, "response_mode": "core", "local_available": False}
+    )
     out = runtime.chat("stats", ui_context={})
     assert out["source"] in ("core_deterministic", out.get("core_source"), "local_grounded_core")
 
 
 # ---------------- feedback ----------------
+
 
 def test_feedback_loader_and_ml_branches(monkeypatch, tmp_path):
     # sklearn path success (123-125)
@@ -143,10 +190,12 @@ def test_feedback_loader_and_ml_branches(monkeypatch, tmp_path):
     setfit_dir = tmp_path / "setfit"
     setfit_dir.mkdir()
     fake_setfit_mod = types.ModuleType("setfit")
+
     class FakeModel:
         @classmethod
         def from_pretrained(cls, p):
             return {"model": p}
+
     fake_setfit_mod.SetFitModel = FakeModel
     monkeypatch.setitem(sys.modules, "setfit", fake_setfit_mod)
     monkeypatch.setattr(feedback, "_SETFIT_CACHE", None)
@@ -162,9 +211,14 @@ def test_feedback_loader_and_ml_branches(monkeypatch, tmp_path):
     class Probs:
         def tolist(self):
             return [0.1, 0.9]
+
     class SF:
-        def predict(self, texts): return ["capabilities_help"]
-        def predict_proba(self, texts): return [Probs()]
+        def predict(self, texts):
+            return ["capabilities_help"]
+
+        def predict_proba(self, texts):
+            return [Probs()]
+
     monkeypatch.setenv("ASSISTANT_NLU", "setfit")
     monkeypatch.setattr(feedback, "_load_setfit_router", lambda: SF())
     res = feedback._predict_intent_ml("hi")
@@ -172,11 +226,19 @@ def test_feedback_loader_and_ml_branches(monkeypatch, tmp_path):
 
     # sklearn decision_function confidence branch (168)
     class Vec:
-        def transform(self, t): return t
+        def transform(self, t):
+            return t
+
     class Clf:
-        def predict(self, X): return ["guest_search"]
-        def predict_proba(self, X): raise RuntimeError("no")
-        def decision_function(self, X): return [[0.0, 1.0]]
+        def predict(self, X):
+            return ["guest_search"]
+
+        def predict_proba(self, X):
+            raise RuntimeError("no")
+
+        def decision_function(self, X):
+            return [[0.0, 1.0]]
+
     monkeypatch.setenv("ASSISTANT_NLU", "sklearn")
     monkeypatch.setattr(feedback, "_load_sklearn_router", lambda: {"vectorizer": Vec(), "classifier": Clf()})
     res = feedback._predict_intent_ml("find guest")
@@ -185,6 +247,7 @@ def test_feedback_loader_and_ml_branches(monkeypatch, tmp_path):
 
 # ---------------- engine ----------------
 
+
 def test_engine_extract_amount_parse_exception_and_more(monkeypatch):
     # line 33: amount parse exception in _extract_write_args
     args = engine._extract_write_args("record payment amount notanumber for reservation #1 cash", {"reservation_id": 1})
@@ -192,9 +255,11 @@ def test_engine_extract_amount_parse_exception_and_more(monkeypatch):
 
     # line 141/223/268/271/398/416-439 branches in _execute_single
     calls = []
+
     def fake_tool(name, args=None):
         calls.append((name, args or {}))
         return {"ok": True, "name": name}
+
     monkeypatch.setattr(engine, "execute_tool", fake_tool)
 
     # none/no proposal path (141)
@@ -252,6 +317,7 @@ def test_engine_extract_amount_parse_exception_and_more(monkeypatch):
 
 # ---------------- actions ----------------
 
+
 def test_actions_branches(monkeypatch):
     # _map_propose_to_execute execute passthrough and unknown (135-137)
     assert actions._map_propose_to_execute("execute_record_payment") == "execute_record_payment"
@@ -261,7 +327,10 @@ def test_actions_branches(monkeypatch):
     with pytest.raises(ValueError):
         actions._exec_add_pos_item({}, {})
     monkeypatch.setattr(actions.services, "add_pos_item", lambda *a, **k: {"pos_id": 11, "pos_ids": [11, 12]})
-    out = actions._exec_add_pos_item({"reservation_id": 1, "item_id": 2, "desc": "X", "qty": 1, "price": 5.0, "batch_id": 9}, {"item": {"id": 2, "item_name": "X"}})
+    out = actions._exec_add_pos_item(
+        {"reservation_id": 1, "item_id": 2, "desc": "X", "qty": 1, "price": 5.0, "batch_id": 9},
+        {"item": {"id": 2, "item_name": "X"}},
+    )
     assert out["affected_ids"]["batch_id"] == 9 and out["affected_ids"]["pos_ids"] == [11, 12]
 
     # _exec_complete_walkin_sale validation (247,249,261)
@@ -301,13 +370,17 @@ def test_actions_branches(monkeypatch):
 
 # ---------------- action_validation ----------------
 
+
 class RowLike:
     def __init__(self, d):
         self._d = d
+
     def keys(self):
         return self._d.keys()
+
     def __getitem__(self, k):
         return self._d[k]
+
 
 def test_action_validation_branches(monkeypatch):
     # _row_to_dict row.keys path (70)
@@ -317,12 +390,20 @@ def test_action_validation_branches(monkeypatch):
     assert av._is_expired("not-a-date") is False
 
     # resolve_inventory_item: code/batch hint path, lookup exception fallback, name not found, inactive item (279-291,306)
-    monkeypatch.setattr(av.services, "resolve_barcode", lambda code: {"type": "batch", "item": {"id": 1, "item_name": "I", "active": 1}, "batch": {"id": 9}})
+    monkeypatch.setattr(
+        av.services,
+        "resolve_barcode",
+        lambda code: {"type": "batch", "item": {"id": 1, "item_name": "I", "active": 1}, "batch": {"id": 9}},
+    )
     out = av.resolve_inventory_item({"barcode": "B1"})
     assert out["resolved"].get("resolved_batch_hint", {}).get("id") == 9
 
-    def bad_search(*a, **k): raise RuntimeError("x")
-    def fallback_items(*a, **k): return [{"id": 2, "item_name": "Tea", "active": 1}]
+    def bad_search(*a, **k):
+        raise RuntimeError("x")
+
+    def fallback_items(*a, **k):
+        return [{"id": 2, "item_name": "Tea", "active": 1}]
+
     monkeypatch.setattr(av.services, "search_inventory", bad_search)
     monkeypatch.setattr(av.services, "get_inventory_items", fallback_items)
     out = av.resolve_inventory_item({"item_name": "tea"})
@@ -341,14 +422,42 @@ def test_action_validation_branches(monkeypatch):
     assert av.resolve_batch_or_lot(None, {})["ok"] is True
 
     # check_availability exception (489-492)
-    monkeypatch.setattr(av.services, "check_room_availability", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+    monkeypatch.setattr(
+        av.services, "check_room_availability", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom"))
+    )
     out = av.check_availability({"room_id": 1, "check_in": "2026-01-01", "check_out": "2026-01-02"}, room_id=1)
     assert not out["ok"]
 
     # preview_add_pos_item various branches (558,559,577,579,580,588,589,603,604)
-    monkeypatch.setattr(av, "resolve_reservation", lambda *a, **k: {"ok": True, "errors": [], "warnings": [], "checks": [], "resolved": {"reservation": {"id": 1}}, "preview": {}})
-    monkeypatch.setattr(av, "resolve_inventory_item", lambda *a, **k: {"ok": True, "errors": [], "warnings": [], "checks": [], "resolved": {"item": {"id": 5, "item_name": "Item", "selling_price": 10.0, "stock_qty": 1, "active": 1}}, "preview": {}})
-    monkeypatch.setattr(av, "resolve_batch_or_lot", lambda *a, **k: {"ok": True, "errors": [], "warnings": [], "checks": [], "resolved": {}, "preview": {}})
+    monkeypatch.setattr(
+        av,
+        "resolve_reservation",
+        lambda *a, **k: {
+            "ok": True,
+            "errors": [],
+            "warnings": [],
+            "checks": [],
+            "resolved": {"reservation": {"id": 1}},
+            "preview": {},
+        },
+    )
+    monkeypatch.setattr(
+        av,
+        "resolve_inventory_item",
+        lambda *a, **k: {
+            "ok": True,
+            "errors": [],
+            "warnings": [],
+            "checks": [],
+            "resolved": {"item": {"id": 5, "item_name": "Item", "selling_price": 10.0, "stock_qty": 1, "active": 1}},
+            "preview": {},
+        },
+    )
+    monkeypatch.setattr(
+        av,
+        "resolve_batch_or_lot",
+        lambda *a, **k: {"ok": True, "errors": [], "warnings": [], "checks": [], "resolved": {}, "preview": {}},
+    )
     monkeypatch.setattr(av.services, "get_setting", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("x")))
     out = av.preview_add_pos_item({"reservation_id": 1, "item_id": 5, "qty": 2, "desc": "Item"})
     assert not out["ok"]  # insufficient stock
@@ -357,20 +466,55 @@ def test_action_validation_branches(monkeypatch):
     out = av.preview_add_pos_item({"reservation_id": 1, "item_id": 5, "qty": 1, "price": "bad", "desc": "Item"})
     assert "estimated_subtotal" in out["preview"]
     # valid price path for subtotal/tax body
-    monkeypatch.setattr(av.services, "calculate_tax", lambda net, z: {"net": net, "service": 0, "vat": 0, "city_tax": 0, "gross": net})
+    monkeypatch.setattr(
+        av.services, "calculate_tax", lambda net, z: {"net": net, "service": 0, "vat": 0, "city_tax": 0, "gross": net}
+    )
     out = av.preview_add_pos_item({"reservation_id": 1, "item_id": 5, "qty": 1, "price": 10.0, "desc": "Item"})
     assert out["preview"]["estimated_subtotal"] == 10.0
 
     # preview_complete_walkin_sale branches (632-643,668-676,705)
-    monkeypatch.setattr(av, "resolve_inventory_item", lambda *a, **k: {"ok": True, "errors": [], "warnings": [], "checks": [], "resolved": {"item": {"id": 1, "item_name": "X", "selling_price": 3.0}}, "preview": {}})
-    monkeypatch.setattr(av, "resolve_batch_or_lot", lambda *a, **k: {"ok": True, "errors": [], "warnings": [], "checks": [], "resolved": {"batch": {"id": 2, "lot_code": "L"}}, "preview": {}})
+    monkeypatch.setattr(
+        av,
+        "resolve_inventory_item",
+        lambda *a, **k: {
+            "ok": True,
+            "errors": [],
+            "warnings": [],
+            "checks": [],
+            "resolved": {"item": {"id": 1, "item_name": "X", "selling_price": 3.0}},
+            "preview": {},
+        },
+    )
+    monkeypatch.setattr(
+        av,
+        "resolve_batch_or_lot",
+        lambda *a, **k: {
+            "ok": True,
+            "errors": [],
+            "warnings": [],
+            "checks": [],
+            "resolved": {"batch": {"id": 2, "lot_code": "L"}},
+            "preview": {},
+        },
+    )
     out = av.preview_complete_walkin_sale({"items": [], "method": ""})
     assert not out["ok"]
     out = av.preview_complete_walkin_sale({"items": [{"inv_id": 1, "qty": 0, "price": None}], "method": "Weird"})
     assert not out["ok"] and any("uncommon" in w for w in out["warnings"])
 
     # preview_record_payment branches (730,731,735,736,746-755)
-    monkeypatch.setattr(av, "resolve_reservation", lambda *a, **k: {"ok": True, "errors": [], "warnings": [], "checks": [], "resolved": {"reservation": {"id": 1}}, "preview": {}})
+    monkeypatch.setattr(
+        av,
+        "resolve_reservation",
+        lambda *a, **k: {
+            "ok": True,
+            "errors": [],
+            "warnings": [],
+            "checks": [],
+            "resolved": {"reservation": {"id": 1}},
+            "preview": {},
+        },
+    )
     monkeypatch.setattr(av.services, "get_balance_breakdown", lambda rid: {"balance_due": 5.0})
     out = av.preview_record_payment({"reservation_id": 1, "amount": 0, "method": ""})
     assert not out["ok"]
@@ -383,28 +527,112 @@ def test_action_validation_branches(monkeypatch):
     assert out["ok"] is True
 
     # preview_book_activity quantity invalid (784,785)
-    monkeypatch.setattr(av, "resolve_reservation", lambda *a, **k: {"ok": True, "errors": [], "warnings": [], "checks": [], "resolved": {}, "preview": {}})
-    monkeypatch.setattr(av, "resolve_activity", lambda *a, **k: {"ok": True, "errors": [], "warnings": [], "checks": [], "resolved": {"activity": {"id": 1, "name": "A", "unit_price": 10}}, "preview": {}})
+    monkeypatch.setattr(
+        av,
+        "resolve_reservation",
+        lambda *a, **k: {"ok": True, "errors": [], "warnings": [], "checks": [], "resolved": {}, "preview": {}},
+    )
+    monkeypatch.setattr(
+        av,
+        "resolve_activity",
+        lambda *a, **k: {
+            "ok": True,
+            "errors": [],
+            "warnings": [],
+            "checks": [],
+            "resolved": {"activity": {"id": 1, "name": "A", "unit_price": 10}},
+            "preview": {},
+        },
+    )
     out = av.preview_book_activity({"reservation_id": 1, "activity_id": 1, "quantity": -1})
     assert not out["ok"] and any("quantity must be positive" in e for e in out.get("errors", []))
 
     # preview_create_reservation branches (820,821,830,831,837-841,843,844,852,854,856)
-    monkeypatch.setattr(av, "resolve_guest", lambda *a, **k: {"ok": True, "errors": [], "warnings": [], "checks": [], "resolved": {"guest": {"id": 5}}, "preview": {}})
-    monkeypatch.setattr(av, "resolve_room", lambda *a, **k: {"ok": True, "errors": [], "warnings": [], "checks": [], "resolved": {"room": {"id": 2, "room_number": "101", "base_price": 55.0}}, "preview": {}})
-    monkeypatch.setattr(av, "resolve_rate_plan", lambda *a, **k: {"ok": True, "errors": [], "warnings": [], "checks": [], "resolved": {}, "preview": {}})
-    monkeypatch.setattr(av, "check_availability", lambda *a, **k: {"ok": True, "errors": [], "warnings": [], "checks": [], "resolved": {}, "preview": {"nights": 2}})
-    out = av.preview_create_reservation({"guest_name": "A", "source": "Direct", "check_in": "2026-01-01", "check_out": "2026-01-03"})
+    monkeypatch.setattr(
+        av,
+        "resolve_guest",
+        lambda *a, **k: {
+            "ok": True,
+            "errors": [],
+            "warnings": [],
+            "checks": [],
+            "resolved": {"guest": {"id": 5}},
+            "preview": {},
+        },
+    )
+    monkeypatch.setattr(
+        av,
+        "resolve_room",
+        lambda *a, **k: {
+            "ok": True,
+            "errors": [],
+            "warnings": [],
+            "checks": [],
+            "resolved": {"room": {"id": 2, "room_number": "101", "base_price": 55.0}},
+            "preview": {},
+        },
+    )
+    monkeypatch.setattr(
+        av,
+        "resolve_rate_plan",
+        lambda *a, **k: {"ok": True, "errors": [], "warnings": [], "checks": [], "resolved": {}, "preview": {}},
+    )
+    monkeypatch.setattr(
+        av,
+        "check_availability",
+        lambda *a, **k: {
+            "ok": True,
+            "errors": [],
+            "warnings": [],
+            "checks": [],
+            "resolved": {},
+            "preview": {"nights": 2},
+        },
+    )
+    out = av.preview_create_reservation(
+        {"guest_name": "A", "source": "Direct", "check_in": "2026-01-01", "check_out": "2026-01-03"}
+    )
     assert out["ok"] is True and out["preview"]["room_id"] == 2 and out["preview"]["rate"] == 55.0
-    out = av.preview_create_reservation({"guest_name": "", "guest_id": None, "room_id": 1, "check_in": "bad", "check_out": "bad"})
+    out = av.preview_create_reservation(
+        {"guest_name": "", "guest_id": None, "room_id": 1, "check_in": "bad", "check_out": "bad"}
+    )
     assert not out["ok"]
     # rate missing with no room base
-    monkeypatch.setattr(av, "resolve_room", lambda *a, **k: {"ok": True, "errors": [], "warnings": [], "checks": [], "resolved": {"room": {"id": 2}}, "preview": {}})
-    monkeypatch.setattr(av, "check_availability", lambda *a, **k: {"ok": True, "errors": [], "warnings": [], "checks": [], "resolved": {}, "preview": {"nights": 1}})
-    out = av.preview_create_reservation({"guest_name": "A", "room_id": 2, "check_in": "2026-01-01", "check_out": "2026-01-02"})
+    monkeypatch.setattr(
+        av,
+        "resolve_room",
+        lambda *a, **k: {
+            "ok": True,
+            "errors": [],
+            "warnings": [],
+            "checks": [],
+            "resolved": {"room": {"id": 2}},
+            "preview": {},
+        },
+    )
+    monkeypatch.setattr(
+        av,
+        "check_availability",
+        lambda *a, **k: {
+            "ok": True,
+            "errors": [],
+            "warnings": [],
+            "checks": [],
+            "resolved": {},
+            "preview": {"nights": 1},
+        },
+    )
+    out = av.preview_create_reservation(
+        {"guest_name": "A", "room_id": 2, "check_in": "2026-01-01", "check_out": "2026-01-02"}
+    )
     assert not out["ok"]
 
     # build_prechecks ui_context merge (925)
-    monkeypatch.setattr(av, "preview_add_pos_item", lambda args: {"ok": True, "errors": [], "warnings": [], "checks": [], "resolved": {}, "preview": {}})
+    monkeypatch.setattr(
+        av,
+        "preview_add_pos_item",
+        lambda args: {"ok": True, "errors": [], "warnings": [], "checks": [], "resolved": {}, "preview": {}},
+    )
     out = av.build_prechecks("preview_add_pos_item", {"reservation_id": 1}, ui_context={"screen": "pos"})
     assert out["resolved"]["ui_context"]["screen"] == "pos"
 
@@ -415,6 +643,7 @@ def test_action_validation_branches(monkeypatch):
 
 # ---------------- formatting ----------------
 
+
 def test_formatting_missing_branches():
     # _format_data exception (17,18) and _friendly_open (27)
     orig = formatting.json.dumps
@@ -423,15 +652,17 @@ def test_formatting_missing_branches():
         assert formatting._format_data("T", {"a": 1}).startswith("T\n")
     finally:
         formatting.json.dumps = orig
-    assert formatting._friendly_open("") .startswith("Sure")
+    assert formatting._friendly_open("").startswith("Sure")
 
     # _fmt_today_ops detailed counts/list rows (98-100)
-    txt = formatting._fmt_today_ops({
-        "date": "2026-01-01",
-        "ops": {"arrivals": [{"id": 1, "guest_name": "A", "room_number": "101"}], "in_house": [], "departures": []},
-        "front_desk": {"arrivals_today": 1, "departures_today": 0, "in_house": 0},
-        "housekeeping": {},
-    })
+    txt = formatting._fmt_today_ops(
+        {
+            "date": "2026-01-01",
+            "ops": {"arrivals": [{"id": 1, "guest_name": "A", "room_number": "101"}], "in_house": [], "departures": []},
+            "front_desk": {"arrivals_today": 1, "departures_today": 0, "in_house": 0},
+            "housekeeping": {},
+        }
+    )
     assert "Arrivals: **1**" in txt and "#1 A" in txt
 
     # _fmt_report scalar other fields (159)
@@ -439,11 +670,33 @@ def test_formatting_missing_branches():
     assert "Misc Note" in txt
 
     # _fmt_compare fallback text (227)
-    txt = formatting._fmt_compare({"current": {"pl": "x", "occupancy": {}, "cash_flow": None}, "previous": {"pl": "y", "occupancy": {}, "cash_flow": None}})
+    txt = formatting._fmt_compare(
+        {
+            "current": {"pl": "x", "occupancy": {}, "cash_flow": None},
+            "previous": {"pl": "y", "occupancy": {}, "cash_flow": None},
+        }
+    )
     assert "Detailed period data" in txt
 
     # _fmt_outstanding more-than-15 (240)
-    txt = formatting._fmt_outstanding({"count": 16, "total_due": 100, "outstanding": [{"reservation_id": i, "guest_name": "g", "room": "1", "status": "Checked In", "check_in": "a", "check_out": "b", "balance_due": 1} for i in range(16)]})
+    txt = formatting._fmt_outstanding(
+        {
+            "count": 16,
+            "total_due": 100,
+            "outstanding": [
+                {
+                    "reservation_id": i,
+                    "guest_name": "g",
+                    "room": "1",
+                    "status": "Checked In",
+                    "check_in": "a",
+                    "check_out": "b",
+                    "balance_due": 1,
+                }
+                for i in range(16)
+            ],
+        }
+    )
     assert "and 1 more" in txt
 
     # _fmt_integrity branches (412,420,421,423-426)
@@ -455,11 +708,15 @@ def test_formatting_missing_branches():
     assert "foo" in txt
 
     # guest portfolio top items (610)
-    txt = formatting._fmt_guest_portfolio({"guest": {"id": 1, "name": "A"}, "stats": {}, "top_items_overall": [{"item": "Tea", "gross": 10}]})
+    txt = formatting._fmt_guest_portfolio(
+        {"guest": {"id": 1, "name": "A"}, "stats": {}, "top_items_overall": [{"item": "Tea", "gross": 10}]}
+    )
     assert "Top items overall" in txt
 
     # decision support string and scalar branches (632,633,637,638,640)
-    txt = formatting._fmt_decision_support({"start": "s", "end": "e", "decision_support": {"summary": "All good", "custom_metric": 5, "pct_metric": 10}})
+    txt = formatting._fmt_decision_support(
+        {"start": "s", "end": "e", "decision_support": {"summary": "All good", "custom_metric": 5, "pct_metric": 10}}
+    )
     assert "Summary" in txt and "Custom Metric" in txt and "Pct Metric" in txt
     txt = formatting._fmt_decision_support({"start": "s", "end": "e", "decision_support": "line1\nline2"})
     assert "line1" in txt
@@ -482,7 +739,7 @@ def test_formatting_missing_branches():
     assert "couldn’t load expiring batches" in formatting._fmt_expiring_batches({"error": "x"})
     assert "couldn’t load inventory batches" in formatting._fmt_inventory_batches({"error": "x"})
     assert "couldn’t read app update status" in formatting._fmt_app_update_status({"error": "x"})
-    txt = formatting._fmt_reservation_search({"reservations": [ {"id": i, "guest_name": "g"} for i in range(21)]})
+    txt = formatting._fmt_reservation_search({"reservations": [{"id": i, "guest_name": "g"} for i in range(21)]})
     assert "and 1 more" in txt
     assert "didn’t find matching inventory items" in formatting._fmt_inventory_search({"items": []})
     txt = formatting._fmt_inventory_search({"items": [{"id": i, "item_name": "x"} for i in range(26)]})
@@ -493,12 +750,16 @@ def test_formatting_missing_branches():
     assert "No reservation groups found" in formatting._fmt_reservation_groups({"groups": []})
     assert "No packages/bundles found" in formatting._fmt_packages_list({"packages": []})
     assert "No open cash shift" in formatting._fmt_cash_shifts({"recent_shifts": []})
-    txt = formatting._fmt_night_audit_runs({"night_audit_runs": [{"id": 1, "business_date": "d", "status": "ok", "exceptions_json": object()}]})
+    txt = formatting._fmt_night_audit_runs(
+        {"night_audit_runs": [{"id": 1, "business_date": "d", "status": "ok", "exceptions_json": object()}]}
+    )
     assert "exceptions **0**" in txt
     assert "Reservation group not found" in formatting._fmt_reservation_group_detail({"group": {}})
     assert "No approval requests found" in formatting._fmt_approvals_list({"approvals": []})
     assert "No approval details available" in formatting._fmt_approval_detail({"approval": {}})
-    txt = formatting._fmt_reservation_financial_integrity({"reservation_id": 1, "ok": False, "issues": [{"type": "x"}], "warnings": ["w"]})
+    txt = formatting._fmt_reservation_financial_integrity(
+        {"reservation_id": 1, "ok": False, "issues": [{"type": "x"}], "warnings": ["w"]}
+    )
     assert "ISSUES FOUND" in txt
 
     # _local_talking_rephrase clarification warm prefix (1287-1291)
@@ -506,4 +767,3 @@ def test_formatting_missing_branches():
     assert ans.lower().startswith("sure") and "which one" in ans.lower()
     ans = formatting._local_talking_rephrase("q", {"intent": "ambiguous_needs_clarification", "answer": ""})
     assert isinstance(ans, str)
-

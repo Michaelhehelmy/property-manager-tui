@@ -1,4 +1,5 @@
 """Targeted coverage tests for assistant core modules (engine/runtime/nlu/feedback/common/actions/validation/init)."""
+
 from __future__ import annotations
 
 import json
@@ -49,7 +50,12 @@ def test_common_helpers_cover_edge_branches(monkeypatch):
 
     hist = [
         {"role": "user", "content": "x"},
-        {"role": "assistant", "slots": {"guest_id": 7, "reservation_id": 3}, "intent": "guest_profile", "resolved_guest_id": 9},
+        {
+            "role": "assistant",
+            "slots": {"guest_id": 7, "reservation_id": 3},
+            "intent": "guest_profile",
+            "resolved_guest_id": 9,
+        },
         {"role": "assistant", "slots": {"group_id": 4, "date_start": "2026-01-01", "date_end": "2026-01-31"}},
     ]
     ctx = common._context_from_history(hist)
@@ -68,7 +74,9 @@ def test_feedback_exemplar_match_and_ml_load_branches(monkeypatch, tmp_path):
     assert feedback.exemplar_match("hello") is None
 
     # exemplar below threshold -> None
-    monkeypatch.setattr(feedback, "_EXEMPLAR_CACHE", [{"text": "completely different thing", "label": "x", "slots": {}}])
+    monkeypatch.setattr(
+        feedback, "_EXEMPLAR_CACHE", [{"text": "completely different thing", "label": "x", "slots": {}}]
+    )
     assert feedback.exemplar_match("hello there", threshold=0.99) is None
 
     # sklearn loader branches: missing path
@@ -95,6 +103,7 @@ def test_feedback_exemplar_match_and_ml_load_branches(monkeypatch, tmp_path):
     class FakeSetfit:
         def predict(self, texts):
             return ["guest_profile"]
+
         def predict_proba(self, texts):
             raise RuntimeError("no proba")
 
@@ -107,13 +116,17 @@ def test_feedback_exemplar_match_and_ml_load_branches(monkeypatch, tmp_path):
     class FakeVec:
         def transform(self, texts):
             return texts
+
     class FakeClf:
         def predict(self, X):
             return ["guest_search"]
+
         def predict_proba(self, X):
             raise RuntimeError("nope")
+
         def decision_function(self, X):
             raise RuntimeError("nope")
+
     fake = {"vectorizer": FakeVec(), "classifier": FakeClf()}
     monkeypatch.setenv("ASSISTANT_NLU", "sklearn")
     monkeypatch.setattr(feedback, "_load_sklearn_router", lambda: fake)
@@ -127,7 +140,14 @@ def test_nlu_rule_and_classify_branches(monkeypatch):
     assert r["intent"] == "report_occupancy"
     r = nlu.rule_classify("when was the last time guest profile for them", {"guest_id": 1})
     # guest_last_visit boost branch
-    assert r["intent"] in {"guest_profile", "guest_last_visit", "guest_top_items_last_visit", "ambiguous_needs_clarification", "compound_multi_intent", "capabilities_help"}
+    assert r["intent"] in {
+        "guest_profile",
+        "guest_last_visit",
+        "guest_top_items_last_visit",
+        "ambiguous_needs_clarification",
+        "compound_multi_intent",
+        "capabilities_help",
+    }
     r = nlu.rule_classify("show group #3 details", {"group_id": 3})
     assert r["intent"] in {"reservation_group_detail", "reservation_groups", "compound_multi_intent"}
     r = nlu.rule_classify("packages on reservation #5", {"reservation_id": 5})
@@ -141,8 +161,22 @@ def test_nlu_rule_and_classify_branches(monkeypatch):
 
     # classify_intent: ml lower-confidence/low-rl path chooses ml when rl.conf < ml.conf (line 184)
     monkeypatch.setattr(feedback, "exemplar_match", lambda text, threshold=0.70: None)
-    monkeypatch.setattr(feedback, "_predict_intent_ml", lambda text: {"intent": "guest_profile", "confidence": 0.55, "router": "sklearn"})
-    monkeypatch.setattr(nlu, "rule_classify", lambda text, slots: {"intent": "capabilities_help", "confidence": 0.4, "slots": slots, "router": "rules", "low_confidence": True})
+    monkeypatch.setattr(
+        feedback,
+        "_predict_intent_ml",
+        lambda text: {"intent": "guest_profile", "confidence": 0.55, "router": "sklearn"},
+    )
+    monkeypatch.setattr(
+        nlu,
+        "rule_classify",
+        lambda text, slots: {
+            "intent": "capabilities_help",
+            "confidence": 0.4,
+            "slots": slots,
+            "router": "rules",
+            "low_confidence": True,
+        },
+    )
     out = nlu.classify_intent("something vague")
     assert out["intent"] == "guest_profile" and out["router"] == "sklearn"
 
@@ -152,6 +186,7 @@ def test_runtime_branches(monkeypatch):
     class LLM:
         def __call__(self, prompt, **kw):
             return "  hi  "
+
     monkeypatch.setattr(runtime, "_get_local_llm", lambda: LLM())
     assert runtime._local_llm_generate("x") == "hi"
 
@@ -163,6 +198,7 @@ def test_runtime_branches(monkeypatch):
     # chat ui guidance propagation and pending propagation
     def fake_ui_guidance(message, ui_context=None):
         return {"ok": True, "intent": "ui_navigate", "answer": "go"}
+
     monkeypatch.setattr(runtime, "_ui_guidance", fake_ui_guidance)
     out = runtime.chat("open reservations", ui_context={"path": "/reservations", "pending_action": {"id": "p1"}})
     assert out["ui_actions"] == []
@@ -171,22 +207,48 @@ def test_runtime_branches(monkeypatch):
 
     # chat compound path
     monkeypatch.setattr(runtime, "_ui_guidance", lambda *a, **k: None)
-    monkeypatch.setattr(runtime, "_llm_config", lambda: {"enabled": False, "response_mode": "core", "local_available": False})
-    monkeypatch.setattr(runtime, "classify_intent", lambda msg, hist: {"intent": "compound_multi_intent", "confidence": 0.9, "slots": {}, "router": "rules"})
-    monkeypatch.setattr(runtime, "_execute_compound", lambda *a, **k: {"ok": True, "intent": "compound_multi_intent", "answer": "done", "tools_used": [], "data": {}})
+    monkeypatch.setattr(
+        runtime, "_llm_config", lambda: {"enabled": False, "response_mode": "core", "local_available": False}
+    )
+    monkeypatch.setattr(
+        runtime,
+        "classify_intent",
+        lambda msg, hist: {"intent": "compound_multi_intent", "confidence": 0.9, "slots": {}, "router": "rules"},
+    )
+    monkeypatch.setattr(
+        runtime,
+        "_execute_compound",
+        lambda *a, **k: {"ok": True, "intent": "compound_multi_intent", "answer": "done", "tools_used": [], "data": {}},
+    )
     out = runtime.chat("compare and show", history=None, ui_context={})
     assert out["intent"] == "compound_multi_intent"
 
     # chat resolved_guest_id propagation and exception-safe path
-    monkeypatch.setattr(runtime, "classify_intent", lambda msg, hist: {"intent": "guest_profile", "confidence": 0.9, "slots": {"guest_id": 5}, "router": "rules"})
-    monkeypatch.setattr(runtime, "_execute_single", lambda *a, **k: {"ok": True, "intent": "guest_profile", "answer": "ok", "tools_used": [], "data": {}, "resolved_guest_id": 5, "slots": None})
+    monkeypatch.setattr(
+        runtime,
+        "classify_intent",
+        lambda msg, hist: {"intent": "guest_profile", "confidence": 0.9, "slots": {"guest_id": 5}, "router": "rules"},
+    )
+    monkeypatch.setattr(
+        runtime,
+        "_execute_single",
+        lambda *a, **k: {
+            "ok": True,
+            "intent": "guest_profile",
+            "answer": "ok",
+            "tools_used": [],
+            "data": {},
+            "resolved_guest_id": 5,
+            "slots": None,
+        },
+    )
     out = runtime.chat("guest 5", ui_context={})
     assert out.get("resolved_guest_id") == 5
 
 
 def test_engine_extract_and_propose_branches(monkeypatch):
     # _extract_write_args: amount parse exception, lot_code string, guest name, item_name extraction
-    text = "add pos item coffee to reservation #1 amount bad qty 2 batch LOTX for John Doe room 3 activity 4 on 2026-01-01 to 2026-01-02 \"note\""
+    text = 'add pos item coffee to reservation #1 amount bad qty 2 batch LOTX for John Doe room 3 activity 4 on 2026-01-01 to 2026-01-02 "note"'
     args = engine._extract_write_args(text, {"reservation_id": 1, "date_start": "2026-01-01", "date_end": "2026-01-02"})
     assert args["qty"] == 2
     assert args["lot_code"] == "LOTX"
@@ -201,16 +263,24 @@ def test_engine_extract_and_propose_branches(monkeypatch):
 
     # propose action branches
     # walk-in with inferred item but missing method
-    monkeypatch.setattr(actions, "create_proposal", lambda action_type, args, ui_context=None: pytest.fail("should not propose without method"))
-    out = engine._maybe_propose_action("propose_complete_walkin_sale", "walk-in sale item barcode ABC qty 2", {}, ui_context={})
+    monkeypatch.setattr(
+        actions,
+        "create_proposal",
+        lambda action_type, args, ui_context=None: pytest.fail("should not propose without method"),
+    )
+    out = engine._maybe_propose_action(
+        "propose_complete_walkin_sale", "walk-in sale item barcode ABC qty 2", {}, ui_context={}
+    )
     assert out and out["intent"] == "action_needs_info" and "method" in out["data"]["missing"]
 
     # create reservation amount->rate
     captured = {}
+
     def fake_create(action_type, args, ui_context=None):
         captured["action_type"] = action_type
         captured["args"] = dict(args)
         return {"summary": "ok", "prechecks": {"ok": True}}
+
     monkeypatch.setattr(actions, "create_proposal", fake_create)
     out = engine._maybe_propose_action(
         "propose_create_reservation",
@@ -223,7 +293,11 @@ def test_engine_extract_and_propose_branches(monkeypatch):
     assert captured["args"]["rate"] == 50.0
 
     # proposal precheck failure formatting and exception handling
-    monkeypatch.setattr(actions, "create_proposal", lambda *a, **k: {"summary": "bad", "prechecks": {"ok": False, "errors": ["e1"], "warnings": ["w1"]}})
+    monkeypatch.setattr(
+        actions,
+        "create_proposal",
+        lambda *a, **k: {"summary": "bad", "prechecks": {"ok": False, "errors": ["e1"], "warnings": ["w1"]}},
+    )
     out = engine._maybe_propose_action(
         "propose_record_payment",
         "record payment amount 10 cash",
@@ -233,6 +307,7 @@ def test_engine_extract_and_propose_branches(monkeypatch):
 
     def boom(*a, **k):
         raise RuntimeError("explode")
+
     monkeypatch.setattr(actions, "create_proposal", boom)
     out = engine._maybe_propose_action(
         "propose_record_payment",
@@ -242,17 +317,24 @@ def test_engine_extract_and_propose_branches(monkeypatch):
     assert out and out["ok"] is False and "couldn’t prepare that action safely" in out["answer"]
 
     # guest disambiguation formatting exception branch
-    bad_guest = {"id": 1}  # missing fields is fine but force exception via custom object? easier: make .get raise? not possible; simulate exception by passing object with keys() raising in iteration not used. Instead use proxy.
+    bad_guest = {
+        "id": 1
+    }  # missing fields is fine but force exception via custom object? easier: make .get raise? not possible; simulate exception by passing object with keys() raising in iteration not used. Instead use proxy.
+
     class Bad:
         def get(self, k, d=None):
             if k == "name":
                 raise RuntimeError("bad")
             return d
+
         def __getitem__(self, k):
             if k == "id":
                 return 1
             raise KeyError(k)
-    out = engine._guest_disambiguation([Bad(), {"id": 2, "name": "Ana", "phone": "p", "email": "e", "stays": 1, "last_stay": "2026"}], q="a")
+
+    out = engine._guest_disambiguation(
+        [Bad(), {"id": 2, "name": "Ana", "phone": "p", "email": "e", "stays": 1, "last_stay": "2026"}], q="a"
+    )
     assert "Which one did you mean" in out["answer"]
 
 
@@ -261,7 +343,9 @@ def test_engine_execute_single_keyword_and_dispatch_branches(monkeypatch):
     res = engine._execute_single("greeting_smalltalk", "thanks!", {})
     assert "welcome" in res["answer"].lower()
     # quick keyword routing branches
-    monkeypatch.setattr(engine, "execute_tool", lambda name, args: {"tool": name, "args": args, "ok": True, "sections": {}, "data": {}})
+    monkeypatch.setattr(
+        engine, "execute_tool", lambda name, args: {"tool": name, "args": args, "ok": True, "sections": {}, "data": {}}
+    )
     res = engine._execute_single("anything", "doctor report please", {})
     assert res["intent"] == "health_diagnostics"
     res = engine._execute_single("anything", "what expires in bad days", {})
@@ -291,14 +375,24 @@ def test_engine_execute_single_keyword_and_dispatch_branches(monkeypatch):
     assert res["needs_clarification"]
 
     # approval detail extract from text and missing
-    monkeypatch.setattr(engine, "execute_tool", lambda name, args: {"approval": {"id": args.get("approval_id"), "status": "pending"}})
+    monkeypatch.setattr(
+        engine, "execute_tool", lambda name, args: {"approval": {"id": args.get("approval_id"), "status": "pending"}}
+    )
     res = engine._execute_single("approval_detail", "show approval #9", {})
     assert res["intent"] == "approval_detail"
     res = engine._execute_single("approval_detail", "show approval", {})
     assert res["needs_clarification"]
 
     # front_desk_ops special formatting path and trace/expiring/inventory_batches by intent
-    monkeypatch.setattr(engine, "execute_tool", lambda name, args: {"date": "2026-01-01", "summary": {"arrivals": 1}, "error": None} if name == "get_front_desk_ops" else {"summary": {"dirty": 0}})
+    monkeypatch.setattr(
+        engine,
+        "execute_tool",
+        lambda name, args: (
+            {"date": "2026-01-01", "summary": {"arrivals": 1}, "error": None}
+            if name == "get_front_desk_ops"
+            else {"summary": {"dirty": 0}}
+        ),
+    )
     res = engine._execute_single("front_desk_ops", "front desk ops", {"date_start": "2026-01-01"})
     assert res["intent"] == "today_ops"
     monkeypatch.setattr(engine, "execute_tool", lambda name, args: {"tool": name, "args": args})
@@ -322,7 +416,17 @@ def test_actions_and_action_validation_direct_branches(monkeypatch):
     orig_norm = av.normalize_action_args
     orig_build = av.build_prechecks
     monkeypatch.setattr(av, "normalize_action_args", lambda t, a: dict(a or {}))
-    monkeypatch.setattr(av, "build_prechecks", lambda t, a, ui_context=None: {"ok": True, "preview": {"type": t, "amount": 5, "method": "Cash", "reservation_id": 1}, "resolved": {"reservation": {"id": 1}}, "warnings": [], "checks": []})
+    monkeypatch.setattr(
+        av,
+        "build_prechecks",
+        lambda t, a, ui_context=None: {
+            "ok": True,
+            "preview": {"type": t, "amount": 5, "method": "Cash", "reservation_id": 1},
+            "resolved": {"reservation": {"id": 1}},
+            "warnings": [],
+            "checks": [],
+        },
+    )
     prop = actions.create_proposal("propose_record_payment", {"reservation_id": 1, "amount": 5, "method": "Cash"})
     assert prop["ok"] and prop["status"] == "pending"
     cancelled = actions.cancel_pending_action(prop, reason="test")
@@ -331,21 +435,79 @@ def test_actions_and_action_validation_direct_branches(monkeypatch):
 
     # execute: proof required, expired, validation failed, success, failure
     assert actions.execute_pending_action(None)["status"] == "invalid"
-    exp = {"status": "pending", "expires_at": "2000-01-01T00:00:00Z", "action_type": "propose_record_payment", "execute_action_type": "execute_record_payment", "args": {}}
+    exp = {
+        "status": "pending",
+        "expires_at": "2000-01-01T00:00:00Z",
+        "action_type": "propose_record_payment",
+        "execute_action_type": "execute_record_payment",
+        "args": {},
+    }
     assert actions.execute_pending_action(exp)["status"] == "expired"
-    no_proof = {"status": "pending", "action_type": "propose_record_payment", "execute_action_type": "execute_record_payment", "args": {"reservation_id": 1, "amount": 1, "method": "Cash"}, "required_proofs": ["ui_confirmation"]}
+    no_proof = {
+        "status": "pending",
+        "action_type": "propose_record_payment",
+        "execute_action_type": "execute_record_payment",
+        "args": {"reservation_id": 1, "amount": 1, "method": "Cash"},
+        "required_proofs": ["ui_confirmation"],
+    }
     assert actions.execute_pending_action(no_proof)["status"] == "proof_required"
-    monkeypatch.setattr(av, "build_prechecks", lambda t, a, ui_context=None: {"ok": False, "errors": ["bad"], "warnings": [], "resolved": {}})
-    bad = {"status": "pending", "action_type": "propose_record_payment", "execute_action_type": "execute_record_payment", "args": {}, "required_proofs": []}
+    monkeypatch.setattr(
+        av,
+        "build_prechecks",
+        lambda t, a, ui_context=None: {"ok": False, "errors": ["bad"], "warnings": [], "resolved": {}},
+    )
+    bad = {
+        "status": "pending",
+        "action_type": "propose_record_payment",
+        "execute_action_type": "execute_record_payment",
+        "args": {},
+        "required_proofs": [],
+    }
     assert actions.execute_pending_action(bad, form_proofs={"confirmed": True})["status"] == "validation_failed"
 
-    monkeypatch.setattr(av, "build_prechecks", lambda t, a, ui_context=None: {"ok": True, "preview": {}, "resolved": {}, "warnings": [], "checks": []})
-    monkeypatch.setattr(actions, "_EXECUTORS", {"execute_record_payment": lambda args, resolved: (_ for _ in ()).throw(RuntimeError("fail"))})
-    fail = actions.execute_pending_action({"status": "pending", "action_type": "propose_record_payment", "execute_action_type": "execute_record_payment", "args": {}, "required_proofs": []}, form_proofs={"confirmed": True})
+    monkeypatch.setattr(
+        av,
+        "build_prechecks",
+        lambda t, a, ui_context=None: {"ok": True, "preview": {}, "resolved": {}, "warnings": [], "checks": []},
+    )
+    monkeypatch.setattr(
+        actions,
+        "_EXECUTORS",
+        {"execute_record_payment": lambda args, resolved: (_ for _ in ()).throw(RuntimeError("fail"))},
+    )
+    fail = actions.execute_pending_action(
+        {
+            "status": "pending",
+            "action_type": "propose_record_payment",
+            "execute_action_type": "execute_record_payment",
+            "args": {},
+            "required_proofs": [],
+        },
+        form_proofs={"confirmed": True},
+    )
     assert fail["status"] == "failed"
 
-    monkeypatch.setattr(actions, "_EXECUTORS", {"execute_record_payment": lambda args, resolved: {"result": {"payment_id": 9}, "affected_ids": {"reservation_id": 1, "payment_id": 9}, "message": "ok"}})
-    ok = actions.execute_pending_action({"status": "pending", "action_type": "propose_record_payment", "execute_action_type": "execute_record_payment", "args": {}, "required_proofs": []}, form_proofs={"confirmed": True})
+    monkeypatch.setattr(
+        actions,
+        "_EXECUTORS",
+        {
+            "execute_record_payment": lambda args, resolved: {
+                "result": {"payment_id": 9},
+                "affected_ids": {"reservation_id": 1, "payment_id": 9},
+                "message": "ok",
+            }
+        },
+    )
+    ok = actions.execute_pending_action(
+        {
+            "status": "pending",
+            "action_type": "propose_record_payment",
+            "execute_action_type": "execute_record_payment",
+            "args": {},
+            "required_proofs": [],
+        },
+        form_proofs={"confirmed": True},
+    )
     assert ok["ok"] and ok["status"] == "executed"
 
     # action_validation direct helpers (restore stubs above)

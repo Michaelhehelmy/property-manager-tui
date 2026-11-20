@@ -1,4 +1,5 @@
 """Manager assistant package (compatibility facade preserving public API)."""
+
 from __future__ import annotations
 
 import datetime as _datetime_mod
@@ -20,24 +21,52 @@ from .runtime import *  # noqa: F401,F403
 
 # Explicit exports for underscore/private APIs relied upon by callers/tests
 from .common import (
-    _fmt_money, _format_data, _iso, _norm_text, _parse_date_range, _parse_iso,
-    _prev_period, _resolve_guest_from_text, _safe_int, _short, _sim,
-    _token_set, _val, _yn,
+    _fmt_money,
+    _format_data,
+    _iso,
+    _norm_text,
+    _parse_date_range,
+    _parse_iso,
+    _prev_period,
+    _resolve_guest_from_text,
+    _safe_int,
+    _short,
+    _sim,
+    _token_set,
+    _val,
+    _yn,
 )
 from .formatting import (
-    _apply_proactive, _format_for_intent, _friendly_open, _local_talking_rephrase, _proactive_suggestions,
+    _apply_proactive,
+    _format_for_intent,
+    _friendly_open,
+    _local_talking_rephrase,
+    _proactive_suggestions,
 )
 from .nlu import _INTENT_CUES, classify_intent, rule_classify
 from .feedback import (
-    _EXEMPLAR_CACHE, _SETFIT_CACHE, _SKLEARN_CACHE,
-    exemplar_match, get_correction_exemplars, list_feedback, record_feedback,
+    _EXEMPLAR_CACHE,
+    _SETFIT_CACHE,
+    _SKLEARN_CACHE,
+    exemplar_match,
+    get_correction_exemplars,
+    list_feedback,
+    record_feedback,
 )
 from .engine import _answer, _execute_compound, _execute_single, _guest_disambiguation
 from .runtime import (
-    _LOCAL_LLM_CACHE, _get_local_llm, _llm_config, _local_llm_generate,
-    chat, deterministic_route, get_llm_config, llm_route, talking_rephrase,
+    _LOCAL_LLM_CACHE,
+    _get_local_llm,
+    _llm_config,
+    _local_llm_generate,
+    chat,
+    deterministic_route,
+    get_llm_config,
+    llm_route,
+    talking_rephrase,
 )
 from .tools import TOOLS, execute_tool
+
 
 # Patchable helpers: ensure they observe assistant.datetime monkeypatches
 def _today():
@@ -57,6 +86,7 @@ def _today():
         return now.date()
     except Exception:
         return now
+
 
 # propagate to modules that use these
 common._today = _today

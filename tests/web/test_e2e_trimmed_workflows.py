@@ -4,6 +4,7 @@ Covers practical end-to-end flows against the real FastAPI app, routes, and
 services with an isolated temp DB (tests.web.conftest). These are additive/local
 integration tests (tests/ is gitignored in this repo).
 """
+
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
@@ -19,6 +20,7 @@ from tests.web.conftest import get_csrf, set_session
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
+
 
 def _room_id() -> int:
     row = db.connect().execute("SELECT id FROM rooms ORDER BY id LIMIT 1").fetchone()
@@ -56,26 +58,35 @@ def _reservation_detail(client, rid: int):
 
 
 def _assert_redirect(resp, contains: str):
-    assert resp.status_code in (302, 303), f"expected redirect, got {resp.status_code}: {getattr(resp, 'text', '')[:300]}"
+    assert resp.status_code in (302, 303), (
+        f"expected redirect, got {resp.status_code}: {getattr(resp, 'text', '')[:300]}"
+    )
     loc = resp.headers.get("location", "")
     assert contains in loc, (contains, loc)
     return loc
 
 
 def _active_payments_sum(rid: int) -> float:
-    row = db.connect().execute(
-        "SELECT COALESCE(SUM(amount),0) AS s FROM payments WHERE reservation_id=? AND voided_at IS NULL",
-        (rid,),
-    ).fetchone()
+    row = (
+        db.connect()
+        .execute(
+            "SELECT COALESCE(SUM(amount),0) AS s FROM payments WHERE reservation_id=? AND voided_at IS NULL",
+            (rid,),
+        )
+        .fetchone()
+    )
     return round(float(row["s"] or 0), 2)
 
 
 # ── 1) Owner unlock / CSRF / sensitive access controls ───────────────────────
 
+
 def test_unlock_controls_and_csrf(client):
     # wrong password does not unlock
     csrf = set_session(client, unlocked=False)
-    r = client.post("/unlock", data={"csrf": csrf, "password": "wrongpass", "next": "/settings/health"}, follow_redirects=False)
+    r = client.post(
+        "/unlock", data={"csrf": csrf, "password": "wrongpass", "next": "/settings/health"}, follow_redirects=False
+    )
     _assert_redirect(r, "/unlock")
 
     set_session(client, unlocked=False)
@@ -85,7 +96,9 @@ def test_unlock_controls_and_csrf(client):
 
     # correct password unlocks and allows protected page
     csrf = set_session(client, unlocked=False)
-    r = client.post("/unlock", data={"csrf": csrf, "password": "testpass", "next": "/settings/health"}, follow_redirects=False)
+    r = client.post(
+        "/unlock", data={"csrf": csrf, "password": "testpass", "next": "/settings/health"}, follow_redirects=False
+    )
     assert r.status_code in (302, 303)
 
     # session should now be unlocked
@@ -106,6 +119,7 @@ def test_unlock_controls_and_csrf(client):
 
 
 # ── 2) Reservation + deposit + folio/invoice/taxes ───────────────────────────
+
 
 def test_reservation_deposit_folio_invoice_taxes_workflow(client, web_env):
     room_id = _room_id()
@@ -132,10 +146,14 @@ def test_reservation_deposit_folio_invoice_taxes_workflow(client, web_env):
     loc = _assert_redirect(r, "/reservations?tab=list")
 
     # find created reservation
-    row = db.connect().execute(
-        "SELECT id FROM reservations WHERE guest_name=? ORDER BY id DESC LIMIT 1",
-        ("E2E Guest Deposit",),
-    ).fetchone()
+    row = (
+        db.connect()
+        .execute(
+            "SELECT id FROM reservations WHERE guest_name=? ORDER BY id DESC LIMIT 1",
+            ("E2E Guest Deposit",),
+        )
+        .fetchone()
+    )
     assert row is not None
     rid = int(row["id"])
 
@@ -144,14 +162,22 @@ def test_reservation_deposit_folio_invoice_taxes_workflow(client, web_env):
     assert float(bd.get("total_paid") or 0) == pytest.approx(50.0, abs=0.01)
     assert float(bd.get("total_charges") or 0) > 0.0
     assert float(bd.get("accommodation_gross") or 0) >= float(bd.get("accommodation_net") or 0)
-    assert abs(
-        float(bd.get("accommodation_gross") or 0)
-        + float(bd.get("pos_gross") or 0)
-        + float(bd.get("services_gross") or 0)
-        + float(bd.get("discounts_gross") or 0)
-        - float(bd.get("total_charges") or 0)
-    ) < 0.02
-    assert abs(float(bd.get("balance_due") or 0) - (float(bd.get("total_charges") or 0) - float(bd.get("total_paid") or 0))) < 0.02
+    assert (
+        abs(
+            float(bd.get("accommodation_gross") or 0)
+            + float(bd.get("pos_gross") or 0)
+            + float(bd.get("services_gross") or 0)
+            + float(bd.get("discounts_gross") or 0)
+            - float(bd.get("total_charges") or 0)
+        )
+        < 0.02
+    )
+    assert (
+        abs(
+            float(bd.get("balance_due") or 0) - (float(bd.get("total_charges") or 0) - float(bd.get("total_paid") or 0))
+        )
+        < 0.02
+    )
 
     # folio/detail page renders
     detail = _reservation_detail(client, rid)
@@ -174,6 +200,7 @@ def test_reservation_deposit_folio_invoice_taxes_workflow(client, web_env):
 
 
 # ── 3) Partial payments, refunds, void corrections, idempotency, allocations ─
+
 
 def test_partial_payments_refunds_voids_idempotency_allocations(client):
     room_id = _room_id()
@@ -233,7 +260,9 @@ def test_partial_payments_refunds_voids_idempotency_allocations(client):
         follow_redirects=False,
     )
     _assert_redirect(r2, f"/reservations/{rid}")
-    assert float(services.get_balance_breakdown(rid).get("total_paid") or 0) == pytest.approx(paid_after_first, abs=0.02)
+    assert float(services.get_balance_breakdown(rid).get("total_paid") or 0) == pytest.approx(
+        paid_after_first, abs=0.02
+    )
 
     # second payment to fully settle
     csrf = set_session(client, unlocked=False)
@@ -254,10 +283,14 @@ def test_partial_payments_refunds_voids_idempotency_allocations(client):
     assert float(bd_settled.get("balance_due") or 0) == pytest.approx(0.0, abs=0.02)
     assert float(bd_settled.get("total_paid") or 0) == pytest.approx(total, abs=0.02)
 
-    pay1 = db.connect().execute(
-        "SELECT id, allocation_json, voided_at FROM payments WHERE reservation_id=? AND idempotency_key=?",
-        (rid, "e2e-pay-1"),
-    ).fetchone()
+    pay1 = (
+        db.connect()
+        .execute(
+            "SELECT id, allocation_json, voided_at FROM payments WHERE reservation_id=? AND idempotency_key=?",
+            (rid, "e2e-pay-1"),
+        )
+        .fetchone()
+    )
     assert pay1 is not None
     pay1_id = int(pay1["id"])
     assert "accommodation" in (pay1["allocation_json"] or "")
@@ -280,10 +313,14 @@ def test_partial_payments_refunds_voids_idempotency_allocations(client):
     _assert_redirect(ref, f"/reservations/{rid}")
     assert float(services.get_balance_breakdown(rid).get("balance_due") or 0) == pytest.approx(first, abs=0.02)
 
-    refund_row = db.connect().execute(
-        "SELECT id, payment_type, voided_at FROM payments WHERE reservation_id=? AND idempotency_key=?",
-        (rid, "e2e-ref-1"),
-    ).fetchone()
+    refund_row = (
+        db.connect()
+        .execute(
+            "SELECT id, payment_type, voided_at FROM payments WHERE reservation_id=? AND idempotency_key=?",
+            (rid, "e2e-ref-1"),
+        )
+        .fetchone()
+    )
     assert refund_row is not None
     refund_id = int(refund_row["id"])
     assert str(refund_row["payment_type"]).lower() == "refund"
@@ -296,7 +333,10 @@ def test_partial_payments_refunds_voids_idempotency_allocations(client):
         follow_redirects=False,
     )
     _assert_redirect(vref, f"/reservations/{rid}")
-    assert db.connect().execute("SELECT voided_at FROM payments WHERE id=?", (refund_id,)).fetchone()["voided_at"] is not None
+    assert (
+        db.connect().execute("SELECT voided_at FROM payments WHERE id=?", (refund_id,)).fetchone()["voided_at"]
+        is not None
+    )
     assert float(services.get_balance_breakdown(rid).get("balance_due") or 0) == pytest.approx(0.0, abs=0.02)
 
     # void an original payment -> creates open balance again
@@ -307,7 +347,10 @@ def test_partial_payments_refunds_voids_idempotency_allocations(client):
         follow_redirects=False,
     )
     _assert_redirect(vpay, f"/reservations/{rid}")
-    assert db.connect().execute("SELECT voided_at FROM payments WHERE id=?", (pay1_id,)).fetchone()["voided_at"] is not None
+    assert (
+        db.connect().execute("SELECT voided_at FROM payments WHERE id=?", (pay1_id,)).fetchone()["voided_at"]
+        is not None
+    )
     assert float(services.get_balance_breakdown(rid).get("balance_due") or 0) == pytest.approx(first, abs=0.02)
 
     # idempotent void feedback/behavior: voiding again is safe
@@ -324,6 +367,7 @@ def test_partial_payments_refunds_voids_idempotency_allocations(client):
 
 
 # ── 4) Groups and coordinated billing ────────────────────────────────────────
+
 
 def test_group_coordinated_billing_workflow(client):
     room1, room2 = _room_ids(2)
@@ -347,7 +391,11 @@ def test_group_coordinated_billing_workflow(client):
         follow_redirects=False,
     )
     _assert_redirect(r, "/reservations/groups")
-    g = db.connect().execute("SELECT id FROM reservation_groups WHERE name=? ORDER BY id DESC LIMIT 1", ("E2E Tour Group",)).fetchone()
+    g = (
+        db.connect()
+        .execute("SELECT id FROM reservation_groups WHERE name=? ORDER BY id DESC LIMIT 1", ("E2E Tour Group",))
+        .fetchone()
+    )
     assert g is not None
     gid = int(g["id"])
 
@@ -406,6 +454,7 @@ def test_group_coordinated_billing_workflow(client):
 
 # ── 5) Housekeeping: blocks, tasks, statuses/ops ─────────────────────────────
 
+
 def test_housekeeping_blocks_tasks_and_ops(client):
     room1, room2 = _room_ids(2)
     ci, co = _future_range(100, nights=1)
@@ -430,10 +479,14 @@ def test_housekeeping_blocks_tasks_and_ops(client):
     avail_ids = {int(r["id"]) for r in avail}
     assert room1 not in avail_ids
 
-    block_row = db.connect().execute(
-        "SELECT id, status FROM room_blocks WHERE room_id=? AND reason=? ORDER BY id DESC LIMIT 1",
-        (room1, "maintenance"),
-    ).fetchone()
+    block_row = (
+        db.connect()
+        .execute(
+            "SELECT id, status FROM room_blocks WHERE room_id=? AND reason=? ORDER BY id DESC LIMIT 1",
+            (room1, "maintenance"),
+        )
+        .fetchone()
+    )
     assert block_row is not None and block_row["status"] == "active"
     block_id = int(block_row["id"])
 
@@ -453,11 +506,17 @@ def test_housekeeping_blocks_tasks_and_ops(client):
         follow_redirects=False,
     )
     _assert_redirect(task, "/housekeeping")
-    trow = db.connect().execute(
-        "SELECT id, status, priority, assignee FROM housekeeping_tasks WHERE room_id=? ORDER BY id DESC LIMIT 1",
-        (room2,),
-    ).fetchone()
-    assert trow is not None and trow["status"] in ("pending", "open", "in_progress", "new") or trow["status"] == "pending"
+    trow = (
+        db.connect()
+        .execute(
+            "SELECT id, status, priority, assignee FROM housekeeping_tasks WHERE room_id=? ORDER BY id DESC LIMIT 1",
+            (room2,),
+        )
+        .fetchone()
+    )
+    assert (
+        trow is not None and trow["status"] in ("pending", "open", "in_progress", "new") or trow["status"] == "pending"
+    )
     task_id = int(trow["id"])
 
     # update task status to in_progress then done (room becomes Clean)
@@ -475,7 +534,11 @@ def test_housekeeping_blocks_tasks_and_ops(client):
     )
     tdone = db.connect().execute("SELECT status FROM housekeeping_tasks WHERE id=?", (task_id,)).fetchone()
     assert tdone["status"] == "done"
-    room2_status = db.connect().execute("SELECT housekeeping_status FROM rooms WHERE id=?", (room2,)).fetchone()["housekeeping_status"]
+    room2_status = (
+        db.connect()
+        .execute("SELECT housekeeping_status FROM rooms WHERE id=?", (room2,))
+        .fetchone()["housekeeping_status"]
+    )
     assert room2_status in ("Clean", "Inspected")
 
     # edit task details
@@ -496,7 +559,11 @@ def test_housekeeping_blocks_tasks_and_ops(client):
         follow_redirects=False,
     )
     _assert_redirect(edit, "/housekeeping")
-    tedit = db.connect().execute("SELECT task_type, assignee, notes FROM housekeeping_tasks WHERE id=?", (task_id,)).fetchone()
+    tedit = (
+        db.connect()
+        .execute("SELECT task_type, assignee, notes FROM housekeeping_tasks WHERE id=?", (task_id,))
+        .fetchone()
+    )
     assert tedit["task_type"] == "inspection"
     assert tedit["assignee"] == "hk2"
 
@@ -512,7 +579,10 @@ def test_housekeeping_blocks_tasks_and_ops(client):
     csrf = set_session(client, unlocked=True)
     res = client.post(f"/housekeeping/blocks/{block_id}/resolve", data={"csrf": csrf}, follow_redirects=False)
     _assert_redirect(res, "/housekeeping")
-    assert db.connect().execute("SELECT status FROM room_blocks WHERE id=?", (block_id,)).fetchone()["status"] == "resolved"
+    assert (
+        db.connect().execute("SELECT status FROM room_blocks WHERE id=?", (block_id,)).fetchone()["status"]
+        == "resolved"
+    )
     avail2 = services.get_rooms_available_between(ci, co)
     assert room1 in {int(r["id"]) for r in avail2}
 
@@ -523,6 +593,7 @@ def test_housekeeping_blocks_tasks_and_ops(client):
 
 
 # ── 6) Cash shifts, night audit, reconciliation ──────────────────────────────
+
 
 def test_cash_shift_night_audit_and_reconciliation(client):
     # open cash shift
@@ -542,7 +613,14 @@ def test_cash_shift_night_audit_and_reconciliation(client):
     csrf = set_session(client, unlocked=True)
     mv = client.post(
         f"/accounting/shifts/{sid}/movement",
-        data={"csrf": csrf, "movement_type": "cash_in", "amount": "20.00", "method": "Cash", "reference": "m1", "notes": "topup"},
+        data={
+            "csrf": csrf,
+            "movement_type": "cash_in",
+            "amount": "20.00",
+            "method": "Cash",
+            "reference": "m1",
+            "notes": "topup",
+        },
         follow_redirects=False,
     )
     _assert_redirect(mv, f"/accounting?tab=shifts&shift_id={sid}")
@@ -577,7 +655,9 @@ def test_cash_shift_night_audit_and_reconciliation(client):
         follow_redirects=False,
     )
     _assert_redirect(close, f"/accounting?tab=shifts&shift_id={sid}")
-    closed = db.connect().execute("SELECT status, counted_cash, variance FROM cash_shifts WHERE id=?", (sid,)).fetchone()
+    closed = (
+        db.connect().execute("SELECT status, counted_cash, variance FROM cash_shifts WHERE id=?", (sid,)).fetchone()
+    )
     assert closed["status"] == "closed"
     assert float(closed["counted_cash"] or 0) == pytest.approx(counted, abs=0.02)
 
@@ -611,6 +691,7 @@ def test_cash_shift_night_audit_and_reconciliation(client):
 
 
 # ── 7) Integrity helpers smoke ───────────────────────────────────────────────
+
 
 def test_financial_integrity_helpers_smoke(client):
     # basic smoke over fresh/active data state

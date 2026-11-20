@@ -17,6 +17,7 @@ from app_core import db, doctor, paths, services, updater
 
 # -------------------- path and printer validation helpers (exposed) --------------------
 
+
 def test_path_helpers_validation_and_confinement(tmp_path):
     root = tmp_path / "root"
     root.mkdir()
@@ -71,9 +72,13 @@ def test_printer_and_filename_validation_helpers(tmp_path, monkeypatch):
     export_dir = tmp_path / "exports"
     invoice_dir = tmp_path / "invoices"
     data_dir = tmp_path / "data"
-    export_dir.mkdir(); invoice_dir.mkdir(); data_dir.mkdir()
-    f = export_dir / "ok.txt"; f.write_text("hi", encoding="utf-8")
-    outside = tmp_path / "outside.txt"; outside.write_text("no", encoding="utf-8")
+    export_dir.mkdir()
+    invoice_dir.mkdir()
+    data_dir.mkdir()
+    f = export_dir / "ok.txt"
+    f.write_text("hi", encoding="utf-8")
+    outside = tmp_path / "outside.txt"
+    outside.write_text("no", encoding="utf-8")
     monkeypatch.setattr(services, "EXPORT_DIR", export_dir)
     monkeypatch.setattr(services, "INVOICE_DIR", invoice_dir)
     monkeypatch.setattr(paths, "EXPORT_DIR", export_dir)
@@ -92,12 +97,15 @@ def test_printer_and_filename_validation_helpers(tmp_path, monkeypatch):
     if isinstance(res, tuple):
         ok, msg = res[0], (res[1] if len(res) > 1 else "")
         assert ok is False
-        assert "outside" in str(msg).lower() or "refus" in str(msg).lower() or "allowed" in str(msg).lower() or msg != ""
+        assert (
+            "outside" in str(msg).lower() or "refus" in str(msg).lower() or "allowed" in str(msg).lower() or msg != ""
+        )
     else:
         assert res is False or res is None
 
 
 # -------------------- rounding and traceability helpers --------------------
+
 
 def test_rounding_and_traceability_text_helpers():
     assert services._round_money(1.234) == 1.23
@@ -106,7 +114,9 @@ def test_rounding_and_traceability_text_helpers():
     assert services._round_qty(1.23456) == 1.2346
     assert services._round_qty(None) == 0.0
 
-    txt = services._traceability_text(lot_code="LOT1", batch_id=7, expiry_date="2026-12-31", received_at="2026-01-01 10:00:00")
+    txt = services._traceability_text(
+        lot_code="LOT1", batch_id=7, expiry_date="2026-12-31", received_at="2026-01-01 10:00:00"
+    )
     assert "lot LOT1" in txt
     assert "batch #7" in txt
     assert "exp 2026-12-31" in txt
@@ -115,6 +125,7 @@ def test_rounding_and_traceability_text_helpers():
 
 
 # -------------------- CSRF/session helpers without full web stack --------------------
+
 
 def _req(method="GET", path="/x", headers=None, cookie_session=None):
     hdrs = []
@@ -136,6 +147,7 @@ def test_csrf_session_helper_behavior_without_full_web_stack(tmp_path, monkeypat
     # isolate web deps secret and timeout behavior
     os.environ.setdefault("PM_WEB_SECRET_KEY", "test-secret")
     import ui.web.deps as deps
+
     deps = importlib.reload(deps)
 
     req = _req()
@@ -185,8 +197,10 @@ def test_csrf_session_helper_behavior_without_full_web_stack(tmp_path, monkeypat
     assert deps.service_password(req2, {"password": ""}, allow_session_sentinel=True) == ""
 
     # safe_download_path confinement
-    export_dir = tmp_path / "exports"; export_dir.mkdir()
-    invoice_dir = tmp_path / "invoices"; invoice_dir.mkdir()
+    export_dir = tmp_path / "exports"
+    export_dir.mkdir()
+    invoice_dir = tmp_path / "invoices"
+    invoice_dir.mkdir()
     (export_dir / "a.txt").write_text("ok", encoding="utf-8")
     monkeypatch.setattr(paths, "EXPORT_DIR", export_dir)
     monkeypatch.setattr(paths, "INVOICE_DIR", invoice_dir)
@@ -199,6 +213,7 @@ def test_csrf_session_helper_behavior_without_full_web_stack(tmp_path, monkeypat
 
 
 # -------------------- authz/service-proof contracts (core services) --------------------
+
 
 def test_authz_service_proof_contracts(clean_db):
     assert services.has_super_password() is True
@@ -229,6 +244,7 @@ def test_authz_service_proof_contracts(clean_db):
 
 # -------------------- POS/batch/FEFO/expiry/void/restore/recipe-COGS/rounding/stock-ledger invariants --------------------
 
+
 def test_pos_batch_fefo_expiry_void_restore_cogs_rounding_and_stock_ledger(clean_db):
     # setup tracked item with FEFO batches (clean_db already initializes password)
     services.unlock_session("testpass")
@@ -236,11 +252,19 @@ def test_pos_batch_fefo_expiry_void_restore_cogs_rounding_and_stock_ledger(clean
     item = db.connect().execute("SELECT * FROM inventory WHERE item_name='Juice'").fetchone()
     iid = item["id"]
     # create batches: earlier expiry should be consumed first (FEFO)
-    b_exp_soon = services.create_inventory_batch(iid, 2, 10.0, received_at="2026-01-01 00:00:00", expiry_date="2026-02-01", password="testpass")
-    b_exp_later = services.create_inventory_batch(iid, 3, 12.0, received_at="2026-01-02 00:00:00", expiry_date="2026-06-01", password="testpass")
+    b_exp_soon = services.create_inventory_batch(
+        iid, 2, 10.0, received_at="2026-01-01 00:00:00", expiry_date="2026-02-01", password="testpass"
+    )
+    b_exp_later = services.create_inventory_batch(
+        iid, 3, 12.0, received_at="2026-01-02 00:00:00", expiry_date="2026-06-01", password="testpass"
+    )
     # total stock must match batch remaining
     stock = db.connect().execute("SELECT stock_qty FROM inventory WHERE id=?", (iid,)).fetchone()[0]
-    rem = db.connect().execute("SELECT COALESCE(SUM(quantity_remaining),0) FROM inventory_batches WHERE item_id=?", (iid,)).fetchone()[0]
+    rem = (
+        db.connect()
+        .execute("SELECT COALESCE(SUM(quantity_remaining),0) FROM inventory_batches WHERE item_id=?", (iid,))
+        .fetchone()[0]
+    )
     assert round(float(stock), 6) == round(float(rem), 6) == 5.0
 
     rid = services.create_reservation("Guest", "Direct", 1, None, 100.0, "2026-12-01", "2026-12-03", 0)
@@ -253,14 +277,26 @@ def test_pos_batch_fefo_expiry_void_restore_cogs_rounding_and_stock_ledger(clean
 
     # sell 2 units -> FEFO consumes earliest-expiry batch first
     sale = services.add_pos_item(rid, "Juice", 2, 20.0, inv_id=iid)
-    b1 = db.connect().execute("SELECT quantity_remaining FROM inventory_batches WHERE id=?", (b_exp_soon["id"],)).fetchone()[0]
-    b2 = db.connect().execute("SELECT quantity_remaining FROM inventory_batches WHERE id=?", (b_exp_later["id"],)).fetchone()[0]
+    b1 = (
+        db.connect()
+        .execute("SELECT quantity_remaining FROM inventory_batches WHERE id=?", (b_exp_soon["id"],))
+        .fetchone()[0]
+    )
+    b2 = (
+        db.connect()
+        .execute("SELECT quantity_remaining FROM inventory_batches WHERE id=?", (b_exp_later["id"],))
+        .fetchone()[0]
+    )
     assert round(float(b1), 6) == 0.0
     assert round(float(b2), 6) == 3.0
 
     # stock-batch/ledger invariants after sale
     stock2 = db.connect().execute("SELECT stock_qty FROM inventory WHERE id=?", (iid,)).fetchone()[0]
-    rem2 = db.connect().execute("SELECT COALESCE(SUM(quantity_remaining),0) FROM inventory_batches WHERE item_id=?", (iid,)).fetchone()[0]
+    rem2 = (
+        db.connect()
+        .execute("SELECT COALESCE(SUM(quantity_remaining),0) FROM inventory_batches WHERE item_id=?", (iid,))
+        .fetchone()[0]
+    )
     assert round(float(stock2), 6) == round(float(rem2), 6) == 3.0
     integ = services.verify_ledger_integrity()
     issues = {i.get("type") for i in (integ.get("issues") or [])}
@@ -271,15 +307,23 @@ def test_pos_batch_fefo_expiry_void_restore_cogs_rounding_and_stock_ledger(clean
     pos_id = sale["pos_id"] if isinstance(sale, dict) else sale
     services.void_pos_item(pos_id, "testpass")
     stock3 = db.connect().execute("SELECT stock_qty FROM inventory WHERE id=?", (iid,)).fetchone()[0]
-    rem3 = db.connect().execute("SELECT COALESCE(SUM(quantity_remaining),0) FROM inventory_batches WHERE item_id=?", (iid,)).fetchone()[0]
+    rem3 = (
+        db.connect()
+        .execute("SELECT COALESCE(SUM(quantity_remaining),0) FROM inventory_batches WHERE item_id=?", (iid,))
+        .fetchone()[0]
+    )
     assert round(float(stock3), 6) == round(float(rem3), 6) == 5.0
-    pos_row = db.connect().execute("SELECT voided_at, batch_id, lot_code FROM pos_tabs WHERE id=?", (pos_id,)).fetchone()
+    pos_row = (
+        db.connect().execute("SELECT voided_at, batch_id, lot_code FROM pos_tabs WHERE id=?", (pos_id,)).fetchone()
+    )
     assert pos_row["voided_at"] is not None
 
     # recipe/COGS helper behavior (deterministic unit COGS)
     services.add_inventory_item("Rum", "Bar", "ml", 1000, 0.1, 0.5, 0, 0, "testpass")
     rum = db.connect().execute("SELECT id, unit_cost FROM inventory WHERE item_name='Rum'").fetchone()
-    services.set_recipe_components(iid, [{"ingredient_item_id": rum["id"], "qty_per_sale": 50}], "testpass")  # 50ml per juice
+    services.set_recipe_components(
+        iid, [{"ingredient_item_id": rum["id"], "qty_per_sale": 50}], "testpass"
+    )  # 50ml per juice
     recipe = services.get_recipe_components(iid)
     assert recipe and float(recipe[0].get("qty_per_sale", recipe[0].get("qty", 0))) == 50.0
     expected_cogs = round(float(rum["unit_cost"]) * 50.0, 6)
@@ -300,11 +344,14 @@ def test_pos_batch_fefo_expiry_void_restore_cogs_rounding_and_stock_ledger(clean
 
 # -------------------- receipt/invoice traceability outputs --------------------
 
+
 def test_receipt_invoice_traceability_outputs(clean_db, tmp_path, monkeypatch):
     services.unlock_session("testpass")
     services.add_inventory_item("TraceCola", "Bar", "bottle", 0, 2, 5, 0, 0, "testpass")
     iid = db.connect().execute("SELECT id FROM inventory WHERE item_name='TraceCola'").fetchone()[0]
-    batch = services.create_inventory_batch(iid, 2, 2.0, received_at="2026-01-01 00:00:00", expiry_date="2028-01-01", password="testpass")
+    batch = services.create_inventory_batch(
+        iid, 2, 2.0, received_at="2026-01-01 00:00:00", expiry_date="2028-01-01", password="testpass"
+    )
     rid = services.create_reservation("Trace Guest", "Direct", 1, None, 100.0, "2026-12-01", "2026-12-03", 0)
     sale = services.add_pos_item(rid, "TraceCola", 1, 5.0, inv_id=iid)
     pos_id = sale["pos_id"] if isinstance(sale, dict) else sale
@@ -321,7 +368,8 @@ def test_receipt_invoice_traceability_outputs(clean_db, tmp_path, monkeypatch):
         assert str(row["lot_code"]) in inv_text or "LOT" in inv_text.upper() or "batch" in inv_text.lower()
 
     # walk-in receipt/save helpers produce deterministic traceable output files in invoice dir
-    inv_dir = tmp_path / "invoices"; inv_dir.mkdir(exist_ok=True)
+    inv_dir = tmp_path / "invoices"
+    inv_dir.mkdir(exist_ok=True)
     monkeypatch.setattr(paths, "INVOICE_DIR", inv_dir)
     monkeypatch.setattr(services, "INVOICE_DIR", inv_dir)
     receipt_text = "WALK-IN RECEIPT\nTraceCola lot LOTX batch #1"
@@ -341,6 +389,7 @@ def test_receipt_invoice_traceability_outputs(clean_db, tmp_path, monkeypatch):
 
 # -------------------- migration/idempotency edge cases --------------------
 
+
 def test_migration_idempotency_edge_case_user_version_stable(clean_db):
     # init_db/migrate should be safe to repeat on current schema
     v1 = db.connect().execute("PRAGMA user_version").fetchone()[0]
@@ -355,6 +404,7 @@ def test_migration_idempotency_edge_case_user_version_stable(clean_db):
 
 
 # -------------------- updater/doctor/backup-verify safety --------------------
+
 
 def test_updater_and_doctor_safety_helpers(tmp_path, monkeypatch):
     # updater: non-git apply refusal and network error handling

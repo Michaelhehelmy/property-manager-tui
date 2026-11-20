@@ -30,6 +30,7 @@ def _req(path="/", method="GET", headers=None, query_string=b""):
 
 def test_deps_import_nonlocal_requires_secret(monkeypatch):
     import ui.web.deps as deps
+
     old = os.environ.pop("PM_WEB_SECRET_KEY", None)
     old_host = os.environ.get("HOST")
     old_allow = os.environ.get("PM_WEB_ALLOW_INSECURE_DEV")

@@ -4,6 +4,7 @@ transactional/stock-batch consistency, migration v8->v9 edge/idempotency,
 doctor/backup-verify helpers (monkeypatched), updater safety/refusal paths,
 and authz/service-proof helper contracts (no web stack).
 """
+
 import json
 import sqlite3
 import subprocess
@@ -33,17 +34,25 @@ def _mk_reservation(status="Checked In", guest="Guest", room_index=0):
 
 def _mk_tracked_item(name="TraceItem", stock=0.0, cost=2.0, price=5.0):
     services.add_inventory_item(name, "Bar", "bottle", stock, cost, price, 0, 0, "testpass", track_batches=True)
-    row = db.connect().execute("SELECT id FROM inventory WHERE item_name=? ORDER BY id DESC LIMIT 1", (name,)).fetchone()
+    row = (
+        db.connect().execute("SELECT id FROM inventory WHERE item_name=? ORDER BY id DESC LIMIT 1", (name,)).fetchone()
+    )
     return int(row["id"])
 
 
 # -------------------- service-generated receipt/invoice/traceability --------------------
 
+
 def test_invoice_and_walkin_receipt_include_batch_traceability(unlocked, tmp_path):
     item_id = _mk_tracked_item("TraceCola", 0.0, 1.25, 4.0)
     batch = services.create_inventory_batch(
-        item_id, 5, 1.25, received_at="2026-01-01 10:00:00",
-        expiry_date="2030-01-01", password="testpass", supplier="Acme",
+        item_id,
+        5,
+        1.25,
+        received_at="2026-01-01 10:00:00",
+        expiry_date="2030-01-01",
+        password="testpass",
+        supplier="Acme",
     )
     rid = _mk_reservation()
 
@@ -70,15 +79,22 @@ def test_invoice_and_walkin_receipt_include_batch_traceability(unlocked, tmp_pat
     # receipt items or ledger/POS trace should reflect the sold lot when accessible
     lot_codes = [it.get("lot_code") for it in (sale.get("receipt_items") or []) if it.get("lot_code")]
     if not lot_codes:
-        lot_codes = [r["lot_code"] for r in db.connect().execute(
-            "SELECT lot_code FROM pos_tabs WHERE id IN (SELECT ref_id FROM general_ledger WHERE ref_type='POS' AND reservation_id IS NULL AND entry_type='CHARGE') AND lot_code IS NOT NULL"
-        ).fetchall()]
+        lot_codes = [
+            r["lot_code"]
+            for r in db.connect()
+            .execute(
+                "SELECT lot_code FROM pos_tabs WHERE id IN (SELECT ref_id FROM general_ledger WHERE ref_type='POS' AND reservation_id IS NULL AND entry_type='CHARGE') AND lot_code IS NOT NULL"
+            )
+            .fetchall()
+        ]
     assert batch["lot_code"] in lot_codes
 
     # direct receipt generator helper contract
     txt = services.generate_walkin_receipt_text(
         [{"desc": "TraceCola", "qty": 1, "price": 4.0, "gross": 4.0, "lot_code": "LOT-X"}],
-        4.0, "Card", payment_id=999,
+        4.0,
+        "Card",
+        payment_id=999,
     )
     assert "WALK-IN RECEIPT" in txt
     assert "LOT-X" in txt
@@ -87,14 +103,21 @@ def test_invoice_and_walkin_receipt_include_batch_traceability(unlocked, tmp_pat
 
 # -------------------- batch FEFO/expiry/void/restore/recipe-COGS invariants and rounding --------------------
 
+
 def test_batch_fefo_expiry_block_void_restore_and_recipe_cogs_rounding(unlocked):
     # FEFO + expiry block setting
     item_id = _mk_tracked_item("MilkFEFO", 0.0, 1.0, 3.0)
     services.set_setting("allow_negative_stock", "false")
     services.set_setting("block_sell_expired", "true")
-    expired = services.create_inventory_batch(item_id, 2, 1.0, received_at="2025-01-01 00:00:00", expiry_date="2025-01-02", password="testpass")
-    b_earlier_exp = services.create_inventory_batch(item_id, 2, 1.0, received_at="2026-01-02 00:00:00", expiry_date="2026-06-01", password="testpass")
-    b_later_exp = services.create_inventory_batch(item_id, 2, 1.0, received_at="2026-01-01 00:00:00", expiry_date="2026-12-01", password="testpass")
+    expired = services.create_inventory_batch(
+        item_id, 2, 1.0, received_at="2025-01-01 00:00:00", expiry_date="2025-01-02", password="testpass"
+    )
+    b_earlier_exp = services.create_inventory_batch(
+        item_id, 2, 1.0, received_at="2026-01-02 00:00:00", expiry_date="2026-06-01", password="testpass"
+    )
+    b_later_exp = services.create_inventory_batch(
+        item_id, 2, 1.0, received_at="2026-01-01 00:00:00", expiry_date="2026-12-01", password="testpass"
+    )
     rid = _mk_reservation()
 
     # expired lot should not be consumed when blocking enabled and alternatives exist
@@ -102,23 +125,39 @@ def test_batch_fefo_expiry_block_void_restore_and_recipe_cogs_rounding(unlocked)
     row = db.connect().execute("SELECT batch_id, lot_code FROM pos_tabs WHERE id=?", (res["pos_id"],)).fetchone()
     assert row["batch_id"] in {b_earlier_exp["id"], b_later_exp["id"]}  # FEFO among non-expired
     assert row["batch_id"] != expired["id"]
-    rem_expired = db.connect().execute("SELECT quantity_remaining FROM inventory_batches WHERE id=?", (expired["id"],)).fetchone()[0]
+    rem_expired = (
+        db.connect()
+        .execute("SELECT quantity_remaining FROM inventory_batches WHERE id=?", (expired["id"],))
+        .fetchone()[0]
+    )
     assert float(rem_expired) == 2.0
 
     # split allocation, explicit batch selection path sanity, void/restore invariants
     item2 = _mk_tracked_item("SplitJuice", 0.0, 1.0, 3.0)
-    s1 = services.create_inventory_batch(item2, 1, 1.0, received_at="2026-02-01 00:00:00", expiry_date="2027-01-01", password="testpass")
-    s2 = services.create_inventory_batch(item2, 2, 1.0, received_at="2026-02-02 00:00:00", expiry_date="2027-02-01", password="testpass")
+    s1 = services.create_inventory_batch(
+        item2, 1, 1.0, received_at="2026-02-01 00:00:00", expiry_date="2027-01-01", password="testpass"
+    )
+    s2 = services.create_inventory_batch(
+        item2, 2, 1.0, received_at="2026-02-02 00:00:00", expiry_date="2027-02-01", password="testpass"
+    )
     rid2 = _mk_reservation(guest="G2", room_index=1)
     sale = services.add_pos_item(rid2, "SplitJuice", 3, 3.0, inv_id=item2)
     pos_ids = sale.get("pos_ids") or [sale["pos_id"]]
     assert len(pos_ids) == 2
     # void one split line restores matching stock and batch remainder invariant
     before_stock = db.connect().execute("SELECT stock_qty FROM inventory WHERE id=?", (item2,)).fetchone()[0]
-    before_sum = db.connect().execute("SELECT COALESCE(SUM(quantity_remaining),0) FROM inventory_batches WHERE item_id=?", (item2,)).fetchone()[0]
+    before_sum = (
+        db.connect()
+        .execute("SELECT COALESCE(SUM(quantity_remaining),0) FROM inventory_batches WHERE item_id=?", (item2,))
+        .fetchone()[0]
+    )
     services.void_pos_item(pos_ids[0], "testpass")
     after_stock = db.connect().execute("SELECT stock_qty FROM inventory WHERE id=?", (item2,)).fetchone()[0]
-    after_sum = db.connect().execute("SELECT COALESCE(SUM(quantity_remaining),0) FROM inventory_batches WHERE item_id=?", (item2,)).fetchone()[0]
+    after_sum = (
+        db.connect()
+        .execute("SELECT COALESCE(SUM(quantity_remaining),0) FROM inventory_batches WHERE item_id=?", (item2,))
+        .fetchone()[0]
+    )
     assert round(float(after_stock) - float(before_stock), 6) == round(float(after_sum) - float(before_sum), 6)
 
     # recipe COGS invariants + rounding (fractional qty/cost)
@@ -131,19 +170,28 @@ def test_batch_fefo_expiry_block_void_restore_and_recipe_cogs_rounding(unlocked)
     assert out.get("recipe_deducted") is True
     ing_stock = db.connect().execute("SELECT stock_qty FROM inventory WHERE id=?", (ing,)).fetchone()[0]
     assert round(float(ing_stock), 6) == round(10.0 - (3 * 2), 6)
-    cogs = db.connect().execute(
-        "SELECT COALESCE(SUM(net),0) FROM general_ledger WHERE ref_type='POS' AND ref_id=? AND entry_type='COGS'",
-        (out["pos_id"],),
-    ).fetchone()[0]
+    cogs = (
+        db.connect()
+        .execute(
+            "SELECT COALESCE(SUM(net),0) FROM general_ledger WHERE ref_type='POS' AND ref_id=? AND entry_type='COGS'",
+            (out["pos_id"],),
+        )
+        .fetchone()[0]
+    )
     assert round(float(cogs), 2) == round(0.3333 * 3 * 2, 2)
 
 
 # -------------------- transactional/stock-batch consistency --------------------
 
+
 def test_transactional_stock_batch_consistency_and_integrity(unlocked):
     item_id = _mk_tracked_item("AtomicCola", 0.0, 1.0, 2.0)
-    b1 = services.create_inventory_batch(item_id, 2, 1.0, received_at="2026-03-01 00:00:00", expiry_date="2028-01-01", password="testpass")
-    b2 = services.create_inventory_batch(item_id, 2, 1.0, received_at="2026-03-02 00:00:00", expiry_date="2028-06-01", password="testpass")
+    b1 = services.create_inventory_batch(
+        item_id, 2, 1.0, received_at="2026-03-01 00:00:00", expiry_date="2028-01-01", password="testpass"
+    )
+    b2 = services.create_inventory_batch(
+        item_id, 2, 1.0, received_at="2026-03-02 00:00:00", expiry_date="2028-06-01", password="testpass"
+    )
     rid = _mk_reservation(guest="Atomic")
 
     # force failure after POS insert path by breaking ledger insert in a targeted way via trigger-like? easier: oversell with negatives off
@@ -153,8 +201,12 @@ def test_transactional_stock_batch_consistency_and_integrity(unlocked):
 
     conn = db.connect()
     stock = conn.execute("SELECT stock_qty FROM inventory WHERE id=?", (item_id,)).fetchone()[0]
-    batch_sum = conn.execute("SELECT COALESCE(SUM(quantity_remaining),0) FROM inventory_batches WHERE item_id=?", (item_id,)).fetchone()[0]
-    active_pos = conn.execute("SELECT COUNT(*) FROM pos_tabs WHERE reservation_id=? AND voided_at IS NULL", (rid,)).fetchone()[0]
+    batch_sum = conn.execute(
+        "SELECT COALESCE(SUM(quantity_remaining),0) FROM inventory_batches WHERE item_id=?", (item_id,)
+    ).fetchone()[0]
+    active_pos = conn.execute(
+        "SELECT COUNT(*) FROM pos_tabs WHERE reservation_id=? AND voided_at IS NULL", (rid,)
+    ).fetchone()[0]
     assert float(stock) == 4.0
     assert float(batch_sum) == 4.0
     assert int(active_pos) == 0
@@ -162,7 +214,9 @@ def test_transactional_stock_batch_consistency_and_integrity(unlocked):
     # successful sale remains consistent and ledger/integrity clean
     res = services.add_pos_item(rid, "AtomicCola", 3, 2.0, inv_id=item_id)
     stock2 = conn.execute("SELECT stock_qty FROM inventory WHERE id=?", (item_id,)).fetchone()[0]
-    batch_sum2 = conn.execute("SELECT COALESCE(SUM(quantity_remaining),0) FROM inventory_batches WHERE item_id=?", (item_id,)).fetchone()[0]
+    batch_sum2 = conn.execute(
+        "SELECT COALESCE(SUM(quantity_remaining),0) FROM inventory_batches WHERE item_id=?", (item_id,)
+    ).fetchone()[0]
     assert round(float(stock2), 6) == 1.0
     assert round(float(batch_sum2), 6) == 1.0
     integ = services.verify_ledger_integrity()
@@ -173,6 +227,7 @@ def test_transactional_stock_batch_consistency_and_integrity(unlocked):
 
 
 # -------------------- migration v8->v9 edge cases/idempotency --------------------
+
 
 def _make_pre_v9_db_v8(path: Path):
     conn = sqlite3.connect(str(path))
@@ -217,12 +272,20 @@ def _make_pre_v9_db_v8(path: Path):
         PRAGMA user_version=8;
         """
     )
-    conn.execute("INSERT INTO inventory (id,item_name,category,stock_qty,unit,unit_cost,selling_price,created_at) VALUES (1,'Legacy Cola','Bar',7,'bottle',2.5,5.0,'2026-01-01 08:00:00')")
-    conn.execute("INSERT INTO inventory_logs (item_id,change_type,quantity,reference,at) VALUES (1,'IN',7,'legacy receive','2026-01-01 09:00:00')")
+    conn.execute(
+        "INSERT INTO inventory (id,item_name,category,stock_qty,unit,unit_cost,selling_price,created_at) VALUES (1,'Legacy Cola','Bar',7,'bottle',2.5,5.0,'2026-01-01 08:00:00')"
+    )
+    conn.execute(
+        "INSERT INTO inventory_logs (item_id,change_type,quantity,reference,at) VALUES (1,'IN',7,'legacy receive','2026-01-01 09:00:00')"
+    )
     # zero stock: no backfill batch/log
-    conn.execute("INSERT INTO inventory (id,item_name,category,stock_qty,unit,unit_cost,selling_price,created_at) VALUES (2,'Empty','Bar',0,'bottle',1.0,2.0,'2026-01-01 08:00:00')")
+    conn.execute(
+        "INSERT INTO inventory (id,item_name,category,stock_qty,unit,unit_cost,selling_price,created_at) VALUES (2,'Empty','Bar',0,'bottle',1.0,2.0,'2026-01-01 08:00:00')"
+    )
     # pre-existing batch should prevent duplicate legacy backfill creation
-    conn.execute("INSERT INTO inventory (id,item_name,category,stock_qty,unit,unit_cost,selling_price,created_at) VALUES (3,'HasBatch','Bar',4,'bottle',1.0,2.0,'2026-01-01 08:00:00')")
+    conn.execute(
+        "INSERT INTO inventory (id,item_name,category,stock_qty,unit,unit_cost,selling_price,created_at) VALUES (3,'HasBatch','Bar',4,'bottle',1.0,2.0,'2026-01-01 08:00:00')"
+    )
     conn.commit()
     conn.close()
 
@@ -260,7 +323,9 @@ def test_migrate_v8_to_v9_edge_cases_and_idempotency(tmp_path, monkeypatch):
             "b2": c.execute("SELECT COUNT(*) FROM inventory_batches WHERE item_id=2").fetchone()[0],
             "b3": c.execute("SELECT COUNT(*) FROM inventory_batches WHERE item_id=3").fetchone()[0],
             "l1": c.execute("SELECT COUNT(*) FROM inventory_logs WHERE item_id=1 AND change_type='IN'").fetchone()[0],
-            "rem1": c.execute("SELECT COALESCE(SUM(quantity_remaining),0) FROM inventory_batches WHERE item_id=1").fetchone()[0],
+            "rem1": c.execute(
+                "SELECT COALESCE(SUM(quantity_remaining),0) FROM inventory_batches WHERE item_id=1"
+            ).fetchone()[0],
         }
 
     s1 = snap()
@@ -284,6 +349,7 @@ def test_migrate_v8_to_v9_edge_cases_and_idempotency(tmp_path, monkeypatch):
 
 
 # -------------------- doctor/backup-verify helpers (monkeypatched) --------------------
+
 
 def test_doctor_collect_and_backup_verify_helpers(tmp_path, monkeypatch):
     # use fresh isolated db/paths
@@ -324,6 +390,7 @@ def test_doctor_collect_and_backup_verify_helpers(tmp_path, monkeypatch):
     if created.get("ok") is not True:
         # fallback: create backup directly and verify via doctor
         import shutil
+
         backup_path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(test_db, backup_path)
         created = {"ok": True, "backup_path": str(backup_path)}
@@ -359,6 +426,7 @@ def test_doctor_collect_and_backup_verify_helpers(tmp_path, monkeypatch):
 
 
 # -------------------- updater safety/refusal paths --------------------
+
 
 def test_updater_safety_and_refusal_paths(tmp_path, monkeypatch):
     # non-git dir refusal
@@ -408,6 +476,7 @@ def test_updater_safety_and_refusal_paths(tmp_path, monkeypatch):
 
 # -------------------- authz/service-proof helper contracts (no web stack) --------------------
 
+
 def test_authz_and_service_proof_helper_contracts(clean_db):
     # password/auth helper contracts
     assert services.has_super_password() is True
@@ -455,7 +524,10 @@ def test_authz_and_service_proof_helper_contracts(clean_db):
     for _ in range(4):
         assert services.verify_password("nope") is False
     assert services.verify_password("nope") in (False,)
-    meta = {r[0]: r[1] for r in db.connect().execute(
-        "SELECT key, value FROM app_metadata WHERE key IN ('failed_attempts','lockout_until')"
-    ).fetchall()}
+    meta = {
+        r[0]: r[1]
+        for r in db.connect()
+        .execute("SELECT key, value FROM app_metadata WHERE key IN ('failed_attempts','lockout_until')")
+        .fetchall()
+    }
     assert "failed_attempts" in meta or "lockout_until" in meta

@@ -88,13 +88,18 @@ def test_guests_routes(client):
     assert nf.status_code in (302, 303)
 
     # update (unlocked + permission)
-    upd = _csrf_post(client, f"/guests/{gid}/update", {
-        "name": "Guest Updated",
-        "phone": "123",
-        "email": "g@example.com",
-        "notes": "note",
-        "password": "testpass",
-    }, unlocked=True)
+    upd = _csrf_post(
+        client,
+        f"/guests/{gid}/update",
+        {
+            "name": "Guest Updated",
+            "phone": "123",
+            "email": "g@example.com",
+            "notes": "note",
+            "password": "testpass",
+        },
+        unlocked=True,
+    )
     assert upd.status_code in (302, 303)
 
     # update error path (if invalid id)
@@ -130,7 +135,12 @@ def test_reports_routes(client):
     assert r.status_code in (200, 302, 303)
 
     # analytics export
-    r = _csrf_post(client, "/reports/analytics-export", {"preset": "management_pack", "start": month_start, "end": today}, unlocked=True)
+    r = _csrf_post(
+        client,
+        "/reports/analytics-export",
+        {"preset": "management_pack", "start": month_start, "end": today},
+        unlocked=True,
+    )
     assert r.status_code in (302, 303)
 
 
@@ -141,7 +151,9 @@ def test_settings_core_and_catalog_routes(client):
         assert client.get(f"/settings?tab={tab}").status_code == 200
 
     # branding and save settings
-    r = _csrf_post(client, "/settings/branding", {"display_name": "Brand X", "tagline": "T", "animation": "reveal"}, unlocked=True)
+    r = _csrf_post(
+        client, "/settings/branding", {"display_name": "Brand X", "tagline": "T", "animation": "reveal"}, unlocked=True
+    )
     assert r.status_code in (302, 303)
     r = _csrf_post(client, "/settings/save", {"password": "testpass"}, unlocked=True)
     assert r.status_code in (302, 303)
@@ -157,7 +169,12 @@ def test_settings_core_and_catalog_routes(client):
     assert ok.status_code in (302, 303)
 
     # rooms add/delete
-    add = _csrf_post(client, "/settings/rooms/add", {"room_number": "Z999", "room_type": "Test", "base_price": "50", "housekeeping_status": "Clean"}, unlocked=True)
+    add = _csrf_post(
+        client,
+        "/settings/rooms/add",
+        {"room_number": "Z999", "room_type": "Test", "base_price": "50", "housekeeping_status": "Clean"},
+        unlocked=True,
+    )
     assert add.status_code in (302, 303)
     row = db.connect().execute("SELECT id FROM rooms WHERE room_number='Z999' ORDER BY id DESC LIMIT 1").fetchone()
     if row:
@@ -172,27 +189,87 @@ def test_settings_core_and_catalog_routes(client):
     if plan:
         pid = int(plan["id"])
         _csrf_post(client, f"/settings/rate-plans/{pid}/edit", {"name": "WebPlan2", "modifier": "1.2"}, unlocked=True)
-        _csrf_post(client, "/settings/rate-rules/add", {"name": "WebRule", "adjustment_type": "amount", "adjustment_value": "5", "rate_plan_id": str(pid), "priority": "100", "active": "on"}, unlocked=True)
-        rule = db.connect().execute("SELECT id FROM rate_rules WHERE name='WebRule' ORDER BY id DESC LIMIT 1").fetchone()
+        _csrf_post(
+            client,
+            "/settings/rate-rules/add",
+            {
+                "name": "WebRule",
+                "adjustment_type": "amount",
+                "adjustment_value": "5",
+                "rate_plan_id": str(pid),
+                "priority": "100",
+                "active": "on",
+            },
+            unlocked=True,
+        )
+        rule = (
+            db.connect().execute("SELECT id FROM rate_rules WHERE name='WebRule' ORDER BY id DESC LIMIT 1").fetchone()
+        )
         if rule:
-            _csrf_post(client, f"/settings/rate-rules/{int(rule['id'])}/edit", {"name": "WebRule2", "adjustment_type": "amount", "adjustment_value": "7", "rate_plan_id": str(pid), "priority": "100", "active": "on"}, unlocked=True)
+            _csrf_post(
+                client,
+                f"/settings/rate-rules/{int(rule['id'])}/edit",
+                {
+                    "name": "WebRule2",
+                    "adjustment_type": "amount",
+                    "adjustment_value": "7",
+                    "rate_plan_id": str(pid),
+                    "priority": "100",
+                    "active": "on",
+                },
+                unlocked=True,
+            )
         _csrf_post(client, f"/settings/rate-plans/{pid}/delete", {}, unlocked=True)
 
     # vouchers
     set_session(client, unlocked=True)
     assert client.get("/settings/vouchers").status_code == 200
-    _csrf_post(client, "/settings/vouchers/add", {"code": "WEB10", "discount_type": "amount", "value": "10", "name": "Web", "active": "on"}, unlocked=True)
+    _csrf_post(
+        client,
+        "/settings/vouchers/add",
+        {"code": "WEB10", "discount_type": "amount", "value": "10", "name": "Web", "active": "on"},
+        unlocked=True,
+    )
     v = db.connect().execute("SELECT id FROM discount_vouchers WHERE code='WEB10' ORDER BY id DESC LIMIT 1").fetchone()
     if v:
-        _csrf_post(client, f"/settings/vouchers/{int(v['id'])}/edit", {"code": "WEB10", "discount_type": "amount", "value": "12", "name": "Web2", "active": "on"}, unlocked=True)
+        _csrf_post(
+            client,
+            f"/settings/vouchers/{int(v['id'])}/edit",
+            {"code": "WEB10", "discount_type": "amount", "value": "12", "name": "Web2", "active": "on"},
+            unlocked=True,
+        )
 
     # service catalog
     set_session(client, unlocked=True)
     assert client.get("/settings/service-catalog").status_code == 200
-    _csrf_post(client, "/settings/service-catalog/add", {"name": "WebSvc", "category": "Service", "unit_price": "15", "description": "d", "taxable": "on", "active": "on"}, unlocked=True)
+    _csrf_post(
+        client,
+        "/settings/service-catalog/add",
+        {
+            "name": "WebSvc",
+            "category": "Service",
+            "unit_price": "15",
+            "description": "d",
+            "taxable": "on",
+            "active": "on",
+        },
+        unlocked=True,
+    )
     s = db.connect().execute("SELECT id FROM service_catalog WHERE name='WebSvc' ORDER BY id DESC LIMIT 1").fetchone()
     if s:
-        _csrf_post(client, f"/settings/service-catalog/{int(s['id'])}/edit", {"name": "WebSvc2", "category": "Service", "unit_price": "20", "description": "d2", "taxable": "on", "active": "on"}, unlocked=True)
+        _csrf_post(
+            client,
+            f"/settings/service-catalog/{int(s['id'])}/edit",
+            {
+                "name": "WebSvc2",
+                "category": "Service",
+                "unit_price": "20",
+                "description": "d2",
+                "taxable": "on",
+                "active": "on",
+            },
+            unlocked=True,
+        )
 
     # packages
     set_session(client, unlocked=True)
@@ -201,35 +278,83 @@ def test_settings_core_and_catalog_routes(client):
     p = db.connect().execute("SELECT id FROM packages WHERE name='WebPkg' ORDER BY id DESC LIMIT 1").fetchone()
     if p:
         pid2 = int(p["id"])
-        _csrf_post(client, f"/settings/packages/{pid2}/edit", {"name": "WebPkg2", "description": "p2", "active": "on"}, unlocked=True)
-        _csrf_post(client, f"/settings/packages/{pid2}/items/add", {"service_id": str(int(s["id"])) if s else "", "description": "pkg item", "quantity": "1", "unit_price": "10"}, unlocked=True)
-        pi = db.connect().execute("SELECT id FROM package_items WHERE package_id=? ORDER BY id DESC LIMIT 1", (pid2,)).fetchone()
+        _csrf_post(
+            client,
+            f"/settings/packages/{pid2}/edit",
+            {"name": "WebPkg2", "description": "p2", "active": "on"},
+            unlocked=True,
+        )
+        _csrf_post(
+            client,
+            f"/settings/packages/{pid2}/items/add",
+            {
+                "service_id": str(int(s["id"])) if s else "",
+                "description": "pkg item",
+                "quantity": "1",
+                "unit_price": "10",
+            },
+            unlocked=True,
+        )
+        pi = (
+            db.connect()
+            .execute("SELECT id FROM package_items WHERE package_id=? ORDER BY id DESC LIMIT 1", (pid2,))
+            .fetchone()
+        )
         if pi:
             _csrf_post(client, f"/settings/packages/items/{int(pi['id'])}/delete", {}, unlocked=True)
 
     # users and approvals pages/actions
     set_session(client, unlocked=True)
     assert client.get("/settings/users").status_code == 200
-    _csrf_post(client, "/settings/users/add", {"username": "webuser", "display_name": "Web User", "role": "staff", "new_password": "pass123", "active": "on"}, unlocked=True)
+    _csrf_post(
+        client,
+        "/settings/users/add",
+        {"username": "webuser", "display_name": "Web User", "role": "staff", "new_password": "pass123", "active": "on"},
+        unlocked=True,
+    )
     u = db.connect().execute("SELECT id FROM users WHERE username='webuser' ORDER BY id DESC LIMIT 1").fetchone()
     if u:
         uid = int(u["id"])
-        _csrf_post(client, f"/settings/users/{uid}/edit", {"display_name": "Web User 2", "role": "staff", "active": "on"}, unlocked=True)
+        _csrf_post(
+            client,
+            f"/settings/users/{uid}/edit",
+            {"display_name": "Web User 2", "role": "staff", "active": "on"},
+            unlocked=True,
+        )
         # login/logout user session (requires csrf but not unlocked)
         _csrf_post(client, "/settings/users/login", {"username": "webuser", "user_password": "pass123"}, unlocked=False)
         _csrf_post(client, "/settings/users/logout", {}, unlocked=False)
 
     set_session(client, unlocked=True)
     assert client.get("/settings/approvals").status_code == 200
-    _csrf_post(client, "/settings/approvals/request", {
-        "action_type": "manual_note", "entity_type": "reservation", "entity_id": "1",
-        "payload_json": "{\"x\":1}", "reason": "r", "notes": "n"
-    }, unlocked=True)
+    _csrf_post(
+        client,
+        "/settings/approvals/request",
+        {
+            "action_type": "manual_note",
+            "entity_type": "reservation",
+            "entity_id": "1",
+            "payload_json": '{"x":1}',
+            "reason": "r",
+            "notes": "n",
+        },
+        unlocked=True,
+    )
     a = db.connect().execute("SELECT id FROM approvals ORDER BY id DESC LIMIT 1").fetchone()
     if a:
         aid = int(a["id"])
-        _csrf_post(client, f"/settings/approvals/{aid}/decide", {"decision": "approved", "notes": "ok", "status_filter": ""}, unlocked=True)
-        _csrf_post(client, f"/settings/approvals/{aid}/execute", {"execution_result_json": "{\"done\":true}", "notes": "x"}, unlocked=True)
+        _csrf_post(
+            client,
+            f"/settings/approvals/{aid}/decide",
+            {"decision": "approved", "notes": "ok", "status_filter": ""},
+            unlocked=True,
+        )
+        _csrf_post(
+            client,
+            f"/settings/approvals/{aid}/execute",
+            {"execution_result_json": '{"done":true}', "notes": "x"},
+            unlocked=True,
+        )
 
     # health page and updates check/apply (apply likely fails safely in this env)
     set_session(client, unlocked=True)

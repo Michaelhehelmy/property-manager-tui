@@ -1,4 +1,5 @@
 """Final coverage closure — every reachable branch."""
+
 import pytest
 from app_core import services
 from app_core import db
@@ -11,6 +12,7 @@ from unittest.mock import patch
 # ═══════════════════════════════════════════════════════════════════════════
 # DB LAYER
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def test_db_close_reopens(clean_db):
     """Cover db.close() — closes then reopens on next connect()."""
@@ -25,13 +27,13 @@ def test_db_close_reopens(clean_db):
 def test_db_transaction_commit_success(clean_db):
     with db.transaction() as c:
         c.execute("INSERT INTO guests (canonical_name) VALUES ('commit_ok')")
-    assert connect().execute(
-        "SELECT 1 FROM guests WHERE canonical_name='commit_ok'").fetchone()
+    assert connect().execute("SELECT 1 FROM guests WHERE canonical_name='commit_ok'").fetchone()
 
 
 # ═══════════════════════════════════════════════════════════════════════════
 # SETTINGS — text type, save error path
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def test_validate_text_type(clean_db):
     norm, err = services._validate_setting("property_address", "Line1\nLine2")
@@ -41,8 +43,7 @@ def test_validate_text_type(clean_db):
 
 def test_save_settings_partial_error_rolls_back(clean_db):
     """If any value is invalid, nothing is saved."""
-    count, errs = services.save_settings(
-        {"vat_rate": "0.15", "min_nights": "-1"}, "testpass")
+    count, errs = services.save_settings({"vat_rate": "0.15", "min_nights": "-1"}, "testpass")
     assert count == 0
     assert len(errs) == 1
     # vat_rate should NOT have been saved
@@ -59,6 +60,7 @@ def test_audit_failure_swallowed(clean_db):
 # ═══════════════════════════════════════════════════════════════════════════
 # AUTH — lockout edge cases
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def test_lockout_expires(clean_db):
     """After lockout window passes, correct password works again."""
@@ -93,6 +95,7 @@ def test_verify_no_salt_stored(clean_db):
 # GUESTS — edge cases
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def test_find_guest_matches_empty_name(clean_db):
     assert services.find_guest_matches("") == []
     assert services.find_guest_matches("   ") == []
@@ -106,6 +109,7 @@ def test_find_or_create_empty_raises(clean_db):
 # ═══════════════════════════════════════════════════════════════════════════
 # RESERVATIONS — status edge cases
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def test_update_status_not_found(clean_db):
     with pytest.raises(ValueError, match="not found"):
@@ -144,6 +148,7 @@ def test_delete_refuses_pos_items(clean_db):
 # POS — negative stock branch
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def test_add_pos_negative_stock_blocked(clean_db):
     services.set_setting("allow_negative_stock", "false")
     rid = make_reservation()
@@ -156,22 +161,21 @@ def test_add_pos_walkin_with_reservation_id_none(clean_db):
     result = services.add_pos_item(None, "Water", 1, 20, None)
     assert result["pos_id"] > 0
     # No reservation_id set
-    row = connect().execute("SELECT reservation_id FROM pos_tabs WHERE id=?",
-                            (result["pos_id"],)).fetchone()
+    row = connect().execute("SELECT reservation_id FROM pos_tabs WHERE id=?", (result["pos_id"],)).fetchone()
     assert row["reservation_id"] is None
 
 
 def test_void_walkin_pos(clean_db):
     result = services.add_pos_item(None, "Water", 1, 20, 1)
     services.void_pos_item(result["pos_id"], "testpass")
-    row = connect().execute("SELECT voided_at FROM pos_tabs WHERE id=?",
-                            (result["pos_id"],)).fetchone()
+    row = connect().execute("SELECT voided_at FROM pos_tabs WHERE id=?", (result["pos_id"],)).fetchone()
     assert row["voided_at"] is not None
 
 
 # ═══════════════════════════════════════════════════════════════════════════
 # PAYMENTS — nonexistent, zero-amount paths
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def test_record_payment_zero_amount(clean_db):
     rid = make_reservation()
@@ -207,6 +211,7 @@ def test_record_refund_negative_amount(clean_db):
 # EXPENSES — invalid category FK
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def test_expense_invalid_category_raises(clean_db):
     with pytest.raises(Exception):  # FK violation
         services.record_operational_expense(9999, "X", 100.0)
@@ -225,6 +230,7 @@ def test_void_expense_not_found(clean_db):
 # ═══════════════════════════════════════════════════════════════════════════
 # BALANCE — cancelled/no-show/checked-out branches
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def test_balance_cancelled_returns_zero(clean_db):
     rid = make_reservation()
@@ -257,6 +263,7 @@ def test_breakdown_cancelled(clean_db):
 # LEDGER / A/R
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def test_summary_empty(clean_db):
     s = services.get_general_ledger_summary()
     assert s["billed_revenue"] == 0
@@ -276,6 +283,7 @@ def test_summary_ignores_negative_balances(clean_db):
 # REPORTS — empty data branches
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def test_pl_no_expense_category(clean_db):
     text = services.report_pl_statement("2026-01-01", "2026-01-31")
     assert "COGS" in text
@@ -294,6 +302,7 @@ def test_payment_methods_empty(clean_db):
 # ═══════════════════════════════════════════════════════════════════════════
 # INVENTORY — remaining branches
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def test_restock_nonexistent_item(clean_db):
     with pytest.raises(ValueError, match="not found"):
@@ -328,6 +337,7 @@ def test_delete_inventory_not_found(clean_db):
 # ═══════════════════════════════════════════════════════════════════════════
 # ATTRIBUTION
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def test_attribution_valid(clean_db):
     ok, msg = services.verify_app_attribution()

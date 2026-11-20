@@ -13,12 +13,20 @@ def test_action_validation_helpers(monkeypatch):
     # _row_to_dict branches
     assert av._row_to_dict(None) is None
     assert av._row_to_dict({"a": 1}) == {"a": 1}
+
     class Row:
-        def keys(self): return ["x"]
-        def __getitem__(self, k): return 1
+        def keys(self):
+            return ["x"]
+
+        def __getitem__(self, k):
+            return 1
+
     assert av._row_to_dict(Row()) == {"x": 1}
+
     class BadKeys:
-        def keys(self): raise RuntimeError("x")
+        def keys(self):
+            raise RuntimeError("x")
+
     assert av._row_to_dict(BadKeys()) is BadKeys() or isinstance(av._row_to_dict(BadKeys()), BadKeys)
 
     # _float_or_none / _int_or_none / _bool / _norm_str / _get
@@ -76,7 +84,9 @@ def test_action_validation_resolvers(monkeypatch):
     out = av.resolve_guest({})
     assert any(w for w in out["warnings"])
     # search exception
-    monkeypatch.setattr(av.services, "assistant_find_guests", lambda name, limit=8: (_ for _ in ()).throw(RuntimeError("s")))
+    monkeypatch.setattr(
+        av.services, "assistant_find_guests", lambda name, limit=8: (_ for _ in ()).throw(RuntimeError("s"))
+    )
     out = av.resolve_guest({"guest_name": "A"})
     assert out["ok"] is True and out["resolved"].get("guest_query") == "A"
     # ambiguous / single / none
@@ -94,22 +104,41 @@ def test_action_validation_resolvers(monkeypatch):
     monkeypatch.setattr(av.services, "get_inventory_item", lambda iid: None)
     out = av.resolve_inventory_item({"item_id": 9})
     assert out["ok"] is False
-    monkeypatch.setattr(av.services, "resolve_barcode", lambda code: {"type": "batch", "item": {"id": 1, "item_name": "X", "active": 1}, "batch": {"id": 7}})
+    monkeypatch.setattr(
+        av.services,
+        "resolve_barcode",
+        lambda code: {"type": "batch", "item": {"id": 1, "item_name": "X", "active": 1}, "batch": {"id": 7}},
+    )
     out = av.resolve_inventory_item({"barcode": "B1"})
     assert out["ok"] is True and out["resolved"].get("resolved_batch_hint")
     monkeypatch.setattr(av.services, "resolve_barcode", lambda code: {"type": "none"})
     out = av.resolve_inventory_item({"barcode": "B1"})
     assert out["ok"] is False
     # by name
-    monkeypatch.setattr(av.services, "search_inventory", lambda query=None, **k: (_ for _ in ()).throw(RuntimeError("x")))
-    monkeypatch.setattr(av.services, "get_inventory_items", lambda query=None, **k: [{"id": 1, "item_name": "Water", "active": 1}])
+    monkeypatch.setattr(
+        av.services, "search_inventory", lambda query=None, **k: (_ for _ in ()).throw(RuntimeError("x"))
+    )
+    monkeypatch.setattr(
+        av.services, "get_inventory_items", lambda query=None, **k: [{"id": 1, "item_name": "Water", "active": 1}]
+    )
     out = av.resolve_inventory_item({"item_name": "Water"})
     assert out["ok"] is True
-    monkeypatch.setattr(av.services, "search_inventory", lambda query=None, **k: [{"id": 1, "item_name": "A", "active": 1}, {"id": 2, "item_name": "B", "active": 1}])
+    monkeypatch.setattr(
+        av.services,
+        "search_inventory",
+        lambda query=None, **k: [{"id": 1, "item_name": "A", "active": 1}, {"id": 2, "item_name": "B", "active": 1}],
+    )
     monkeypatch.setattr(av.services, "get_inventory_items", lambda query=None, **k: [])
     out = av.resolve_inventory_item({"item_name": "Nope"})
     assert out["ok"] is False
-    monkeypatch.setattr(av.services, "search_inventory", lambda query=None, **k: [{"id": 1, "item_name": "Same", "active": 1}, {"id": 2, "item_name": "Same", "active": 1}])
+    monkeypatch.setattr(
+        av.services,
+        "search_inventory",
+        lambda query=None, **k: [
+            {"id": 1, "item_name": "Same", "active": 1},
+            {"id": 2, "item_name": "Same", "active": 1},
+        ],
+    )
     out = av.resolve_inventory_item({"item_name": "Same"})
     assert out["ok"] is False
     out = av.resolve_inventory_item({})
@@ -128,7 +157,11 @@ def test_action_validation_resolvers(monkeypatch):
     out = av.resolve_batch_or_lot(item, {"batch_id": 1, "qty": 5})
     assert any(w for w in out["warnings"]) or out["ok"] is True
     # lot path
-    monkeypatch.setattr(av.services, "resolve_barcode", lambda lot: {"type": "batch", "batch": {"id": 2, "item_id": 5, "status": "active", "quantity_remaining": 10}})
+    monkeypatch.setattr(
+        av.services,
+        "resolve_barcode",
+        lambda lot: {"type": "batch", "batch": {"id": 2, "item_id": 5, "status": "active", "quantity_remaining": 10}},
+    )
     out = av.resolve_batch_or_lot(item, {"lot_code": "L1", "qty": 1})
     assert out["resolved"].get("batch")
     monkeypatch.setattr(av.services, "resolve_barcode", lambda lot: {"type": "none"})
@@ -155,12 +188,16 @@ def test_action_validation_resolvers(monkeypatch):
     monkeypatch.setattr(av.services, "get_room", lambda rid: {"id": 1, "room_number": "101"})
     out = av.resolve_room({"room_id": 1})
     assert out["ok"] is True
-    monkeypatch.setattr(av.services, "get_all_rooms", lambda: [{"id": 1, "room_number": "101"}, {"id": 2, "room_number": "101A"}])
+    monkeypatch.setattr(
+        av.services, "get_all_rooms", lambda: [{"id": 1, "room_number": "101"}, {"id": 2, "room_number": "101A"}]
+    )
     out = av.resolve_room({"room_number": "999"})
     assert out["ok"] is False
     out = av.resolve_room({"room_number": "101A"})
     assert out["ok"] is True
-    monkeypatch.setattr(av.services, "get_all_rooms", lambda: [{"id": 1, "room_number": "10"}, {"id": 2, "room_number": "100"}])
+    monkeypatch.setattr(
+        av.services, "get_all_rooms", lambda: [{"id": 1, "room_number": "10"}, {"id": 2, "room_number": "100"}]
+    )
     out = av.resolve_room({"room_number": "10"})
     assert out["ok"] is True or out["ok"] is False
     out = av.resolve_room({})
@@ -187,7 +224,9 @@ def test_action_validation_resolvers(monkeypatch):
     monkeypatch.setattr(av.services, "get_activity", lambda aid: None)
     out = av.resolve_activity({"activity_id": 1})
     assert out["ok"] is False
-    monkeypatch.setattr(av.services, "get_activity", lambda aid: {"id": 1, "active": 0, "capacity": 5, "booked": 1, "name": "Trip"})
+    monkeypatch.setattr(
+        av.services, "get_activity", lambda aid: {"id": 1, "active": 0, "capacity": 5, "booked": 1, "name": "Trip"}
+    )
     out = av.resolve_activity({"activity_id": 1})
     assert out["ok"] is False
     monkeypatch.setattr(av.services, "get_activity", lambda aid: (_ for _ in ()).throw(RuntimeError("x")))
@@ -205,22 +244,35 @@ def test_action_validation_resolvers(monkeypatch):
     monkeypatch.setattr(av.services, "is_room_available", lambda **k: (False, "booked"), raising=False)
     out = av.check_availability({"room_id": 1, "check_in": "2026-01-01", "check_out": "2026-01-02"})
     assert out["ok"] in (True, False)
-    monkeypatch.setattr(av.services, "is_room_available", lambda **k: (_ for _ in ()).throw(RuntimeError("x")), raising=False)
+    monkeypatch.setattr(
+        av.services, "is_room_available", lambda **k: (_ for _ in ()).throw(RuntimeError("x")), raising=False
+    )
     monkeypatch.setattr(av.services, "get_rooms_available_between", lambda *a, **k: [{"id": 1}], raising=False)
     out = av.check_availability({"room_id": 1, "check_in": "2026-01-01", "check_out": "2026-01-02"})
     assert out["ok"] in (True, False)
-    monkeypatch.setattr(av.services, "get_rooms_available_between", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("x")), raising=False)
-    monkeypatch.setattr(av.services, "is_room_available", lambda **k: (_ for _ in ()).throw(RuntimeError("x")), raising=False)
+    monkeypatch.setattr(
+        av.services,
+        "get_rooms_available_between",
+        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("x")),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        av.services, "is_room_available", lambda **k: (_ for _ in ()).throw(RuntimeError("x")), raising=False
+    )
     out = av.check_availability({"room_id": 1, "check_in": "2026-01-01", "check_out": "2026-01-02"})
     assert out["ok"] in (True, False)
 
     # helper/preview mapping coverage (best-effort across implementation variants)
     base = av._ok_base("x")
     if hasattr(av, "_merge_result"):
-        av._merge_result(base, {"errors": ["e"], "warnings": ["w"], "checks": [{"name": "c", "ok": True}], "resolved": {"a": 1}})
+        av._merge_result(
+            base, {"errors": ["e"], "warnings": ["w"], "checks": [{"name": "c", "ok": True}], "resolved": {"a": 1}}
+        )
         assert base["ok"] is False
     elif hasattr(av, "merge_result"):
-        av.merge_result(base, {"errors": ["e"], "warnings": ["w"], "checks": [{"name": "c", "ok": True}], "resolved": {"a": 1}})
+        av.merge_result(
+            base, {"errors": ["e"], "warnings": ["w"], "checks": [{"name": "c", "ok": True}], "resolved": {"a": 1}}
+        )
     if hasattr(av, "_coerce_qty"):
         assert av._coerce_qty({"qty": "2"}) in (2.0, 2)
     if hasattr(av, "_coerce_price"):
@@ -259,7 +311,13 @@ def test_tools_more_branches(monkeypatch):
     # try to run common read tools with monkeypatched dependencies
     monkeypatch.setattr(tools.services, "init_db", lambda: None)
     monkeypatch.setattr(tools.services, "get_all_rate_plans", lambda: (_ for _ in ()).throw(RuntimeError("x")))
-    for name in ("list_rate_plans", "get_property_stats", "list_capabilities", "app_update_status", "get_recent_activity"):
+    for name in (
+        "list_rate_plans",
+        "get_property_stats",
+        "list_capabilities",
+        "app_update_status",
+        "get_recent_activity",
+    ):
         fn = reg.get(name) if isinstance(reg, dict) else None
         if callable(fn):
             try:
@@ -275,17 +333,26 @@ def test_tools_more_branches(monkeypatch):
         assert tools._safe_float("1.5") == 1.5
         assert tools._safe_float("bad", default=7) == 7
     if hasattr(tools, "tool_get_inventory_alerts"):
-        monkeypatch.setattr(tools.services, "get_inventory_alerts", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("x")), raising=False)
+        monkeypatch.setattr(
+            tools.services,
+            "get_inventory_alerts",
+            lambda *a, **k: (_ for _ in ()).throw(RuntimeError("x")),
+            raising=False,
+        )
         try:
             out = tools.tool_get_inventory_alerts()
         except Exception:
             out = {}
         assert isinstance(out, dict)
     elif hasattr(tools, "get_inventory_alerts"):
-        monkeypatch.setattr(tools.services, "get_inventory_alerts", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("x")), raising=False)
+        monkeypatch.setattr(
+            tools.services,
+            "get_inventory_alerts",
+            lambda *a, **k: (_ for _ in ()).throw(RuntimeError("x")),
+            raising=False,
+        )
         try:
             out = tools.get_inventory_alerts({})
         except Exception:
             out = {}
         assert isinstance(out, dict)
-

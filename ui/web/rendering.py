@@ -50,6 +50,7 @@ def render(request: Request, name: str, ctx: dict | None = None, status: int = 2
     update_notice = None
     try:
         from app_core import updater
+
         update_notice = updater.get_cached_update_notice(force=False, timeout=4)
     except Exception:
         update_notice = None
@@ -59,16 +60,28 @@ def render(request: Request, name: str, ctx: dict | None = None, status: int = 2
         sess = deps.get_session(request)
         dismissed_key = sess.get("dismissed_update_key") if isinstance(sess, dict) else None
         show_update_modal = bool(
-            update_notice and update_notice.get("update_available") and update_notice_key and dismissed_key != update_notice_key
+            update_notice
+            and update_notice.get("update_available")
+            and update_notice_key
+            and dismissed_key != update_notice_key
         )
     except Exception:
         show_update_modal = bool(update_notice and update_notice.get("update_available"))
-    context = {"request": request, "services": services, "paths": paths, "csrf_token": deps.csrf_token(request),
-               "flashes": deps.pop_flashes(request), "unlocked": deps.is_unlocked(request),
-               "brand_name": services.get_app_display_name(), "gift": services.get_gift_attribution(),
-               "update_notice": update_notice, "update_notice_key": update_notice_key, "show_update_modal": show_update_modal,
-               "current_user": deps.get_current_user(request) if hasattr(deps, "get_current_user") else None,
-               "current_actor": deps.current_actor(request) if hasattr(deps, "current_actor") else None}
+    context = {
+        "request": request,
+        "services": services,
+        "paths": paths,
+        "csrf_token": deps.csrf_token(request),
+        "flashes": deps.pop_flashes(request),
+        "unlocked": deps.is_unlocked(request),
+        "brand_name": services.get_app_display_name(),
+        "gift": services.get_gift_attribution(),
+        "update_notice": update_notice,
+        "update_notice_key": update_notice_key,
+        "show_update_modal": show_update_modal,
+        "current_user": deps.get_current_user(request) if hasattr(deps, "get_current_user") else None,
+        "current_actor": deps.current_actor(request) if hasattr(deps, "current_actor") else None,
+    }
     if ctx:
         context.update(ctx)
     context = _to_template_data(context)

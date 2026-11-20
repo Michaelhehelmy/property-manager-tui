@@ -20,7 +20,9 @@ def test_guest_detail_enriches_batches(client, monkeypatch):
     # Ensure a guest exists (seed data usually has guests)
     guest = db.connect().execute("SELECT id, canonical_name FROM guests ORDER BY id LIMIT 1").fetchone()
     if not guest:
-        db.connect().execute("INSERT INTO guests (canonical_name, phone, email) VALUES (?,?,?)", ("Batch Guest", "", ""))
+        db.connect().execute(
+            "INSERT INTO guests (canonical_name, phone, email) VALUES (?,?,?)", ("Batch Guest", "", "")
+        )
         db.connect().commit()
         guest = db.connect().execute("SELECT id, canonical_name FROM guests ORDER BY id DESC LIMIT 1").fetchone()
     gid = int(guest["id"])
@@ -29,10 +31,14 @@ def test_guest_detail_enriches_batches(client, monkeypatch):
     c = db.connect()
     batch_id = None
     for stmt, params in [
-        ("INSERT INTO inventory_batches (item_id, batch_code, lot_code, quantity_received, quantity_remaining, received_at, expiry_date, supplier, status) VALUES (?,?,?,?,?,?,?,?,?)",
-         (1, "B1", "LOT1", 10, 5, "2026-01-01", "2099-01-01", "Supplier", "active")),
-        ("INSERT INTO inventory_batches (item_id, lot_code, quantity_remaining, received_at, expiry_date, supplier) VALUES (?,?,?,?,?,?)",
-         (1, "LOT1", 5, "2026-01-01", "2099-01-01", "Supplier")),
+        (
+            "INSERT INTO inventory_batches (item_id, batch_code, lot_code, quantity_received, quantity_remaining, received_at, expiry_date, supplier, status) VALUES (?,?,?,?,?,?,?,?,?)",
+            (1, "B1", "LOT1", 10, 5, "2026-01-01", "2099-01-01", "Supplier", "active"),
+        ),
+        (
+            "INSERT INTO inventory_batches (item_id, lot_code, quantity_remaining, received_at, expiry_date, supplier) VALUES (?,?,?,?,?,?)",
+            (1, "LOT1", 5, "2026-01-01", "2099-01-01", "Supplier"),
+        ),
     ]:
         try:
             c.execute(stmt, params)
@@ -87,13 +93,22 @@ def test_unlock_lock_recovery_and_settings_branches(client, monkeypatch):
     set_session(client, unlocked=False)
     assert client.get("/unlock/recovery?next=/").status_code == 200
     monkeypatch.setattr(services, "use_recovery_code", lambda *a, **k: (_ for _ in ()).throw(ValueError("bad code")))
-    badrec = _csrf_post(client, "/unlock/recovery", {"code": "x", "new_password": "newpass123", "confirm_password": "newpass123", "next": "/"})
+    badrec = _csrf_post(
+        client,
+        "/unlock/recovery",
+        {"code": "x", "new_password": "newpass123", "confirm_password": "newpass123", "next": "/"},
+    )
     assert badrec.status_code in (302, 303)
 
     def ok_use(code, new_password, confirm_password):
         services.set_super_password(new_password)
+
     monkeypatch.setattr(services, "use_recovery_code", ok_use)
-    goodrec = _csrf_post(client, "/unlock/recovery", {"code": "ok", "new_password": "newpass123", "confirm_password": "newpass123", "next": "/"})
+    goodrec = _csrf_post(
+        client,
+        "/unlock/recovery",
+        {"code": "ok", "new_password": "newpass123", "confirm_password": "newpass123", "next": "/"},
+    )
     assert goodrec.status_code in (302, 303)
     # restore test password for subsequent operations
     try:
@@ -127,13 +142,28 @@ def test_seed_export_import_demo_label_health_updates(client, monkeypatch, tmp_p
     csrf = set_session(client, unlocked=True)
     r = client.post("/settings/seed/import", data={"csrf": csrf}, follow_redirects=False)
     assert r.status_code in (302, 303)
-    r = client.post("/settings/seed/import", data={"csrf": csrf}, files={"seed_file": ("seed.txt", b"{}", "text/plain")}, follow_redirects=False)
+    r = client.post(
+        "/settings/seed/import",
+        data={"csrf": csrf},
+        files={"seed_file": ("seed.txt", b"{}", "text/plain")},
+        follow_redirects=False,
+    )
     assert r.status_code in (302, 303)
     monkeypatch.setattr(services, "import_seed_config", lambda *a, **k: {"summary": {"ok": True}})
-    r = client.post("/settings/seed/import", data={"csrf": csrf, "password": "testpass", "confirm": "IMPORT"}, files={"seed_file": ("seed.json", b"{}", "application/json")}, follow_redirects=False)
+    r = client.post(
+        "/settings/seed/import",
+        data={"csrf": csrf, "password": "testpass", "confirm": "IMPORT"},
+        files={"seed_file": ("seed.json", b"{}", "application/json")},
+        follow_redirects=False,
+    )
     assert r.status_code in (302, 303)
     monkeypatch.setattr(services, "import_seed_config", lambda *a, **k: {"summary": {"ok": True}})
-    r = client.post("/settings/seed/import", data={"csrf": csrf, "password": "testpass", "confirm": "IMPORT"}, files={"seed_file": ("seed.csv", b"a,b\n1,2", "text/csv")}, follow_redirects=False)
+    r = client.post(
+        "/settings/seed/import",
+        data={"csrf": csrf, "password": "testpass", "confirm": "IMPORT"},
+        files={"seed_file": ("seed.csv", b"a,b\n1,2", "text/csv")},
+        follow_redirects=False,
+    )
     assert r.status_code in (302, 303)
 
     # demo preset and reset wrong confirm already covered elsewhere; exercise demo route + error
@@ -153,12 +183,16 @@ def test_seed_export_import_demo_label_health_updates(client, monkeypatch, tmp_p
     assert r.status_code in (302, 303)
 
     # health
-    monkeypatch.setattr(services, "verify_ledger_integrity", lambda: {"ok": True, "stats": {}, "issues": [], "checks": {}})
+    monkeypatch.setattr(
+        services, "verify_ledger_integrity", lambda: {"ok": True, "stats": {}, "issues": [], "checks": {}}
+    )
     set_session(client, unlocked=True)
     assert client.get("/settings/health").status_code == 200
 
     # updates check branches
-    monkeypatch.setattr(updater, "check_for_updates", lambda: {"ok": True, "update_available": True, "commits_behind": 2})
+    monkeypatch.setattr(
+        updater, "check_for_updates", lambda: {"ok": True, "update_available": True, "commits_behind": 2}
+    )
     assert _csrf_post(client, "/settings/updates/check", {}, unlocked=False).status_code in (302, 303)
     monkeypatch.setattr(updater, "check_for_updates", lambda: {"ok": True, "update_available": False})
     assert _csrf_post(client, "/settings/updates/check", {}, unlocked=False).status_code in (302, 303)
@@ -169,9 +203,15 @@ def test_seed_export_import_demo_label_health_updates(client, monkeypatch, tmp_p
 
     # updates apply branches
     monkeypatch.setattr(updater, "apply_update", lambda: {"ok": True})
-    assert _csrf_post(client, "/settings/updates/apply", {"confirm": "UPDATE APP"}, unlocked=True).status_code in (302, 303)
+    assert _csrf_post(client, "/settings/updates/apply", {"confirm": "UPDATE APP"}, unlocked=True).status_code in (
+        302,
+        303,
+    )
     monkeypatch.setattr(updater, "apply_update", lambda: {"ok": False, "error": "nope"})
-    assert _csrf_post(client, "/settings/updates/apply", {"confirm": "UPDATE APP"}, unlocked=True).status_code in (302, 303)
+    assert _csrf_post(client, "/settings/updates/apply", {"confirm": "UPDATE APP"}, unlocked=True).status_code in (
+        302,
+        303,
+    )
 
 
 def test_reports_and_support_small_branches(client, monkeypatch, tmp_path):
@@ -179,6 +219,7 @@ def test_reports_and_support_small_branches(client, monkeypatch, tmp_path):
     # exports/invoices dirs exist in web_env; create files
     # (client fixture provides env; locate dirs via services paths if set)
     from app_core import paths
+
     try:
         (paths.EXPORT_DIR / "sample.txt").write_text("x", encoding="utf-8")
         (paths.INVOICE_DIR / "inv1.txt").write_text("x", encoding="utf-8")
@@ -191,11 +232,22 @@ def test_reports_and_support_small_branches(client, monkeypatch, tmp_path):
     # reports run unknown kind renders generic path? unknown kind falls back to pl(start,end) via .get(..., services.report_pl_statement)
     # and error branch already covered; cover analytics export error already possible
     # invalid preset error branch
-    monkeypatch.setattr(services, "generate_unified_report", lambda *a, **k: (_ for _ in ()).throw(ValueError("bad preset")))
-    r = _csrf_post(client, "/reports/analytics-export", {"preset": "nope", "start": "2026-01-01", "end": "2026-01-31"}, unlocked=True)
+    monkeypatch.setattr(
+        services, "generate_unified_report", lambda *a, **k: (_ for _ in ()).throw(ValueError("bad preset"))
+    )
+    r = _csrf_post(
+        client,
+        "/reports/analytics-export",
+        {"preset": "nope", "start": "2026-01-01", "end": "2026-01-31"},
+        unlocked=True,
+    )
     assert r.status_code in (302, 303)
 
     # support error-page prefill branch
-    set_session(client, unlocked=False, extra={"last_error_report": {"ref": "abc", "error_type": "Boom", "error_message": "msg", "path": "/x"}})
+    set_session(
+        client,
+        unlocked=False,
+        extra={"last_error_report": {"ref": "abc", "error_type": "Boom", "error_message": "msg", "path": "/x"}},
+    )
     r = client.get("/support/report?from_error=1&ref=abc&path=/x")
     assert r.status_code == 200

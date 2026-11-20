@@ -9,6 +9,7 @@ def test_support_report_page_renders(client, monkeypatch):
     # avoid network side effects from update notices/checks during render/diagnostics
     try:
         import app_core.updater as updater
+
         monkeypatch.setattr(updater, "get_cached_update_notice", lambda *a, **k: None)
     except Exception:
         pass
@@ -22,19 +23,26 @@ def test_support_report_page_renders(client, monkeypatch):
 def test_support_report_prefill_from_error_context(client, monkeypatch):
     try:
         import app_core.updater as updater
-        monkeypatch.setattr(updater, "get_cached_update_notice", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+
+        monkeypatch.setattr(
+            updater, "get_cached_update_notice", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom"))
+        )
     except Exception:
         pass
 
     # set last_error_report in session so route prefills from it
-    set_session(client, unlocked=False, extra={
-        "last_error_report": {
-            "ref": "ERR123",
-            "error_message": "Something failed",
-            "error_type": "ValueError",
-            "path": "/reservations/1",
-        }
-    })
+    set_session(
+        client,
+        unlocked=False,
+        extra={
+            "last_error_report": {
+                "ref": "ERR123",
+                "error_message": "Something failed",
+                "error_type": "ValueError",
+                "path": "/reservations/1",
+            }
+        },
+    )
     r = client.get("/support/report?from_error=1&ref=ERR123")
     assert r.status_code == 200
     # prefill content may be embedded in JSON/template; just ensure page rendered

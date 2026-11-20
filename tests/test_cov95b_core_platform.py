@@ -25,6 +25,7 @@ import app_core.services as services_pkg
 # doctor.py missing branches
 # ---------------------------------------------------------------------------
 
+
 def test_doctor_create_backup_missing_source_and_default_dest(tmp_path, monkeypatch):
     monkeypatch.setattr(paths, "DB_PATH", tmp_path / "missing.db")
     monkeypatch.setattr(paths, "DATA_DIR", tmp_path)
@@ -77,10 +78,13 @@ def test_doctor_detect_backup_files_exception_branches(tmp_path, monkeypatch):
     class BoomPath:
         def __init__(self, p):
             self.p = p
+
         def exists(self):
             raise RuntimeError("boom-exists")
+
         def is_dir(self):
             return True
+
     monkeypatch.setattr(paths, "DATA_DIR", tmp_path / "x")
     monkeypatch.setattr(doctor, "Path", BoomPath)
     det = doctor._detect_backup_files()
@@ -93,6 +97,7 @@ def test_doctor_config_issues_exception_and_ledger_branches(tmp_path, monkeypatc
         @property
         def _conn(self):
             raise RuntimeError("db-attr-fail")
+
     monkeypatch.setattr(doctor, "db", BadDB())
     # keep rest of checks benign
     monkeypatch.setattr(paths, "check_runtime_permissions", lambda: {}, raising=False)
@@ -141,14 +146,19 @@ def test_doctor_collect_health_io_and_ledger_branches(clean_db, tmp_path, monkey
         def __init__(self, p):
             self._p = real_path(p)
             self._s = str(p)
+
         def __getattr__(self, name):
             return getattr(self._p, name)
+
         def __fspath__(self):
             return str(self._p)
+
         def __str__(self):
             return str(self._p)
+
         def __truediv__(self, other):
             return SidecarPath(self._p / other)
+
         def exists(self):
             if self._s.endswith("-wal"):
                 state["wal_exists_calls"] += 1
@@ -180,21 +190,41 @@ def test_doctor_collect_health_io_and_ledger_branches(clean_db, tmp_path, monkey
     monkeypatch.setattr(paths, "EXPORT_DIR", hdir / "exports")
     monkeypatch.setattr(paths, "INVOICE_DIR", hdir / "invoices")
     monkeypatch.setattr(paths, "ensure_data_dirs", lambda: None)
-    monkeypatch.setattr(doctor, "_backup_restore_guidance", lambda: {"backup": {}, "restore": {}, "readiness": {}, "runtime_data_preserved": []})
+    monkeypatch.setattr(
+        doctor,
+        "_backup_restore_guidance",
+        lambda: {"backup": {}, "restore": {}, "readiness": {}, "runtime_data_preserved": []},
+    )
     monkeypatch.setattr(doctor, "_config_issues", lambda: [])
 
     real_path = Path
+
     class DBPathWrap:
         def __init__(self, p):
             self._p = real_path(p)
             self._s = str(p)
-        def __fspath__(self): return str(self._p)
-        def __str__(self): return str(self._p)
-        def __truediv__(self, other): return DBPathWrap(self._p / other)
-        def __getattr__(self, name): return getattr(self._p, name)
-        def exists(self): return True
-        def is_dir(self): return False
-        def is_file(self): return True
+
+        def __fspath__(self):
+            return str(self._p)
+
+        def __str__(self):
+            return str(self._p)
+
+        def __truediv__(self, other):
+            return DBPathWrap(self._p / other)
+
+        def __getattr__(self, name):
+            return getattr(self._p, name)
+
+        def exists(self):
+            return True
+
+        def is_dir(self):
+            return False
+
+        def is_file(self):
+            return True
+
         def stat(self, *a, **k):
             # raise to hit 456-457 inside collect_health try block
             raise RuntimeError("nostat")
@@ -207,11 +237,14 @@ def test_doctor_collect_health_io_and_ledger_branches(clean_db, tmp_path, monkey
     monkeypatch.setattr(doctor, "Path", path_factory)
 
     real_connect = sqlite3.connect
+
     class ConnProxy:
         def __init__(self, real):
             self._real = real
+
         def __getattr__(self, n):
             return getattr(self._real, n)
+
         def execute(self, sql, *a, **k):
             s = str(sql)
             if "FROM sqlite_master" in s and "type='table'" in s:
@@ -219,6 +252,7 @@ def test_doctor_collect_health_io_and_ledger_branches(clean_db, tmp_path, monkey
             if "PRAGMA journal_mode" in s:
                 raise RuntimeError("no-pragmas")
             return self._real.execute(sql, *a, **k)
+
     monkeypatch.setattr(sqlite3, "connect", lambda *a, **k: ConnProxy(real_connect(*a, **k)))
     try:
         monkeypatch.setattr(db, "_conn", None)  # triggers ledger-skip note 497
@@ -238,10 +272,12 @@ def test_doctor_collect_health_io_and_ledger_branches(clean_db, tmp_path, monkey
 
     # ledger outer except 498-499: make getattr(db,"_conn",None) raise inside ledger try block
     monkeypatch.setattr(db, "_conn", object())
+
     class BadConnDB:
         @property
         def _conn(self):
             raise RuntimeError("conn-fail")
+
     monkeypatch.setattr(doctor, "db", BadConnDB())
     rep = doctor.collect_health(check_updates=False)
     assert any("Ledger integrity check unavailable" in n for n in rep.get("notes", []))
@@ -250,8 +286,17 @@ def test_doctor_collect_health_io_and_ledger_branches(clean_db, tmp_path, monkey
 def test_doctor_format_and_main_guard(tmp_path, monkeypatch):
     # format_health_report remote redact exception 594-595
     rep = {
-        "ok": True, "checked_at": "", "paths": {}, "data_dirs": {}, "schema": {}, "integrity": {},
-        "consistency": {}, "readiness": {}, "backup_restore": {}, "config_issues": [], "notes": [],
+        "ok": True,
+        "checked_at": "",
+        "paths": {},
+        "data_dirs": {},
+        "schema": {},
+        "integrity": {},
+        "consistency": {},
+        "readiness": {},
+        "backup_restore": {},
+        "config_issues": [],
+        "notes": [],
         "update": {"local": {"app_version": "1", "is_git_repo": True, "remote": "http://x"}},
     }
     monkeypatch.setattr(paths, "redact_sensitive", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("redact fail")))
@@ -262,7 +307,23 @@ def test_doctor_format_and_main_guard(tmp_path, monkeypatch):
     # __main__ guard 686
     monkeypatch.setattr(paths, "redact_sensitive", lambda x, *a, **k: str(x))
     monkeypatch.setattr(sys, "argv", ["app_core.doctor", "--json"])
-    monkeypatch.setattr(doctor, "collect_health", lambda check_updates=False: {"ok": True, "checked_at": "", "paths": {}, "data_dirs": {}, "schema": {}, "integrity": {}, "consistency": {}, "readiness": {}, "backup_restore": {}, "config_issues": [], "notes": []})
+    monkeypatch.setattr(
+        doctor,
+        "collect_health",
+        lambda check_updates=False: {
+            "ok": True,
+            "checked_at": "",
+            "paths": {},
+            "data_dirs": {},
+            "schema": {},
+            "integrity": {},
+            "consistency": {},
+            "readiness": {},
+            "backup_restore": {},
+            "config_issues": [],
+            "notes": [],
+        },
+    )
     with pytest.raises(SystemExit) as ei:
         runpy.run_module("app_core.doctor", run_name="__main__")
     assert ei.value.code == 0
@@ -271,6 +332,7 @@ def test_doctor_format_and_main_guard(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 # paths.py missing branches
 # ---------------------------------------------------------------------------
+
 
 def test_paths_missing_branches(tmp_path, monkeypatch):
     # _is_frozen_runtime return branch 16
@@ -287,11 +349,13 @@ def test_paths_missing_branches(tmp_path, monkeypatch):
     monkeypatch.setattr(sys, "executable", str(tmp_path / "app.exe"), raising=False)
     real_path = Path
     calls = {"n": 0}
+
     def path_boom_then_ok(p=""):
         calls["n"] += 1
         if calls["n"] == 1:
             raise RuntimeError("boom")
         return real_path(p)
+
     monkeypatch.setattr(paths, "Path", path_boom_then_ok)
     try:
         r = paths._detect_project_root()
@@ -311,15 +375,27 @@ def test_paths_missing_branches(tmp_path, monkeypatch):
 
     # _resolve_existingish fallbacks 41-45
     class P1:
-        def expanduser(self): return self
-        def resolve(self, strict=False): raise RuntimeError("r")
-        def absolute(self): return Path("/tmp/abs")
+        def expanduser(self):
+            return self
+
+        def resolve(self, strict=False):
+            raise RuntimeError("r")
+
+        def absolute(self):
+            return Path("/tmp/abs")
+
     assert paths._resolve_existingish(P1()) == Path("/tmp/abs")
 
     class P2:
-        def expanduser(self): return self
-        def resolve(self, strict=False): raise RuntimeError("r")
-        def absolute(self): raise RuntimeError("a")
+        def expanduser(self):
+            return self
+
+        def resolve(self, strict=False):
+            raise RuntimeError("r")
+
+        def absolute(self):
+            raise RuntimeError("a")
+
     p2 = P2()
     assert paths._resolve_existingish(p2) is p2
 
@@ -330,6 +406,7 @@ def test_paths_missing_branches(tmp_path, monkeypatch):
     class BadPat:
         def sub(self, repl, s):
             raise RuntimeError("subfail")
+
     orig_patterns = paths._REDACT_PATTERNS
     monkeypatch.setattr(paths, "_REDACT_PATTERNS", [(BadPat(), "x")] + list(orig_patterns))
     try:
@@ -346,13 +423,16 @@ def test_paths_missing_branches(tmp_path, monkeypatch):
 # updater.py missing branches
 # ---------------------------------------------------------------------------
 
+
 def test_updater_missing_branches(monkeypatch, tmp_path):
     real_check_for_updates = updater.check_for_updates
+
     # _project_root fallback branches 45-54 when paths.PROJECT_ROOT access fails
     class BadPaths:
         @property
         def PROJECT_ROOT(self):
             raise RuntimeError("no-root")
+
     monkeypatch.setattr(updater, "paths", BadPaths())
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     monkeypatch.setattr(sys, "executable", str(tmp_path / "app.bin"), raising=False)
@@ -360,8 +440,12 @@ def test_updater_missing_branches(monkeypatch, tmp_path):
 
     # force exception inside frozen branch -> 52-53
     class BadPathStr:
-        def __init__(self, p): self.p = p
-        def resolve(self): raise RuntimeError("no-resolve")
+        def __init__(self, p):
+            self.p = p
+
+        def resolve(self):
+            raise RuntimeError("no-resolve")
+
     monkeypatch.setattr(updater, "Path", lambda p="": BadPathStr(p) if "app.bin" in str(p) else Path(p))
     assert isinstance(updater._project_root(), Path)
 
@@ -373,13 +457,21 @@ def test_updater_missing_branches(monkeypatch, tmp_path):
 
     # _github_get auth header 152
     captured = {}
+
     class Resp:
-        def __enter__(self): return self
-        def __exit__(self, *a): return False
-        def read(self): return b'{"ok": true}'
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            return b'{"ok": true}'
+
     def fake_urlopen(req, timeout=0):
         captured["auth"] = req.headers.get("Authorization") or req.get_header("Authorization")
         return Resp()
+
     monkeypatch.setenv("GITHUB_TOKEN", "tok123")
     monkeypatch.setattr(updater.urllib.request, "urlopen", fake_urlopen)
     data = updater._github_get("https://api.github.com/x", timeout=5)
@@ -399,28 +491,58 @@ def test_updater_missing_branches(monkeypatch, tmp_path):
     monkeypatch.setattr(updater, "_default_update_interval_sec", lambda: 3600)
     monkeypatch.setattr(updater, "auto_update_checks_enabled", lambda: True)
     monkeypatch.setattr(updater, "get_local_state", lambda: {"is_git_repo": True, "branch": "main"})
-    monkeypatch.setattr(updater, "check_for_updates", lambda timeout=8: {"ok": False, "update_available": False, "error": "git-rate-limit", "latest": None, "compare_url": None, "commits_behind": None})
-    monkeypatch.setattr(updater, "get_latest_release", lambda timeout=8: (_ for _ in ()).throw(RuntimeError("rel-boom")))
+    monkeypatch.setattr(
+        updater,
+        "check_for_updates",
+        lambda timeout=8: {
+            "ok": False,
+            "update_available": False,
+            "error": "git-rate-limit",
+            "latest": None,
+            "compare_url": None,
+            "commits_behind": None,
+        },
+    )
+    monkeypatch.setattr(
+        updater, "get_latest_release", lambda timeout=8: (_ for _ in ()).throw(RuntimeError("rel-boom"))
+    )
     n = updater.get_cached_update_notice(force=True, timeout=1)
     assert n.get("error") == "git-rate-limit"
 
     # release exception with no prior error -> 314
     updater._UPDATE_CACHE["checked_at_ts"] = 0.0
     updater._UPDATE_CACHE["result"] = None
-    monkeypatch.setattr(updater, "check_for_updates", lambda timeout=8: {"ok": True, "update_available": False, "error": None, "latest": None, "compare_url": None, "commits_behind": 0})
-    monkeypatch.setattr(updater, "get_latest_release", lambda timeout=8: (_ for _ in ()).throw(RuntimeError("rel-only")))
+    monkeypatch.setattr(
+        updater,
+        "check_for_updates",
+        lambda timeout=8: {
+            "ok": True,
+            "update_available": False,
+            "error": None,
+            "latest": None,
+            "compare_url": None,
+            "commits_behind": 0,
+        },
+    )
+    monkeypatch.setattr(
+        updater, "get_latest_release", lambda timeout=8: (_ for _ in ()).throw(RuntimeError("rel-only"))
+    )
     n = updater.get_cached_update_notice(force=True, timeout=1)
     assert n.get("error") == "rel-only"
 
     # changelog loop continue on non-dict commit 383 (restore real function after earlier monkeypatches)
     monkeypatch.setattr(updater, "check_for_updates", real_check_for_updates)
     monkeypatch.setattr(updater, "get_local_state", lambda: {"commit": "old", "is_git_repo": True, "branch": "main"})
-    monkeypatch.setattr(updater, "_github_get", lambda url, timeout=12: [
-        {"sha": "new2", "commit": {"author": {"date": "d2", "name": "n2"}, "message": "subj2"}, "html_url": "u2"},
-        "not-a-dict",
-        {"sha": "new1", "commit": {"author": {"date": "d1", "name": "n1"}, "message": "subj1"}, "html_url": "u1"},
-        {"sha": "old", "commit": {"author": {"date": "d0", "name": "n0"}, "message": "old"}, "html_url": "u0"},
-    ])
+    monkeypatch.setattr(
+        updater,
+        "_github_get",
+        lambda url, timeout=12: [
+            {"sha": "new2", "commit": {"author": {"date": "d2", "name": "n2"}, "message": "subj2"}, "html_url": "u2"},
+            "not-a-dict",
+            {"sha": "new1", "commit": {"author": {"date": "d1", "name": "n1"}, "message": "subj1"}, "html_url": "u1"},
+            {"sha": "old", "commit": {"author": {"date": "d0", "name": "n0"}, "message": "old"}, "html_url": "u0"},
+        ],
+    )
     res = updater.check_for_updates()
     assert res["ok"] is True and res["commits_behind"] == 2
     assert [c["commit_short"] for c in res["changelog"]] == ["new2", "new1"]
@@ -436,11 +558,13 @@ def test_updater_missing_branches(monkeypatch, tmp_path):
 # support.py missing branches
 # ---------------------------------------------------------------------------
 
+
 def test_support_missing_branches(tmp_path, monkeypatch):
     # _redact_string pattern sub except 47-48
     class BadPat:
         def sub(self, repl, s):
             raise RuntimeError("subfail")
+
     orig = support._SENSITIVE_VALUE_PATTERNS
     monkeypatch.setattr(support, "_SENSITIVE_VALUE_PATTERNS", [BadPat()])
     try:
@@ -456,6 +580,7 @@ def test_support_missing_branches(tmp_path, monkeypatch):
     # fallback repr branch 98
     class X:
         pass
+
     out = support.sanitize_for_report(X(), "safe_field")
     assert isinstance(out, str)
 
@@ -466,14 +591,23 @@ def test_support_missing_branches(tmp_path, monkeypatch):
     assert rs.get("db_initialized") is False
 
     # doctor summary integrity non-dict passthrough 148
-    monkeypatch.setattr("app_core.doctor.collect_health", lambda check_updates=False: {
-        "ok": True, "schema": {}, "integrity": "opaque", "config_issues": [], "notes": [], "update": {}
-    })
+    monkeypatch.setattr(
+        "app_core.doctor.collect_health",
+        lambda check_updates=False: {
+            "ok": True,
+            "schema": {},
+            "integrity": "opaque",
+            "config_issues": [],
+            "notes": [],
+            "update": {},
+        },
+    )
     ds = support._safe_doctor_summary()
     assert ds.get("integrity") == "opaque"
 
     # collect_support_diagnostics updater block exception 251-252
     import app_core.updater as real_upd
+
     monkeypatch.setattr(real_upd, "get_local_state", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
     diag = support.collect_support_diagnostics(context={})
     assert "error" in (diag.get("app") or {})
@@ -494,7 +628,11 @@ def test_support_missing_branches(tmp_path, monkeypatch):
     monkeypatch.setattr(sys, "argv", ["support", "--json"])
     # stub collect/format to be fast
     monkeypatch.setattr(support, "collect_support_diagnostics", lambda *a, **k: {"ok": True})
-    monkeypatch.setattr(support, "generate_support_bundle", lambda *a, **k: {"diagnostics": {"ok": True}, "markdown": "m", "issue": {"url": "u"}})
+    monkeypatch.setattr(
+        support,
+        "generate_support_bundle",
+        lambda *a, **k: {"diagnostics": {"ok": True}, "markdown": "m", "issue": {"url": "u"}},
+    )
     with pytest.raises(SystemExit) as ei:
         runpy.run_module("app_core.support", run_name="__main__")
     assert ei.value.code == 0
@@ -503,6 +641,7 @@ def test_support_missing_branches(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 # db.py missing branches
 # ---------------------------------------------------------------------------
+
 
 def test_db_migrate_to_17_role_seed_exception(tmp_path, monkeypatch):
     # _migrate_to_17 role insert except 1306-1307
@@ -517,8 +656,10 @@ def test_db_migrate_to_17_role_seed_exception(tmp_path, monkeypatch):
     class ProxyConn:
         def __init__(self, real):
             self._real = real
+
         def __getattr__(self, name):
             return getattr(self._real, name)
+
         def execute(self, sql, *a, **k):
             if "INSERT OR IGNORE INTO roles" in str(sql):
                 raise RuntimeError("seed-fail")
@@ -550,6 +691,7 @@ def test_db_migrate_to_17_role_seed_exception(tmp_path, monkeypatch):
 # billing_docs.py missing branches
 # ---------------------------------------------------------------------------
 
+
 def test_billing_docs_missing_branches(tmp_path, monkeypatch):
     monkeypatch.setattr(paths, "INVOICE_DIR", tmp_path / "inv")
     paths.ensure_data_dirs()
@@ -560,6 +702,7 @@ def test_billing_docs_missing_branches(tmp_path, monkeypatch):
 
     # simulate write/open failure to hit 53-60 and inner close-except 56-57
     import os as _os
+
     real_fdopen = _os.fdopen
     real_close = _os.close
     real_open = _os.open
@@ -567,8 +710,13 @@ def test_billing_docs_missing_branches(tmp_path, monkeypatch):
     class FailingFile:
         def __init__(self, fd):
             self.fd = fd
-        def __enter__(self): return self
-        def __exit__(self, *exc): return False
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
         def write(self, s):
             raise RuntimeError("writefail")
 
@@ -629,7 +777,9 @@ def test_billing_docs_missing_branches(tmp_path, monkeypatch):
     # build_walkin_receipt_text gross fallback exception 220-221
     txt = billing_docs.build_walkin_receipt_text(
         [{"desc": "X", "qty": "bad", "price": 5, "gross": 0}],
-        total_gross=0, method="Cash", payment_id=1,
+        total_gross=0,
+        method="Cash",
+        payment_id=1,
     )
     assert "WALK-IN RECEIPT" in txt
 
@@ -637,6 +787,7 @@ def test_billing_docs_missing_branches(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 # services/__init__.py and reports_metrics.py missing branches
 # ---------------------------------------------------------------------------
+
 
 def test_services_facade_alias_branches(monkeypatch):
     import importlib
@@ -661,15 +812,18 @@ def test_reports_metrics_unparseable_date_branch(clean_db, monkeypatch):
     # 104: continue on rows with unparseable dates (row must pass SQL overlap filter)
     from app_core import db as core_db
     from app_core.domain.dates import parse_date as orig_parse_date
+
     core_db.execute(
         "INSERT INTO reservations (guest_name, source, room_id, agreed_nightly_rate, check_in_date, check_out_date, status) "
         "VALUES (?,?,?,?,?,?,?)",
         ("BadDates", "Direct", 1, 100.0, "2026-01-02", "2026-01-04", "Reserved"),
     )
+
     def fake_parse(v):
         if str(v) in ("2026-01-02", "2026-01-04"):
             return None
         return orig_parse_date(v)
+
     monkeypatch.setattr(reports_metrics, "parse_date", fake_parse)
     out = reports_metrics.occupancy_adr_revpar("2026-01-01", "2026-01-05")
     assert out["occupied_room_nights"] == 0

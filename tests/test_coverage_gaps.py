@@ -1,4 +1,5 @@
 """Closes every remaining branch + internal function."""
+
 import pytest
 from unittest.mock import patch, MagicMock
 from app_core import services
@@ -10,6 +11,7 @@ from conftest import make_reservation
 # ═══════════════════════════════════════════════════════════════════════════
 # INTERNAL HELPERS
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def test_norm_text_basic():
     assert services._norm_text("Hello World") == "hello world"
@@ -77,6 +79,7 @@ def test_nights_calculation():
 # ═══════════════════════════════════════════════════════════════════════════
 # VALIDATE SETTING — every type
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def test_validate_str(clean_db):
     norm, err = services._validate_setting("property_name", "  Test  ")
@@ -169,6 +172,7 @@ def test_validate_unknown_key(clean_db):
 # LANGUAGE
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def test_set_language_en(clean_db):
     services.set_language("en")
     assert services.get_language() == "en"
@@ -199,6 +203,7 @@ def test_translate_missing_key_returns_key(clean_db):
 # GUESTS — remaining functions
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def test_get_guest_by_id(clean_db):
     gid, name, _ = services.find_or_create_guest("Test")
     g = services.get_guest_by_id(gid)
@@ -216,8 +221,7 @@ def test_get_guest_history_empty(clean_db):
 
 def test_get_guest_history_with_bookings(clean_db):
     gid, _, _ = services.find_or_create_guest("Test")
-    services.create_reservation("Test", "Direct", 1, None, 100,
-                                "2026-12-01", "2026-12-03", guest_id=gid)
+    services.create_reservation("Test", "Direct", 1, None, 100, "2026-12-01", "2026-12-03", guest_id=gid)
     history = services.get_guest_history_by_id(gid)
     assert len(history) == 1
     assert history[0]["status"] == "Reserved"
@@ -226,6 +230,7 @@ def test_get_guest_history_with_bookings(clean_db):
 # ═══════════════════════════════════════════════════════════════════════════
 # INVENTORY — remaining
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def test_get_inventory_categories(clean_db):
     cats = services.get_inventory_categories()
@@ -237,6 +242,7 @@ def test_get_inventory_categories(clean_db):
 # EXPENSES — remaining
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def test_get_expense_categories(clean_db):
     cats = services.get_expense_categories()
     assert len(cats) == 10
@@ -245,6 +251,7 @@ def test_get_expense_categories(clean_db):
 # ═══════════════════════════════════════════════════════════════════════════
 # SETTINGS — remaining
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def test_get_all_settings(clean_db):
     all_s = services.get_all_settings()
@@ -261,6 +268,7 @@ def test_save_settings_skips_schema_version(clean_db):
 # ═══════════════════════════════════════════════════════════════════════════
 # LEDGER — remaining
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def test_get_recent_ledger(clean_db):
     make_reservation()
@@ -279,6 +287,7 @@ def test_get_recent_ledger_limit(clean_db):
 # ═══════════════════════════════════════════════════════════════════════════
 # RESERVATIONS — remaining
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def test_get_reservation(clean_db):
     rid = make_reservation()
@@ -313,9 +322,11 @@ def test_cancel_keep_first_night_policy(clean_db):
     services.set_setting("cancel_policy", "keep_first_night")
     rid = make_reservation(rate=100.0, ci="2026-12-01", co="2026-12-03", deposit=150.0)
     services.cancel_reservation(rid, "testpass")
-    refund = connect().execute(
-        "SELECT SUM(amount) FROM payments WHERE reservation_id=? AND payment_type='Refund'",
-        (rid,)).fetchone()[0]
+    refund = (
+        connect()
+        .execute("SELECT SUM(amount) FROM payments WHERE reservation_id=? AND payment_type='Refund'", (rid,))
+        .fetchone()[0]
+    )
     # 150 - 100 = 50 refund
     assert abs(refund) == pytest.approx(50.0)
 
@@ -323,6 +334,7 @@ def test_cancel_keep_first_night_policy(clean_db):
 # ═══════════════════════════════════════════════════════════════════════════
 # POS — remaining
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def test_void_custom_item_no_inventory(clean_db):
     """Custom items (no inventory link) void without stock restore."""
@@ -335,8 +347,11 @@ def test_void_custom_item_no_inventory(clean_db):
 
 def test_add_pos_inactive_inventory_item(clean_db):
     from app_core.db import transaction
+
     with transaction() as c:
-        c.execute("INSERT INTO inventory (item_name, category, stock_qty, unit, active) VALUES ('Dead', 'Test', 10, 'pcs', 0)")
+        c.execute(
+            "INSERT INTO inventory (item_name, category, stock_qty, unit, active) VALUES ('Dead', 'Test', 10, 'pcs', 0)"
+        )
         iid = c.execute("SELECT last_insert_rowid()").fetchone()[0]
     rid = make_reservation()
     with pytest.raises(ValueError, match="inactive"):
@@ -371,6 +386,7 @@ def test_get_pos_items_with_items(clean_db):
 # PAYMENTS — remaining
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def test_record_payment_non_int_reservation(clean_db):
     with pytest.raises(ValueError):
         services.record_payment("not-an-int", 100.0, "Cash")
@@ -385,9 +401,11 @@ def test_record_payment_nonexistent_reservation(clean_db):
 # SESSION — remaining
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def test_touch_session_unlocked(clean_db):
     services.unlock_session("testpass")
     import time
+
     time.sleep(0.01)
     before = services._session["last_activity"]
     time.sleep(0.01)
@@ -407,6 +425,7 @@ def test_touch_session_locked(clean_db):
 # UI HELPERS
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def test_fmt():
     assert services.fmt(1234.5) == "1,234.50 EGP"
     assert services.fmt(0) == "0.00 EGP"
@@ -417,8 +436,10 @@ def test_selected_id_valid():
     class MockTable:
         row_count = 2
         cursor_row = 0
+
         def get_row_at(self, i):
             return ("42", "x")
+
     assert services.selected_id(MockTable()) == 42
 
 
@@ -426,8 +447,10 @@ def test_selected_id_empty():
     class MockTable:
         row_count = 0
         cursor_row = 0
+
         def get_row_at(self, i):
             return ("x",)
+
     assert services.selected_id(MockTable()) is None
 
 
@@ -435,8 +458,10 @@ def test_selected_id_non_numeric():
     class MockTable:
         row_count = 1
         cursor_row = 0
+
         def get_row_at(self, i):
             return ("abc",)
+
     assert services.selected_id(MockTable()) is None
 
 
@@ -444,13 +469,16 @@ def test_safe_action_success():
     class MockApp:
         def __init__(self):
             self.messages = []
+
         def notify(self, msg, severity=None):
             self.messages.append((msg, severity))
+
     class MockSelf:
         def __init__(self):
             self.app = MockApp()
 
     calls = []
+
     @services.safe_action
     def handler(self, event):
         calls.append(event)
@@ -465,8 +493,10 @@ def test_safe_action_permission_error():
     class MockApp:
         def __init__(self):
             self.messages = []
+
         def notify(self, msg, severity=None):
             self.messages.append((msg, severity))
+
     class MockSelf:
         def __init__(self):
             self.app = MockApp()
@@ -485,8 +515,10 @@ def test_safe_action_generic_exception():
     class MockApp:
         def __init__(self):
             self.messages = []
+
         def notify(self, msg, severity=None):
             self.messages.append((msg, severity))
+
     class MockSelf:
         def __init__(self):
             self.app = MockApp()
@@ -504,6 +536,7 @@ def test_safe_action_generic_exception():
 # ═══════════════════════════════════════════════════════════════════════════
 # AUDIT LOG
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def test_get_audit_log(clean_db):
     make_reservation()
@@ -523,6 +556,7 @@ def test_audit_log_limit(clean_db):
 # ═══════════════════════════════════════════════════════════════════════════
 # DB LAYER
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def test_migrate_upgraded(clean_db):
     """Test the 'upgraded' branch of migrate()."""

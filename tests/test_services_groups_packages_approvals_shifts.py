@@ -111,7 +111,9 @@ def test_reservation_groups(clean_db):
 
 
 def test_packages_crud_apply_and_void(clean_db):
-    svc_id = services.create_service_catalog_item("Breakfast", category="F&B", unit_price=20.0, taxable=True, active=True)
+    svc_id = services.create_service_catalog_item(
+        "Breakfast", category="F&B", unit_price=20.0, taxable=True, active=True
+    )
     pid = services.create_package("Romance", description="desc", active=True)
     assert isinstance(pid, int)
 
@@ -119,10 +121,14 @@ def test_packages_crud_apply_and_void(clean_db):
     pkg = services.get_package(pid)
     assert pkg and pkg["name"] == "Romance Plus"
 
-    iid = services.add_package_item(pid, service_id=svc_id, description="", quantity=2, unit_price=None, taxable=None, sort_order=1)
+    iid = services.add_package_item(
+        pid, service_id=svc_id, description="", quantity=2, unit_price=None, taxable=None, sort_order=1
+    )
     assert isinstance(iid, int)
     # custom line item (no service)
-    services.add_package_item(pid, service_id=None, description="Late checkout", quantity=1, unit_price=15.0, taxable=True, sort_order=2)
+    services.add_package_item(
+        pid, service_id=None, description="Late checkout", quantity=1, unit_price=15.0, taxable=True, sort_order=2
+    )
 
     pkgs = services.list_packages(active_only=False)
     p = next(x for x in pkgs if x["id"] == pid)

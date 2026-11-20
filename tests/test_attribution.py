@@ -1,4 +1,5 @@
 """Gift attribution: immutable, tamper-detected."""
+
 import pytest
 from app_core import services
 from app_core.db import connect, transaction

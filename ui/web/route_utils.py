@@ -1,4 +1,5 @@
 """Shared response helpers for web route handlers."""
+
 from __future__ import annotations
 
 from typing import Any, Mapping
@@ -45,4 +46,3 @@ def htmx_partial_or_redirect(
         deps.save_session(response, deps.get_session(request))
         return response
     return flash_redirect(request, redirect_url, status=redirect_status)
-

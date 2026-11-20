@@ -3,6 +3,7 @@
 Anchors data to project/data locations so moving Python modules does not
 relocate the live SQLite DB, exports, or invoices.
 """
+
 from __future__ import annotations
 
 import os
@@ -13,6 +14,7 @@ from pathlib import Path
 def _is_frozen_runtime() -> bool:
     try:
         import sys
+
         return bool(getattr(sys, "frozen", False)) or "__compiled__" in globals()
     except Exception:
         return False
@@ -23,6 +25,7 @@ def _detect_project_root() -> Path:
     # Frozen/native packaged builds: keep runtime data discoverable relative to the executable.
     try:
         import sys
+
         if bool(getattr(sys, "frozen", False)) or "__compiled__" in globals():
             exe = Path(getattr(sys, "executable", "") or "").resolve()
             if str(exe):
@@ -148,9 +151,17 @@ def is_path_within(path: str | Path, root: str | Path) -> bool:
 
 # Sensitive-data / log-hygiene helpers (do not log passwords, recovery codes, secrets)
 _REDACT_PATTERNS = [
-    (re.compile(r'(?i)\b(password|passwd|super[_-]?password|secret|api[_-]?key|token|recovery[_-]?code)\b\s*[:=]\s*([^\s,;]+)'), r'\1=<redacted>'),
-    (re.compile(r'(?i)"(password|passwd|super_password|secret|api_key|token|recovery_code)"\s*:\s*"[^"]*"'), r'"\1":"<redacted>"'),
-    (re.compile(r'(?i)\b(rcv_[A-Za-z0-9_-]+)\b'), '<redacted-recovery-code>'),
+    (
+        re.compile(
+            r"(?i)\b(password|passwd|super[_-]?password|secret|api[_-]?key|token|recovery[_-]?code)\b\s*[:=]\s*([^\s,;]+)"
+        ),
+        r"\1=<redacted>",
+    ),
+    (
+        re.compile(r'(?i)"(password|passwd|super_password|secret|api_key|token|recovery_code)"\s*:\s*"[^"]*"'),
+        r'"\1":"<redacted>"',
+    ),
+    (re.compile(r"(?i)\b(rcv_[A-Za-z0-9_-]+)\b"), "<redacted-recovery-code>"),
 ]
 
 

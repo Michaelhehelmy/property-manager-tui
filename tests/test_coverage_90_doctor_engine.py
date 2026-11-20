@@ -18,8 +18,10 @@ from app_core import db
 def test_doctor_exists_info_exception(monkeypatch, tmp_path):
     p = tmp_path / "x"
     real_access = os.access
+
     def bad_access(*a, **k):
         raise RuntimeError("no")
+
     monkeypatch.setattr(os, "access", bad_access)
     # exists() may be fine, but access call inside try raises -> exception branch
     # create file so exists True path hits os.access
@@ -37,6 +39,7 @@ def test_doctor_db_helpers_exception_branches(tmp_path):
             if "foreign_key_check" in q:
                 raise RuntimeError("fk")
             raise RuntimeError("x")
+
     out = doctor._db_integrity_summary(BadConn())
     assert out.get("integrity_error") or out.get("foreign_key_error")
 
@@ -44,6 +47,7 @@ def test_doctor_db_helpers_exception_branches(tmp_path):
     class BadConn2:
         def execute(self, q):
             raise RuntimeError("boom")
+
     out = doctor._schema_table_checks(BadConn2())
     assert out.get("ok") is False
     # _inspect_db_conn will fail on PRAGMA user_version
@@ -93,15 +97,20 @@ def test_doctor_printer_and_backup_branches(monkeypatch, tmp_path):
     monkeypatch.setattr(paths, "DATA_DIR", tmp_path)
     monkeypatch.setattr(paths, "DB_PATH", tmp_path / "pm.db")
     src_db = tmp_path / "pm.db"
-    c = sqlite3.connect(str(src_db)); c.execute("create table t(id int)"); c.commit(); c.close()
+    c = sqlite3.connect(str(src_db))
+    c.execute("create table t(id int)")
+    c.commit()
+    c.close()
     # sqlite backup API fallback path by forcing connect failure inside primary try
     real_connect = sqlite3.connect
     calls = {"n": 0}
+
     def fake_sqlite_connect(pth, *a, **k):
         calls["n"] += 1
         if calls["n"] <= 2:
             raise RuntimeError("no sqlite backup")
         return real_connect(pth, *a, **k)
+
     monkeypatch.setattr(doctor.sqlite3, "connect", fake_sqlite_connect)
     try:
         out = doctor.create_backup(tmp_path / "fallback.db")
@@ -118,13 +127,18 @@ def test_doctor_printer_and_backup_branches(monkeypatch, tmp_path):
     except TypeError:
         out = doctor.create_backup(str(tmp_path / "fail.db"))
     assert isinstance(out, dict)
-    
+
+
 def test_doctor_config_issues_and_collect_health(monkeypatch, tmp_path, clean_db):
     # setup paths
     data_dir = tmp_path / "data"
     data_dir.mkdir()
     db_path = data_dir / "pm.db"
-    c = sqlite3.connect(str(db_path)); c.execute("PRAGMA user_version=21"); c.execute("create table t(id int)"); c.commit(); c.close()
+    c = sqlite3.connect(str(db_path))
+    c.execute("PRAGMA user_version=21")
+    c.execute("create table t(id int)")
+    c.commit()
+    c.close()
     monkeypatch.setattr(paths, "DATA_DIR", data_dir)
     monkeypatch.setattr(paths, "DB_PATH", db_path)
     monkeypatch.setattr(paths, "EXPORT_DIR", data_dir / "exports")
@@ -142,13 +156,17 @@ def test_doctor_config_issues_and_collect_health(monkeypatch, tmp_path, clean_db
     old_time = time.time() - (9 * 24 * 3600)
     os.utime(oldb, (old_time, old_time))
     # path permission issues
-    monkeypatch.setattr(paths, "check_runtime_permissions", lambda: {
-        "data_dir": {"exists": True, "writable": False, "path": str(data_dir)},
-        "export_dir": {"exists": True, "writable": False, "path": str(data_dir/"exports")},
-        "invoice_dir": {"exists": True, "writable": False, "path": str(data_dir/"invoices")},
-        "db_path": {"exists": True, "writable": False, "path": str(db_path)},
-        "data_dir_world_writable": True,
-    })
+    monkeypatch.setattr(
+        paths,
+        "check_runtime_permissions",
+        lambda: {
+            "data_dir": {"exists": True, "writable": False, "path": str(data_dir)},
+            "export_dir": {"exists": True, "writable": False, "path": str(data_dir / "exports")},
+            "invoice_dir": {"exists": True, "writable": False, "path": str(data_dir / "invoices")},
+            "db_path": {"exists": True, "writable": False, "path": str(db_path)},
+            "data_dir_world_writable": True,
+        },
+    )
     # db connection not open in this process -> config_issues note
     monkeypatch.setattr(db, "_conn", None, raising=False)
     issues = doctor._config_issues()
@@ -157,7 +175,7 @@ def test_doctor_config_issues_and_collect_health(monkeypatch, tmp_path, clean_db
     # exception in config checks outer try
     monkeypatch.setattr(paths, "check_runtime_permissions", lambda: (_ for _ in ()).throw(RuntimeError("perm")))
     monkeypatch.setattr(db, "_conn", object(), raising=False)
-    monkeypatch.setattr(services, "get_setting", lambda k,d=None: (_ for _ in ()).throw(RuntimeError("s")))
+    monkeypatch.setattr(services, "get_setting", lambda k, d=None: (_ for _ in ()).throw(RuntimeError("s")))
     issues = doctor._config_issues()
     assert isinstance(issues, list)
 
@@ -165,6 +183,7 @@ def test_doctor_config_issues_and_collect_health(monkeypatch, tmp_path, clean_db
     monkeypatch.setattr(paths, "ensure_data_dirs", lambda: (_ for _ in ()).throw(RuntimeError("dirs")))
     # updater remote check branches
     import app_core.updater as updater
+
     monkeypatch.setattr(updater, "get_local_state", lambda: {"app_version": "1"})
     monkeypatch.setattr(updater, "check_for_updates", lambda: (_ for _ in ()).throw(RuntimeError("net")))
     report = doctor.collect_health(check_updates=True)
@@ -182,32 +201,110 @@ def test_doctor_config_issues_and_collect_health(monkeypatch, tmp_path, clean_db
 
     # format_health_report with rich data
     rich = {
-        "ok": False, "checked_at": "now",
+        "ok": False,
+        "checked_at": "now",
         "paths": {"project_root": "p", "data_dir": "d", "db_path": "db", "export_dir": "e", "invoice_dir": "i"},
-        "data_dirs": {"x": {"exists": True, "is_dir": True, "writable": False, "path": "/x"}, "db_wal": {"exists": True, "is_file": True, "writable": True, "path": "/w"}},
-        "schema": {"user_version": 1, "expected_version": 2, "matches_expected": False, "tables": {"ok": False, "present_count": 1, "missing_tables": ["a"]}},
-        "integrity": {"sqlite": {"integrity_check": ["ok"], "foreign_key_violations": [], "integrity_error": "e"}, "ledger": {"ok": True}},
+        "data_dirs": {
+            "x": {"exists": True, "is_dir": True, "writable": False, "path": "/x"},
+            "db_wal": {"exists": True, "is_file": True, "writable": True, "path": "/w"},
+        },
+        "schema": {
+            "user_version": 1,
+            "expected_version": 2,
+            "matches_expected": False,
+            "tables": {"ok": False, "present_count": 1, "missing_tables": ["a"]},
+        },
+        "integrity": {
+            "sqlite": {"integrity_check": ["ok"], "foreign_key_violations": [], "integrity_error": "e"},
+            "ledger": {"ok": True},
+        },
         "db": {"journal_mode": "wal", "foreign_keys": 1, "busy_timeout": 5000},
-        "consistency": {"batch_stock": {"ok": False, "checked": 1, "mismatch_count": 1, "mismatches": [{"item_id": 1, "item_name": "X", "stock_qty": 1, "batch_remaining_active": 2}], "error": "e"}},
-        "readiness": {"printer": {"configured": True, "mode": "tcp", "target_set": True, "checks": [{"severity": "warn", "code": "c", "message": "m"}]}},
-        "update": {"local": {"app_version": "1", "branch": "m", "commit_short": "abc", "dirty": False, "is_git_repo": True, "remote": "https://x"}, "remote": {"update_available": False, "error": "e"}},
+        "consistency": {
+            "batch_stock": {
+                "ok": False,
+                "checked": 1,
+                "mismatch_count": 1,
+                "mismatches": [{"item_id": 1, "item_name": "X", "stock_qty": 1, "batch_remaining_active": 2}],
+                "error": "e",
+            }
+        },
+        "readiness": {
+            "printer": {
+                "configured": True,
+                "mode": "tcp",
+                "target_set": True,
+                "checks": [{"severity": "warn", "code": "c", "message": "m"}],
+            }
+        },
+        "update": {
+            "local": {
+                "app_version": "1",
+                "branch": "m",
+                "commit_short": "abc",
+                "dirty": False,
+                "is_git_repo": True,
+                "remote": "https://x",
+            },
+            "remote": {"update_available": False, "error": "e"},
+        },
         "config_issues": [{"severity": "error", "code": "x", "message": "y"}],
-        "backup_restore": {"runtime_data_preserved": ["db"], "backup": {"stop_app_first": True, "copy_db_file": "a", "suggested_backup_path": "b", "wal_exists": True, "shm_exists": False}, "restore": {"stop_app_first": True, "replace_db_file": "a", "verify_helper": "v"}, "readiness": {"db_exists": True, "data_dir_writable": True}},
+        "backup_restore": {
+            "runtime_data_preserved": ["db"],
+            "backup": {
+                "stop_app_first": True,
+                "copy_db_file": "a",
+                "suggested_backup_path": "b",
+                "wal_exists": True,
+                "shm_exists": False,
+            },
+            "restore": {"stop_app_first": True, "replace_db_file": "a", "verify_helper": "v"},
+            "readiness": {"db_exists": True, "data_dir_writable": True},
+        },
         "notes": ["n"],
     }
     txt = doctor.format_health_report(rich)
     assert "ISSUES DETECTED" in txt and "Backup/restore guidance" in txt and "Printer readiness" in txt
 
     # CLI main branches
-    missing_res = {"ok": False, "error": "bad", "path": str(tmp_path/"x"), "integrity": {"sqlite": {"integrity_check": ["ok"], "foreign_key_violations": []}}, "schema": {"user_version": 1}}
+    missing_res = {
+        "ok": False,
+        "error": "bad",
+        "path": str(tmp_path / "x"),
+        "integrity": {"sqlite": {"integrity_check": ["ok"], "foreign_key_violations": []}},
+        "schema": {"user_version": 1},
+    }
     monkeypatch.setattr(doctor, "verify_backup_file", lambda p: missing_res)
-    assert doctor.main(["--verify-backup", str(tmp_path/"x")]) in (0, 1)
-    monkeypatch.setattr(doctor, "create_backup", lambda p: {"ok": True, "source": "s", "backup_path": str(tmp_path/"b.db"), "verified": {"ok": True}})
+    assert doctor.main(["--verify-backup", str(tmp_path / "x")]) in (0, 1)
+    monkeypatch.setattr(
+        doctor,
+        "create_backup",
+        lambda p: {"ok": True, "source": "s", "backup_path": str(tmp_path / "b.db"), "verified": {"ok": True}},
+    )
     assert doctor.main(["--backup", "--json"]) == 0
-    monkeypatch.setattr(doctor, "create_backup", lambda p: {"ok": False, "source": "s", "backup_path": "b", "error": "e", "warning": "w"})
-    assert doctor.main(["--backup-to", str(tmp_path/"b.db")]) in (0, 1)
+    monkeypatch.setattr(
+        doctor,
+        "create_backup",
+        lambda p: {"ok": False, "source": "s", "backup_path": "b", "error": "e", "warning": "w"},
+    )
+    assert doctor.main(["--backup-to", str(tmp_path / "b.db")]) in (0, 1)
     # collect_health batch stock mismatch sets ok False
-    monkeypatch.setattr(doctor, "collect_health", lambda check_updates=False: {"ok": True, "checked_at": "", "paths": {}, "data_dirs": {}, "schema": {}, "integrity": {}, "consistency": {"batch_stock": {"checked": 1, "ok": False}}, "readiness": {}, "backup_restore": {}, "config_issues": [], "notes": []})
+    monkeypatch.setattr(
+        doctor,
+        "collect_health",
+        lambda check_updates=False: {
+            "ok": True,
+            "checked_at": "",
+            "paths": {},
+            "data_dirs": {},
+            "schema": {},
+            "integrity": {},
+            "consistency": {"batch_stock": {"checked": 1, "ok": False}},
+            "readiness": {},
+            "backup_restore": {},
+            "config_issues": [],
+            "notes": [],
+        },
+    )
     assert doctor.main([]) in (0, 1)
 
 
@@ -234,7 +331,9 @@ def test_engine_more_branches(monkeypatch):
     monkeypatch.setattr(engine, "resolve_guest", lambda text, slots: ([], None, ""))
 
     # room availability / health diagnostics / expiring batches / batches / trace / inventory item details
-    r = engine._execute_single("room_availability", "availability", {"date_start": "2026-01-01", "date_end": "2026-01-02"})
+    r = engine._execute_single(
+        "room_availability", "availability", {"date_start": "2026-01-01", "date_end": "2026-01-02"}
+    )
     assert r["ok"] is True
     r = engine._execute_single("health_diagnostics", "health", {})
     assert r.get("intent") in ("health_diagnostics", "ledger_integrity")
@@ -270,11 +369,25 @@ def test_engine_more_branches(monkeypatch):
     assert isinstance(r, dict)
 
     # guest branches
-    monkeypatch.setattr(engine, "resolve_guest", lambda text, slots: ([{"id": 1, "name": "A", "phone": "", "email": "", "stays": 0, "last_stay": ""}], None, "A"))
-    for intent in ("guest_top_items_last_visit", "guest_last_visit_spend", "guest_activity_bookings", "guest_profile", "guest_portfolio", "guest_last_visit"):
+    monkeypatch.setattr(
+        engine,
+        "resolve_guest",
+        lambda text, slots: (
+            [{"id": 1, "name": "A", "phone": "", "email": "", "stays": 0, "last_stay": ""}],
+            None,
+            "A",
+        ),
+    )
+    for intent in (
+        "guest_top_items_last_visit",
+        "guest_last_visit_spend",
+        "guest_activity_bookings",
+        "guest_profile",
+        "guest_portfolio",
+        "guest_last_visit",
+    ):
         r = engine._execute_single(intent, "guest 1", {"guest_id": 1})
         assert "answer" in r
     monkeypatch.setattr(engine, "resolve_guest", lambda text, slots: ([], None, ""))
     r = engine._execute_single("guest_profile", "guest", {"guest_query": "Nobody"})
     assert r.get("ok") is False or r.get("needs_clarification")
-

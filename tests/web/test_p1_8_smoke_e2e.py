@@ -8,6 +8,7 @@ security headers at edge, real backup/restore drills on production-like data, mu
 and concurrent-user behavior, installer/updater flows on real git installs, print/label
 hardware, LLM/model runtime availability, and long-run performance/load.
 """
+
 from __future__ import annotations
 
 import json
@@ -204,7 +205,11 @@ def test_pos_walkin_sale_smoke_journey(client):
     assert r.status_code == 303
     assert r.headers.get("location", "").startswith("/pos")
 
-    token = set_session(client, unlocked=False, extra={"walkin_cart": [{"desc": "P18SmokeItem", "qty": 1, "price": 5.0, "inv_id": item_id}]})
+    token = set_session(
+        client,
+        unlocked=False,
+        extra={"walkin_cart": [{"desc": "P18SmokeItem", "qty": 1, "price": 5.0, "inv_id": item_id}]},
+    )
     r = client.post("/pos/walkin", data={"csrf": token, "method": "Cash", "notes": "smoke"}, follow_redirects=False)
     assert r.status_code == 303
     loc = r.headers.get("location", "")

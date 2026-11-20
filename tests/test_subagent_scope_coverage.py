@@ -3,6 +3,7 @@ void/restore, recipe/COGS traceability, seed/demo guards, integrity/doctor, upda
 
 Deterministic, tmp_path/monkeypatch, no network/external deps.
 """
+
 import json
 import sqlite3
 from datetime import datetime, timedelta
@@ -14,6 +15,7 @@ from app_core import db, doctor, paths, services, updater
 
 
 # ── helpers ──────────────────────────────────────────────────────────────
+
 
 def _patch_db(tmp_path, monkeypatch):
     try:
@@ -80,6 +82,7 @@ def _mk_reservation(status="Checked In"):
 
 
 # ── v8 -> v9 migration fixtures/idempotency ─────────────────────────────
+
 
 def _make_v8_db(path):
     conn = sqlite3.connect(str(path))
@@ -188,6 +191,7 @@ def test_v8_to_v9_migration_backfill_is_idempotent(tmp_path, monkeypatch):
 
 # ── batch stock-vs-quantity invariants & FEFO/expiry edge cases ─────────
 
+
 def test_batch_stock_quantity_invariant_and_fefo_expiry_edges(fresh):
     services.set_setting("allow_negative_stock", "false")
     services.set_setting("block_sell_expired", "true")
@@ -205,7 +209,9 @@ def test_batch_stock_quantity_invariant_and_fefo_expiry_edges(fresh):
     # receive creates matching stock/log invariants
     stock = float(conn.execute("SELECT stock_qty FROM inventory WHERE id=?", (item_id,)).fetchone()[0])
     batch_sum = float(
-        conn.execute("SELECT COALESCE(SUM(quantity_remaining),0) FROM inventory_batches WHERE item_id=?", (item_id,)).fetchone()[0]
+        conn.execute(
+            "SELECT COALESCE(SUM(quantity_remaining),0) FROM inventory_batches WHERE item_id=?", (item_id,)
+        ).fetchone()[0]
     )
     assert abs(stock - batch_sum) < 1e-6 and stock == 15.0
 
@@ -229,7 +235,9 @@ def test_batch_stock_quantity_invariant_and_fefo_expiry_edges(fresh):
     # direct invariant: stock still equals total remaining after reads
     stock2 = float(conn.execute("SELECT stock_qty FROM inventory WHERE id=?", (item_id,)).fetchone()[0])
     batch_sum2 = float(
-        conn.execute("SELECT COALESCE(SUM(quantity_remaining),0) FROM inventory_batches WHERE item_id=?", (item_id,)).fetchone()[0]
+        conn.execute(
+            "SELECT COALESCE(SUM(quantity_remaining),0) FROM inventory_batches WHERE item_id=?", (item_id,)
+        ).fetchone()[0]
     )
     assert abs(stock2 - batch_sum2) < 1e-6
     integ = services.verify_ledger_integrity()
@@ -238,11 +246,14 @@ def test_batch_stock_quantity_invariant_and_fefo_expiry_edges(fresh):
 
 # ── void/restore and recipe/COGS traceability ───────────────────────────
 
+
 def test_void_restore_and_recipe_cogs_traceability(fresh):
     services.set_setting("allow_negative_stock", "false")
     conn = db.connect()
     item_id = _mk_tracked_item("ColaTrace")
-    b1 = services.create_inventory_batch(item_id, 3, 1.0, received_at="2030-01-01 10:00:00", expiry_date="2030-06-01", password="secret123")
+    b1 = services.create_inventory_batch(
+        item_id, 3, 1.0, received_at="2030-01-01 10:00:00", expiry_date="2030-06-01", password="secret123"
+    )
     rid = _mk_reservation()
 
     # Simulate a traced batch sale (POS line + stock/batch deduction + charge/COGS ledger) then void/restore via services/db APIs.
@@ -263,55 +274,105 @@ def test_void_restore_and_recipe_cogs_traceability(fresh):
             ("POS", pos_id, "COGS", "COGS", 2.0, 0.0, 0.0, 0.0, 2.0, "", "pos cogs", None, ""),
         )
     assert float(conn.execute("SELECT stock_qty FROM inventory WHERE id=?", (item_id,)).fetchone()[0]) == 1.0
-    assert float(conn.execute("SELECT quantity_remaining FROM inventory_batches WHERE id=?", (b1["id"],)).fetchone()[0]) == 1.0
+    assert (
+        float(conn.execute("SELECT quantity_remaining FROM inventory_batches WHERE id=?", (b1["id"],)).fetchone()[0])
+        == 1.0
+    )
 
     services.void_pos_item(pos_id, "secret123")
     assert float(conn.execute("SELECT stock_qty FROM inventory WHERE id=?", (item_id,)).fetchone()[0]) == 3.0
-    assert float(conn.execute("SELECT quantity_remaining FROM inventory_batches WHERE id=?", (b1["id"],)).fetchone()[0]) == 3.0
+    assert (
+        float(conn.execute("SELECT quantity_remaining FROM inventory_batches WHERE id=?", (b1["id"],)).fetchone()[0])
+        == 3.0
+    )
     row = conn.execute("SELECT voided_at FROM pos_tabs WHERE id=?", (pos_id,)).fetchone()
     assert row["voided_at"] is not None
-    assert conn.execute(
-        "SELECT COUNT(*) FROM general_ledger WHERE ref_type='POS' AND ref_id=? AND reverses_id IS NOT NULL", (pos_id,)
-    ).fetchone()[0] >= 2
-    assert conn.execute(
-        "SELECT COUNT(*) FROM inventory_logs WHERE item_id=? AND reference LIKE ?", (item_id, f"void POS #{pos_id}%")
-    ).fetchone()[0] >= 1
+    assert (
+        conn.execute(
+            "SELECT COUNT(*) FROM general_ledger WHERE ref_type='POS' AND ref_id=? AND reverses_id IS NOT NULL",
+            (pos_id,),
+        ).fetchone()[0]
+        >= 2
+    )
+    assert (
+        conn.execute(
+            "SELECT COUNT(*) FROM inventory_logs WHERE item_id=? AND reference LIKE ?",
+            (item_id, f"void POS #{pos_id}%"),
+        ).fetchone()[0]
+        >= 1
+    )
 
     # Recipe/COGS traceability (data-level, testable via db/services APIs): components, COGS ledger, ingredient deduction logs/batches.
     rum_id = _mk_tracked_item("RumIng", cost=0.02)
     lime_id = _mk_tracked_item("LimeIng", cost=0.01)
     with db.transaction() as c:
-        c.execute("INSERT INTO inventory (item_name, category, stock_qty, unit, unit_cost, selling_price, track_batches, active) VALUES ('CocktailMenu','Cocktails',0,'glass',0,12.0,0,1)")
+        c.execute(
+            "INSERT INTO inventory (item_name, category, stock_qty, unit, unit_cost, selling_price, track_batches, active) VALUES ('CocktailMenu','Cocktails',0,'glass',0,12.0,0,1)"
+        )
         menu_id = c.execute("SELECT last_insert_rowid()").fetchone()[0]
-        c.execute("INSERT INTO recipe_components (menu_item_id, ingredient_item_id, qty_per_sale) VALUES (?,?,?)", (menu_id, rum_id, 50))
-        c.execute("INSERT INTO recipe_components (menu_item_id, ingredient_item_id, qty_per_sale) VALUES (?,?,?)", (menu_id, lime_id, 20))
-    services.create_inventory_batch(rum_id, 200, 0.02, received_at="2030-01-01 10:00:00", expiry_date="2031-01-01", password="secret123")
-    services.create_inventory_batch(lime_id, 100, 0.01, received_at="2030-01-01 10:00:00", expiry_date="2031-01-01", password="secret123")
+        c.execute(
+            "INSERT INTO recipe_components (menu_item_id, ingredient_item_id, qty_per_sale) VALUES (?,?,?)",
+            (menu_id, rum_id, 50),
+        )
+        c.execute(
+            "INSERT INTO recipe_components (menu_item_id, ingredient_item_id, qty_per_sale) VALUES (?,?,?)",
+            (menu_id, lime_id, 20),
+        )
+    services.create_inventory_batch(
+        rum_id, 200, 0.02, received_at="2030-01-01 10:00:00", expiry_date="2031-01-01", password="secret123"
+    )
+    services.create_inventory_batch(
+        lime_id, 100, 0.01, received_at="2030-01-01 10:00:00", expiry_date="2031-01-01", password="secret123"
+    )
     comps = services.get_recipe_components(menu_id)
     assert {c["ingredient_item_id"] for c in comps} == {rum_id, lime_id}
 
     rid2 = _mk_reservation()
     with db.transaction() as c:
-        c.execute("INSERT INTO pos_tabs (reservation_id, inventory_item_id, item_description, quantity, unit_price, tax_amount, cost_at_sale) VALUES (?,?,?,?,?,?,?)",
-                  (rid2, menu_id, "CocktailMenu", 2, 12.0, 0.0, 0.0))
+        c.execute(
+            "INSERT INTO pos_tabs (reservation_id, inventory_item_id, item_description, quantity, unit_price, tax_amount, cost_at_sale) VALUES (?,?,?,?,?,?,?)",
+            (rid2, menu_id, "CocktailMenu", 2, 12.0, 0.0, 0.0),
+        )
         rpos = c.execute("SELECT last_insert_rowid()").fetchone()[0]
-        c.execute("INSERT INTO general_ledger (at, ref_type, ref_id, entry_type, category, net, service, vat, city_tax, gross, method, description, reverses_id, actor) VALUES (datetime('now'),'POS',?,'COGS','COGS',2.4,0,0,0,2.4,'','recipe cogs',NULL,'')", (rpos,))
+        c.execute(
+            "INSERT INTO general_ledger (at, ref_type, ref_id, entry_type, category, net, service, vat, city_tax, gross, method, description, reverses_id, actor) VALUES (datetime('now'),'POS',?,'COGS','COGS',2.4,0,0,0,2.4,'','recipe cogs',NULL,'')",
+            (rpos,),
+        )
         c.execute("UPDATE inventory SET stock_qty = stock_qty - 100 WHERE id=?", (rum_id,))
         c.execute("UPDATE inventory SET stock_qty = stock_qty - 40 WHERE id=?", (lime_id,))
-        c.execute("UPDATE inventory_batches SET quantity_remaining = quantity_remaining - 100 WHERE item_id=?", (rum_id,))
-        c.execute("UPDATE inventory_batches SET quantity_remaining = quantity_remaining - 40 WHERE item_id=?", (lime_id,))
-        c.execute("INSERT INTO inventory_logs (item_id, change_type, quantity, reference) VALUES (?, 'OUT_SALE', 100, ?)", (rum_id, f"POS #{rpos} recipe: CocktailMenu x2"))
-        c.execute("INSERT INTO inventory_logs (item_id, change_type, quantity, reference) VALUES (?, 'OUT_SALE', 40, ?)", (lime_id, f"POS #{rpos} recipe: CocktailMenu x2"))
+        c.execute(
+            "UPDATE inventory_batches SET quantity_remaining = quantity_remaining - 100 WHERE item_id=?", (rum_id,)
+        )
+        c.execute(
+            "UPDATE inventory_batches SET quantity_remaining = quantity_remaining - 40 WHERE item_id=?", (lime_id,)
+        )
+        c.execute(
+            "INSERT INTO inventory_logs (item_id, change_type, quantity, reference) VALUES (?, 'OUT_SALE', 100, ?)",
+            (rum_id, f"POS #{rpos} recipe: CocktailMenu x2"),
+        )
+        c.execute(
+            "INSERT INTO inventory_logs (item_id, change_type, quantity, reference) VALUES (?, 'OUT_SALE', 40, ?)",
+            (lime_id, f"POS #{rpos} recipe: CocktailMenu x2"),
+        )
 
     assert float(conn.execute("SELECT stock_qty FROM inventory WHERE id=?", (rum_id,)).fetchone()[0]) == 100.0
     assert float(conn.execute("SELECT stock_qty FROM inventory WHERE id=?", (lime_id,)).fetchone()[0]) == 60.0
-    cogs_rows = conn.execute("SELECT COUNT(*) c, COALESCE(SUM(gross),0) g FROM general_ledger WHERE ref_type='POS' AND ref_id=? AND entry_type='COGS'", (rpos,)).fetchone()
+    cogs_rows = conn.execute(
+        "SELECT COUNT(*) c, COALESCE(SUM(gross),0) g FROM general_ledger WHERE ref_type='POS' AND ref_id=? AND entry_type='COGS'",
+        (rpos,),
+    ).fetchone()
     assert cogs_rows["c"] >= 1 and float(cogs_rows["g"]) > 0
-    assert conn.execute("SELECT COUNT(*) FROM inventory_logs WHERE reference LIKE ?", (f"POS #{rpos} recipe:%",)).fetchone()[0] >= 2
+    assert (
+        conn.execute(
+            "SELECT COUNT(*) FROM inventory_logs WHERE reference LIKE ?", (f"POS #{rpos} recipe:%",)
+        ).fetchone()[0]
+        >= 2
+    )
     assert "stock_batch_drift" not in [i.get("type") for i in (services.verify_ledger_integrity().get("issues") or [])]
 
 
 # ── seed/demo guards ────────────────────────────────────────────────────
+
 
 def test_seed_and_demo_guards(fresh):
     with pytest.raises(PermissionError):
@@ -350,6 +411,7 @@ def test_seed_import_requires_correct_confirmation_on_fresh_db(tmp_path, monkeyp
 
 # ── integrity/doctor helpers ────────────────────────────────────────────
 
+
 def test_integrity_and_doctor_helpers(fresh):
     integ = services.verify_ledger_integrity()
     assert isinstance(integ, dict) and "issues" in integ and "stats" in integ
@@ -377,6 +439,7 @@ def test_integrity_and_doctor_helpers(fresh):
 
 # ── updater behavior (no network/external deps) ─────────────────────────
 
+
 def test_updater_behavior_deterministic(fresh, monkeypatch, tmp_path):
     monkeypatch.setattr(updater, "_project_root", lambda: tmp_path)
     st = updater.get_local_state()
@@ -399,7 +462,14 @@ def test_updater_behavior_deterministic(fresh, monkeypatch, tmp_path):
     monkeypatch.setattr(
         updater,
         "get_local_state",
-        lambda: {"app_version": updater.APP_VERSION, "project_root": str(tmp_path), "is_git_repo": True, "branch": "main", "commit": "abc1234", "dirty": True},
+        lambda: {
+            "app_version": updater.APP_VERSION,
+            "project_root": str(tmp_path),
+            "is_git_repo": True,
+            "branch": "main",
+            "commit": "abc1234",
+            "dirty": True,
+        },
     )
     dirty = updater.apply_update()
     assert dirty["ok"] is False and "uncommitted" in (dirty.get("error") or "").lower()
@@ -407,7 +477,14 @@ def test_updater_behavior_deterministic(fresh, monkeypatch, tmp_path):
     monkeypatch.setattr(
         updater,
         "get_local_state",
-        lambda: {"app_version": updater.APP_VERSION, "project_root": str(tmp_path), "is_git_repo": True, "branch": "main", "commit": "abc1234", "dirty": False},
+        lambda: {
+            "app_version": updater.APP_VERSION,
+            "project_root": str(tmp_path),
+            "is_git_repo": True,
+            "branch": "main",
+            "commit": "abc1234",
+            "dirty": False,
+        },
     )
     calls = []
 
@@ -422,11 +499,19 @@ def test_updater_behavior_deterministic(fresh, monkeypatch, tmp_path):
     assert ok["ok"] is True and ok.get("restart_required") is True
     assert any(c[0] == "fetch" for c in calls) and any(c[0] == "pull" for c in calls)
 
-    monkeypatch.setattr(updater, "get_local_state", lambda: {"commit": "same123", "is_git_repo": True, "branch": "main"})
+    monkeypatch.setattr(
+        updater, "get_local_state", lambda: {"commit": "same123", "is_git_repo": True, "branch": "main"}
+    )
     monkeypatch.setattr(
         updater,
         "_github_get",
-        lambda *a, **k: [{"sha": "same123", "commit": {"author": {"date": "2026-01-01", "name": "x"}, "message": "msg"}, "html_url": "u"}],
+        lambda *a, **k: [
+            {
+                "sha": "same123",
+                "commit": {"author": {"date": "2026-01-01", "name": "x"}, "message": "msg"},
+                "html_url": "u",
+            }
+        ],
     )
     up = updater.check_for_updates()
     assert up["ok"] is True and up["update_available"] is False and up.get("commits_behind") == 0

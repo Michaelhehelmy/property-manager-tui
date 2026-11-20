@@ -86,7 +86,10 @@ def test_outstanding_balances_and_summary(clean_db, monkeypatch):
 
     # exercise exception handling branch
     import app_core.services._monolith as monolith
-    monkeypatch.setattr(monolith, "calculate_guest_balance", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("boom")))
+
+    monkeypatch.setattr(
+        monolith, "calculate_guest_balance", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("boom"))
+    )
     err = rm.reservation_outstanding(rid_due)
     assert err["reservation_id"] == rid_due and "error" in err
 

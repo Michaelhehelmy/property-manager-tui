@@ -51,7 +51,11 @@ def test_front_desk_ops_night_audit_and_reports(clean_db):
     day = "2099-05-10"
     # create arrivals/in-house style reservations around the day to exercise ops paths
     rid1 = _make_reservation(day, "2099-05-12", guest="Arrival Guest", room_index=0)
-    rid2 = _make_reservation("2099-05-08", "2099-05-11", guest="Inhouse Guest", room_index=1) if len(services.get_all_rooms()) > 1 else _make_reservation("2099-05-08", "2099-05-11", guest="Inhouse Guest", room_index=0)
+    rid2 = (
+        _make_reservation("2099-05-08", "2099-05-11", guest="Inhouse Guest", room_index=1)
+        if len(services.get_all_rooms()) > 1
+        else _make_reservation("2099-05-08", "2099-05-11", guest="Inhouse Guest", room_index=0)
+    )
     assert rid1 and rid2
 
     ops = services.get_front_desk_ops(day)

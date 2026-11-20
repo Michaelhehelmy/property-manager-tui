@@ -11,7 +11,9 @@ def test_recent_grounded_read_tools_direct(clean_db):
 
     # seed grounded entities
     rr_id = services.add_rate_rule(
-        name="Weekend Adj", adjustment_type="amount", adjustment_value=10.0,
+        name="Weekend Adj",
+        adjustment_type="amount",
+        adjustment_value=10.0,
         active=True,
     )
     svc_id = services.create_service_catalog_item(
@@ -21,8 +23,12 @@ def test_recent_grounded_read_tools_direct(clean_db):
         code="WELCOME10", discount_type="percent", value=10.0, name="Welcome", active=True
     )
     a_id = services.create_approval_request(
-        action_type="discount_override", entity_type="reservation", entity_id=str(rid),
-        payload={"amount": 5}, reason="test", requested_by="manager"
+        action_type="discount_override",
+        entity_type="reservation",
+        entity_id=str(rid),
+        payload={"amount": 5},
+        reason="test",
+        requested_by="manager",
     )
 
     rr = assistant.execute_tool("list_rate_rules", {"active_only": False})
@@ -33,12 +39,17 @@ def test_recent_grounded_read_tools_direct(clean_db):
     sc = assistant.execute_tool("list_service_catalog", {"active_only": True})
     assert "error" not in sc
     assert sc.get("count", 0) >= 1
-    assert any((x.get("id") == svc_id) or (x.get("name") == "Airport Pickup") for x in (sc.get("service_catalog") or []))
+    assert any(
+        (x.get("id") == svc_id) or (x.get("name") == "Airport Pickup") for x in (sc.get("service_catalog") or [])
+    )
 
     dv = assistant.execute_tool("list_discount_vouchers", {"active_only": False})
     assert "error" not in dv
     assert dv.get("count", 0) >= 1
-    assert any((x.get("id") == v_id) or (str(x.get("code", "")).upper() == "WELCOME10") for x in (dv.get("discount_vouchers") or []))
+    assert any(
+        (x.get("id") == v_id) or (str(x.get("code", "")).upper() == "WELCOME10")
+        for x in (dv.get("discount_vouchers") or [])
+    )
 
     ap = assistant.execute_tool("list_approvals", {"status": "", "limit": 50})
     assert "error" not in ap
@@ -73,7 +84,9 @@ def test_recent_grounded_read_intents_via_chat(clean_db):
     services.add_rate_rule(name="Seasonal", adjustment_type="percent", adjustment_value=5.0, active=True)
     services.create_service_catalog_item(name="Spa", category="Wellness", unit_price=50.0, active=True)
     services.create_discount_voucher(code="SPA5", discount_type="amount", value=5.0, active=True)
-    services.create_approval_request(action_type="void_payment", entity_type="reservation", entity_id=str(rid), reason="intent")
+    services.create_approval_request(
+        action_type="void_payment", entity_type="reservation", entity_id=str(rid), reason="intent"
+    )
 
     cases = [
         "show rate rules",

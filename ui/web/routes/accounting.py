@@ -5,7 +5,9 @@ from app_core.db import connect
 from ui.web import deps
 from ui.web.rendering import render
 from ui.web.route_utils import flash_redirect
+
 router = APIRouter()
+
 
 @router.get("/accounting")
 def accounting(request: Request, tab: str = "overview", shift_id: int | None = None):
@@ -13,12 +15,22 @@ def accounting(request: Request, tab: str = "overview", shift_id: int | None = N
     expenses = services.get_recent_expenses(50)
     ledger = services.get_recent_ledger(100)
     summary = services.get_general_ledger_summary()
-    res = connect().execute("SELECT id, guest_name FROM reservations WHERE status IN ('Reserved','Checked In','Checked Out') ORDER BY id DESC LIMIT 100").fetchall()
+    res = (
+        connect()
+        .execute(
+            "SELECT id, guest_name FROM reservations WHERE status IN ('Reserved','Checked In','Checked Out') ORDER BY id DESC LIMIT 100"
+        )
+        .fetchall()
+    )
     try:
         cash_shifts = services.list_cash_shifts(50)
         open_shift = services.get_open_cash_shift()
         shift_movements = services.list_cash_movements(open_shift["id"]) if open_shift else []
-        open_shift_recon = services.get_cash_shift_reconciliation(open_shift["id"]) if open_shift and hasattr(services, "get_cash_shift_reconciliation") else None
+        open_shift_recon = (
+            services.get_cash_shift_reconciliation(open_shift["id"])
+            if open_shift and hasattr(services, "get_cash_shift_reconciliation")
+            else None
+        )
     except Exception:
         cash_shifts, open_shift, shift_movements, open_shift_recon = [], None, [], None
     selected_shift = None
@@ -27,10 +39,16 @@ def accounting(request: Request, tab: str = "overview", shift_id: int | None = N
     if shift_id is not None:
         try:
             sid = int(shift_id)
-            selected_shift_recon = services.get_cash_shift_reconciliation(sid) if hasattr(services, "get_cash_shift_reconciliation") else None
+            selected_shift_recon = (
+                services.get_cash_shift_reconciliation(sid)
+                if hasattr(services, "get_cash_shift_reconciliation")
+                else None
+            )
             if selected_shift_recon:
                 selected_shift = dict(selected_shift_recon)
-            selected_shift_movements = services.list_cash_movements(sid) if hasattr(services, "list_cash_movements") else []
+            selected_shift_movements = (
+                services.list_cash_movements(sid) if hasattr(services, "list_cash_movements") else []
+            )
         except Exception:
             selected_shift = None
             selected_shift_recon = None
@@ -39,15 +57,32 @@ def accounting(request: Request, tab: str = "overview", shift_id: int | None = N
         night_audits = services.list_night_audit_runs(30)
     except Exception:
         night_audits = []
-    allowed = {"overview","expenses","payments","ledger","shifts","night_audit"}
+    allowed = {"overview", "expenses", "payments", "ledger", "shifts", "night_audit"}
     tab = (tab or "overview").strip().lower()
-    if tab not in allowed: tab = "overview"
-    return render(request, "accounting/index.html", {
-        "title":"Accounting","cats":cats,"expenses":expenses,"ledger":ledger,"summary":summary,"reservations":res,
-        "cash_shifts":cash_shifts,"open_shift":open_shift,"open_shift_recon":open_shift_recon,"shift_movements":shift_movements,
-        "selected_shift":selected_shift,"selected_shift_recon":selected_shift_recon,"selected_shift_movements":selected_shift_movements,
-        "night_audits":night_audits,"active_tab":tab
-    })
+    if tab not in allowed:
+        tab = "overview"
+    return render(
+        request,
+        "accounting/index.html",
+        {
+            "title": "Accounting",
+            "cats": cats,
+            "expenses": expenses,
+            "ledger": ledger,
+            "summary": summary,
+            "reservations": res,
+            "cash_shifts": cash_shifts,
+            "open_shift": open_shift,
+            "open_shift_recon": open_shift_recon,
+            "shift_movements": shift_movements,
+            "selected_shift": selected_shift,
+            "selected_shift_recon": selected_shift_recon,
+            "selected_shift_movements": selected_shift_movements,
+            "night_audits": night_audits,
+            "active_tab": tab,
+        },
+    )
+
 
 @router.post("/accounting/expense")
 async def expense(request: Request):
@@ -65,6 +100,7 @@ async def expense(request: Request):
     except Exception as e:
         return flash_redirect(request, "/accounting?tab=expenses", str(e), "error")
 
+
 @router.post("/accounting/expense/{eid}/void")
 async def void_expense(eid: int, request: Request):
     form = await deps.require_unlocked_form(request, permission="accounting.manage")
@@ -73,6 +109,7 @@ async def void_expense(eid: int, request: Request):
         return flash_redirect(request, "/accounting?tab=expenses", "Expense voided", "success")
     except Exception as e:
         return flash_redirect(request, "/accounting?tab=expenses", str(e), "error")
+
 
 @router.post("/accounting/payment")
 async def payment(request: Request):
@@ -92,6 +129,7 @@ async def payment(request: Request):
         return flash_redirect(request, "/accounting?tab=payments", "Payment recorded", "success")
     except Exception as e:
         return flash_redirect(request, "/accounting?tab=payments", str(e), "error")
+
 
 @router.post("/accounting/refund")
 async def refund(request: Request):
@@ -138,7 +176,9 @@ async def shift_movement(shift_id: int, request: Request):
             reference=form.get("reference", ""),
             notes=form.get("notes", ""),
         )
-        return flash_redirect(request, f"/accounting?tab=shifts&shift_id={shift_id}", "Cash movement recorded", "success")
+        return flash_redirect(
+            request, f"/accounting?tab=shifts&shift_id={shift_id}", "Cash movement recorded", "success"
+        )
     except Exception as e:
         return flash_redirect(request, "/accounting?tab=shifts", str(e), "error")
 
@@ -163,6 +203,8 @@ async def night_audit_run(request: Request):
     form = await deps.require_unlocked_form(request, permission="accounting.manage")
     try:
         services.run_night_audit(business_date=form.get("business_date") or None, notes=form.get("notes", ""))
-        return flash_redirect(request, "/accounting?tab=night_audit", "Night audit snapshot recorded (advisory)", "success")
+        return flash_redirect(
+            request, "/accounting?tab=night_audit", "Night audit snapshot recorded (advisory)", "success"
+        )
     except Exception as e:
         return flash_redirect(request, "/accounting?tab=night_audit", str(e), "error")

@@ -1,4 +1,5 @@
 """Settings catalog, validation, save, reset, import/export."""
+
 import pytest
 from app_core import services
 from app_core.services import SETTINGS_CATALOG
@@ -11,8 +12,16 @@ def test_catalog_complete(clean_db):
 
 
 def test_catalog_has_required_keys(clean_db):
-    required = ["vat_rate", "service_charge_rate", "usd_to_egp", "schema_version",
-                "cancel_policy", "noshow_policy", "language", "default_printer"]
+    required = [
+        "vat_rate",
+        "service_charge_rate",
+        "usd_to_egp",
+        "schema_version",
+        "cancel_policy",
+        "noshow_policy",
+        "language",
+        "default_printer",
+    ]
     for key in required:
         assert key in SETTINGS_CATALOG
 

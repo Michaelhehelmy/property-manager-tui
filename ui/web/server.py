@@ -1,4 +1,5 @@
 """FastAPI + HTMX web UI (localhost MVP, single worker)."""
+
 from __future__ import annotations
 
 import logging
@@ -43,7 +44,9 @@ def _runtime_readiness(include_checks: bool = False) -> dict:
     invoice_dir = checks.get("invoice_dir") or {}
     data_writable = bool(data_dir.get("writable"))
     db_writable = bool(db_info.get("writable", data_writable))
-    ready = bool(data_writable and db_writable and export_dir.get("writable", False) and invoice_dir.get("writable", False))
+    ready = bool(
+        data_writable and db_writable and export_dir.get("writable", False) and invoice_dir.get("writable", False)
+    )
     try:
         db_initialized = bool(db.is_initialized())
     except Exception as exc:
@@ -69,7 +72,7 @@ def create_app(*, init_db: bool = True, run_startup: bool = True) -> FastAPI:
         paths.ensure_data_dirs()
         # Best-effort startup hygiene warnings (no secrets logged)
         try:
-            host_hint = (os.environ.get("HOST") or os.environ.get("PM_WEB_HOST") or "127.0.0.1")
+            host_hint = os.environ.get("HOST") or os.environ.get("PM_WEB_HOST") or "127.0.0.1"
             local_host = host_hint in ("127.0.0.1", "localhost", "::1")
             if not local_host and not (os.environ.get("PM_WEB_SECRET_KEY") or "").strip():
                 logger.warning("web_startup_config_warning code=missing_web_secret host_scope=non_local")
@@ -107,7 +110,9 @@ def create_app(*, init_db: bool = True, run_startup: bool = True) -> FastAPI:
         try:
             actor = deps.current_actor(request)
             if hasattr(services, "set_current_actor"):
-                _actor_token = services.set_current_actor(actor.get("actor"), actor.get("actor_user_id"), actor.get("actor_role"))
+                _actor_token = services.set_current_actor(
+                    actor.get("actor"), actor.get("actor_user_id"), actor.get("actor_role")
+                )
             request.state.current_user = deps.get_current_user(request)
             request.state.current_actor = actor
         except Exception:
@@ -153,7 +158,9 @@ def create_app(*, init_db: bool = True, run_startup: bool = True) -> FastAPI:
                 error_ref = f"err-{int(time.time())}"
                 err_type = type(exc).__name__
                 try:
-                    err_msg = _safe_detail(paths.redact_sensitive(exc, max_len=240) if hasattr(paths, "redact_sensitive") else str(exc))
+                    err_msg = _safe_detail(
+                        paths.redact_sensitive(exc, max_len=240) if hasattr(paths, "redact_sensitive") else str(exc)
+                    )
                 except Exception:
                     err_msg = "Unhandled exception"
                 logger.exception(
@@ -177,10 +184,18 @@ def create_app(*, init_db: bool = True, run_startup: bool = True) -> FastAPI:
                 if wants_html:
                     try:
                         from ui.web.rendering import render
+
                         hint = f"ref: {error_ref}\nmethod: {request.method}\npath: {request.url.path}\nerror: {err_type}: {err_msg}"
-                        resp = render(request, "errors/500.html", {"title": "Error", "error_hint": hint, "error_ref": error_ref}, status=500)
+                        resp = render(
+                            request,
+                            "errors/500.html",
+                            {"title": "Error", "error_hint": hint, "error_ref": error_ref},
+                            status=500,
+                        )
                     except Exception:
-                        resp = JSONResponse({"detail": "Internal Server Error", "error_ref": error_ref}, status_code=500)
+                        resp = JSONResponse(
+                            {"detail": "Internal Server Error", "error_ref": error_ref}, status_code=500
+                        )
                 else:
                     resp = JSONResponse({"detail": "Internal Server Error", "error_ref": error_ref}, status_code=500)
                 deps.save_session(resp, session)
@@ -213,7 +228,18 @@ def create_app(*, init_db: bool = True, run_startup: bool = True) -> FastAPI:
             logger.debug("web_request_log_failed", exc_info=True)
         return response
 
-    from ui.web.routes import accounting, dashboard, files, guests, housekeeping, pos_inventory, reports_analytics, reservations, settings_branding, support
+    from ui.web.routes import (
+        accounting,
+        dashboard,
+        files,
+        guests,
+        housekeeping,
+        pos_inventory,
+        reports_analytics,
+        reservations,
+        settings_branding,
+        support,
+    )
 
     app.include_router(dashboard.router)
     app.include_router(reservations.router)
@@ -224,6 +250,7 @@ def create_app(*, init_db: bool = True, run_startup: bool = True) -> FastAPI:
     app.include_router(reports_analytics.router)
     try:
         from ui.web.routes import assistant as assistant_routes
+
         app.include_router(assistant_routes.router)
     except Exception:
         logger.warning("Assistant module unavailable; /assistant routes disabled", exc_info=True)

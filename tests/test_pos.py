@@ -1,4 +1,5 @@
 """POS: add items, stock, COGS, void, walk-in."""
+
 import pytest
 from app_core import services
 from app_core.db import connect
@@ -59,9 +60,9 @@ def test_add_pos_deducts_stock(clean_db):
 def test_add_pos_creates_cogs(clean_db):
     rid = make_reservation()
     services.add_pos_item(rid, "Water", 3, 20, 1)  # item 1 has unit_cost=3
-    cogs = connect().execute(
-        "SELECT net FROM general_ledger WHERE entry_type='COGS' ORDER BY id DESC LIMIT 1"
-    ).fetchone()
+    cogs = (
+        connect().execute("SELECT net FROM general_ledger WHERE entry_type='COGS' ORDER BY id DESC LIMIT 1").fetchone()
+    )
     assert cogs["net"] == pytest.approx(9.0)  # 3 * 3
 
 
@@ -84,9 +85,11 @@ def test_negative_stock_allowed_by_default(clean_db):
 def test_walkin_creates_payment(clean_db):
     """Walk-in: add_pos_item creates the charge; record_payment creates the payment."""
     services.add_pos_item(None, "Water", 1, 20, None)
-    charge = connect().execute(
-        "SELECT gross FROM general_ledger WHERE ref_type='POS' AND entry_type='CHARGE'"
-    ).fetchone()["gross"]
+    charge = (
+        connect()
+        .execute("SELECT gross FROM general_ledger WHERE ref_type='POS' AND entry_type='CHARGE'")
+        .fetchone()["gross"]
+    )
     assert charge > 0
     services.record_payment(None, charge, "Cash")
     pay = connect().execute("SELECT amount, method FROM payments WHERE reservation_id IS NULL").fetchone()
@@ -109,9 +112,11 @@ def test_void_reverses_cogs(clean_db):
     result = services.add_pos_item(rid, "Water", 2, 20, 1)
     services.void_pos_item(result["pos_id"], "testpass")
     # COGS + its reversal
-    rows = connect().execute(
-        "SELECT entry_type, net FROM general_ledger WHERE entry_type IN ('COGS','VOID_COGS') ORDER BY id"
-    ).fetchall()
+    rows = (
+        connect()
+        .execute("SELECT entry_type, net FROM general_ledger WHERE entry_type IN ('COGS','VOID_COGS') ORDER BY id")
+        .fetchall()
+    )
     assert len(rows) == 2
     assert rows[0]["net"] == pytest.approx(6.0)
     assert rows[1]["net"] == pytest.approx(-6.0)
@@ -135,8 +140,10 @@ def test_void_requires_password(clean_db):
 def test_pos_charge_ref_type(clean_db):
     rid = make_reservation()
     result = services.add_pos_item(rid, "Water", 1, 20, 1)
-    charge = connect().execute(
-        "SELECT ref_type, ref_id FROM general_ledger WHERE entry_type='CHARGE' AND ref_type='POS'"
-    ).fetchone()
+    charge = (
+        connect()
+        .execute("SELECT ref_type, ref_id FROM general_ledger WHERE entry_type='CHARGE' AND ref_type='POS'")
+        .fetchone()
+    )
     assert charge["ref_type"] == "POS"
     assert charge["ref_id"] == result["pos_id"]

@@ -176,8 +176,7 @@ def test_db_integrity_check_error_branches(clean_db, monkeypatch):
     conn = sqlite3.connect(":memory:")
     conn.execute("PRAGMA foreign_keys = ON")
     conn.executescript(
-        "CREATE TABLE p(id INTEGER PRIMARY KEY);"
-        "CREATE TABLE c(id INTEGER PRIMARY KEY, pid INTEGER REFERENCES p(id));"
+        "CREATE TABLE p(id INTEGER PRIMARY KEY);CREATE TABLE c(id INTEGER PRIMARY KEY, pid INTEGER REFERENCES p(id));"
     )
     conn.execute("PRAGMA foreign_keys = OFF")
     conn.execute("INSERT INTO c(id,pid) VALUES(1,999)")
@@ -215,13 +214,16 @@ def test_db_runtime_indexes_and_migrate_edge_branches(tmp_path, monkeypatch):
     class ConnRaise:
         def __init__(self, real):
             self._real = real
+
         def __getattr__(self, name):
             return getattr(self._real, name)
+
         def execute(self, sql, *a, **k):
             s = str(sql)
             if "idx_res_source_segment" in s or "UPDATE reservations SET booking_notes" in s:
                 raise RuntimeError("boom")
             return self._real.execute(sql, *a, **k)
+
         def executescript(self, sql):
             return self._real.executescript(sql)
 
@@ -237,7 +239,9 @@ def test_db_runtime_indexes_and_migrate_edge_branches(tmp_path, monkeypatch):
         "CREATE TABLE pos_tabs(id INTEGER PRIMARY KEY);"
     )
     c3.execute("INSERT INTO inventory(id,stock_qty,unit_cost,created_at) VALUES(1,5,2,'2026-01-01 00:00:00')")
-    c3.execute("INSERT INTO inventory_batches(id,item_id,lot_code,barcode_value,barcode_type,quantity_received,quantity_remaining,unit_cost,received_at,expiry_date,supplier,reference,notes,status,payload_json,created_at) VALUES(99,2,'LEGACY-1','LEGACY-1','code128',1,1,1,'2026-01-01','','','x','x','active','{}','2026-01-01')")
+    c3.execute(
+        "INSERT INTO inventory_batches(id,item_id,lot_code,barcode_value,barcode_type,quantity_received,quantity_remaining,unit_cost,received_at,expiry_date,supplier,reference,notes,status,payload_json,created_at) VALUES(99,2,'LEGACY-1','LEGACY-1','code128',1,1,1,'2026-01-01','','','x','x','active','{}','2026-01-01')"
+    )
     db._migrate_to_10(c3)
     lots = [r[0] for r in c3.execute("SELECT lot_code FROM inventory_batches WHERE item_id=1").fetchall()]
     assert lots and lots[0].startswith("LEGACY-1-")
@@ -247,18 +251,23 @@ def test_db_runtime_indexes_and_migrate_edge_branches(tmp_path, monkeypatch):
     c4.execute("CREATE TABLE payments(id INTEGER PRIMARY KEY, shift_id INTEGER)")
     c4.execute("CREATE TABLE roles(name TEXT PRIMARY KEY, description TEXT, permissions_json TEXT, created_at TEXT)")
     c4.execute("CREATE TABLE users(id INTEGER PRIMARY KEY, username TEXT, role TEXT, active INTEGER)")
+
     class ConnRaise2:
         def __init__(self, real):
             self._real = real
+
         def __getattr__(self, name):
             return getattr(self._real, name)
+
         def execute(self, sql, *a, **k):
             s = str(sql)
             if "idx_payments_idempotency" in s or "idx_payments_shift" in s or "INSERT OR IGNORE INTO roles" in s:
                 raise RuntimeError("x")
             return self._real.execute(sql, *a, **k)
+
         def executescript(self, sql):
             return self._real.executescript(sql)
+
     w4 = ConnRaise2(c4)
     db._migrate_to_13(w4)
     db._migrate_to_17(w4)
@@ -280,7 +289,9 @@ def test_db_migrate_control_flow_branches(tmp_path, monkeypatch):
     db.close()
 
     # restore schema from module for subsequent operations by reloading would be heavy; instead set to minimal valid schema
-    monkeypatch.setattr(db, "_SCHEMA", "CREATE TABLE settings(key TEXT PRIMARY KEY, value TEXT NOT NULL); PRAGMA user_version=0;")
+    monkeypatch.setattr(
+        db, "_SCHEMA", "CREATE TABLE settings(key TEXT PRIMARY KEY, value TEXT NOT NULL); PRAGMA user_version=0;"
+    )
 
     # upgrade path: active transaction rollback guard (1461-1463), BEGIN failure (1483-1484), exception rollback path (1527-1532)
     monkeypatch.setattr(paths, "DATA_DIR", tmp_path / "m2")
@@ -297,8 +308,10 @@ def test_db_migrate_control_flow_branches(tmp_path, monkeypatch):
     class ProxyConn:
         def __init__(self, real):
             self._real = real
+
         def __getattr__(self, name):
             return getattr(self._real, name)
+
         @property
         def in_transaction(self):
             # first check in migrate() -> True to hit defensive rollback (1461), later -> real state
@@ -306,6 +319,7 @@ def test_db_migrate_control_flow_branches(tmp_path, monkeypatch):
             if calls["in_tx_checks"] == 1:
                 return True
             return getattr(self._real, "in_transaction", False)
+
         def execute(self, sql, *a, **k):
             s = str(sql)
             if s == "BEGIN IMMEDIATE" and calls["begin_fail"] == 0:
@@ -314,6 +328,7 @@ def test_db_migrate_control_flow_branches(tmp_path, monkeypatch):
             if s == "ROLLBACK":
                 calls["rollback"] += 1
             return self._real.execute(sql, *a, **k)
+
         def executescript(self, sql):
             return self._real.executescript(sql)
 
@@ -328,7 +343,9 @@ def test_db_migrate_control_flow_branches(tmp_path, monkeypatch):
         assert calls["rollback"] >= 1  # defensive + exception rollback paths
     finally:
         monkeypatch.setattr(db, "connect", orig_connect)
-        monkeypatch.setattr(db, "_migrate_to_5", db._migrate_to_5, raising=False)  # monkeypatch will restore later; keep explicit no-op safe
+        monkeypatch.setattr(
+            db, "_migrate_to_5", db._migrate_to_5, raising=False
+        )  # monkeypatch will restore later; keep explicit no-op safe
     db.close()
 
     # current schema branch exception swallowing (1538-1539)

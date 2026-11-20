@@ -104,7 +104,9 @@ def _summary_for(action_type: str, prechecks: Mapping[str, Any], args: Mapping[s
         price = preview.get("unit_price") or args.get("price")
         return f"Add POS item '{item}' x{qty} @ {price} to reservation #{rid}"
     if ptype in {"preview_complete_walkin_sale", "propose_complete_walkin_sale"}:
-        count = preview.get("item_count") or (len(args.get("items") or []) if isinstance(args.get("items"), list) else 0)
+        count = preview.get("item_count") or (
+            len(args.get("items") or []) if isinstance(args.get("items"), list) else 0
+        )
         total = preview.get("estimated_total")
         method = preview.get("method") or args.get("method")
         return f"Complete walk-in sale ({count} item(s), est total {total}) via {method}"
@@ -119,7 +121,11 @@ def _summary_for(action_type: str, prechecks: Mapping[str, Any], args: Mapping[s
         qty = preview.get("quantity") or args.get("quantity") or 1
         return f"Book activity '{act}' x{qty} for reservation #{rid}"
     if ptype in {"preview_create_reservation", "propose_create_reservation"}:
-        guest = preview.get("guest_name") or args.get("guest_name") or f"guest#{preview.get('guest_id') or args.get('guest_id')}"
+        guest = (
+            preview.get("guest_name")
+            or args.get("guest_name")
+            or f"guest#{preview.get('guest_id') or args.get('guest_id')}"
+        )
         room = preview.get("room_number") or preview.get("room_id") or args.get("room_id")
         ci = preview.get("check_in") or args.get("check_in")
         co = preview.get("check_out") or args.get("check_out")
@@ -171,7 +177,9 @@ def create_proposal(
     action_id = _generate_action_id()
     expires_at = av._expires_at(ttl_seconds if ttl_seconds is not None else av.DEFAULT_TTL_SECONDS)
     execute_type = _map_propose_to_execute(action_type)
-    required_proofs = list(REQUIRED_PROOFS.get(action_type) or REQUIRED_PROOFS.get(execute_type or "") or ["ui_confirmation"])
+    required_proofs = list(
+        REQUIRED_PROOFS.get(action_type) or REQUIRED_PROOFS.get(execute_type or "") or ["ui_confirmation"]
+    )
 
     return {
         "ok": True,
@@ -212,8 +220,12 @@ def cancel_pending_action(pending_action: Mapping[str, Any] | None, reason: str 
 
 # ── Execution wrappers (call existing services) ───────────────────────────────
 
+
 def _exec_add_pos_item(args: Mapping[str, Any], resolved: Mapping[str, Any]) -> dict[str, Any]:
-    rid = _int(args.get("reservation_id") or ((resolved.get("reservation") or {}).get("id") if isinstance(resolved.get("reservation"), dict) else None))
+    rid = _int(
+        args.get("reservation_id")
+        or ((resolved.get("reservation") or {}).get("id") if isinstance(resolved.get("reservation"), dict) else None)
+    )
     item = resolved.get("item") if isinstance(resolved.get("item"), dict) else {}
     batch = resolved.get("batch") if isinstance(resolved.get("batch"), dict) else {}
     inv_id = _int(args.get("item_id") or args.get("inv_id") or item.get("id"))
@@ -226,7 +238,9 @@ def _exec_add_pos_item(args: Mapping[str, Any], resolved: Mapping[str, Any]) -> 
     lot_code = _norm_str(args.get("lot_code") or batch.get("lot_code")) or None
     if rid is None or inv_id is None or qty is None or price is None or not desc:
         raise ValueError("Missing required add_pos_item args (reservation_id, inv_id/item_id, desc, qty, price)")
-    result = services.add_pos_item(rid, desc, int(qty), float(price), inv_id=inv_id, batch_id=batch_id, lot_code=lot_code)
+    result = services.add_pos_item(
+        rid, desc, int(qty), float(price), inv_id=inv_id, batch_id=batch_id, lot_code=lot_code
+    )
     affected: dict[str, Any] = {"reservation_id": rid, "inventory_item_id": inv_id}
     if batch_id:
         affected["batch_id"] = batch_id
@@ -259,14 +273,16 @@ def _exec_complete_walkin_sale(args: Mapping[str, Any], resolved: Mapping[str, A
         lot_code = _norm_str(it.get("lot_code")) or None
         if inv_id is None or not desc or qty is None or price is None:
             raise ValueError("Each walk-in item requires inv_id/item_id, desc, qty, price")
-        payload_items.append({
-            "desc": desc,
-            "qty": int(qty),
-            "price": float(price),
-            "inv_id": inv_id,
-            "batch_id": batch_id,
-            "lot_code": lot_code,
-        })
+        payload_items.append(
+            {
+                "desc": desc,
+                "qty": int(qty),
+                "price": float(price),
+                "inv_id": inv_id,
+                "batch_id": batch_id,
+                "lot_code": lot_code,
+            }
+        )
 
     result = services.complete_walkin_sale(payload_items, method, notes=notes, payment_type=payment_type)
     affected: dict[str, Any] = {}
@@ -279,7 +295,10 @@ def _exec_complete_walkin_sale(args: Mapping[str, Any], resolved: Mapping[str, A
 
 
 def _exec_record_payment(args: Mapping[str, Any], resolved: Mapping[str, Any]) -> dict[str, Any]:
-    rid = _int(args.get("reservation_id") or ((resolved.get("reservation") or {}).get("id") if isinstance(resolved.get("reservation"), dict) else None))
+    rid = _int(
+        args.get("reservation_id")
+        or ((resolved.get("reservation") or {}).get("id") if isinstance(resolved.get("reservation"), dict) else None)
+    )
     amount = _float(args.get("amount"))
     method = _norm_str(args.get("method") or args.get("payment_method"))
     notes = _norm_str(args.get("notes"))
@@ -294,8 +313,14 @@ def _exec_record_payment(args: Mapping[str, Any], resolved: Mapping[str, Any]) -
 
 
 def _exec_book_activity(args: Mapping[str, Any], resolved: Mapping[str, Any]) -> dict[str, Any]:
-    rid = _int(args.get("reservation_id") or ((resolved.get("reservation") or {}).get("id") if isinstance(resolved.get("reservation"), dict) else None))
-    aid = _int(args.get("activity_id") or ((resolved.get("activity") or {}).get("id") if isinstance(resolved.get("activity"), dict) else None))
+    rid = _int(
+        args.get("reservation_id")
+        or ((resolved.get("reservation") or {}).get("id") if isinstance(resolved.get("reservation"), dict) else None)
+    )
+    aid = _int(
+        args.get("activity_id")
+        or ((resolved.get("activity") or {}).get("id") if isinstance(resolved.get("activity"), dict) else None)
+    )
     qty = _int(args.get("quantity") or args.get("qty") or 1) or 1
     scheduled_at = args.get("scheduled_at")
     notes = _norm_str(args.get("notes"))
@@ -319,7 +344,9 @@ def _exec_create_reservation(args: Mapping[str, Any], resolved: Mapping[str, Any
     room = resolved.get("room") if isinstance(resolved.get("room"), dict) else {}
 
     guest_id = _int(args.get("guest_id") or guest.get("id"))
-    guest_name = _norm_str(args.get("guest_name") or args.get("name") or guest.get("canonical_name") or guest.get("name"))
+    guest_name = _norm_str(
+        args.get("guest_name") or args.get("name") or guest.get("canonical_name") or guest.get("name")
+    )
     source = _norm_str(args.get("source")) or "Direct"
     room_id = _int(args.get("room_id") or room.get("id"))
     rate_plan_id = _int(args.get("rate_plan_id") or args.get("plan_id"))
@@ -375,7 +402,14 @@ def execute_pending_action(
     Returns: {ok, status, result, affected_ids, message, prechecks}
     """
     if not isinstance(pending_action, Mapping):
-        return {"ok": False, "status": "invalid", "result": None, "affected_ids": {}, "message": "pending_action is required", "prechecks": None}
+        return {
+            "ok": False,
+            "status": "invalid",
+            "result": None,
+            "affected_ids": {},
+            "message": "pending_action is required",
+            "prechecks": None,
+        }
 
     status = _norm_str(pending_action.get("status") or "pending")
     if status in {"executed", "cancelled", "expired"}:

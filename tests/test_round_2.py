@@ -1,4 +1,5 @@
 """Round 2 — hit remaining reachable lines."""
+
 import pytest
 from unittest.mock import patch, MagicMock
 from app_core import services
@@ -11,10 +12,10 @@ from conftest import make_reservation
 # SETTINGS — schema_version skip + write path
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def test_save_settings_schema_version_skipped(clean_db):
     """save_settings should ignore schema_version key."""
-    count, errs = services.save_settings(
-        {"schema_version": "999", "vat_rate": "0.15"}, "testpass")
+    count, errs = services.save_settings({"schema_version": "999", "vat_rate": "0.15"}, "testpass")
     assert errs == []
     # vat_rate saved, schema_version ignored
     assert services.get_setting("vat_rate") == "0.15"
@@ -38,6 +39,7 @@ def test_validate_str_and_text_identical(clean_db):
 # ═══════════════════════════════════════════════════════════════════════════
 # GUEST MATCHING — phone/email branches
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def test_guest_match_by_phone_exact(clean_db):
     services.find_or_create_guest("Alice", phone="+201001234567")
@@ -77,10 +79,10 @@ def test_guest_match_empty_email(clean_db):
 # RESERVATION — rate_plan type, overbooking, modify branches
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def test_create_reservation_plan_string_coerced(clean_db):
     """Non-int rate_plan_id is coerced to None (audit P1-2)."""
-    rid = services.create_reservation("X", "Direct", 1, "not-a-plan", 100,
-                                       "2026-12-01", "2026-12-03")
+    rid = services.create_reservation("X", "Direct", 1, "not-a-plan", 100, "2026-12-01", "2026-12-03")
     r = services.get_reservation(rid)
     assert r["rate_plan_id"] is None
 
@@ -89,15 +91,13 @@ def test_create_reservation_plan_zero_fails_fk(clean_db):
     """rate_plan_id=0 must fail FK — this is the audit P1-2 bug at the service layer.
     UI's job is to send None for blank, not 0."""
     with pytest.raises(Exception):  # sqlite3.IntegrityError
-        services.create_reservation("X", "Direct", 1, 0, 100,
-                                     "2026-12-01", "2026-12-03")
+        services.create_reservation("X", "Direct", 1, 0, 100, "2026-12-01", "2026-12-03")
 
 
 def test_overbooking_allowed_setting_true(clean_db):
     services.set_setting("allow_overbooking", "true")
     make_reservation(ci="2026-12-01", co="2026-12-05", room_id=1)
-    rid = services.create_reservation("Y", "Direct", 1, None, 100,
-                                       "2026-12-03", "2026-12-07")
+    rid = services.create_reservation("Y", "Direct", 1, None, 100, "2026-12-03", "2026-12-07")
     assert rid > 0
 
 
@@ -131,12 +131,15 @@ def test_modify_checkedin_reservation(clean_db):
 # CANCEL — no POS items, has POS items, refund=0
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def test_cancel_no_refund_when_no_payments(clean_db):
     rid = make_reservation()
     services.cancel_reservation(rid, "testpass")
-    refunds = connect().execute(
-        "SELECT COUNT(*) FROM payments WHERE reservation_id=? AND payment_type='Refund'",
-        (rid,)).fetchone()[0]
+    refunds = (
+        connect()
+        .execute("SELECT COUNT(*) FROM payments WHERE reservation_id=? AND payment_type='Refund'", (rid,))
+        .fetchone()[0]
+    )
     assert refunds == 0
 
 
@@ -144,8 +147,7 @@ def test_cancel_voids_pos_items(clean_db):
     rid = make_reservation()
     services.add_pos_item(rid, "Water", 2, 20, 1)
     services.cancel_reservation(rid, "testpass")
-    rows = connect().execute(
-        "SELECT voided_at FROM pos_tabs WHERE reservation_id=?", (rid,)).fetchall()
+    rows = connect().execute("SELECT voided_at FROM pos_tabs WHERE reservation_id=?", (rid,)).fetchall()
     assert all(r["voided_at"] is not None for r in rows)
 
 
@@ -163,15 +165,18 @@ def test_cancel_restores_stock(clean_db):
 def test_cancel_with_refund_creates_ledger_reversal(clean_db):
     rid = make_reservation(deposit=100.0)
     services.cancel_reservation(rid, "testpass")
-    reversals = connect().execute(
-        "SELECT COUNT(*) FROM general_ledger WHERE entry_type='VOID_CHARGE' AND ref_id=?",
-        (rid,)).fetchone()[0]
+    reversals = (
+        connect()
+        .execute("SELECT COUNT(*) FROM general_ledger WHERE entry_type='VOID_CHARGE' AND ref_id=?", (rid,))
+        .fetchone()[0]
+    )
     assert reversals >= 1
 
 
 # ═══════════════════════════════════════════════════════════════════════════
 # DELETE — payments/POS present
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def test_delete_with_payments(clean_db):
     rid = make_reservation(deposit=50.0)
@@ -196,6 +201,7 @@ def test_delete_reserved_clean(clean_db):
 # POS — inventory edge cases
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def test_pos_inventory_not_found(clean_db):
     rid = make_reservation()
     with pytest.raises(ValueError, match="not found"):
@@ -204,7 +210,9 @@ def test_pos_inventory_not_found(clean_db):
 
 def test_pos_inventory_inactive(clean_db):
     with transaction() as c:
-        c.execute("INSERT INTO inventory (item_name, category, stock_qty, unit, active) VALUES ('Dead', 'X', 10, 'pcs', 0)")
+        c.execute(
+            "INSERT INTO inventory (item_name, category, stock_qty, unit, active) VALUES ('Dead', 'X', 10, 'pcs', 0)"
+        )
         iid = c.execute("SELECT last_insert_rowid()").fetchone()[0]
     rid = make_reservation()
     with pytest.raises(ValueError, match="inactive"):
@@ -237,6 +245,7 @@ def test_pos_with_custom_no_inventory(clean_db):
 # INVENTORY
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def test_restock_zero_stock_item(clean_db):
     """Restock an item that currently has zero stock."""
     with transaction() as c:
@@ -259,6 +268,7 @@ def test_restock_first_time_cost(clean_db):
 # ATTESTATION / ATTRIBUTION
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def test_attribution_value_tampered(clean_db):
     with transaction() as c:
         c.execute("UPDATE app_metadata SET value='Changed' WHERE key='gift_attribution'")
@@ -277,6 +287,7 @@ def test_attribution_hash_tampered(clean_db):
 # BALANCE / REPORT empty branches
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def test_balance_overpaid(clean_db):
     """Guest paid more than charges."""
     rid = make_reservation(rate=100.0, ci="2026-12-01", co="2026-12-02")
@@ -294,12 +305,15 @@ def test_summary_with_no_active_reservations(clean_db):
 # UI HELPERS
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def test_selected_id_when_cursor_negative():
     class T:
         row_count = 2
         cursor_row = -1
+
         def get_row_at(self, i):
             raise IndexError()
+
     assert services.selected_id(T()) is None
 
 
@@ -307,8 +321,10 @@ def test_selected_id_when_value_type_error():
     class T:
         row_count = 1
         cursor_row = 0
+
         def get_row_at(self, i):
             return (None,)  # int(None) raises TypeError
+
     assert services.selected_id(T()) is None
 
 
@@ -316,12 +332,12 @@ def test_selected_id_when_value_type_error():
 # DB — line 229
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def test_db_transaction_rolls_back(clean_db):
     """Force a rollback via exception inside transaction."""
     with pytest.raises(ValueError):
         with db.transaction() as c:
             c.execute("INSERT INTO guests (canonical_name) VALUES ('rollback')")
             raise ValueError("boom")
-    row = connect().execute(
-        "SELECT 1 FROM guests WHERE canonical_name='rollback'").fetchone()
+    row = connect().execute("SELECT 1 FROM guests WHERE canonical_name='rollback'").fetchone()
     assert row is None

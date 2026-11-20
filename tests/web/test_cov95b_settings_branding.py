@@ -51,12 +51,16 @@ def test_detect_lan_ipv4s_and_settings_exception_branches(client, monkeypatch):
     class _Sock:
         def __init__(self, target):
             self.target = target
+
         def __enter__(self):
             return self
+
         def __exit__(self, exc_type, exc, tb):
             return False
+
         def connect(self, addr):
             raise OSError("no route")
+
         def getsockname(self):
             return ("10.0.0.2", 1234)
 
@@ -77,21 +81,26 @@ def test_detect_lan_ipv4s_and_settings_exception_branches(client, monkeypatch):
         @property
         def hostname(self):
             raise RuntimeError("bad host")
+
         @property
         def port(self):
             return 8000
+
         @property
         def scheme(self):
             return "http"
+
     req = _make_request(path="/settings", method="GET")
     req.scope["app"] = client.app
     # patch request.url by setting attribute on instance (property-like via __getattr__ not used); simpler: monkeypatch URL access
     monkeypatch.setattr(type(req), "url", property(lambda self: _BadURL()), raising=False)
     # render needs templates; use real app render via route call fallback: easier monkeypatch render
     captured = {}
+
     def fake_render(request, name, ctx=None, status=200):
         captured["ctx"] = ctx or {}
         return Response("ok", status_code=status)
+
     monkeypatch.setattr(sb, "render", fake_render)
     monkeypatch.setattr(sb.services, "get_all_rooms", lambda: [])
     monkeypatch.setattr(sb.services, "list_demo_data_presets", lambda: [])
@@ -115,21 +124,29 @@ def test_settings_branding_error_and_user_session_exception_paths(client, monkey
 
     # branding exception branch (163)
     token = set_session(client, unlocked=True)
-    monkeypatch.setattr(sb.services, "apply_branding_settings", lambda *a, **k: (_ for _ in ()).throw(ValueError("brand-boom")))
+    monkeypatch.setattr(
+        sb.services, "apply_branding_settings", lambda *a, **k: (_ for _ in ()).throw(ValueError("brand-boom"))
+    )
     r = client.post("/settings/branding", data={"csrf": token, "display_name": "X"}, follow_redirects=True)
     assert r.status_code == 200
     assert "brand-boom" in r.text
 
     # users login exception (334,335)
     token = set_session(client, unlocked=False)
-    monkeypatch.setattr(sb.services, "verify_user_password", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("login-boom")))
-    r = client.post("/settings/users/login", data={"csrf": token, "username": "u", "user_password": "p"}, follow_redirects=True)
+    monkeypatch.setattr(
+        sb.services, "verify_user_password", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("login-boom"))
+    )
+    r = client.post(
+        "/settings/users/login", data={"csrf": token, "username": "u", "user_password": "p"}, follow_redirects=True
+    )
     assert r.status_code == 200
     assert "login-boom" in r.text
 
     # users logout exception (351,352)
     token = set_session(client, unlocked=False)
-    monkeypatch.setattr(sb.deps, "get_current_user", lambda req: {"id": 1, "username": "u", "display_name": "u", "role": "staff"})
+    monkeypatch.setattr(
+        sb.deps, "get_current_user", lambda req: {"id": 1, "username": "u", "display_name": "u", "role": "staff"}
+    )
     monkeypatch.setattr(sb.deps, "clear_current_user", lambda req: (_ for _ in ()).throw(RuntimeError("logout-boom")))
     r = client.post("/settings/users/logout", data={"csrf": token}, follow_redirects=True)
     assert r.status_code == 200
@@ -143,8 +160,10 @@ def test_seed_import_none_read_and_unlink_exception(client, monkeypatch):
     class _Upload:
         filename = "seed.json"
         content_type = "application/json"
+
         async def read(self):
             return None
+
     req = _make_request(path="/settings/seed/import", method="POST")
     deps.get_session(req)["csrf"] = "tok"
     form = {"csrf": "tok", "seed_file": _Upload(), "confirm": "yes"}
@@ -154,10 +173,12 @@ def test_seed_import_none_read_and_unlink_exception(client, monkeypatch):
     monkeypatch.setattr(sb.services, "import_seed_config", lambda path, pw, confirm: {"summary": {"ok": 1}})
     # 463,464: unlink raises
     real_unlink = Path.unlink
+
     def flaky_unlink(self, *a, **k):
         if str(self).endswith(".json") and "tmp" in str(self):
             raise OSError("cannot unlink")
         return real_unlink(self, *a, **k)
+
     monkeypatch.setattr(Path, "unlink", flaky_unlink)
     resp = asyncio.run(sb.seed_import(req))
     assert resp.status_code in (303, 307)
@@ -168,6 +189,7 @@ def test_seed_import_none_read_and_unlink_exception(client, monkeypatch):
 def _coro(val):
     async def _inner(*a, **k):
         return val
+
     return _inner()
 
 
@@ -176,20 +198,30 @@ def test_approvals_decide_execute_error_branches(client, monkeypatch):
 
     # decide exception (790,791)
     token = set_session(client, unlocked=True)
-    monkeypatch.setattr(sb.services, "decide_approval", lambda *a, **k: (_ for _ in ()).throw(ValueError("decide-boom")))
+    monkeypatch.setattr(
+        sb.services, "decide_approval", lambda *a, **k: (_ for _ in ()).throw(ValueError("decide-boom"))
+    )
     r = client.post("/settings/approvals/1/decide", data={"csrf": token, "decision": "approve"}, follow_redirects=True)
     assert r.status_code == 200
     assert "decide-boom" in r.text
 
     # execute invalid JSON (808,809)
     token = set_session(client, unlocked=True)
-    r = client.post("/settings/approvals/1/execute", data={"csrf": token, "execution_result_json": "{bad"}, follow_redirects=True)
+    r = client.post(
+        "/settings/approvals/1/execute", data={"csrf": token, "execution_result_json": "{bad"}, follow_redirects=True
+    )
     assert r.status_code == 200
     assert "execution_result_json must be valid JSON" in r.text
 
     # execute outer exception (812,813)
-    monkeypatch.setattr(sb.services, "mark_approval_executed", lambda *a, **k: (_ for _ in ()).throw(ValueError("exec-boom")))
-    r = client.post("/settings/approvals/1/execute", data={"csrf": token, "execution_result_json": '{"ok": true}'}, follow_redirects=True)
+    monkeypatch.setattr(
+        sb.services, "mark_approval_executed", lambda *a, **k: (_ for _ in ()).throw(ValueError("exec-boom"))
+    )
+    r = client.post(
+        "/settings/approvals/1/execute",
+        data={"csrf": token, "execution_result_json": '{"ok": true}'},
+        follow_redirects=True,
+    )
     assert r.status_code == 200
     assert "exec-boom" in r.text
 
@@ -202,7 +234,9 @@ def test_updates_dismiss_branches(monkeypatch):
     deps.get_session(req)["csrf"] = "real"
     form = {"csrf": "wrong", "key": "git:abc", "next": "javascript:bad"}
     monkeypatch.setattr(sb.deps, "get_form", lambda r: _coro(form))
-    monkeypatch.setattr(sb.deps, "verify_csrf", lambda r, t: (_ for _ in ()).throw(HTTPException(status_code=400, detail="bad csrf")))
+    monkeypatch.setattr(
+        sb.deps, "verify_csrf", lambda r, t: (_ for _ in ()).throw(HTTPException(status_code=400, detail="bad csrf"))
+    )
     resp = asyncio.run(sb.updates_dismiss(req))
     assert resp.status_code in (303, 307)
     assert deps.get_session(req).get("dismissed_update_key") == "git:abc"
@@ -213,9 +247,13 @@ def test_updates_dismiss_branches(monkeypatch):
     deps.get_session(req2)["csrf"] = "real"
     form2 = {"csrf": "real", "next": "/ok"}
     monkeypatch.setattr(sb.deps, "get_form", lambda r: _coro(form2))
-    def verify_ok(r, t): return None
+
+    def verify_ok(r, t):
+        return None
+
     monkeypatch.setattr(sb.deps, "verify_csrf", verify_ok)
     import ui.web.route_utils as ru
+
     monkeypatch.setattr(ru, "safe_local_path", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("x")))
     resp2 = asyncio.run(sb.updates_dismiss(req2))
     assert resp2.headers.get("location") == "/"
@@ -227,7 +265,11 @@ def test_updates_dismiss_branches(monkeypatch):
     monkeypatch.setattr(sb.deps, "get_form", lambda r: _coro(form3))
     monkeypatch.setattr(sb.deps, "verify_csrf", verify_ok)
     # restore safe_local_path behavior
-    monkeypatch.setattr(ru, "safe_local_path", lambda v, default="": v if isinstance(v, str) and v.startswith("/") and not v.startswith("//") else default)
+    monkeypatch.setattr(
+        ru,
+        "safe_local_path",
+        lambda v, default="": v if isinstance(v, str) and v.startswith("/") and not v.startswith("//") else default,
+    )
     resp3 = asyncio.run(sb.updates_dismiss(req3))
     assert resp3.headers.get("location") == "/settings?tab=updates"
 
@@ -239,8 +281,10 @@ def test_updates_apply_now_branches(client, monkeypatch):
     # route currently calls deps.redirect(..., status_code=303) while deps.redirect expects `status`;
     # tolerate this by adapting signature in-test so branch lines execute and redirect is returned.
     orig_redirect = sb.deps.redirect
+
     def _compat_redirect(url, status=303, status_code=None):
         return orig_redirect(url, status=status_code or status)
+
     monkeypatch.setattr(sb.deps, "redirect", _compat_redirect)
     token = set_session(client, unlocked=False)
     r = client.post("/updates/apply-now", data={"csrf": token}, follow_redirects=False)
@@ -255,8 +299,11 @@ def test_updates_apply_now_branches(client, monkeypatch):
 
     # git dirty (881-883) + notice fetch exception (872-875)
     def setup_dirty():
-        monkeypatch.setattr(sb.updater, "get_cached_update_notice", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("net")))
+        monkeypatch.setattr(
+            sb.updater, "get_cached_update_notice", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("net"))
+        )
         monkeypatch.setattr(sb.updater, "get_local_state", lambda: {"is_git_repo": True, "dirty": True})
+
     r = post_apply(setup_dirty)
     assert r.status_code == 200
     assert "local source changes" in r.text
@@ -266,6 +313,7 @@ def test_updates_apply_now_branches(client, monkeypatch):
         monkeypatch.setattr(sb.updater, "get_cached_update_notice", lambda *a, **k: {"kind": "git"})
         monkeypatch.setattr(sb.updater, "get_local_state", lambda: {"is_git_repo": True, "dirty": False})
         monkeypatch.setattr(sb.updater, "apply_update", lambda: {"ok": True})
+
     r = post_apply(setup_git_ok)
     assert r.status_code == 200
     assert "Update applied successfully" in r.text
@@ -275,15 +323,21 @@ def test_updates_apply_now_branches(client, monkeypatch):
         monkeypatch.setattr(sb.updater, "get_cached_update_notice", lambda *a, **k: {"kind": "git"})
         monkeypatch.setattr(sb.updater, "get_local_state", lambda: {"is_git_repo": True, "dirty": False})
         monkeypatch.setattr(sb.updater, "apply_update", lambda: {"ok": False, "error": "ff-failed"})
+
     r = post_apply(setup_git_fail)
     assert r.status_code == 200
     assert "ff-failed" in r.text or "Automatic update failed" in r.text
 
     # non-git guided path (895-905)
     def setup_guided():
-        monkeypatch.setattr(sb.updater, "get_cached_update_notice", lambda *a, **k: {"kind": "release", "url": "https://example/release"})
+        monkeypatch.setattr(
+            sb.updater,
+            "get_cached_update_notice",
+            lambda *a, **k: {"kind": "release", "url": "https://example/release"},
+        )
         monkeypatch.setattr(sb.updater, "get_local_state", lambda: {"is_git_repo": False, "dirty": False})
         monkeypatch.setattr(sb.updater, "REPO_URL", "https://example/repo", raising=False)
+
     r = post_apply(setup_guided)
     assert r.status_code == 200
     assert "Automatic in-place update is not supported" in r.text
@@ -291,7 +345,9 @@ def test_updates_apply_now_branches(client, monkeypatch):
     # require_permission raises but caught (860,861) - unlocked path continues
     token = set_session(client, unlocked=True)
     monkeypatch.setattr(sb.deps, "require_permission", lambda req, perm: (_ for _ in ()).throw(RuntimeError("perm")))
-    monkeypatch.setattr(sb.updater, "get_cached_update_notice", lambda *a, **k: {"kind": "release", "url": "https://example/release"})
+    monkeypatch.setattr(
+        sb.updater, "get_cached_update_notice", lambda *a, **k: {"kind": "release", "url": "https://example/release"}
+    )
     monkeypatch.setattr(sb.updater, "get_local_state", lambda: {"is_git_repo": False, "dirty": False})
     monkeypatch.setattr(sb.updater, "REPO_URL", "https://example/repo", raising=False)
     r = client.post("/updates/apply-now", data={"csrf": token}, follow_redirects=True)
@@ -301,6 +357,7 @@ def test_updates_apply_now_branches(client, monkeypatch):
     def setup_exc():
         monkeypatch.setattr(sb.updater, "get_cached_update_notice", lambda *a, **k: {})
         monkeypatch.setattr(sb.updater, "get_local_state", lambda: (_ for _ in ()).throw(RuntimeError("state-boom")))
+
     r = post_apply(setup_exc)
     assert r.status_code == 200
     assert "Update action failed" in r.text

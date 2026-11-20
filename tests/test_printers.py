@@ -1,10 +1,12 @@
 """Printers — all OS branches with mocks."""
+
 import pytest
 from unittest.mock import MagicMock, patch
 from app_core import services
 
 
 # ── list_printers ────────────────────────────────────────────────────────
+
 
 def test_list_printers_cups(clean_db):
     v_mock = MagicMock(returncode=0, stdout="device for Office: ipp://x\ndevice for Receipt: ipp://y")
@@ -52,6 +54,7 @@ def test_list_printers_exception(clean_db):
 
 
 # ── print_to_printer ─────────────────────────────────────────────────────
+
 
 def test_print_file_not_found(clean_db):
     ok, msg = services.print_to_printer("/nonexistent/file.txt")
@@ -128,7 +131,7 @@ def test_print_invalid_target(clean_db, tmp_path):
     f.write_text("x")
     ok, msg = services.print_to_printer(str(f), "nonsense")
     assert ok is False
-    assert ("Unknown" in msg or "Unsupported" in msg)
+    assert "Unknown" in msg or "Unsupported" in msg
 
 
 def test_print_raw_exception(clean_db, tmp_path):

@@ -115,6 +115,7 @@ def test_save_session_and_redirect():
     class Resp:
         def __init__(self):
             self.cookies = []
+
         def set_cookie(self, *a, **k):
             self.cookies.append((a, k))
 
@@ -168,9 +169,11 @@ def test_safe_download_path(tmp_path, monkeypatch):
     with pytest.raises(HTTPException):
         deps.safe_download_path("export", "escape.txt")
 
+
 import importlib
 import io
 import sys as _sys
+
 
 def test_deps_import_warning_when_env_missing(monkeypatch):
     # cover import-time warning branch by reloading module without env var

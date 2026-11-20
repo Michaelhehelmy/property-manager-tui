@@ -21,6 +21,7 @@ def test_apply_update_refuses_non_git(tmp_path, monkeypatch):
 def test_check_for_updates_handles_network_error(monkeypatch):
     def boom(*a, **k):
         raise RuntimeError("offline")
+
     monkeypatch.setattr(updater, "_github_get", boom)
     res = updater.check_for_updates()
     assert res["ok"] is False

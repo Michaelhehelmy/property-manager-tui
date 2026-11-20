@@ -13,7 +13,11 @@ router = APIRouter()
 
 
 def _rooms():
-    return connect().execute("SELECT id, room_number, room_type, housekeeping_status FROM rooms ORDER BY room_number").fetchall()
+    return (
+        connect()
+        .execute("SELECT id, room_number, room_type, housekeeping_status FROM rooms ORDER BY room_number")
+        .fetchall()
+    )
 
 
 @router.get("/housekeeping")
@@ -51,14 +55,18 @@ def housekeeping_page(request: Request, status: str = "", block_status: str = "a
         blocks = services.list_room_blocks(status=block_status)
     except Exception:
         blocks = []
-    return render(request, "housekeeping/index.html", {
-        "title": "Housekeeping",
-        "tasks": tasks,
-        "rooms": _rooms(),
-        "blocks": blocks,
-        "status_filter": status or "",
-        "block_status_filter": block_status or "active",
-    })
+    return render(
+        request,
+        "housekeeping/index.html",
+        {
+            "title": "Housekeeping",
+            "tasks": tasks,
+            "rooms": _rooms(),
+            "blocks": blocks,
+            "status_filter": status or "",
+            "block_status_filter": block_status or "active",
+        },
+    )
 
 
 @router.post("/housekeeping/tasks/create")
@@ -77,18 +85,24 @@ async def create_task(request: Request):
         deps.add_flash(request, "Housekeeping task created", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
-    r = deps.redirect("/housekeeping"); deps.save_session(r, deps.get_session(request)); return r
+    r = deps.redirect("/housekeeping")
+    deps.save_session(r, deps.get_session(request))
+    return r
 
 
 @router.post("/housekeeping/tasks/{task_id}/status")
 async def update_task_status(task_id: int, request: Request):
     form = await deps.get_form(request)
     try:
-        services.update_housekeeping_task_status(task_id, form.get("status", ""), notes_append=form.get("notes_append", ""))
+        services.update_housekeeping_task_status(
+            task_id, form.get("status", ""), notes_append=form.get("notes_append", "")
+        )
         deps.add_flash(request, "Task updated", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
-    r = deps.redirect("/housekeeping"); deps.save_session(r, deps.get_session(request)); return r
+    r = deps.redirect("/housekeeping")
+    deps.save_session(r, deps.get_session(request))
+    return r
 
 
 @router.post("/housekeeping/tasks/{task_id}/edit")
@@ -112,10 +126,15 @@ async def edit_task(task_id: int, request: Request):
     block_status = form.get("block_status_filter", "active")
     url = "/housekeeping"
     params = []
-    if status: params.append(f"status={status}")
-    if block_status: params.append(f"block_status={block_status}")
-    if params: url += "?" + "&".join(params)
-    r = deps.redirect(url); deps.save_session(r, deps.get_session(request)); return r
+    if status:
+        params.append(f"status={status}")
+    if block_status:
+        params.append(f"block_status={block_status}")
+    if params:
+        url += "?" + "&".join(params)
+    r = deps.redirect(url)
+    deps.save_session(r, deps.get_session(request))
+    return r
 
 
 @router.post("/housekeeping/tasks/generate")
@@ -126,7 +145,9 @@ async def generate_tasks(request: Request):
         deps.add_flash(request, f"Generated {n} task(s) for dirty rooms", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
-    r = deps.redirect("/housekeeping"); deps.save_session(r, deps.get_session(request)); return r
+    r = deps.redirect("/housekeeping")
+    deps.save_session(r, deps.get_session(request))
+    return r
 
 
 @router.post("/housekeeping/blocks/create")
@@ -144,7 +165,9 @@ async def create_block(request: Request):
         deps.add_flash(request, "Room block created", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
-    r = deps.redirect("/housekeeping"); deps.save_session(r, deps.get_session(request)); return r
+    r = deps.redirect("/housekeeping")
+    deps.save_session(r, deps.get_session(request))
+    return r
 
 
 @router.post("/housekeeping/blocks/{block_id}/resolve")
@@ -155,4 +178,6 @@ async def resolve_block(block_id: int, request: Request):
         deps.add_flash(request, "Room block resolved", "success")
     except Exception as e:
         deps.add_flash(request, str(e), "error")
-    r = deps.redirect("/housekeeping"); deps.save_session(r, deps.get_session(request)); return r
+    r = deps.redirect("/housekeeping")
+    deps.save_session(r, deps.get_session(request))
+    return r

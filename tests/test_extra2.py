@@ -1,4 +1,5 @@
 """Additional tests to close remaining coverage branches."""
+
 import pytest
 from app_core import services
 from app_core.db import connect
@@ -8,6 +9,7 @@ from conftest import make_reservation
 # ═══════════════════════════════════════════════════════════════════════════
 # _validate_setting — every branch
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def test_validate_pct_zero(clean_db):
     norm, err = services._validate_setting("vat_rate", "0.0")
@@ -58,17 +60,16 @@ def test_validate_bool_one(clean_db):
 # save_settings — atomic error path
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def test_save_settings_partial_invalid_nothing_saved(clean_db):
-    count, errs = services.save_settings(
-        {"vat_rate": "0.15", "min_nights": "-1"}, "testpass")
+    count, errs = services.save_settings({"vat_rate": "0.15", "min_nights": "-1"}, "testpass")
     assert count == 0
     assert len(errs) == 1
     assert services.get_setting("vat_rate") == "0.14"
 
 
 def test_save_settings_all_invalid(clean_db):
-    count, errs = services.save_settings(
-        {"vat_rate": "2", "min_nights": "-1"}, "testpass")
+    count, errs = services.save_settings({"vat_rate": "2", "min_nights": "-1"}, "testpass")
     assert count == 0
     assert len(errs) == 2
 
@@ -76,6 +77,7 @@ def test_save_settings_all_invalid(clean_db):
 # ═══════════════════════════════════════════════════════════════════════════
 # Guest matching — every branch
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def test_find_matches_empty_name(clean_db):
     assert services.find_guest_matches("") == []
@@ -117,6 +119,7 @@ def test_find_matches_threshold_zero(clean_db):
 # Reservations — all transitions
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def test_transition_reserved_to_cancelled(clean_db):
     rid = make_reservation()
     services.cancel_reservation(rid, "testpass")
@@ -147,6 +150,7 @@ def test_transition_deleted_to_anything_fails(clean_db):
 # Room pricing edges
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def test_update_room_price_zero(clean_db):
     services.update_room_price(1, 0.0, "testpass")
     assert services.get_room(1)["base_price"] == 0.0
@@ -160,6 +164,7 @@ def test_update_room_price_huge(clean_db):
 # ═══════════════════════════════════════════════════════════════════════════
 # Audit trail coverage
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def test_audit_covers_multiple_actions(clean_db):
     make_reservation()
@@ -182,6 +187,7 @@ def test_audit_log_actor(clean_db):
 # Balance edge cases
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def test_balance_overpayment(clean_db):
     rid = make_reservation(rate=100.0, ci="2026-12-01", co="2026-12-02")
     services.record_payment(rid, 500.0, "Cash")
@@ -198,6 +204,7 @@ def test_balance_after_partial_refund(clean_db):
 # ═══════════════════════════════════════════════════════════════════════════
 # Cash flow
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def test_cash_flow_multiple_payments(clean_db):
     rid = make_reservation()
@@ -216,6 +223,7 @@ def test_cash_out_includes_expenses(clean_db):
 # ═══════════════════════════════════════════════════════════════════════════
 # Reports — empty data
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def test_pl_no_data(clean_db):
     text = services.report_pl_statement("2099-01-01", "2099-01-02")
@@ -236,6 +244,7 @@ def test_occupancy_no_data(clean_db):
 # Heatmap coverage
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def test_heatmap_full_range(clean_db):
     make_reservation(ci="2027-06-01", co="2027-06-05", room_id=1)
     data = services.get_occupancy_heatmap_data("2027-06-01", "2027-06-05")
@@ -247,6 +256,7 @@ def test_heatmap_full_range(clean_db):
 # Language functions
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def test_get_language_returns_current(clean_db):
     services.set_language("ar")
     assert services.get_language() == "ar"
@@ -257,6 +267,7 @@ def test_get_language_returns_current(clean_db):
 # ═══════════════════════════════════════════════════════════════════════════
 # Count rate plan usage
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def test_count_zero(clean_db):
     pid = services.get_all_rate_plans()[0]["id"]
@@ -274,6 +285,7 @@ def test_count_two(clean_db):
 # UI helpers
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def test_fmt_negative():
     assert services.fmt(-100.0) == "-100.00 EGP"
 
@@ -282,14 +294,17 @@ def test_selected_id_no_cursor():
     class MockTable:
         row_count = 1
         cursor_row = None
+
         def get_row_at(self, i):
             raise IndexError("no cursor")
+
     assert services.selected_id(MockTable()) is None
 
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Attribution
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def test_attribution_intact(clean_db):
     ok, msg = services.verify_app_attribution()
@@ -300,10 +315,12 @@ def test_attribution_intact(clean_db):
 # Backup
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def test_backup_contains_data(clean_db):
     make_reservation(guest="BackupTest")
     path = services.backup_now()
     import sqlite3
+
     conn = sqlite3.connect(path)
     rows = conn.execute("SELECT guest_name FROM reservations").fetchall()
     conn.close()
@@ -314,10 +331,12 @@ def test_backup_contains_data(clean_db):
 # Session
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def test_touch_session_refreshes(clean_db):
     services.unlock_session("testpass")
     before = services._session["last_activity"]
     import time
+
     time.sleep(0.01)
     services.touch_session()
     assert services._session["last_activity"] > before
@@ -328,6 +347,7 @@ def test_touch_session_refreshes(clean_db):
 # Update inventory requires password
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def test_update_inventory_wrong_password(clean_db):
     with pytest.raises(PermissionError):
         services.update_inventory_item(1, "X", "F&B", "pcs", 25.0, 5, 200, "wrong")
@@ -337,10 +357,10 @@ def test_update_inventory_wrong_password(clean_db):
 # Voids on custom items
 # ═══════════════════════════════════════════════════════════════════════════
 
+
 def test_void_custom_item(clean_db):
     rid = make_reservation()
     result = services.add_pos_item(rid, "Custom", 1, 50, None)
     services.void_pos_item(result["pos_id"], "testpass")
-    row = connect().execute(
-        "SELECT voided_at FROM pos_tabs WHERE id=?", (result["pos_id"],)).fetchone()
+    row = connect().execute("SELECT voided_at FROM pos_tabs WHERE id=?", (result["pos_id"],)).fetchone()
     assert row["voided_at"] is not None

@@ -156,12 +156,24 @@ def test_validate_print_filepath_and_raw_socket(clean_db, tmp_path, monkeypatch)
     sent = {}
 
     class FakeSock:
-        def __init__(self): self.timeout = None; self.connected = None
-        def __enter__(self): return self
-        def __exit__(self, exc_type, exc, tb): return False
-        def settimeout(self, t): self.timeout = t
-        def connect(self, addr): self.connected = addr
-        def sendall(self, data): sent["data"] = data
+        def __init__(self):
+            self.timeout = None
+            self.connected = None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def settimeout(self, t):
+            self.timeout = t
+
+        def connect(self, addr):
+            self.connected = addr
+
+        def sendall(self, data):
+            sent["data"] = data
 
     monkeypatch.setattr(socket, "socket", lambda *a, **k: FakeSock())
     m._print_raw_socket("127.0.0.1", 9100, str(raw_file))
@@ -200,7 +212,9 @@ def test_print_to_printer_and_list_printers(clean_db, tmp_path, monkeypatch):
     ok, msg = m.print_to_printer(str(f), "")
     assert ok and "default printer" in msg.lower()
 
-    monkeypatch.setattr(m.subprocess, "run", lambda *a, **k: types.SimpleNamespace(returncode=1, stdout="", stderr="no lp"))
+    monkeypatch.setattr(
+        m.subprocess, "run", lambda *a, **k: types.SimpleNamespace(returncode=1, stdout="", stderr="no lp")
+    )
     ok, msg = m.print_to_printer(str(f), "")
     assert not ok and "print failed" in msg.lower()
 
@@ -209,13 +223,20 @@ def test_print_to_printer_and_list_printers(clean_db, tmp_path, monkeypatch):
     ok, msg = m.print_to_printer(str(f), "cups:Office")
     assert ok and "CUPS" in msg
 
-    monkeypatch.setattr(m.subprocess, "run", lambda *a, **k: types.SimpleNamespace(returncode=1, stdout="oops", stderr=""))
+    monkeypatch.setattr(
+        m.subprocess, "run", lambda *a, **k: types.SimpleNamespace(returncode=1, stdout="oops", stderr="")
+    )
     ok, msg = m.print_to_printer(str(f), "cups:Office")
     assert not ok and "cups error" in msg.lower()
 
     started = {}
     monkeypatch.setattr(m.platform, "system", lambda: "Windows")
-    monkeypatch.setattr(m.os, "startfile", lambda path, op, arg=None: started.setdefault("calls", []).append((path, op, arg)), raising=False)
+    monkeypatch.setattr(
+        m.os,
+        "startfile",
+        lambda path, op, arg=None: started.setdefault("calls", []).append((path, op, arg)),
+        raising=False,
+    )
     ok, msg = m.print_to_printer(str(f), "win:Printer1")
     assert ok and started["calls"][-1][1:] == ("printto", "Printer1")
     ok, msg = m.print_to_printer(str(f), "")
@@ -223,7 +244,9 @@ def test_print_to_printer_and_list_printers(clean_db, tmp_path, monkeypatch):
 
     raw_calls = {}
     monkeypatch.setattr(m, "_print_raw_socket", lambda h, p, fp: raw_calls.setdefault("v", (h, p, fp)))
-    monkeypatch.setattr(services, "_print_raw_socket", lambda h, p, fp: raw_calls.setdefault("v", (h, p, fp)), raising=False)
+    monkeypatch.setattr(
+        services, "_print_raw_socket", lambda h, p, fp: raw_calls.setdefault("v", (h, p, fp)), raising=False
+    )
     monkeypatch.setattr(m.platform, "system", lambda: "Linux")
     ok, msg = m.print_to_printer(str(f), "raw:10.0.0.5:9100")
     assert ok and raw_calls["v"][0] == "10.0.0.5"
@@ -235,7 +258,9 @@ def test_print_to_printer_and_list_printers(clean_db, tmp_path, monkeypatch):
     monkeypatch.setattr(m, "_validate_print_filepath", lambda x: (_ for _ in ()).throw(ValueError("bad target path")))
     ok, msg = m.print_to_printer("x", "")
     assert not ok and "bad target path" in msg
-    monkeypatch.setattr(m, "_validate_print_filepath", lambda x: (_ for _ in ()).throw(m.subprocess.TimeoutExpired(cmd="lp", timeout=1)))
+    monkeypatch.setattr(
+        m, "_validate_print_filepath", lambda x: (_ for _ in ()).throw(m.subprocess.TimeoutExpired(cmd="lp", timeout=1))
+    )
     ok, msg = m.print_to_printer("x", "")
     assert not ok and "timed out" in msg.lower()
     monkeypatch.setattr(m, "_validate_print_filepath", lambda x: (_ for _ in ()).throw(RuntimeError("boom")))
@@ -244,16 +269,21 @@ def test_print_to_printer_and_list_printers(clean_db, tmp_path, monkeypatch):
 
     # list_printers branches
     monkeypatch.setattr(m.platform, "system", lambda: "Windows")
-    monkeypatch.setattr(m.subprocess, "run", lambda *a, **k: types.SimpleNamespace(returncode=0, stdout="A\nB\n", stderr=""))
+    monkeypatch.setattr(
+        m.subprocess, "run", lambda *a, **k: types.SimpleNamespace(returncode=0, stdout="A\nB\n", stderr="")
+    )
     r = m.list_printers()
     assert r["source"] == "winspool" and r["queues"] == ["A", "B"]
 
     def lpstat_run(cmd, *a, **k):
         if cmd and cmd[0] == "lpstat" and "-v" in cmd:
-            return types.SimpleNamespace(returncode=0, stdout="device for HP: usb://hp\ndevice for BadLine\n", stderr="")
+            return types.SimpleNamespace(
+                returncode=0, stdout="device for HP: usb://hp\ndevice for BadLine\n", stderr=""
+            )
         if cmd and cmd[0] == "lpstat" and "-d" in cmd:
             return types.SimpleNamespace(returncode=0, stdout="system default destination: HP\n", stderr="")
         return types.SimpleNamespace(returncode=1, stdout="", stderr="")
+
     monkeypatch.setattr(m.platform, "system", lambda: "Linux")
     monkeypatch.setattr(m.subprocess, "run", lpstat_run)
     r = m.list_printers()
@@ -271,9 +301,15 @@ def test_audit_actor_and_session_paths(clean_db, monkeypatch):
     m.reset_current_actor(tok)
 
     class BadCtx:
-        def get(self): raise RuntimeError("boom")
-        def set(self, v): raise RuntimeError("boom")
-        def reset(self, t): raise RuntimeError("boom")
+        def get(self):
+            raise RuntimeError("boom")
+
+        def set(self, v):
+            raise RuntimeError("boom")
+
+        def reset(self, t):
+            raise RuntimeError("boom")
+
     monkeypatch.setattr(m, "_CURRENT_ACTOR", BadCtx())
     assert m.get_current_actor() == {}
     # should not raise
@@ -281,15 +317,21 @@ def test_audit_actor_and_session_paths(clean_db, monkeypatch):
 
     # audit fallback path when normal insert fails
     calls = {"n": 0}
+
     class FakeConn:
         def execute(self, *a, **k):
             calls["n"] += 1
             if calls["n"] == 1:
                 raise RuntimeError("primary fail")
             return None
+
     class Tx:
-        def __enter__(self): return FakeConn()
-        def __exit__(self, exc_type, exc, tb): return False
+        def __enter__(self):
+            return FakeConn()
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
     monkeypatch.setattr(db, "transaction", lambda: Tx())
     m._audit("x", "y", "1", "d")
 
@@ -325,15 +367,20 @@ def test_migrate_branding_if_needed_branches(clean_db, monkeypatch):
             "app_tagline": "tag",
             "loading_animation": "reveal",
         }.get(k, d)
+
     monkeypatch.setattr(m, "get_setting", gs)
     monkeypatch.setattr(m, "apply_branding_settings", lambda *a, **k: calls.append(("apply", a, k)))
     m.migrate_branding_if_needed()
     assert calls and calls[-1][0] == "apply"
 
     calls.clear()
-    monkeypatch.setattr(m, "get_setting", lambda k, d="": {
-        "branding_configured": "false", "property_name": "Legacy Name", "app_display_name": ""
-    }.get(k, d))
+    monkeypatch.setattr(
+        m,
+        "get_setting",
+        lambda k, d="": {"branding_configured": "false", "property_name": "Legacy Name", "app_display_name": ""}.get(
+            k, d
+        ),
+    )
     monkeypatch.setattr(m, "set_setting", lambda k, v: calls.append((k, v)))
     m.migrate_branding_if_needed()
     assert ("app_display_name", "Legacy Name") in calls
@@ -398,7 +445,21 @@ def test_guest_portfolio_invoice_and_walkin_helpers(clean_db, tmp_path, monkeypa
 
     # generate/save wrappers (delegate to billing_docs; exercise code paths)
     try:
-        txt = m.generate_walkin_receipt_text([{"item_description": "X", "quantity": 1, "unit_price": 10, "tax_amount": 0, "batch_id": None, "lot_code": None}], 10.0, "Cash", payment_id=123)
+        txt = m.generate_walkin_receipt_text(
+            [
+                {
+                    "item_description": "X",
+                    "quantity": 1,
+                    "unit_price": 10,
+                    "tax_amount": 0,
+                    "batch_id": None,
+                    "lot_code": None,
+                }
+            ],
+            10.0,
+            "Cash",
+            payment_id=123,
+        )
         assert "X" in txt or "Walk" in txt or "Cash" in txt
     except Exception:
         # billing_docs implementation details may vary; wrapper call still executed
@@ -413,8 +474,15 @@ def test_guest_portfolio_invoice_and_walkin_helpers(clean_db, tmp_path, monkeypa
     monkeypatch.setattr(m, "EXPORT_DIR", tmp_path / "exports")
     monkeypatch.setattr(m, "get_app_display_name", lambda: "App")
     called = {}
-    monkeypatch.setattr(m, "print_to_printer", lambda path, printer=None: called.setdefault("v", (path, printer)) or (True, "ok"))
-    monkeypatch.setattr(services, "print_to_printer", lambda path, printer=None: called.setdefault("v", (path, printer)) or (True, "ok"), raising=False)
+    monkeypatch.setattr(
+        m, "print_to_printer", lambda path, printer=None: called.setdefault("v", (path, printer)) or (True, "ok")
+    )
+    monkeypatch.setattr(
+        services,
+        "print_to_printer",
+        lambda path, printer=None: called.setdefault("v", (path, printer)) or (True, "ok"),
+        raising=False,
+    )
     ok, msg = m.test_print(None)
     assert ok and "printer_test.txt" in called["v"][0]
 

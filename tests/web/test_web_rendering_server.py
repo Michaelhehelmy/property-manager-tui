@@ -13,7 +13,10 @@ from ui.web.server import create_app
 
 def test_render_saves_session_and_ctx(web_app, client):
     # hit a real page so templates/middleware work
-    client.cookies.set(deps.SESSION_COOKIE, deps._serializer.dumps({"csrf": "tok123", "unlocked": False, "flashes": [{"level":"info","message":"hi"}]}))
+    client.cookies.set(
+        deps.SESSION_COOKIE,
+        deps._serializer.dumps({"csrf": "tok123", "unlocked": False, "flashes": [{"level": "info", "message": "hi"}]}),
+    )
     r = client.get("/unlock")
     assert r.status_code == 200
     assert "Unlock" in r.text
@@ -33,6 +36,7 @@ def test_render_direct_unit(web_app):
 
 def test_create_app_init_branches(web_env, monkeypatch):
     from app_core import paths, services
+
     calls = []
     monkeypatch.setattr(paths, "ensure_data_dirs", lambda: calls.append("dirs"))
     monkeypatch.setattr(services, "init_db", lambda: calls.append("init"))
@@ -61,6 +65,7 @@ def test_middleware_sets_cookie_when_missing(web_env):
 
 def test_middleware_skips_when_cookie_already_set(web_env):
     from fastapi.responses import JSONResponse
+
     app = create_app(init_db=False, run_startup=False)
 
     @app.get("/_preset")
@@ -79,10 +84,12 @@ def test_middleware_skips_when_cookie_already_set(web_env):
 
 def test_static_dir_missing_branch(web_env, monkeypatch):
     orig_exists = pathlib.Path.exists
+
     def fake_exists(self):
         if self.name == "static" and "ui/web" in str(self).replace("\\", "/"):
             return False
         return orig_exists(self)
+
     monkeypatch.setattr(pathlib.Path, "exists", fake_exists)
     app = create_app(init_db=False, run_startup=False)
     # /static not mounted; app still works
@@ -113,13 +120,20 @@ def test_readyz_probe(web_env):
         assert "db_initialized" in readiness
         assert "ready" in readiness
         assert "checks" in readiness
-        assert set((readiness.get("checks") or {}).keys()) >= {"data_dir_exists", "export_dir_writable", "invoice_dir_writable"}
+        assert set((readiness.get("checks") or {}).keys()) >= {
+            "data_dir_exists",
+            "export_dir_writable",
+            "invoice_dir_writable",
+        }
+
 
 import importlib
 import sys
 
+
 def test_server_sys_path_insert_branch(web_env, monkeypatch):
     import ui.web.server as srv
+
     src = str((pathlib.Path(srv.__file__).resolve().parents[2] / "src"))
     # ensure branch where SRC not in sys.path is executed
     removed = False

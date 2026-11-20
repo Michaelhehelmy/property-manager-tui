@@ -46,9 +46,14 @@ def test_fresh_db_integrity_ok(temp_db):
 def test_seeded_inventory_has_consistent_batches(temp_db):
     # after fresh init, any item with nonzero stock should have batch coverage (backfill/seed behavior)
     conn = db.connect()
-    items = conn.execute("SELECT id, item_name, stock_qty FROM inventory WHERE ABS(COALESCE(stock_qty,0)) > 0.0001").fetchall()
+    items = conn.execute(
+        "SELECT id, item_name, stock_qty FROM inventory WHERE ABS(COALESCE(stock_qty,0)) > 0.0001"
+    ).fetchall()
     for it in items:
-        batches = conn.execute("SELECT COUNT(*) c, COALESCE(SUM(quantity_remaining),0) rem FROM inventory_batches WHERE item_id=?", (it["id"],)).fetchone()
+        batches = conn.execute(
+            "SELECT COUNT(*) c, COALESCE(SUM(quantity_remaining),0) rem FROM inventory_batches WHERE item_id=?",
+            (it["id"],),
+        ).fetchone()
         assert batches["c"] >= 1, f"item {it['id']} {it['item_name']} has stock but no batches"
         # allow small float tolerance
         assert abs(float(batches["rem"]) - float(it["stock_qty"])) < 0.01

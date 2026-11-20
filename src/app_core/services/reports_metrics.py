@@ -4,6 +4,7 @@ Query/pure helpers for occupancy, ADR, RevPAR, outstanding balances, and
 arrivals/in-house/departures based on existing DB structures. These helpers do
 not modify existing report behavior or APIs.
 """
+
 from __future__ import annotations
 
 from datetime import datetime, timedelta
@@ -52,9 +53,11 @@ def arrivals_in_house_departures(on_date: Any = None) -> dict[str, Any]:
            ORDER BY id""",
         (day, day),
     ).fetchall()
+
     # normalize sqlite3.Row objects to plain dicts for easy reuse
     def _rows(rows):
         return [dict(r) for r in rows]
+
     return {
         "date": day,
         "arrivals": _rows(arrivals),
@@ -78,9 +81,14 @@ def occupancy_adr_revpar(start: Any, end: Any) -> dict[str, Any]:
     d2 = parse_date(end)
     if not d1 or not d2 or d2 < d1:
         return {
-            "start": str(start), "end": str(end),
-            "occupancy_pct": 0.0, "occupied_room_nights": 0, "available_room_nights": 0,
-            "adr": 0.0, "revpar": 0.0, "room_revenue": 0.0,
+            "start": str(start),
+            "end": str(end),
+            "occupancy_pct": 0.0,
+            "occupied_room_nights": 0,
+            "available_room_nights": 0,
+            "adr": 0.0,
+            "revpar": 0.0,
+            "room_revenue": 0.0,
         }
     start_s = d1.strftime(DATE_FMT)
     end_s = d2.strftime(DATE_FMT)
@@ -107,16 +115,19 @@ def occupancy_adr_revpar(start: Any, end: Any) -> dict[str, Any]:
         if b > a:
             occupied_room_nights += (b - a).days
 
-    rev = conn.execute(
-        """SELECT COALESCE(SUM(net + service), 0) FROM general_ledger
+    rev = (
+        conn.execute(
+            """SELECT COALESCE(SUM(net + service), 0) FROM general_ledger
            WHERE entry_type IN ('CHARGE','VOID_CHARGE') AND category='Accommodation' AND ref_type='RES'
              AND ref_id IN (
                 SELECT id FROM reservations
                 WHERE status IN ('Reserved','Checked In','Checked Out')
                   AND NOT (check_out_date <= ? OR check_in_date > ?)
              )""",
-        (start_s, end_s),
-    ).fetchone()[0] or 0.0
+            (start_s, end_s),
+        ).fetchone()[0]
+        or 0.0
+    )
 
     return {
         "start": start_s,
@@ -142,6 +153,7 @@ def reservation_outstanding(reservation_id: int) -> dict[str, Any]:
     out: dict[str, Any] = {"reservation_id": rid, "outstanding": 0.0}
     try:
         from ._monolith import calculate_guest_balance  # local import, additive use
+
         bal = float(calculate_guest_balance(rid) or 0)
         out["outstanding"] = round(bal if bal > 0 else 0.0, 2)
         out["balance"] = round(bal, 2)

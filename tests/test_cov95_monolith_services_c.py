@@ -11,7 +11,9 @@ import app_core.services._monolith as m
 
 def test_room_rateplan_basic_and_counts(unlocked):
     conn = db.connect()
-    conn.execute("INSERT INTO rooms(room_number, room_type, base_price, housekeeping_status) VALUES ('C101','Std',80,'Clean')")
+    conn.execute(
+        "INSERT INTO rooms(room_number, room_type, base_price, housekeeping_status) VALUES ('C101','Std',80,'Clean')"
+    )
     room_id = conn.execute("SELECT id FROM rooms WHERE room_number='C101'").fetchone()[0]
     rooms = services.get_all_rooms()
     assert any(r["id"] == room_id for r in rooms)
@@ -42,12 +44,18 @@ def test_room_rateplan_basic_and_counts(unlocked):
 
 def test_payments_refunds_voids_and_summary(unlocked):
     conn = db.connect()
-    conn.execute("INSERT INTO rooms(room_number, room_type, base_price, housekeeping_status) VALUES ('C201','Std',100,'Clean')")
+    conn.execute(
+        "INSERT INTO rooms(room_number, room_type, base_price, housekeeping_status) VALUES ('C201','Std',100,'Clean')"
+    )
     room_id = conn.execute("SELECT id FROM rooms WHERE room_number='C201'").fetchone()[0]
     rid = services.create_reservation("PayGuest", "Direct", room_id, None, 100.0, "2099-08-01", "2099-08-03")
 
-    pid = services.record_payment(rid, 50.0, "Cash", notes="part", idempotency_key="idem-1", allocation_json={"accommodation": 50})
-    pid2 = services.record_payment(rid, 50.0, "Cash", notes="dup", idempotency_key="idem-1", allocation_json={"accommodation": 50})
+    pid = services.record_payment(
+        rid, 50.0, "Cash", notes="part", idempotency_key="idem-1", allocation_json={"accommodation": 50}
+    )
+    pid2 = services.record_payment(
+        rid, 50.0, "Cash", notes="dup", idempotency_key="idem-1", allocation_json={"accommodation": 50}
+    )
     assert pid == pid2
 
     summ = services.get_reservation_payment_summary(rid)

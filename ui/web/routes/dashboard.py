@@ -14,6 +14,7 @@ router = APIRouter()
 def dashboard(request: Request, day: str | None = None):
     if not services.is_branding_configured():
         from fastapi.responses import RedirectResponse
+
         return RedirectResponse(url="/setup", status_code=303)
     ops_day = (day or "").strip() or datetime.now().strftime(services.DATE_FMT)
     try:

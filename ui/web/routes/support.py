@@ -33,23 +33,31 @@ def support_report(request: Request):
                 ep = last.get("path") or ""
                 er = last.get("ref") or ""
                 prefill["title"] = f"App error: {et}"[:120]
-                prefill["actual"] = f"Unexpected error in the web app.\nRef: {er}\nPath: {ep}\nError: {et}: {em}".strip()
+                prefill["actual"] = (
+                    f"Unexpected error in the web app.\nRef: {er}\nPath: {ep}\nError: {et}: {em}".strip()
+                )
                 prefill["notes"] = "Reported from in-app error page. Please add steps to reproduce."
-                context.update({
-                    "error_code": er,
-                    "error_message": f"{et}: {em}" if em else et,
-                    "path": ep or context.get("path"),
-                })
+                context.update(
+                    {
+                        "error_code": er,
+                        "error_message": f"{et}: {em}" if em else et,
+                        "path": ep or context.get("path"),
+                    }
+                )
         except Exception:
             pass
 
     diagnostics = collect_support_diagnostics(context=context, include_update_check=False)
     # Safe JSON for embedding in <script type="application/json">
     diagnostics_json = json.dumps(diagnostics, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
-    return render(request, "support/report.html", {
-        "title": "Report issue",
-        "diagnostics": diagnostics,
-        "diagnostics_json": diagnostics_json,
-        "github_repo": DEFAULT_REPO,
-        "prefill": prefill,
-    })
+    return render(
+        request,
+        "support/report.html",
+        {
+            "title": "Report issue",
+            "diagnostics": diagnostics,
+            "diagnostics_json": diagnostics_json,
+            "github_repo": DEFAULT_REPO,
+            "prefill": prefill,
+        },
+    )

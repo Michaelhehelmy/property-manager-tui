@@ -3,6 +3,7 @@
 These helpers are intentionally side-effect-free and DB-agnostic so future
 availability logic can build on them without changing current behavior.
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterable
@@ -29,10 +30,13 @@ def windows_overlap(check_in_a: Any, check_out_a: Any, check_in_b: Any, check_ou
     return a1 < b2 and b1 < a2
 
 
-def is_room_available_for_window(existing_reservations: Iterable[dict[str, Any]],
-                                 check_in: Any, check_out: Any,
-                                 ignore_reservation_id: Any = None,
-                                 active_statuses: set[str] | None = None) -> bool:
+def is_room_available_for_window(
+    existing_reservations: Iterable[dict[str, Any]],
+    check_in: Any,
+    check_out: Any,
+    ignore_reservation_id: Any = None,
+    active_statuses: set[str] | None = None,
+) -> bool:
     """Pure check against in-memory reservation windows."""
     active = active_statuses or {"Reserved", "Checked In"}
     ignore = None if ignore_reservation_id is None else str(ignore_reservation_id)

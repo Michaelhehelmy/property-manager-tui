@@ -2,6 +2,7 @@
 
 These helpers are pure and do not alter existing pricing/report behavior.
 """
+
 from __future__ import annotations
 
 from decimal import Decimal
@@ -48,8 +49,9 @@ def apply_discount(amount: Any, discount_percent: Any = 0, discount_amount: Any 
     return quantize_money(out)
 
 
-def line_totals(quantity: Any, unit_price: Any, tax_rate_percent: Any = 0,
-                discount_percent: Any = 0, discount_amount: Any = 0) -> dict[str, Decimal]:
+def line_totals(
+    quantity: Any, unit_price: Any, tax_rate_percent: Any = 0, discount_percent: Any = 0, discount_amount: Any = 0
+) -> dict[str, Decimal]:
     qty = to_decimal(quantity, ZERO) or ZERO
     unit = to_decimal(unit_price, ZERO) or ZERO
     subtotal = quantize_money(qty * unit)

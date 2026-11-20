@@ -5,6 +5,7 @@ The application is web-only. This starts the FastAPI/HTMX server with safe
 SQLite defaults (--workers 1). Runtime data (DB/exports/invoices/PM_DATA_DIR)
 is preserved across updates/restarts.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -23,7 +24,9 @@ if str(ROOT) not in sys.path:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="main.py", description="SPMS Web UI entry point")
     parser.add_argument("--host", default=os.environ.get("HOST", "127.0.0.1"), help="Web host (default: 127.0.0.1)")
-    parser.add_argument("--port", type=int, default=int(os.environ.get("PORT", "8000")), help="Web port (default: 8000)")
+    parser.add_argument(
+        "--port", type=int, default=int(os.environ.get("PORT", "8000")), help="Web port (default: 8000)"
+    )
     parser.add_argument("--no-browser", action="store_true", help="Compatibility flag (ignored; no browser auto-open)")
     args = parser.parse_args(argv)
 

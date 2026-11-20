@@ -1,4 +1,5 @@
 """DB migration coverage (idempotent upgrade paths)."""
+
 import sqlite3
 from app_core import db
 

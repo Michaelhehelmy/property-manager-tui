@@ -74,12 +74,14 @@ def test_barcodes_coverage(tmp_path, monkeypatch):
         id = 1
         sku = "S1"
         item_name = "Item"
+
     class Batch:
         lot_code = "L1"
         received_at = "2026-01-01"
         expiry_date = "2026-02-01"
         quantity_received = 10
         quantity_remaining = 5
+
     payload = bar.make_lot_payload(Item(), Batch())
     assert payload["lot"] == "L1" and payload["item"] == 1
     s = bar.encode_payload(payload)
@@ -106,6 +108,7 @@ def test_barcodes_coverage(tmp_path, monkeypatch):
     assert bar.expiry_status("bad-date") == ("none", None)
     # use relative dates around today
     from datetime import date, timedelta
+
     today = date.today()
     assert bar.expiry_status((today - timedelta(days=1)).strftime("%Y-%m-%d"))[0] == "expired"
     assert bar.expiry_status((today + timedelta(days=1)).strftime("%Y-%m-%d"), warn_days=7)[0] == "expiring"
@@ -124,8 +127,26 @@ def test_barcodes_coverage(tmp_path, monkeypatch):
     assert bar._get_field(obj, "z", "d") == "d"
 
     # render label functions
-    item = {"id": 1, "item_name": "Water", "sku": "SKU1", "barcode": "BC1", "category": "Bev", "selling_price": 10, "barcode_type": "code128"}
-    batch = {"lot_code": "LOT1", "received_at": "2026-01-01", "expiry_date": "", "quantity_received": 5, "quantity_remaining": 2, "unit_cost": 3, "supplier": "Sup", "reference": "R", "barcode_value": "BV1"}
+    item = {
+        "id": 1,
+        "item_name": "Water",
+        "sku": "SKU1",
+        "barcode": "BC1",
+        "category": "Bev",
+        "selling_price": 10,
+        "barcode_type": "code128",
+    }
+    batch = {
+        "lot_code": "LOT1",
+        "received_at": "2026-01-01",
+        "expiry_date": "",
+        "quantity_received": 5,
+        "quantity_remaining": 2,
+        "unit_cost": 3,
+        "supplier": "Sup",
+        "reference": "R",
+        "barcode_value": "BV1",
+    }
     txt = bar.render_item_label_text(item)
     assert "ITEM LABEL" in txt and "Water" in txt
     btxt = bar.render_batch_label_text(item, batch, include_payload=True)
@@ -143,22 +164,31 @@ def test_feedback_coverage(monkeypatch, tmp_path):
     import app_core.assistant.common as common
 
     # _ensure_nlu_dirs OSError branch
-    monkeypatch.setattr(fb, "INTENT_DATA_DIR", SimpleNamespace(mkdir=lambda *a, **k: (_ for _ in ()).throw(OSError("x"))))
+    monkeypatch.setattr(
+        fb, "INTENT_DATA_DIR", SimpleNamespace(mkdir=lambda *a, **k: (_ for _ in ()).throw(OSError("x")))
+    )
     fb._ensure_nlu_dirs()  # should not raise
 
     # record_feedback: DB insert exception and JSONL append exception paths
     monkeypatch.setattr(fb, "FEEDBACK_JSONL", tmp_path / "fb.jsonl")
     monkeypatch.setattr(fb, "_ensure_nlu_dirs", lambda: None)
+
     class BadConn:
-        def execute(self, *a, **k): raise RuntimeError("db")
-        def commit(self): pass
+        def execute(self, *a, **k):
+            raise RuntimeError("db")
+
+        def commit(self):
+            pass
+
     monkeypatch.setattr("app_core.db.connect", lambda: BadConn())
     # also force open failure
     real_open = Path.open
+
     def bad_open(self, *a, **k):
         if str(self).endswith("fb.jsonl"):
             raise OSError("nope")
         return real_open(self, *a, **k)
+
     monkeypatch.setattr(Path, "open", bad_open)
     fid = fb.record_feedback("hello", predicted_intent="x")
     assert fid is None
@@ -166,40 +196,62 @@ def test_feedback_coverage(monkeypatch, tmp_path):
 
     # list_feedback: query success with bad JSON decode branch and exception branch
     class Row(dict):
-        def keys(self): return super().keys()
+        def keys(self):
+            return super().keys()
+
     class GoodConn:
         def execute(self, q, args=None):
             class R:
                 def fetchall(self_inner):
-                    return [Row({"id": 1, "slots_json": "{bad", "corrected_slots_json": None, "tools_used_json": "[1]"})]
+                    return [
+                        Row({"id": 1, "slots_json": "{bad", "corrected_slots_json": None, "tools_used_json": "[1]"})
+                    ]
+
             return R()
+
     monkeypatch.setattr("app_core.db.connect", lambda: GoodConn())
     out = fb.list_feedback(limit=10, status="new")
     assert isinstance(out, list) and out and isinstance(out[0].get("slots"), dict)
 
     class BadConn2:
-        def execute(self, *a, **k): raise RuntimeError("dbfail")
+        def execute(self, *a, **k):
+            raise RuntimeError("dbfail")
+
     monkeypatch.setattr("app_core.db.connect", lambda: BadConn2())
     assert fb.list_feedback() == []
 
     # get_correction_exemplars: bad slots json and exception branches
     class CRow(dict):
-        def keys(self): return super().keys()
+        def keys(self):
+            return super().keys()
+
     class ExConn:
         def execute(self, q, args=None):
             class R:
                 def fetchall(self_inner):
                     return [
-                        CRow({"message": "m", "corrected_intent": "i1", "corrected_slots_json": "{bad", "predicted_intent": "", "slots_json": "{}"}),
+                        CRow(
+                            {
+                                "message": "m",
+                                "corrected_intent": "i1",
+                                "corrected_slots_json": "{bad",
+                                "predicted_intent": "",
+                                "slots_json": "{}",
+                            }
+                        ),
                         CRow({"message": "m2", "corrected_intent": "", "predicted_intent": "", "slots_json": "{}"}),
                     ]
+
             return R()
+
     monkeypatch.setattr("app_core.db.connect", lambda: ExConn())
     ex = fb.get_correction_exemplars()
     assert any(e["label"] == "i1" for e in ex)
 
     class BadExConn:
-        def execute(self, *a, **k): raise RuntimeError("x")
+        def execute(self, *a, **k):
+            raise RuntimeError("x")
+
     monkeypatch.setattr("app_core.db.connect", lambda: BadExConn())
     assert fb.get_correction_exemplars() == []
 
@@ -214,7 +266,7 @@ def test_feedback_coverage(monkeypatch, tmp_path):
     m = fb.exemplar_match("same text")
     assert m and m["source"] == "exemplar_exact"
     m2 = fb.exemplar_match("check reservation balance please now", threshold=0.5)
-    assert m2 is None or m2.get("intent") in ("a","b","c")
+    assert m2 is None or m2.get("intent") in ("a", "b", "c")
 
     # ML loader branches (imports/env paths + exception paths)
     fb._SKLEARN_CACHE = None
@@ -228,11 +280,14 @@ def test_feedback_coverage(monkeypatch, tmp_path):
     # force exception in loaders
     fb._SKLEARN_CACHE = None
     import builtins
+
     real_import = builtins.__import__
+
     def fake_import(name, *a, **k):
         if name == "joblib":
             raise ImportError("no")
         return real_import(name, *a, **k)
+
     monkeypatch.setattr(builtins, "__import__", fake_import)
     assert fb._load_sklearn_router() is None
     monkeypatch.setattr(builtins, "__import__", real_import)
@@ -247,17 +302,29 @@ def test_feedback_coverage(monkeypatch, tmp_path):
 
     # sklearn prediction branches
     monkeypatch.setenv("ASSISTANT_NLU", "sklearn")
+
     class Vec:
-        def transform(self, xs): return xs
+        def transform(self, xs):
+            return xs
+
     class Clf:
-        def predict(self, X): return ["intent_x"]
-        def predict_proba(self, X): return [[0.2, 0.8]]
+        def predict(self, X):
+            return ["intent_x"]
+
+        def predict_proba(self, X):
+            return [[0.2, 0.8]]
+
     monkeypatch.setattr(fb, "_load_sklearn_router", lambda: {"vectorizer": Vec(), "classifier": Clf()})
     r = fb._predict_intent_ml("hello")
     assert r and r["intent"] == "intent_x"
+
     class Clf2:
-        def predict(self, X): return ["intent_y"]
-        def decision_function(self, X): return [[1.0, 2.0]]
+        def predict(self, X):
+            return ["intent_y"]
+
+        def decision_function(self, X):
+            return [[1.0, 2.0]]
+
     monkeypatch.setattr(fb, "_load_sklearn_router", lambda: {"vectorizer": Vec(), "classifier": Clf2()})
     r = fb._predict_intent_ml("hello")
     assert r and r["intent"] == "intent_y"
@@ -297,7 +364,9 @@ def test_common_coverage(monkeypatch):
     assert common._parse_date_range("no date here") == ("2026-03-01", "2026-03-15")
 
     # extract_slots basics
-    slots = common.extract_slots('find reservation #12 guest #3 group #4 room #A1 "John Doe" source Booking.com segment Corporate')
+    slots = common.extract_slots(
+        'find reservation #12 guest #3 group #4 room #A1 "John Doe" source Booking.com segment Corporate'
+    )
     assert slots.get("reservation_id") == 12 and slots.get("guest_id") == 3 and slots.get("group_id") == 4
     assert slots.get("guest_query") == "John Doe"
     assert (slots.get("source") or "").strip().lower() == "booking.com"
@@ -314,7 +383,9 @@ def test_support_more_coverage(clean_db, monkeypatch, tmp_path):
     # Path exception fallback (scoped; restore before other code uses Path.name)
     orig_name = Path.name
     try:
-        monkeypatch.setattr(Path, "name", property(lambda self: (_ for _ in ()).throw(RuntimeError("x"))), raising=False)
+        monkeypatch.setattr(
+            Path, "name", property(lambda self: (_ for _ in ()).throw(RuntimeError("x"))), raising=False
+        )
         v = support.sanitize_for_report(Path("/tmp/x.txt"))
         assert v == "<path>" or "x" in str(v)
     finally:
@@ -330,30 +401,50 @@ def test_support_more_coverage(clean_db, monkeypatch, tmp_path):
     monkeypatch.setattr("app_core.doctor.collect_health", lambda **k: (_ for _ in ()).throw(RuntimeError("docfail")))
     d = support._safe_doctor_summary()
     assert d.get("ok") is False
-    monkeypatch.setattr("app_core.doctor.collect_health", lambda **k: {
-        "ok": True,
-        "schema": {"current_version": 1, "expected_version": 1, "tables": {"missing_tables": ["x"]}},
-        "integrity": {"db": {"ok": True, "integrity_check": ["ok", "extra"], "error": "e"}, "x": "v", "bad": [1]},
-        "config_issues": [{"severity": "warn", "code": "c", "message": "m"}, "bad"],
-        "update": {"local": {"app_version": "1"}, "remote": {}},
-        "notes": ["n"]
-    })
+    monkeypatch.setattr(
+        "app_core.doctor.collect_health",
+        lambda **k: {
+            "ok": True,
+            "schema": {"current_version": 1, "expected_version": 1, "tables": {"missing_tables": ["x"]}},
+            "integrity": {"db": {"ok": True, "integrity_check": ["ok", "extra"], "error": "e"}, "x": "v", "bad": [1]},
+            "config_issues": [{"severity": "warn", "code": "c", "message": "m"}, "bad"],
+            "update": {"local": {"app_version": "1"}, "remote": {}},
+            "notes": ["n"],
+        },
+    )
     d = support._safe_doctor_summary()
     assert d.get("ok") is True and d["schema"]["missing_tables_count"] == 1
 
     # collect_support_diagnostics update notice branches
     monkeypatch.setattr(support, "_safe_readiness_summary", lambda: {})
     monkeypatch.setattr(support, "_safe_doctor_summary", lambda **k: {})
-    monkeypatch.setattr("app_core.updater.get_cached_update_notice", lambda **k: {"update_available": True, "kind": "git", "message": "m", "latest_release": {"tag_name": "v1"}})
+    monkeypatch.setattr(
+        "app_core.updater.get_cached_update_notice",
+        lambda **k: {"update_available": True, "kind": "git", "message": "m", "latest_release": {"tag_name": "v1"}},
+    )
     # avoid init_db side effects issues; collect_support_diagnostics calls services.init_db in try
     diag = support.collect_support_diagnostics(context={"secret": "x"}, include_update_check=True)
     assert diag["report_version"] == support.REPORT_VERSION
 
     # format_support_report_markdown json dumps exception/truncation
     class Bad:
-        def __str__(self): raise RuntimeError("x")
+        def __str__(self):
+            raise RuntimeError("x")
+
     # normal path already tested; test large diagnostics truncation via outer length hard; ensure function returns string
-    md = support.format_support_report_markdown({"a": 1}, user={"title": "t", "steps": "s", "expected": "e", "actual": "a", "notes": "n", "contact": "c", "category": "bug", "severity": "low"})
+    md = support.format_support_report_markdown(
+        {"a": 1},
+        user={
+            "title": "t",
+            "steps": "s",
+            "expected": "e",
+            "actual": "a",
+            "notes": "n",
+            "contact": "c",
+            "category": "bug",
+            "severity": "low",
+        },
+    )
     assert "Issue report" in md
 
     # build_github_issue_url large body truncation
@@ -365,4 +456,3 @@ def test_support_more_coverage(clean_db, monkeypatch, tmp_path):
     assert rc == 0
     rc = support._cli_main([])
     assert rc == 0
-

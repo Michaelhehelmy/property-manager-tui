@@ -15,7 +15,6 @@ def test_expiring_batches_tool_shape(tmp_path, monkeypatch):
     assert "batches" in res or "error" in res
 
 
-
 def test_new_read_tools_registered_and_callable():
     # P3/P5 grounded read tools added in recent parity work
     for name, args in [

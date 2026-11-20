@@ -33,8 +33,10 @@ def _req(path="/", method="GET", headers=None, query_string=b"", cookies=None):
         "client": ("127.0.0.1", 12345),
         "server": ("testserver", 80),
     }
+
     async def receive():
         return {"type": "http.request", "body": b"", "more_body": False}
+
     return Request(scope, receive)
 
 
@@ -84,9 +86,11 @@ def test_deps_require_unlock_redirect_edge_cases(monkeypatch):
     req = _req(path="//evil", method="GET")
     req.scope["path"] = "//evil"
     req.scope["raw_path"] = b"//evil"
+
     # Recreate request so .url reflects scope path
     async def receive():
         return {"type": "http.request", "body": b"", "more_body": False}
+
     req = Request(req.scope, receive)
     deps.get_session(req)
     with pytest.raises(HTTPException) as ei:
@@ -122,11 +126,13 @@ def test_deps_safe_download_and_redirect_branches(tmp_path, monkeypatch):
 
     # commonpath mismatch branch (583,584)
     real_commonpath = os.path.commonpath
+
     def bad_commonpath(paths):
         # force mismatch for our case
         if any("exports" in str(p) for p in paths):
             return "/definitely-different"
         return real_commonpath(paths)
+
     monkeypatch.setattr(os.path, "commonpath", bad_commonpath)
     with pytest.raises(HTTPException) as ei:
         deps.safe_download_path("export", "ok.txt")
@@ -160,17 +166,20 @@ def test_rendering_update_notice_and_fallback_branches(web_app, monkeypatch):
             if key == "latest_release":
                 return {}
             raise RuntimeError("boom")
+
     assert rendering._update_notice_key(BadNotice()) == ""
     assert rendering._update_notice_key({}) == ""
 
     # render fallback when session access raises during modal computation (64,65)
     scope = {"type": "http", "method": "GET", "path": "/", "headers": [], "query_string": b"", "app": web_app}
     req = Request(scope)
+
     class BadSession(dict):
         def get(self, key, default=None):
             if key == "dismissed_update_key":
                 raise RuntimeError("sess")
             return super().get(key, default)
+
     req.state.session = BadSession({"csrf": "abc", "unlocked": False, "flashes": []})
     notice = {"update_available": True}
     monkeypatch.setattr("app_core.updater.get_cached_update_notice", lambda *a, **k: notice)
@@ -184,9 +193,11 @@ def test_server_middleware_exception_and_probe_branches(web_env, monkeypatch):
 
     # 144,151 HTTPException re-raised/logged path
     app_http = create_app(init_db=False, run_startup=False)
+
     @app_http.get("/__http_exc_only")
     def _http_exc_only():
         raise HTTPException(status_code=418, detail="teapot")
+
     with TestClient(app_http, raise_server_exceptions=False) as c:
         r = c.get("/__http_exc_only")
         assert r.status_code == 418
@@ -194,7 +205,9 @@ def test_server_middleware_exception_and_probe_branches(web_env, monkeypatch):
     # 192,193: actor reset exception swallowed in finally
     app = create_app(init_db=False, run_startup=False)
     monkeypatch.setattr("ui.web.server.services.set_current_actor", lambda *a, **k: "tok")
-    monkeypatch.setattr("ui.web.server.services.reset_current_actor", lambda tok: (_ for _ in ()).throw(RuntimeError("reset")))
+    monkeypatch.setattr(
+        "ui.web.server.services.reset_current_actor", lambda tok: (_ for _ in ()).throw(RuntimeError("reset"))
+    )
     with TestClient(app, raise_server_exceptions=False) as c:
         r = c.get("/health")
         assert r.status_code == 200
@@ -216,6 +229,7 @@ def test_server_middleware_exception_and_probe_branches(web_env, monkeypatch):
 
     # redact fallback (157,158): force redact_sensitive to raise
     import ui.web.server as srv
+
     monkeypatch.setattr(srv.paths, "redact_sensitive", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("redact")))
     with TestClient(app2, raise_server_exceptions=False) as c:
         r = c.get("/__http_exc")
@@ -223,9 +237,12 @@ def test_server_middleware_exception_and_probe_branches(web_env, monkeypatch):
 
         # make 500 html rendering fail to hit 182,183
         import ui.web.rendering as rendering_mod
+
         real_render = rendering_mod.render
+
         def bad_render(*a, **k):
             raise RuntimeError("render-fail")
+
         monkeypatch.setattr(rendering_mod, "render", bad_render)
         r = c.get("/__err_render", headers={"accept": "text/html"})
         assert r.status_code == 500

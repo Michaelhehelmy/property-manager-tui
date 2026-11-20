@@ -47,15 +47,26 @@ def test_guests_list_detail_update(client):
     set_session(client, unlocked=False)
     page = client.get(f"/guests/{gid}")
     csrf = get_csrf(page.text) or "x"
-    r = client.post(f"/guests/{gid}/update", data={"csrf": csrf, "name": "A2", "phone": "", "email": "", "notes": "", "password": "testpass"})
+    r = client.post(
+        f"/guests/{gid}/update",
+        data={"csrf": csrf, "name": "A2", "phone": "", "email": "", "notes": "", "password": "testpass"},
+    )
     assert r.status_code == 303  # require_unlock redirect
 
     token = set_session(client, unlocked=True)
-    r = client.post(f"/guests/{gid}/update", data={"csrf": token, "name": "A2", "phone": "9", "email": "", "notes": "n", "password": "testpass"}, follow_redirects=True)
+    r = client.post(
+        f"/guests/{gid}/update",
+        data={"csrf": token, "name": "A2", "phone": "9", "email": "", "notes": "n", "password": "testpass"},
+        follow_redirects=True,
+    )
     assert r.status_code == 200
-    assert ("updated" in r.text.lower() or "a2" in r.text.lower() or "A2" in r.text)
+    assert "updated" in r.text.lower() or "a2" in r.text.lower() or "A2" in r.text
 
     # update error path
     token = set_session(client, unlocked=True)
-    r = client.post(f"/guests/{gid}/update", data={"csrf": token, "name": "", "phone": "", "email": "", "notes": "", "password": "wrong"}, follow_redirects=True)
+    r = client.post(
+        f"/guests/{gid}/update",
+        data={"csrf": token, "name": "", "phone": "", "email": "", "notes": "", "password": "wrong"},
+        follow_redirects=True,
+    )
     assert r.status_code == 200

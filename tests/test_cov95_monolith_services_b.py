@@ -12,13 +12,30 @@ import app_core.services._monolith as m
 def _mk_res(clean_db, status="Reserved"):
     conn = db.connect()
     gid = conn.execute("INSERT INTO guests(canonical_name, phone, email) VALUES ('G','1','g@x')").lastrowid
-    conn.execute("INSERT INTO rooms(room_number, room_type, base_price, housekeeping_status) VALUES (?,?,?,?)", (f"R{gid}", "Standard", 100.0, "Clean"))
+    conn.execute(
+        "INSERT INTO rooms(room_number, room_type, base_price, housekeeping_status) VALUES (?,?,?,?)",
+        (f"R{gid}", "Standard", 100.0, "Clean"),
+    )
     room_id = conn.execute("SELECT id FROM rooms WHERE room_number=?", (f"R{gid}",)).fetchone()[0]
     rid = conn.execute(
         """INSERT INTO reservations(guest_id, guest_name, room_id, check_in_date, check_out_date,
            agreed_nightly_rate, status, created_at, tax_amount, source, notes, booking_notes, market_segment)
            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-        (gid, "G", room_id, "2099-01-10", "2099-01-12", 100.0, status, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 0.0, "Direct", "", "", ""),
+        (
+            gid,
+            "G",
+            room_id,
+            "2099-01-10",
+            "2099-01-12",
+            100.0,
+            status,
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            0.0,
+            "Direct",
+            "",
+            "",
+            "",
+        ),
     ).lastrowid
     conn.commit()
     return {"guest_id": gid, "room_id": room_id, "reservation_id": rid}
@@ -78,11 +95,16 @@ def test_reservation_edit_policy_preview_modify_delete_branches(unlocked):
     d = _mk_res(unlocked.db if False else None) if False else None
     # create via services for valid related rows
     from app_core import db as _db
+
     conn = _db.connect()
     gid = conn.execute("INSERT INTO guests(canonical_name, phone, email) VALUES ('Edit','2','e@x')").lastrowid
-    conn.execute("INSERT INTO rooms(room_number, room_type, base_price, housekeeping_status) VALUES ('ER1','Standard',100,'Clean')")
+    conn.execute(
+        "INSERT INTO rooms(room_number, room_type, base_price, housekeeping_status) VALUES ('ER1','Standard',100,'Clean')"
+    )
     room_id = conn.execute("SELECT id FROM rooms WHERE room_number='ER1'").fetchone()[0]
-    conn.execute("INSERT INTO rooms(room_number, room_type, base_price, housekeeping_status) VALUES ('ER2','Standard',120,'Clean')")
+    conn.execute(
+        "INSERT INTO rooms(room_number, room_type, base_price, housekeeping_status) VALUES ('ER2','Standard',120,'Clean')"
+    )
     room2 = conn.execute("SELECT id FROM rooms WHERE room_number='ER2'").fetchone()[0]
     rid = services.create_reservation("Edit", "Direct", room_id, None, 100.0, "2099-03-01", "2099-03-03")
 
@@ -95,12 +117,16 @@ def test_reservation_edit_policy_preview_modify_delete_branches(unlocked):
     assert not bad["ok"]
     bad2 = services.preview_reservation_modification(rid, 100, "2099-03-03", "2099-03-03", room_id)
     assert not bad2["ok"]
-    ok = services.preview_reservation_modification(rid, 110, "2099-03-01", "2099-03-04", room2, source="OTA", market_segment="Corp")
+    ok = services.preview_reservation_modification(
+        rid, 110, "2099-03-01", "2099-03-04", room2, source="OTA", market_segment="Corp"
+    )
     assert ok["ok"] is True
     assert "changes" in ok
 
     # modify reservation (editable)
-    services.modify_reservation(rid, 110, "2099-03-01", "2099-03-04", room2, source="OTA", market_segment="Corp", booking_notes="bn")
+    services.modify_reservation(
+        rid, 110, "2099-03-01", "2099-03-04", room2, source="OTA", market_segment="Corp", booking_notes="bn"
+    )
     r = services.get_reservation(rid)
     assert r["room_id"] == room2 and float(r["agreed_nightly_rate"]) == 110.0
 
@@ -130,7 +156,9 @@ def test_reservation_edit_policy_preview_modify_delete_branches(unlocked):
 def test_rate_rules_and_pricing_branches(unlocked):
     # seed rooms/rate plan if needed
     conn = db.connect()
-    conn.execute("INSERT INTO rooms(room_number, room_type, base_price, housekeeping_status) VALUES ('PR1','Deluxe',200,'Clean')")
+    conn.execute(
+        "INSERT INTO rooms(room_number, room_type, base_price, housekeeping_status) VALUES ('PR1','Deluxe',200,'Clean')"
+    )
     room_id = conn.execute("SELECT id FROM rooms WHERE room_number='PR1'").fetchone()[0]
     try:
         services.add_rate_plan("Promo", 25.0, "__session__")
@@ -140,21 +168,41 @@ def test_rate_rules_and_pricing_branches(unlocked):
     plan_id = plan["id"] if plan else None
 
     # add/update/list rules
-    rid_rule = services.add_rate_rule("Rule A", adjustment_type="percent", adjustment_value=10, rate_plan_id=plan_id,
-                                      room_type="Deluxe", source="Direct", market_segment="Corp",
-                                      start_date="2099-01-01", end_date="2099-12-31", min_nights=1, max_nights=10, priority=5, active=True)
+    rid_rule = services.add_rate_rule(
+        "Rule A",
+        adjustment_type="percent",
+        adjustment_value=10,
+        rate_plan_id=plan_id,
+        room_type="Deluxe",
+        source="Direct",
+        market_segment="Corp",
+        start_date="2099-01-01",
+        end_date="2099-12-31",
+        min_nights=1,
+        max_nights=10,
+        priority=5,
+        active=True,
+    )
     rules = services.list_rate_rules(active_only=True)
     assert any(r["id"] == rid_rule for r in rules)
-    services.update_rate_rule(rid_rule, adjustment_type="fixed_night", adjustment_value=180, active=True, name="Rule A2")
+    services.update_rate_rule(
+        rid_rule, adjustment_type="fixed_night", adjustment_value=180, active=True, name="Rule A2"
+    )
     rules2 = services.list_rate_rules()
     assert any(r["id"] == rid_rule and r["adjustment_type"] == "fixed_night" for r in rules2)
 
     # resolve/quote pricing exercise branches
-    snap = services.resolve_reservation_pricing(room_id, plan_id, "2099-06-01", "2099-06-04", 210.0, source="Direct", market_segment="Corp", apply_rules=True)
+    snap = services.resolve_reservation_pricing(
+        room_id, plan_id, "2099-06-01", "2099-06-04", 210.0, source="Direct", market_segment="Corp", apply_rules=True
+    )
     assert isinstance(snap, dict)
-    quote = services.quote_reservation_pricing(room_id, plan_id, "2099-06-01", "2099-06-04", rate=None, source="Direct", market_segment="Corp")
+    quote = services.quote_reservation_pricing(
+        room_id, plan_id, "2099-06-01", "2099-06-04", rate=None, source="Direct", market_segment="Corp"
+    )
     assert isinstance(quote, dict)
-    quote2 = services.quote_reservation_pricing(room_id, plan_id, "2099-06-01", "2099-06-04", rate=210.0, source="Direct", market_segment="Corp")
+    quote2 = services.quote_reservation_pricing(
+        room_id, plan_id, "2099-06-01", "2099-06-04", rate=210.0, source="Direct", market_segment="Corp"
+    )
     assert isinstance(quote2, dict)
     with pytest.raises(Exception):
         services.quote_reservation_pricing(room_id, plan_id, "", "2099-06-04")
@@ -167,7 +215,7 @@ def test_payment_allocation_users_shifts_groups_packages_approvals(unlocked):
     with pytest.raises(ValueError):
         m._normalize_payment_allocation('{"accommodation": 200}', 100)
     with pytest.raises(ValueError):
-        m._normalize_payment_allocation('notjson', 100)
+        m._normalize_payment_allocation("notjson", 100)
 
     # users/roles
     roles = services.list_roles()
@@ -195,7 +243,9 @@ def test_payment_allocation_users_shifts_groups_packages_approvals(unlocked):
     gid = services.create_reservation_group("Cov Group", group_type="family", contact_name="C", notes="n")
     # add a reservation member
     conn = db.connect()
-    conn.execute("INSERT INTO rooms(room_number, room_type, base_price, housekeeping_status) VALUES ('GR1','Standard',100,'Clean')")
+    conn.execute(
+        "INSERT INTO rooms(room_number, room_type, base_price, housekeeping_status) VALUES ('GR1','Standard',100,'Clean')"
+    )
     room_id = conn.execute("SELECT id FROM rooms WHERE room_number='GR1'").fetchone()[0]
     rid = services.create_reservation("GrpGuest", "Direct", room_id, None, 100.0, "2099-07-01", "2099-07-03")
     services.add_reservation_to_group(gid, rid, role="leader")
@@ -217,7 +267,9 @@ def test_payment_allocation_users_shifts_groups_packages_approvals(unlocked):
         # create a service catalog item if possible
         svc_id = None
         try:
-            svc_id = services.create_service_catalog_item("PkgSvc", "Service", 10.0, description="d", taxable=True, active=True)
+            svc_id = services.create_service_catalog_item(
+                "PkgSvc", "Service", 10.0, description="d", taxable=True, active=True
+            )
         except Exception:
             # try existing
             row = db.connect().execute("SELECT id FROM service_catalog LIMIT 1").fetchone()
@@ -242,7 +294,7 @@ def test_payment_allocation_users_shifts_groups_packages_approvals(unlocked):
                 pass
         # delete a package item if present
         full = services.get_package(pid) or {}
-        for it in (full.get("items") or []):
+        for it in full.get("items") or []:
             try:
                 services.delete_package_item(it["id"])
                 break
@@ -253,7 +305,9 @@ def test_payment_allocation_users_shifts_groups_packages_approvals(unlocked):
         pass
 
     # approvals
-    aid = services.create_approval_request("void_payment", entity_type="payment", entity_id="1", payload={"x": 1}, reason="r", notes="n")
+    aid = services.create_approval_request(
+        "void_payment", entity_type="payment", entity_id="1", payload={"x": 1}, reason="r", notes="n"
+    )
     a = services.get_approval(aid)
     assert a and a["id"] == aid
     lst = services.list_approvals(status="pending", limit=50)
@@ -277,11 +331,21 @@ def test_night_audit_and_reports_basic(clean_db):
         pass
 
     # report helpers should be callable read-only
-    for fn_name in ("report_housekeeping_ops", "report_reservation_groups", "report_packages_summary", "report_cash_shifts_summary", "report_night_audit_summary"):
+    for fn_name in (
+        "report_housekeeping_ops",
+        "report_reservation_groups",
+        "report_packages_summary",
+        "report_cash_shifts_summary",
+        "report_night_audit_summary",
+    ):
         fn = getattr(services, fn_name, None)
         if fn:
             try:
-                out = fn() if fn_name not in ("report_cash_shifts_summary", "report_night_audit_summary") else fn(limit=10)
+                out = (
+                    fn()
+                    if fn_name not in ("report_cash_shifts_summary", "report_night_audit_summary")
+                    else fn(limit=10)
+                )
                 assert out is not None
             except TypeError:
                 try:

@@ -1,4 +1,5 @@
 """Common constants and deterministic helpers for assistant modules."""
+
 from __future__ import annotations
 
 import difflib
@@ -24,37 +25,98 @@ DEFAULT_SETFIT_MODEL_DIR = BASE_DIR / "models" / "assistant_intent_setfit"
 DEFAULT_SKLEARN_MODEL_PATH = BASE_DIR / "models" / "assistant_intent_sklearn.joblib"
 
 INTENT_LABELS = [
-    "capabilities_help", "greeting_smalltalk", "property_stats", "today_ops", "business_partner_briefing", "decision_support",
-    "report_pl", "report_cash_flow", "report_vat", "report_payment_methods", "report_occupancy", "report_daily_ops",
-    "occupancy_summary", "compare_periods", "outstanding_balances", "inventory_alerts", "top_selling_items",
-    "expenses_summary", "sales_breakdown", "reservation_pipeline", "housekeeping_summary", "room_availability",
-    "menu_info", "rate_plans", "rate_rules_list", "service_catalog_list", "discount_vouchers_list", "approvals_list", "approval_detail", "ledger_integrity", "reservation_financial_integrity", "guest_search", "guest_profile", "guest_portfolio", "guest_last_visit",
-    "guest_top_items_last_visit", "guest_last_visit_spend", "guest_activity_bookings",
-    "list_activities", "activity_stats",
-    "reservation_search", "reservation_summary", "reservation_balance",
-    "inventory_search", "inventory_item_details",
-    "walkin_sales_summary", "payments_summary",
-    "reservation_groups", "reservation_group_detail", "packages_list", "reservation_packages_applied",
-    "cash_shifts", "night_audit_runs", "room_blocks", "housekeeping_tasks", "housekeeping_ops_report", "front_desk_ops", "front_desk_arrivals", "front_desk_departures", "front_desk_in_house",
-    "recent_activity", "expiring_batches", "inventory_batches", "trace_barcode", "app_update_status", "health_diagnostics",
-    "ambiguous_needs_clarification", "unsupported_or_unsafe", "compound_multi_intent",
+    "capabilities_help",
+    "greeting_smalltalk",
+    "property_stats",
+    "today_ops",
+    "business_partner_briefing",
+    "decision_support",
+    "report_pl",
+    "report_cash_flow",
+    "report_vat",
+    "report_payment_methods",
+    "report_occupancy",
+    "report_daily_ops",
+    "occupancy_summary",
+    "compare_periods",
+    "outstanding_balances",
+    "inventory_alerts",
+    "top_selling_items",
+    "expenses_summary",
+    "sales_breakdown",
+    "reservation_pipeline",
+    "housekeeping_summary",
+    "room_availability",
+    "menu_info",
+    "rate_plans",
+    "rate_rules_list",
+    "service_catalog_list",
+    "discount_vouchers_list",
+    "approvals_list",
+    "approval_detail",
+    "ledger_integrity",
+    "reservation_financial_integrity",
+    "guest_search",
+    "guest_profile",
+    "guest_portfolio",
+    "guest_last_visit",
+    "guest_top_items_last_visit",
+    "guest_last_visit_spend",
+    "guest_activity_bookings",
+    "list_activities",
+    "activity_stats",
+    "reservation_search",
+    "reservation_summary",
+    "reservation_balance",
+    "inventory_search",
+    "inventory_item_details",
+    "walkin_sales_summary",
+    "payments_summary",
+    "reservation_groups",
+    "reservation_group_detail",
+    "packages_list",
+    "reservation_packages_applied",
+    "cash_shifts",
+    "night_audit_runs",
+    "room_blocks",
+    "housekeeping_tasks",
+    "housekeeping_ops_report",
+    "front_desk_ops",
+    "front_desk_arrivals",
+    "front_desk_departures",
+    "front_desk_in_house",
+    "recent_activity",
+    "expiring_batches",
+    "inventory_batches",
+    "trace_barcode",
+    "app_update_status",
+    "health_diagnostics",
+    "ambiguous_needs_clarification",
+    "unsupported_or_unsafe",
+    "compound_multi_intent",
 ]
+
 
 # Utilities
 def _today():
     return datetime.now().date()
 
+
 def _iso(d):
     return d.strftime(DATE_FMT)
 
+
 def _safe_int(v):
     try:
-        if v is None: return None
+        if v is None:
+            return None
         s = str(v).strip()
-        if s == "": return None
+        if s == "":
+            return None
         return int(re.sub(r"[^\d-]", "", s)) if isinstance(s, str) else int(s)
     except (TypeError, ValueError):
         return None
+
 
 def _norm_text(s: str) -> str:
     s = (s or "").strip().lower()
@@ -63,13 +125,17 @@ def _norm_text(s: str) -> str:
     s = re.sub(r"\s+", " ", s)
     return s
 
+
 def _token_set(s: str):
     return set(re.findall(r"[a-z0-9#@.+%-]+", _norm_text(s)))
 
+
 def _sim(a: str, b: str) -> float:
     a, b = _norm_text(a), _norm_text(b)
-    if not a or not b: return 0.0
+    if not a or not b:
+        return 0.0
     return difflib.SequenceMatcher(None, a, b).ratio()
+
 
 def _fmt_money(x):
     try:
@@ -77,25 +143,32 @@ def _fmt_money(x):
     except (TypeError, ValueError):
         return str(x)
 
+
 def _parse_iso(s):
     try:
         return datetime.strptime(s, DATE_FMT).date()
     except (TypeError, ValueError, AttributeError):
         return None
 
+
 def _yn(v):
     return "yes" if v else "no"
+
 
 def _short(s, n=120):
     s = (str(s) if s is not None else "").replace("\n", " ").strip()
     return s if len(s) <= n else s[: n - 1] + "…"
 
+
 def _val(d, *keys, default=None):
     cur = d
     for k in keys:
-        if isinstance(cur, dict): cur = cur.get(k)
-        else: return default
+        if isinstance(cur, dict):
+            cur = cur.get(k)
+        else:
+            return default
     return default if cur is None else cur
+
 
 def _prev_period(start, end):
     try:
@@ -106,41 +179,51 @@ def _prev_period(start, end):
         p1 = p2 - timedelta(days=days - 1)
         return _iso(p1), _iso(p2)
     except (TypeError, ValueError, AttributeError):
-        logger.debug("assistant._prev_period: failed to compute previous period start=%r end=%r", start, end, exc_info=True)
+        logger.debug(
+            "assistant._prev_period: failed to compute previous period start=%r end=%r", start, end, exc_info=True
+        )
         return start, end
+
 
 # ── Date/range parsing ───────────────────────────────────────────────────────
 
+
 def _parse_date_range(text: str):
-    t = (text or "")
+    t = text or ""
     tl = t.lower()
     today = _today()
     m = re.search(r"\b(?:between|from)\s+(20\d{2}-\d{2}-\d{2})\s+(?:to|and|until|-+)\s+(20\d{2}-\d{2}-\d{2})\b", tl)
     if m:
         d1, d2 = _parse_iso(m.group(1)), _parse_iso(m.group(2))
         if d1 and d2:
-            if d2 < d1: d1, d2 = d2, d1
+            if d2 < d1:
+                d1, d2 = d2, d1
             return _iso(d1), _iso(d2)
     dates = re.findall(r"\b(20\d{2}-\d{2}-\d{2})\b", t)
     if len(dates) >= 2:
         d1, d2 = _parse_iso(dates[0]), _parse_iso(dates[-1])
         a, b = dates[0], dates[-1]
-        if d1 and d2 and d2 < d1: a, b = b, a
+        if d1 and d2 and d2 < d1:
+            a, b = b, a
         return a, b
     m = re.search(r"\bsince\s+(20\d{2}-\d{2}-\d{2})\b", tl)
     if m:
         d = _parse_iso(m.group(1))
-        if d: return _iso(d), _iso(today)
+        if d:
+            return _iso(d), _iso(today)
     if len(dates) == 1 and any(k in tl for k in ["on ", "for ", "dated "]):
         return dates[0], dates[0]
     if "today" in tl:
         return _iso(today), _iso(today)
     if "yesterday" in tl:
-        y = today - timedelta(days=1); return _iso(y), _iso(y)
+        y = today - timedelta(days=1)
+        return _iso(y), _iso(y)
     if "tomorrow" in tl:
-        d = today + timedelta(days=1); return _iso(d), _iso(d)
+        d = today + timedelta(days=1)
+        return _iso(d), _iso(d)
     if "this week" in tl or "current week" in tl:
-        start = today - timedelta(days=today.weekday()); return _iso(start), _iso(today)
+        start = today - timedelta(days=today.weekday())
+        return _iso(start), _iso(today)
     if "last week" in tl or "previous week" in tl:
         start_this = today - timedelta(days=today.weekday())
         return _iso(start_this - timedelta(days=7)), _iso(start_this - timedelta(days=1))
@@ -153,7 +236,8 @@ def _parse_date_range(text: str):
     if re.search(r"\b(last|past|previous)\s+(90|ninety)\s+days\b", tl) or "quarter" in tl:
         return _iso(today - timedelta(days=89)), _iso(today)
     if "this month" in tl or "current month" in tl or "month to date" in tl or "mtd" in tl:
-        start = today.replace(day=1); return _iso(start), _iso(today)
+        start = today.replace(day=1)
+        return _iso(start), _iso(today)
     if "last month" in tl or "previous month" in tl:
         first_this = today.replace(day=1)
         last_prev = first_this - timedelta(days=1)
@@ -163,75 +247,235 @@ def _parse_date_range(text: str):
     start = today.replace(day=1)
     return _iso(start), _iso(today)
 
+
 # ── Slot extraction & context carryover ──────────────────────────────────────
+
 
 def _context_from_history(history):
     ctx = {}
-    if not isinstance(history, list): return ctx
+    if not isinstance(history, list):
+        return ctx
     for h in reversed(history):
         if h.get("role") == "assistant":
             slots = h.get("slots") or {}
             for k in ("guest_id", "reservation_id", "group_id", "date_start", "date_end"):
-                if slots.get(k) and k not in ctx: ctx[k] = slots.get(k)
-            if h.get("intent") and "last_intent" not in ctx: ctx["last_intent"] = h.get("intent")
-            if h.get("resolved_guest_id") and "guest_id" not in ctx: ctx["guest_id"] = h.get("resolved_guest_id")
+                if slots.get(k) and k not in ctx:
+                    ctx[k] = slots.get(k)
+            if h.get("intent") and "last_intent" not in ctx:
+                ctx["last_intent"] = h.get("intent")
+            if h.get("resolved_guest_id") and "guest_id" not in ctx:
+                ctx["guest_id"] = h.get("resolved_guest_id")
         elif h.get("role") == "user":
             # light carryover not needed
             pass
-        if len(ctx) >= 6: break
+        if len(ctx) >= 6:
+            break
     return ctx
+
 
 def extract_slots(text: str, history=None) -> dict:
     t = text or ""
     tl = _norm_text(t)
     slots: dict[str, Any] = {}
     m = re.search(r"\b(?:reservation|res|booking|folio)\s*#?\s*(\d+)\b", tl)
-    if m: slots["reservation_id"] = int(m.group(1))
+    if m:
+        slots["reservation_id"] = int(m.group(1))
     m = re.search(r"\bguest\s*#?\s*(\d+)\b", tl)
-    if m: slots["guest_id"] = int(m.group(1))
+    if m:
+        slots["guest_id"] = int(m.group(1))
     m = re.search(r"\b(?:reservation\s+)?group\s*#?\s*(\d+)\b", tl)
-    if m: slots["group_id"] = int(m.group(1))
+    if m:
+        slots["group_id"] = int(m.group(1))
     m = re.search(r"\broom\s*#?\s*([a-z0-9-]+)\b", tl)
-    if m: slots["room_query"] = m.group(1)
-    s, e = _parse_date_range(t); slots["date_start"], slots["date_end"] = s, e
+    if m:
+        slots["room_query"] = m.group(1)
+    s, e = _parse_date_range(t)
+    slots["date_start"], slots["date_end"] = s, e
     rk = None
-    if any(k in tl for k in ["p&l", "pnl", "profit and loss", "profit-wise", "bottom line", "net profit", "income versus outgoings", "earnings and costs", "revenue beat expenses", "financial performance", "sales in, costs out"]): rk = "pl"
-    elif any(k in tl for k in ["cash flow", "cashflow", "cash in", "cash out", "money movement", "cash-positive", "liquidity", "ins and outs of cash"]): rk = "cash_flow"
-    elif any(k in tl for k in ["value-added tax", "tax report", "output", "input tax"]) or re.search(r"(?<![a-z0-9])vat(?![a-z0-9])", tl): rk = "vat"
-    elif any(k in tl for k in ["payment method", "payments by method", "paid us", "by cash, card", "split by cash", "payment channels", "settlement methods", "how did guests pay", "collections by method", "mix of settlement", "bank transfers or cash"]): rk = "payment_methods"
-    elif any(k in tl for k in ["daily ops", "arrivals", "departures", "in-house", "in house", "check-ins", "checkouts", "check outs", "handover", "front-desk style ops", "stayovers", "ops picture", "ops summary", "operational view"]): rk = "daily_ops"
-    elif any(k in tl for k in ["occupancy", "adr", "revpar", "room-nights", "fill rate", "how full", "how busy", "utilized", "how occupied"]): rk = "occupancy"
-    if rk: slots["report_kind"] = rk
-    mq = re.search(r"[\"""'`]([^\"""'`]{2,})[\"""'`]", t)
+    if any(
+        k in tl
+        for k in [
+            "p&l",
+            "pnl",
+            "profit and loss",
+            "profit-wise",
+            "bottom line",
+            "net profit",
+            "income versus outgoings",
+            "earnings and costs",
+            "revenue beat expenses",
+            "financial performance",
+            "sales in, costs out",
+        ]
+    ):
+        rk = "pl"
+    elif any(
+        k in tl
+        for k in [
+            "cash flow",
+            "cashflow",
+            "cash in",
+            "cash out",
+            "money movement",
+            "cash-positive",
+            "liquidity",
+            "ins and outs of cash",
+        ]
+    ):
+        rk = "cash_flow"
+    elif any(k in tl for k in ["value-added tax", "tax report", "output", "input tax"]) or re.search(
+        r"(?<![a-z0-9])vat(?![a-z0-9])", tl
+    ):
+        rk = "vat"
+    elif any(
+        k in tl
+        for k in [
+            "payment method",
+            "payments by method",
+            "paid us",
+            "by cash, card",
+            "split by cash",
+            "payment channels",
+            "settlement methods",
+            "how did guests pay",
+            "collections by method",
+            "mix of settlement",
+            "bank transfers or cash",
+        ]
+    ):
+        rk = "payment_methods"
+    elif any(
+        k in tl
+        for k in [
+            "daily ops",
+            "arrivals",
+            "departures",
+            "in-house",
+            "in house",
+            "check-ins",
+            "checkouts",
+            "check outs",
+            "handover",
+            "front-desk style ops",
+            "stayovers",
+            "ops picture",
+            "ops summary",
+            "operational view",
+        ]
+    ):
+        rk = "daily_ops"
+    elif any(
+        k in tl
+        for k in [
+            "occupancy",
+            "adr",
+            "revpar",
+            "room-nights",
+            "fill rate",
+            "how full",
+            "how busy",
+            "utilized",
+            "how occupied",
+        ]
+    ):
+        rk = "occupancy"
+    if rk:
+        slots["report_kind"] = rk
+    mq = re.search(r"[\"" "'`]([^\"" "'`]{2,})[\"" "'`]", t)
     if mq:
         slots["guest_query"] = mq.group(1).strip()
     if "guest_query" not in slots:
-        mf = re.search(r"\b(?:find|search|look up|locate|named?|called|for|about)\s+(?:guest\s+|customer\s+)?([A-Za-z\u0600-\u06FF][A-Za-z\u0600-\u06FF\s'.-]{1,50}?)(?:\s+(?:last|most|ordered|visit|stayed|reservation|balance|profile|history|check|who|and|portfolio|invoices|activities|trips)\b|[?.!,]|$)", t, re.I)
+        mf = re.search(
+            r"\b(?:find|search|look up|locate|named?|called|for|about)\s+(?:guest\s+|customer\s+)?([A-Za-z\u0600-\u06FF][A-Za-z\u0600-\u06FF\s'.-]{1,50}?)(?:\s+(?:last|most|ordered|visit|stayed|reservation|balance|profile|history|check|who|and|portfolio|invoices|activities|trips)\b|[?.!,]|$)",
+            t,
+            re.I,
+        )
         if mf:
             cand = mf.group(1).strip(" ?.,!")
-            bad = {"id","number","#","the","a","someone","anyone","he","she","they","him","her","them","last","visit","most","ordered","me","us","today","yesterday","month","week"}
+            bad = {
+                "id",
+                "number",
+                "#",
+                "the",
+                "a",
+                "someone",
+                "anyone",
+                "he",
+                "she",
+                "they",
+                "him",
+                "her",
+                "them",
+                "last",
+                "visit",
+                "most",
+                "ordered",
+                "me",
+                "us",
+                "today",
+                "yesterday",
+                "month",
+                "week",
+            }
             if cand.lower() not in bad and not re.fullmatch(r"\d+", cand):
                 slots["guest_query"] = cand
     # booking source / market segment hints (for reservation search/filtering)
-    m = re.search(r"(?:\bsource\b|\bchannel\b|\bfrom\b)[ \t]{0,20}[:=]?[ \t]{0,20}([A-Za-z][A-Za-z0-9._/-](?:[A-Za-z0-9 ._/-]{0,28}[A-Za-z0-9._/-])?)", t[:500], re.IGNORECASE)
+    m = re.search(
+        r"(?:\bsource\b|\bchannel\b|\bfrom\b)[ \t]{0,20}[:=]?[ \t]{0,20}([A-Za-z][A-Za-z0-9._/-](?:[A-Za-z0-9 ._/-]{0,28}[A-Za-z0-9._/-])?)",
+        t[:500],
+        re.IGNORECASE,
+    )
     if m:
         sv = m.group(1).strip(" ,.")
-        sv = re.split(r"\b(segment|status|guest|room|from\s+20\d{2}|between|for|on|in)\b", sv, flags=re.IGNORECASE)[0].strip(" ,.")
+        sv = re.split(r"\b(segment|status|guest|room|from\s+20\d{2}|between|for|on|in)\b", sv, flags=re.IGNORECASE)[
+            0
+        ].strip(" ,.")
         if sv and sv.lower() not in ("a", "the"):
             slots["source"] = sv
-    m = re.search(r"(?:\bsegment\b|market[ \t]{1,10}segment)[ \t]{0,20}[:=]?[ \t]{0,20}([A-Za-z][A-Za-z0-9._/-](?:[A-Za-z0-9 ._/-]{0,28}[A-Za-z0-9._/-])?)", t[:500], re.IGNORECASE)
+    m = re.search(
+        r"(?:\bsegment\b|market[ \t]{1,10}segment)[ \t]{0,20}[:=]?[ \t]{0,20}([A-Za-z][A-Za-z0-9._/-](?:[A-Za-z0-9 ._/-]{0,28}[A-Za-z0-9._/-])?)",
+        t[:500],
+        re.IGNORECASE,
+    )
     if m:
         mv = m.group(1).strip(" ,.")
-        mv = re.split(r"\b(source|channel|status|guest|room|from\s+20\d{2}|between|for|on|in)\b", mv, flags=re.IGNORECASE)[0].strip(" ,.")
+        mv = re.split(
+            r"\b(source|channel|status|guest|room|from\s+20\d{2}|between|for|on|in)\b", mv, flags=re.IGNORECASE
+        )[0].strip(" ,.")
         if mv and mv.lower() not in ("a", "the"):
             slots["market_segment"] = mv
     ctx = _context_from_history(history)
-    followup = any(k in tl for k in ["same guest", "that guest", "his ", "her ", "their ", "same reservation", "that reservation", "for him", "for her", "for them", "and for", "what about", "same period", "same range", "break that down", "show me more", "their portfolio", "his portfolio", "her portfolio"])
+    followup = any(
+        k in tl
+        for k in [
+            "same guest",
+            "that guest",
+            "his ",
+            "her ",
+            "their ",
+            "same reservation",
+            "that reservation",
+            "for him",
+            "for her",
+            "for them",
+            "and for",
+            "what about",
+            "same period",
+            "same range",
+            "break that down",
+            "show me more",
+            "their portfolio",
+            "his portfolio",
+            "her portfolio",
+        ]
+    )
     if followup or (len(t.split()) <= 6 and not slots.get("guest_id") and not slots.get("reservation_id")):
         for k in ("guest_id", "reservation_id", "group_id", "date_start", "date_end"):
-            if not slots.get(k) and ctx.get(k): slots[k] = ctx[k]
+            if not slots.get(k) and ctx.get(k):
+                slots[k] = ctx[k]
     slots["context"] = ctx
     return slots
+
 
 def resolve_guest(text: str, slots: dict | None = None):
     slots = slots or extract_slots(text)
@@ -241,17 +485,21 @@ def resolve_guest(text: str, slots: dict | None = None):
         return ([g] if g else []), gid, None
     q = slots.get("guest_query")
     if q:
-        q2 = re.sub(r"(?i)\b(find|search|look up|locate|guest|customer|named?|called|for|about|profile|someone|anyone|matching|matches|resembles?|show|possible|candidates|portfolio)\b", " ", q)
+        q2 = re.sub(
+            r"(?i)\b(find|search|look up|locate|guest|customer|named?|called|for|about|profile|someone|anyone|matching|matches|resembles?|show|possible|candidates|portfolio)\b",
+            " ",
+            q,
+        )
         q2 = re.sub(r"\s+", " ", q2).strip(" ?.,!")
-        if len(q2) < 2: q2 = q
+        if len(q2) < 2:
+            q2 = q
         return services.assistant_find_guests(q2, limit=8), None, q2
     return [], None, None
+
 
 def _resolve_guest_from_text(text: str):  # compat
     guests, explicit, q = resolve_guest(text)
     return guests, explicit
-
-
 
 
 def _format_data(title, data):

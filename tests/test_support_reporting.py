@@ -46,7 +46,10 @@ def test_support_readiness_doctor_and_collect(clean_db, monkeypatch):
     monkeypatch.setenv("PM_WEB_SECRET_KEY", "test-secret-key-for-support")
     try:
         from app_core import updater
-        monkeypatch.setattr(updater, "get_cached_update_notice", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("no network")))
+
+        monkeypatch.setattr(
+            updater, "get_cached_update_notice", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("no network"))
+        )
     except Exception:
         pass
 
@@ -73,6 +76,7 @@ def test_support_markdown_issue_bundle_and_cli(clean_db, tmp_path, monkeypatch):
     monkeypatch.setenv("PM_WEB_SECRET_KEY", "test-secret-key-for-support")
     try:
         from app_core import updater
+
         monkeypatch.setattr(updater, "get_cached_update_notice", lambda *a, **k: None)
     except Exception:
         pass
@@ -110,7 +114,9 @@ def test_support_markdown_issue_bundle_and_cli(clean_db, tmp_path, monkeypatch):
     assert issue_trunc["truncated"] is True
     assert "title=" in issue_trunc["url"]
 
-    bundle = support.generate_support_bundle(context={"source": "test"}, user={"title": "Bundle"}, include_update_check=False)
+    bundle = support.generate_support_bundle(
+        context={"source": "test"}, user={"title": "Bundle"}, include_update_check=False
+    )
     assert "diagnostics" in bundle and "markdown" in bundle and "issue" in bundle
 
     # CLI modes

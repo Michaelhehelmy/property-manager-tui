@@ -1,4 +1,5 @@
 """Regression tests for ledger netting, flows, and analytics exports."""
+
 import json
 from pathlib import Path
 import pytest
@@ -15,10 +16,14 @@ def test_modify_reservation_does_not_double_count_balance(clean_db):
     bal = services.calculate_guest_balance(rid)
     types = services._net_types(("CHARGE",))
     ph = ",".join("?" * len(types))
-    ledger_gross = db.connect().execute(
-        f"SELECT COALESCE(SUM(gross),0) FROM general_ledger WHERE ref_type='RES' AND ref_id=? AND entry_type IN ({ph})",
-        (rid, *types),
-    ).fetchone()[0]
+    ledger_gross = (
+        db.connect()
+        .execute(
+            f"SELECT COALESCE(SUM(gross),0) FROM general_ledger WHERE ref_type='RES' AND ref_id=? AND entry_type IN ({ph})",
+            (rid, *types),
+        )
+        .fetchone()[0]
+    )
     assert abs(after["accommodation_gross"] - ledger_gross) < 0.01
     assert abs(after["balance_due"] - bal) < 0.01
     # old 200 net plus tax, new 450 net plus tax; must not be old+new
@@ -56,10 +61,12 @@ def test_complete_walkin_sale_is_atomic(clean_db, monkeypatch):
     before = inv["stock_qty"]
     # force failure at payment posting by breaking method validation? easier: monkeypatch _post to fail on WALKIN_PAY
     real_post = services._post
+
     def boom(cur, ref_type, *a, **k):
         if ref_type == "WALKIN_PAY":
             raise RuntimeError("boom")
         return real_post(cur, ref_type, *a, **k)
+
     monkeypatch.setattr(services, "_post", boom)
     with pytest.raises(RuntimeError):
         services.complete_walkin_sale([{"desc": "W", "qty": 1, "price": 20.0, "inv_id": inv["id"]}], "Cash")

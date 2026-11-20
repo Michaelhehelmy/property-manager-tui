@@ -43,11 +43,16 @@ def _json_safe_value(value, _depth=0):
         return [_json_safe_value(v, _depth + 1) for v in list(value)[:200]]
     # fallback: string form, but avoid repr of exception objects
     try:
-        if value.__class__.__module__ in ("traceback", "types") and value.__class__.__name__ in ("TracebackType", "FrameType", "CodeType"):
+        if value.__class__.__module__ in ("traceback", "types") and value.__class__.__name__ in (
+            "TracebackType",
+            "FrameType",
+            "CodeType",
+        ):
             return "internal_error"
     except Exception:
         pass
     return str(value)
+
 
 router = APIRouter()
 
@@ -124,11 +129,15 @@ def _normalize_pending_action(proposed: dict[str, Any] | None, ui_context: Any =
     action.setdefault("args", {})
     action.setdefault("resolved", {})
     action.setdefault("preview", {})
-    action.setdefault("summary", action.get("title") or action.get("description") or action.get("type") or "Proposed action")
+    action.setdefault(
+        "summary", action.get("title") or action.get("description") or action.get("type") or "Proposed action"
+    )
     return action
 
 
-def set_pending_action(request: Request, proposed: dict[str, Any] | None, ui_context: Any = None) -> dict[str, Any] | None:
+def set_pending_action(
+    request: Request, proposed: dict[str, Any] | None, ui_context: Any = None
+) -> dict[str, Any] | None:
     action = _normalize_pending_action(proposed, ui_context=ui_context)
     sess = deps.get_session(request)
     if action:
@@ -195,12 +204,28 @@ def assistant_page(request: Request):
 @router.post("/assistant/ask")
 async def assistant_ask(request: Request):
     form = await deps.get_form(request)
-    want_json = (request.headers.get("accept", "").find("application/json") >= 0) or (request.headers.get("x-requested-with") == "assistant-widget") or (str(form.get("widget") or "") == "1")
+    want_json = (
+        (request.headers.get("accept", "").find("application/json") >= 0)
+        or (request.headers.get("x-requested-with") == "assistant-widget")
+        or (str(form.get("widget") or "") == "1")
+    )
 
     if not _assistant_allowed(request):
         if want_json:
-            return Response(content=json.dumps({"ok": False, "error": "Unlock required to use Manager Assistant (sensitive data).", "ui_actions": [{"type": "navigate", "url": "/unlock?next=/assistant"}]}, separators=(",", ":")), media_type="application/json")
-        return guarded_unlock_redirect(request, "/unlock?next=/assistant", "Unlock required to use Manager Assistant (sensitive data).")
+            return Response(
+                content=json.dumps(
+                    {
+                        "ok": False,
+                        "error": "Unlock required to use Manager Assistant (sensitive data).",
+                        "ui_actions": [{"type": "navigate", "url": "/unlock?next=/assistant"}],
+                    },
+                    separators=(",", ":"),
+                ),
+                media_type="application/json",
+            )
+        return guarded_unlock_redirect(
+            request, "/unlock?next=/assistant", "Unlock required to use Manager Assistant (sensitive data)."
+        )
 
     message = (form.get("message") or "").strip()
     ui_context = None
@@ -212,7 +237,15 @@ async def assistant_ask(request: Request):
             ui_context = None
 
     hist = _history(request)
-    result = {"ok": True, "answer": "", "intent": "capabilities_help", "confidence": 0.0, "tools_used": [], "source": "none", "ui_actions": []}
+    result = {
+        "ok": True,
+        "answer": "",
+        "intent": "capabilities_help",
+        "confidence": 0.0,
+        "tools_used": [],
+        "source": "none",
+        "ui_actions": [],
+    }
     pending_action = get_pending_action(request)
     if message:
         hist.append({"role": "user", "content": message, "ui_context": ui_context or {}})
@@ -229,7 +262,109 @@ async def assistant_ask(request: Request):
             except Exception:
                 logger.exception("assistant_ask_failed")
                 if want_json:
-                    return Response(content=json.dumps({
+                    return Response(
+                        content=json.dumps(
+                            {
+                                "ok": False,
+                                "answer": "Sorry, the assistant encountered an error while processing your request. Please try again.",
+                                "intent": "error",
+                                "confidence": 0.0,
+                                "tools_used": [],
+                                "source": "error",
+                                "slots": {},
+                                "ui_actions": [],
+                            },
+                            separators=(",", ":"),
+                        ),
+                        media_type="application/json",
+                    )
+                result = {
+                    "ok": False,
+                    "answer": "Sorry, the assistant encountered an error while processing your request. Please try again.",
+                    "intent": "error",
+                    "confidence": 0.0,
+                    "tools_used": [],
+                    "source": "error",
+                    "ui_actions": [],
+                }
+        except Exception:
+            logger.exception("assistant_ask_failed")
+            if want_json:
+                return Response(
+                    content=json.dumps(
+                        {
+                            "ok": False,
+                            "answer": "Sorry, the assistant encountered an error while processing your request. Please try again.",
+                            "intent": "error",
+                            "confidence": 0.0,
+                            "tools_used": [],
+                            "source": "error",
+                            "slots": {},
+                            "ui_actions": [],
+                        },
+                        separators=(",", ":"),
+                    ),
+                    media_type="application/json",
+                )
+            result = {
+                "ok": False,
+                "answer": "Sorry, the assistant encountered an error while processing your request. Please try again.",
+                "intent": "error",
+                "confidence": 0.0,
+                "tools_used": [],
+                "source": "error",
+                "ui_actions": [],
+            }
+
+        if not isinstance(result, dict):
+            result = {
+                "ok": True,
+                "answer": str(result),
+                "intent": "unknown",
+                "confidence": 0.0,
+                "tools_used": [],
+                "source": "unknown",
+                "ui_actions": [],
+            }
+        result.setdefault("ui_actions", [])
+
+        proposed = result.get("proposed_action")
+        if proposed:
+            pending_action = set_pending_action(
+                request, proposed if isinstance(proposed, dict) else {"raw": proposed}, ui_context=ui_context
+            )
+            result["proposed_action"] = pending_action
+        else:
+            # keep any existing pending action unless explicitly replaced; ask flow doesn't clear by itself
+            pending_action = get_pending_action(request)
+
+        answer = result.get("answer") or ""
+        meta = f"[source={result.get('source')} intent={result.get('intent')} conf={result.get('confidence')} tools={','.join(result.get('tools_used') or []) or '-'}]"
+        hist.append(
+            {
+                "role": "assistant",
+                "content": answer,
+                "meta": meta,
+                "intent": result.get("intent"),
+                "confidence": result.get("confidence"),
+                "tools_used": result.get("tools_used") or [],
+                "slots": result.get("slots") or {},
+                "source": result.get("source"),
+                "user_message": message,
+                "ui_actions": result.get("ui_actions") or [],
+                "proposed_action": result.get("proposed_action") or None,
+            }
+        )
+        deps.get_session(request)["assistant_history"] = hist[-40:]
+    else:
+        pending_action = get_pending_action(request)
+
+    if want_json:
+        # Error responses: return fixed safe payload to avoid any exception/trace exposure.
+        if not bool(result.get("ok", True)) and str(result.get("source") or "") == "error":
+            return Response(
+                content=json.dumps(
+                    {
                         "ok": False,
                         "answer": "Sorry, the assistant encountered an error while processing your request. Please try again.",
                         "intent": "error",
@@ -238,71 +373,17 @@ async def assistant_ask(request: Request):
                         "source": "error",
                         "slots": {},
                         "ui_actions": [],
-                    }, separators=(",", ":")), media_type="application/json")
-                result = {"ok": False, "answer": "Sorry, the assistant encountered an error while processing your request. Please try again.", "intent": "error", "confidence": 0.0, "tools_used": [], "source": "error", "ui_actions": []}
-        except Exception:
-            logger.exception("assistant_ask_failed")
-            if want_json:
-                return Response(content=json.dumps({
-                    "ok": False,
-                    "answer": "Sorry, the assistant encountered an error while processing your request. Please try again.",
-                    "intent": "error",
-                    "confidence": 0.0,
-                    "tools_used": [],
-                    "source": "error",
-                    "slots": {},
-                    "ui_actions": [],
-                }, separators=(",", ":")), media_type="application/json")
-            result = {"ok": False, "answer": "Sorry, the assistant encountered an error while processing your request. Please try again.", "intent": "error", "confidence": 0.0, "tools_used": [], "source": "error", "ui_actions": []}
-
-        if not isinstance(result, dict):
-            result = {"ok": True, "answer": str(result), "intent": "unknown", "confidence": 0.0, "tools_used": [], "source": "unknown", "ui_actions": []}
-        result.setdefault("ui_actions", [])
-
-        proposed = result.get("proposed_action")
-        if proposed:
-            pending_action = set_pending_action(request, proposed if isinstance(proposed, dict) else {"raw": proposed}, ui_context=ui_context)
-            result["proposed_action"] = pending_action
-        else:
-            # keep any existing pending action unless explicitly replaced; ask flow doesn't clear by itself
-            pending_action = get_pending_action(request)
-
-        answer = result.get("answer") or ""
-        meta = f"[source={result.get('source')} intent={result.get('intent')} conf={result.get('confidence')} tools={','.join(result.get('tools_used') or []) or '-'}]"
-        hist.append({
-            "role": "assistant",
-            "content": answer,
-            "meta": meta,
-            "intent": result.get("intent"),
-            "confidence": result.get("confidence"),
-            "tools_used": result.get("tools_used") or [],
-            "slots": result.get("slots") or {},
-            "source": result.get("source"),
-            "user_message": message,
-            "ui_actions": result.get("ui_actions") or [],
-            "proposed_action": result.get("proposed_action") or None,
-        })
-        deps.get_session(request)["assistant_history"] = hist[-40:]
-    else:
-        pending_action = get_pending_action(request)
-
-    if want_json:
-        # Error responses: return fixed safe payload to avoid any exception/trace exposure.
-        if not bool(result.get("ok", True)) and str(result.get("source") or "") == "error":
-            return Response(content=json.dumps({
-                "ok": False,
-                "answer": "Sorry, the assistant encountered an error while processing your request. Please try again.",
-                "intent": "error",
-                "confidence": 0.0,
-                "tools_used": [],
-                "source": "error",
-                "slots": {},
-                "ui_actions": [],
-            }, separators=(",", ":")), media_type="application/json")
+                    },
+                    separators=(",", ":"),
+                ),
+                media_type="application/json",
+            )
 
         # Return only sanitized, JSON-safe fields (no exception/trace data).
         safe_slots = _json_safe_value(result.get("slots") if isinstance(result.get("slots"), dict) else {})
-        safe_ui_actions = _json_safe_value(result.get("ui_actions") if isinstance(result.get("ui_actions"), list) else [])
+        safe_ui_actions = _json_safe_value(
+            result.get("ui_actions") if isinstance(result.get("ui_actions"), list) else []
+        )
         payload = {
             "ok": bool(result.get("ok", True)),
             "answer": str(result.get("answer") or ""),
@@ -331,17 +412,22 @@ async def assistant_ask(request: Request):
             # Validate serialized form is parseable JSON
             json.loads(clean_body)
         except Exception:
-            clean_body = json.dumps({
-                "ok": False,
-                "answer": "Sorry, the assistant encountered an error while processing your request. Please try again.",
-                "intent": "error",
-                "confidence": 0.0,
-                "tools_used": [],
-                "source": "error",
-                "slots": {},
-                "ui_actions": [],
-            }, separators=(",", ":"))
-        return Response(content=clean_body, media_type="application/json")  # codeql[py/stack-trace-exposure] sanitized JSON body
+            clean_body = json.dumps(
+                {
+                    "ok": False,
+                    "answer": "Sorry, the assistant encountered an error while processing your request. Please try again.",
+                    "intent": "error",
+                    "confidence": 0.0,
+                    "tools_used": [],
+                    "source": "error",
+                    "slots": {},
+                    "ui_actions": [],
+                },
+                separators=(",", ":"),
+            )
+        return Response(
+            content=clean_body, media_type="application/json"
+        )  # codeql[py/stack-trace-exposure] sanitized JSON body
 
     shown = _history(request)[-20:]
     animate_index = None
@@ -358,7 +444,9 @@ async def assistant_ask(request: Request):
         "intents": assistant.INTENT_LABELS,
         "animate_index": animate_index,
     }
-    return htmx_partial_or_redirect(request, partial_template="assistant/_messages.html", partial_context=ctx, redirect_url="/assistant")
+    return htmx_partial_or_redirect(
+        request, partial_template="assistant/_messages.html", partial_context=ctx, redirect_url="/assistant"
+    )
 
 
 @router.post("/assistant/feedback")
@@ -383,7 +471,8 @@ async def assistant_feedback(request: Request):
     if msg is None or msg.get("role") != "assistant":
         for m in reversed(hist):
             if m.get("role") == "assistant":
-                msg = m; break
+                msg = m
+                break
     if msg and msg.get("role") == "assistant":
         try:
             corrected_slots = json.loads(corrected_slots_raw) if corrected_slots_raw else {}
@@ -407,23 +496,44 @@ async def assistant_feedback(request: Request):
         )
         msg["feedback"] = {"rating": rating, "corrected_intent": corrected_intent, "note": user_note}
         deps.get_session(request)["assistant_history"] = hist[-40:]
-        deps.add_flash(request, "Feedback saved. Corrections are used to improve routing over time (instant exemplar memory + retraining dataset).", "success")
+        deps.add_flash(
+            request,
+            "Feedback saved. Corrections are used to improve routing over time (instant exemplar memory + retraining dataset).",
+            "success",
+        )
     else:
         deps.add_flash(request, "Could not find assistant message to rate.", "error")
 
-    ctx = {"request": request, "history": _history(request)[-20:], "csrf_token": deps.csrf_token(request), "intents": assistant.INTENT_LABELS}
-    return htmx_partial_or_redirect(request, partial_template="assistant/_messages.html", partial_context=ctx, redirect_url="/assistant")
+    ctx = {
+        "request": request,
+        "history": _history(request)[-20:],
+        "csrf_token": deps.csrf_token(request),
+        "intents": assistant.INTENT_LABELS,
+    }
+    return htmx_partial_or_redirect(
+        request, partial_template="assistant/_messages.html", partial_context=ctx, redirect_url="/assistant"
+    )
 
 
 @router.post("/assistant/action/confirm")
 async def assistant_action_confirm(request: Request):
     form, payload = await _get_request_data(request)
-    want_json = (request.headers.get("accept", "").find("application/json") >= 0) or (request.headers.get("x-requested-with") == "assistant-widget") or (str((payload or {}).get("widget") or (form.get("widget") if form is not None else "") or "") == "1")
+    want_json = (
+        (request.headers.get("accept", "").find("application/json") >= 0)
+        or (request.headers.get("x-requested-with") == "assistant-widget")
+        or (str((payload or {}).get("widget") or (form.get("widget") if form is not None else "") or "") == "1")
+    )
 
     if not _assistant_allowed(request):
         if want_json:
-            return {"ok": False, "error": "Unlock required to confirm assistant actions.", "ui_actions": [{"type": "navigate", "url": "/unlock?next=/assistant"}]}
-        return guarded_unlock_redirect(request, "/unlock?next=/assistant", "Unlock required to confirm assistant actions.")
+            return {
+                "ok": False,
+                "error": "Unlock required to confirm assistant actions.",
+                "ui_actions": [{"type": "navigate", "url": "/unlock?next=/assistant"}],
+            }
+        return guarded_unlock_redirect(
+            request, "/unlock?next=/assistant", "Unlock required to confirm assistant actions."
+        )
 
     fields = _parse_body_fields(form, payload, "action_id", "password", "proof", "proof_password")
     action_id = str(fields.get("action_id") or "").strip()
@@ -432,15 +542,37 @@ async def assistant_action_confirm(request: Request):
         if want_json:
             return {"ok": False, "error": "No pending assistant action (it may have expired).", "pending_action": None}
         deps.add_flash(request, "No pending assistant action (it may have expired).", "error")
-        ctx = {"request": request, "history": _history(request)[-20:], "pending_action": None, "csrf_token": deps.csrf_token(request), "intents": assistant.INTENT_LABELS}
-        return htmx_partial_or_redirect(request, partial_template="assistant/_messages.html", partial_context=ctx, redirect_url="/assistant")
+        ctx = {
+            "request": request,
+            "history": _history(request)[-20:],
+            "pending_action": None,
+            "csrf_token": deps.csrf_token(request),
+            "intents": assistant.INTENT_LABELS,
+        }
+        return htmx_partial_or_redirect(
+            request, partial_template="assistant/_messages.html", partial_context=ctx, redirect_url="/assistant"
+        )
 
     if not action_id or str(pending.get("id") or "") != action_id:
         if want_json:
-            return {"ok": False, "error": "Pending action does not match (stale or replaced). Please review and try again.", "pending_action": pending}
-        deps.add_flash(request, "Pending action does not match (stale or replaced). Please review and try again.", "error")
-        ctx = {"request": request, "history": _history(request)[-20:], "pending_action": pending, "csrf_token": deps.csrf_token(request), "intents": assistant.INTENT_LABELS}
-        return htmx_partial_or_redirect(request, partial_template="assistant/_messages.html", partial_context=ctx, redirect_url="/assistant")
+            return {
+                "ok": False,
+                "error": "Pending action does not match (stale or replaced). Please review and try again.",
+                "pending_action": pending,
+            }
+        deps.add_flash(
+            request, "Pending action does not match (stale or replaced). Please review and try again.", "error"
+        )
+        ctx = {
+            "request": request,
+            "history": _history(request)[-20:],
+            "pending_action": pending,
+            "csrf_token": deps.csrf_token(request),
+            "intents": assistant.INTENT_LABELS,
+        }
+        return htmx_partial_or_redirect(
+            request, partial_template="assistant/_messages.html", partial_context=ctx, redirect_url="/assistant"
+        )
 
     # Best-effort proof resolution: prefer explicit password, else session sentinel when unlocked.
     proof = fields.get("proof") or fields.get("proof_password") or None
@@ -460,7 +592,13 @@ async def assistant_action_confirm(request: Request):
             exec_result = {"ok": True, "answer": str(exec_result), "ui_actions": []}
     except Exception:
         logger.exception("assistant_action_confirm_failed")
-        exec_result = {"ok": False, "answer": "Failed to execute action due to an internal error. Please try again or check logs.", "error": "internal_error", "ui_actions": [], "terminal": True}
+        exec_result = {
+            "ok": False,
+            "answer": "Failed to execute action due to an internal error. Please try again or check logs.",
+            "error": "internal_error",
+            "ui_actions": [],
+            "terminal": True,
+        }
 
     ok = bool(exec_result.get("ok", False))
     terminal_failure = bool(exec_result.get("terminal")) or not ok
@@ -473,28 +611,34 @@ async def assistant_action_confirm(request: Request):
 
     answer = exec_result.get("answer") or ("Action completed." if ok else "Action failed.")
     meta = f"[action={pending.get('type')} status={'ok' if ok else 'failed'}]"
-    hist.append({
-        "role": "assistant",
-        "content": answer,
-        "meta": meta,
-        "intent": "action_confirm",
-        "confidence": 1.0,
-        "tools_used": exec_result.get("tools_used") or ["assistant_action_confirm"],
-        "slots": {"action_id": action_id, "action_type": pending.get("type")},
-        "source": "assistant_action",
-        "user_message": f"[confirm action] {pending.get('summary') or pending.get('type') or action_id}",
-        "ui_actions": exec_result.get("ui_actions") or [],
-        "action_result": exec_result,
-        "proposed_action": None,
-    })
+    hist.append(
+        {
+            "role": "assistant",
+            "content": answer,
+            "meta": meta,
+            "intent": "action_confirm",
+            "confidence": 1.0,
+            "tools_used": exec_result.get("tools_used") or ["assistant_action_confirm"],
+            "slots": {"action_id": action_id, "action_type": pending.get("type")},
+            "source": "assistant_action",
+            "user_message": f"[confirm action] {pending.get('summary') or pending.get('type') or action_id}",
+            "ui_actions": exec_result.get("ui_actions") or [],
+            "action_result": exec_result,
+            "proposed_action": None,
+        }
+    )
     deps.get_session(request)["assistant_history"] = hist[-40:]
 
     if want_json:
         safe_exec = {
             "ok": bool((exec_result or {}).get("ok", False)),
             "answer": str((exec_result or {}).get("answer") or answer),
-            "tools_used": [str(x) for x in ((exec_result or {}).get("tools_used") or []) if isinstance(x, (str, int, float))],
-            "ui_actions": (exec_result or {}).get("ui_actions") if isinstance((exec_result or {}).get("ui_actions"), list) else [],
+            "tools_used": [
+                str(x) for x in ((exec_result or {}).get("tools_used") or []) if isinstance(x, (str, int, float))
+            ],
+            "ui_actions": (exec_result or {}).get("ui_actions")
+            if isinstance((exec_result or {}).get("ui_actions"), list)
+            else [],
         }
         if not ok and (exec_result or {}).get("error"):
             safe_exec["error"] = "internal_error"
@@ -521,18 +665,30 @@ async def assistant_action_confirm(request: Request):
         deps.add_flash(request, answer if len(answer) < 180 else "Action completed.", "success")
     else:
         deps.add_flash(request, answer if len(answer) < 180 else "Action failed.", "error")
-    return htmx_partial_or_redirect(request, partial_template="assistant/_messages.html", partial_context=ctx, redirect_url="/assistant")
+    return htmx_partial_or_redirect(
+        request, partial_template="assistant/_messages.html", partial_context=ctx, redirect_url="/assistant"
+    )
 
 
 @router.post("/assistant/action/cancel")
 async def assistant_action_cancel(request: Request):
     form, payload = await _get_request_data(request)
-    want_json = (request.headers.get("accept", "").find("application/json") >= 0) or (request.headers.get("x-requested-with") == "assistant-widget") or (str((payload or {}).get("widget") or (form.get("widget") if form is not None else "") or "") == "1")
+    want_json = (
+        (request.headers.get("accept", "").find("application/json") >= 0)
+        or (request.headers.get("x-requested-with") == "assistant-widget")
+        or (str((payload or {}).get("widget") or (form.get("widget") if form is not None else "") or "") == "1")
+    )
 
     if not _assistant_allowed(request):
         if want_json:
-            return {"ok": False, "error": "Unlock required to manage assistant actions.", "ui_actions": [{"type": "navigate", "url": "/unlock?next=/assistant"}]}
-        return guarded_unlock_redirect(request, "/unlock?next=/assistant", "Unlock required to manage assistant actions.")
+            return {
+                "ok": False,
+                "error": "Unlock required to manage assistant actions.",
+                "ui_actions": [{"type": "navigate", "url": "/unlock?next=/assistant"}],
+            }
+        return guarded_unlock_redirect(
+            request, "/unlock?next=/assistant", "Unlock required to manage assistant actions."
+        )
 
     fields = _parse_body_fields(form, payload, "action_id")
     action_id = str(fields.get("action_id") or "").strip()
@@ -540,27 +696,41 @@ async def assistant_action_cancel(request: Request):
     if pending and action_id and str(pending.get("id") or "") != action_id:
         # stale id: don't clear current pending, report mismatch
         if want_json:
-            return {"ok": False, "error": "Pending action does not match; nothing cancelled.", "pending_action": pending}
+            return {
+                "ok": False,
+                "error": "Pending action does not match; nothing cancelled.",
+                "pending_action": pending,
+            }
         deps.add_flash(request, "Pending action does not match; nothing cancelled.", "error")
-        ctx = {"request": request, "history": _history(request)[-20:], "pending_action": pending, "csrf_token": deps.csrf_token(request), "intents": assistant.INTENT_LABELS}
-        return htmx_partial_or_redirect(request, partial_template="assistant/_messages.html", partial_context=ctx, redirect_url="/assistant")
+        ctx = {
+            "request": request,
+            "history": _history(request)[-20:],
+            "pending_action": pending,
+            "csrf_token": deps.csrf_token(request),
+            "intents": assistant.INTENT_LABELS,
+        }
+        return htmx_partial_or_redirect(
+            request, partial_template="assistant/_messages.html", partial_context=ctx, redirect_url="/assistant"
+        )
 
     if pending:
         clear_pending_action(request)
         hist = _history(request)
-        hist.append({
-            "role": "assistant",
-            "content": f"Cancelled proposed action: {pending.get('summary') or pending.get('type') or 'action'}.",
-            "meta": "[action=cancelled]",
-            "intent": "action_cancel",
-            "confidence": 1.0,
-            "tools_used": ["assistant_action_cancel"],
-            "slots": {"action_id": str(pending.get('id') or action_id)},
-            "source": "assistant_action",
-            "user_message": f"[cancel action] {pending.get('summary') or pending.get('type') or ''}",
-            "ui_actions": [],
-            "proposed_action": None,
-        })
+        hist.append(
+            {
+                "role": "assistant",
+                "content": f"Cancelled proposed action: {pending.get('summary') or pending.get('type') or 'action'}.",
+                "meta": "[action=cancelled]",
+                "intent": "action_cancel",
+                "confidence": 1.0,
+                "tools_used": ["assistant_action_cancel"],
+                "slots": {"action_id": str(pending.get("id") or action_id)},
+                "source": "assistant_action",
+                "user_message": f"[cancel action] {pending.get('summary') or pending.get('type') or ''}",
+                "ui_actions": [],
+                "proposed_action": None,
+            }
+        )
         deps.get_session(request)["assistant_history"] = hist[-40:]
         msg = "Proposed action cancelled."
     else:
@@ -572,8 +742,17 @@ async def assistant_action_cancel(request: Request):
     deps.add_flash(request, msg, "info" if pending else "warning")
     shown = _history(request)[-20:]
     animate_index = len(shown) - 1 if shown and pending else None
-    ctx = {"request": request, "history": shown, "pending_action": None, "csrf_token": deps.csrf_token(request), "intents": assistant.INTENT_LABELS, "animate_index": animate_index}
-    return htmx_partial_or_redirect(request, partial_template="assistant/_messages.html", partial_context=ctx, redirect_url="/assistant")
+    ctx = {
+        "request": request,
+        "history": shown,
+        "pending_action": None,
+        "csrf_token": deps.csrf_token(request),
+        "intents": assistant.INTENT_LABELS,
+        "animate_index": animate_index,
+    }
+    return htmx_partial_or_redirect(
+        request, partial_template="assistant/_messages.html", partial_context=ctx, redirect_url="/assistant"
+    )
 
 
 @router.post("/assistant/clear")
@@ -581,5 +760,13 @@ async def assistant_clear(request: Request):
     form = await deps.get_form(request)
     deps.get_session(request)["assistant_history"] = []
     clear_pending_action(request)
-    ctx = {"request": request, "history": [], "pending_action": None, "csrf_token": deps.csrf_token(request), "intents": assistant.INTENT_LABELS}
-    return htmx_partial_or_redirect(request, partial_template="assistant/_messages.html", partial_context=ctx, redirect_url="/assistant")
+    ctx = {
+        "request": request,
+        "history": [],
+        "pending_action": None,
+        "csrf_token": deps.csrf_token(request),
+        "intents": assistant.INTENT_LABELS,
+    }
+    return htmx_partial_or_redirect(
+        request, partial_template="assistant/_messages.html", partial_context=ctx, redirect_url="/assistant"
+    )

@@ -1,4 +1,5 @@
 """Web dependencies: sessions, CSRF, auth, flash messages, safe file paths."""
+
 from __future__ import annotations
 
 import logging
@@ -24,7 +25,7 @@ _ALLOW_INSECURE_ENV = "PM_WEB_ALLOW_INSECURE_DEV"
 SECRET_KEY = os.environ.get(_SECRET_ENV)
 _insecure_dev = False
 if not SECRET_KEY:
-    host_hint = (os.environ.get("HOST") or os.environ.get("PM_WEB_HOST") or "127.0.0.1")
+    host_hint = os.environ.get("HOST") or os.environ.get("PM_WEB_HOST") or "127.0.0.1"
     non_local = host_hint not in ("127.0.0.1", "localhost", "::1")
     allow_insecure = os.environ.get(_ALLOW_INSECURE_ENV) == "1"
     if non_local and not allow_insecure:
@@ -40,13 +41,23 @@ if not SECRET_KEY:
         stderr_msg = "[pm-web] WARNING: using an insecure ephemeral development web session secret (explicit local/dev override)."
         warn_code = "insecure_dev_secret_override"
     else:
-        stderr_msg = "[pm-web] WARNING: web session secret not configured; using an ephemeral per-process development secret."
+        stderr_msg = (
+            "[pm-web] WARNING: web session secret not configured; using an ephemeral per-process development secret."
+        )
         warn_code = "insecure_dev_secret"
     print(stderr_msg, file=sys.stderr)
-    logger.warning("web_secret_config_warning code=%s host_scope=%s ephemeral=%s", warn_code, "non_local" if non_local else "local", True)
+    logger.warning(
+        "web_secret_config_warning code=%s host_scope=%s ephemeral=%s",
+        warn_code,
+        "non_local" if non_local else "local",
+        True,
+    )
 elif len(SECRET_KEY) < 32:
     _insecure_dev = True
-    print("[pm-web] WARNING: configured web session secret is short; use a strong random secret in production.", file=sys.stderr)
+    print(
+        "[pm-web] WARNING: configured web session secret is short; use a strong random secret in production.",
+        file=sys.stderr,
+    )
     logger.warning("web_secret_config_warning code=short_secret_key")
 
 _serializer = URLSafeSerializer(SECRET_KEY, salt="pm-session")
@@ -77,6 +88,7 @@ def rate_limit_config(scope: str = "unlock") -> tuple[int, int]:
         _env_int("PM_WEB_UNLOCK_RATE_LIMIT", 8, min_v=1, max_v=1000),
         _env_int("PM_WEB_UNLOCK_RATE_WINDOW_SEC", 300, min_v=10, max_v=86400),
     )
+
 
 _WEB_UNLOCK_LAST = "web_unlock_last"
 _LOGIN_ATTEMPTS: dict[str, list[float]] = {}
@@ -220,7 +232,6 @@ def service_password(request: Request, form, *, allow_session_sentinel: bool = F
     return pw
 
 
-
 _WEB_USER_KEY = "auth_user"
 
 
@@ -280,6 +291,7 @@ def current_actor(request: Request) -> dict[str, Any]:
 
 # --- RBAC/auth migration scaffolding (P4, additive, non-breaking defaults) ---
 
+
 def web_auth_mode() -> str:
     """Auth enforcement mode for migration path.
     - legacy (default): preserve existing unlock/session behavior.
@@ -313,7 +325,6 @@ def require_authenticated_user(request: Request) -> None:
     if is_strict_rbac():
         raise HTTPException(status_code=403, detail="Authenticated user session required (strict auth mode)")
     # legacy/hybrid: no-op
-
 
 
 def has_permission(request: Request, permission: str) -> bool:
@@ -350,7 +361,12 @@ def has_permission(request: Request, permission: str) -> bool:
             return True
         # allow if namespace/action prefix matches
         for c in caps:
-            if perm == c or perm.startswith(c.rstrip("*")) or (c.endswith(".*") and perm.startswith(c[:-1])) or (c.endswith(".read") and perm == c):
+            if (
+                perm == c
+                or perm.startswith(c.rstrip("*"))
+                or (c.endswith(".*") and perm.startswith(c[:-1]))
+                or (c.endswith(".read") and perm == c)
+            ):
                 return True
         # also allow generic read-only checks to be safe
         if perm.endswith(".read") or perm.endswith(":read"):
@@ -365,7 +381,6 @@ def require_permission(request: Request, permission: str) -> None:
     # groundwork: keep behavior compatible; only block if future strict checks deny
     if not has_permission(request, permission):
         raise HTTPException(status_code=403, detail="Permission denied")
-
 
 
 def _session_timeout_minutes() -> int:
@@ -443,7 +458,9 @@ def clear_attempts(bucket: dict[str, list[float]], key: str) -> None:
     bucket.pop(key, None)
 
 
-def enforce_auth_rate_limit(request: Request, scope: str = "unlock", *, limit: int | None = None, window_sec: int | None = None) -> None:
+def enforce_auth_rate_limit(
+    request: Request, scope: str = "unlock", *, limit: int | None = None, window_sec: int | None = None
+) -> None:
     """Mitigate brute-force on auth/unlock-sensitive endpoints (best-effort, in-process, configurable)."""
     d_limit, d_window = rate_limit_config(scope)
     lim = d_limit if limit is None else max(1, int(limit))
@@ -503,6 +520,7 @@ def require_unlock(request: Request) -> None:
             if ref:
                 try:
                     from urllib.parse import urlsplit
+
                     parts = urlsplit(ref)
                     req_netloc = str(getattr(getattr(request, "url", None), "netloc", "") or "")
                     if parts.scheme in ("", "http", "https") and parts.netloc in ("", req_netloc):
@@ -597,7 +615,14 @@ def redirect(url: str, status: int = 303) -> RedirectResponse:
     # Allow only app-local absolute paths (no scheme/netloc/backslashes/control chars)
     parts = urlsplit(ref)
     safe_path = "/"
-    if ref and not parts.scheme and not parts.netloc and not ref.startswith("//") and "\\" not in ref and ref.startswith("/"):
+    if (
+        ref
+        and not parts.scheme
+        and not parts.netloc
+        and not ref.startswith("//")
+        and "\\" not in ref
+        and ref.startswith("/")
+    ):
         path = parts.path or "/"
         if not path.startswith("/"):
             path = "/" + path
@@ -611,4 +636,6 @@ def redirect(url: str, status: int = 303) -> RedirectResponse:
                 candidate += "#" + parts.fragment
             if _re.fullmatch(r"/[A-Za-z0-9._~\-/%?=&#,+@:;!]*", candidate):
                 safe_path = candidate
-    return RedirectResponse(url=safe_path, status_code=status)  # codeql[py/url-redirection] local path allowlist/sanitized
+    return RedirectResponse(
+        url=safe_path, status_code=status
+    )  # codeql[py/url-redirection] local path allowlist/sanitized

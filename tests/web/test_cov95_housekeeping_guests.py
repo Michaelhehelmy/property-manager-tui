@@ -23,13 +23,13 @@ def test_housekeeping_overdue_parse_branches(client, monkeypatch):
     past_dt = now - timedelta(days=2)
     future_dt = now + timedelta(days=2)
     tasks = [
-        {"id": 1, "status": "pending", "due_at": past_dt.strftime("%Y-%m-%d %H:%M")},       # overdue fmt 1
-        {"id": 2, "status": "in_progress", "due_at": past_dt.strftime("%Y-%m-%d %H:%M:%S")}, # overdue fmt 2
-        {"id": 3, "status": "pending", "due_at": past_dt.strftime("%Y-%m-%d")},              # overdue fmt 3
-        {"id": 4, "status": "pending", "due_at": future_dt.strftime("%Y-%m-%d %H:%M")},      # not overdue
-        {"id": 5, "status": "completed", "due_at": past_dt.strftime("%Y-%m-%d")},            # ignored by status
-        {"id": 6, "status": "pending", "due_at": "not-a-date"},                              # parse fail path
-        {"id": 7, "status": "in_progress", "due_at": None},                                   # no due_at
+        {"id": 1, "status": "pending", "due_at": past_dt.strftime("%Y-%m-%d %H:%M")},  # overdue fmt 1
+        {"id": 2, "status": "in_progress", "due_at": past_dt.strftime("%Y-%m-%d %H:%M:%S")},  # overdue fmt 2
+        {"id": 3, "status": "pending", "due_at": past_dt.strftime("%Y-%m-%d")},  # overdue fmt 3
+        {"id": 4, "status": "pending", "due_at": future_dt.strftime("%Y-%m-%d %H:%M")},  # not overdue
+        {"id": 5, "status": "completed", "due_at": past_dt.strftime("%Y-%m-%d")},  # ignored by status
+        {"id": 6, "status": "pending", "due_at": "not-a-date"},  # parse fail path
+        {"id": 7, "status": "in_progress", "due_at": None},  # no due_at
     ]
     monkeypatch.setattr(hk.services, "list_housekeeping_tasks", lambda status="": tasks)
     monkeypatch.setattr(hk.services, "list_room_blocks", lambda status="active": [])
@@ -75,9 +75,20 @@ def test_guests_helper_branches_and_routes(client, monkeypatch):
         inv_id = None
         try:
             from app_core import services as svc
+
             inv_id = svc.add_inventory_item(
-                "GInv", "General", "ea", 0, 1.0, 2.0, 0, 0, "testpass",
-                sku="GSKU", barcode="GBAR", track_batches=1,
+                "GInv",
+                "General",
+                "ea",
+                0,
+                1.0,
+                2.0,
+                0,
+                0,
+                "testpass",
+                sku="GSKU",
+                barcode="GBAR",
+                track_batches=1,
             )
         except Exception:
             try:
@@ -133,9 +144,16 @@ def test_guests_helper_branches_and_routes(client, monkeypatch):
         "all_payments": [],
         "top_items_overall": [],
         "stats": {
-            "stays_total": 0, "completed_stays": 0, "total_nights": 0,
-            "total_charges": 0, "pos_gross_total": 0, "total_paid": 0, "total_outstanding": 0,
-            "first_visit": None, "last_visit": None, "favorite_room": None,
+            "stays_total": 0,
+            "completed_stays": 0,
+            "total_nights": 0,
+            "total_charges": 0,
+            "pos_gross_total": 0,
+            "total_paid": 0,
+            "total_outstanding": 0,
+            "first_visit": None,
+            "last_visit": None,
+            "favorite_room": None,
         },
     }
     monkeypatch.setattr(gr.services, "get_guest_portfolio", lambda _gid: portfolio)
