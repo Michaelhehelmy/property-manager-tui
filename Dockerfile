@@ -21,7 +21,10 @@ RUN apt-get update \
 # Install runtime deps first for better layer caching
 COPY requirements.txt requirements/ci-bootstrap-tools.txt requirements/runtime-linux-cp312.txt ./
 RUN python -m pip install --require-hashes -r ci-bootstrap-tools.txt \
-    && python -m pip install --require-hashes -r runtime-linux-cp312.txt
+    && python -m pip install --require-hashes -r runtime-linux-cp312.txt \
+    && python -m pip install --force-reinstall --no-deps --require-hashes -r ci-bootstrap-tools.txt \
+    && find /usr/local -type d \( -name 'setuptools-70.3.0*' -o -name 'setuptools-70.3.0.dist-info' \) -exec rm -rf {} + 2>/dev/null || true \
+    && find /usr/local -type f -name '*setuptools*70.3.0*' -delete 2>/dev/null || true
 
 # Copy application source
 COPY pyproject.toml main.py launcher.py ./

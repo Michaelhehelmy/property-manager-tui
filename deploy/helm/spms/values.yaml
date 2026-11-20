@@ -2,7 +2,8 @@ replicaCount: 1
 
 image:
   repository: ghcr.io/michaelhehelmy/spms
-  tag: "latest"
+  # Defaults to Chart appVersion when empty (avoids :latest)
+  tag: ""
   pullPolicy: IfNotPresent
 
 imagePullSecrets: []
@@ -18,11 +19,20 @@ podLabels: {}
 
 podSecurityContext:
   fsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
 
 securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
   runAsNonRoot: true
   runAsUser: 10001
   runAsGroup: 10001
+  capabilities:
+    drop:
+      - ALL
+  seccompProfile:
+    type: RuntimeDefault
 
 service:
   type: ClusterIP
@@ -39,7 +49,13 @@ ingress:
           pathType: Prefix
   tls: []
 
-resources: {}
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
 
 persistence:
   enabled: true

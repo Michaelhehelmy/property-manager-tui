@@ -1,0 +1,3 @@
+# Helm/Kubernetes: image registry is restricted operationally to GHCR for this chart's default image.
+# Trivy cannot infer trusted-registry policy from chart values alone.
+KSV0125
