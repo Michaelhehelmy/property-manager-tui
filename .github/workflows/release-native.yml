@@ -43,8 +43,7 @@ jobs:
           python -m pip install --require-hashes -r requirements/ci-bootstrap-tools.txt
           if [ "${{ matrix.platform }}" = "linux" ]; then
             python -m pip install --require-hashes -r requirements/runtime-linux-cp312.txt
-            # Nuitka build deps file may pull unpinned/unhashed transitive deps (e.g. imageio -> numpy/pillow).
-            python -m pip install -r requirements/nuitka-linux-cp312.txt
+            python -m pip install --require-hashes -r requirements/nuitka-linux-cp312.txt
           else
             python -m pip install -r requirements.txt
             python -m pip install "nuitka==4.3.5" "ordered-set==4.1.0" "zstandard==0.25.0" "imageio==2.38.2"
