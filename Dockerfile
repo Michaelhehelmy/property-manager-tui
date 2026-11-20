@@ -22,9 +22,10 @@ RUN apt-get update \
 COPY requirements.txt requirements/ci-bootstrap-tools.txt requirements/runtime-linux-cp312.txt ./
 RUN python -m pip install --require-hashes -r ci-bootstrap-tools.txt \
     && python -m pip install --require-hashes -r runtime-linux-cp312.txt \
+    && python -m pip install --force-reinstall --require-hashes -r runtime-linux-cp312.txt \
     && python -m pip install --force-reinstall --no-deps --require-hashes -r ci-bootstrap-tools.txt \
-    && find /usr/local -type d \( -name 'setuptools-70.3.0*' -o -name 'setuptools-70.3.0.dist-info' \) -exec rm -rf {} + 2>/dev/null || true \
-    && find /usr/local -type f -name '*setuptools*70.3.0*' -delete 2>/dev/null || true
+    && find /usr /opt /home 2>/dev/null \( -path '*setuptools-70.3.0*' -o -path '*certifi-2026.6.17*' -o -path '*msgpack-1.1.2*' -o -path '*urllib3-2.7.0*' \) -exec rm -rf {} + 2>/dev/null || true \
+    && python -m pip check || true
 
 # Copy application source
 COPY pyproject.toml main.py launcher.py ./
