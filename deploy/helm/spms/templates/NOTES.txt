@@ -1,0 +1,19 @@
+SPMS has been deployed.
+
+1. Get the application URL:
+{{- if .Values.ingress.enabled }}
+  http{{ if .Values.ingress.tls }}s{{ end }}://{{ (index .Values.ingress.hosts 0).host }}/
+{{- else if contains "NodePort" .Values.service.type }}
+  export NODE_PORT=$(kubectl get --namespace {{ .Release.Namespace }} -o jsonpath="{.spec.ports[0].nodePort}" services {{ include "spms.fullname" . }})
+  export NODE_IP=$(kubectl get nodes --namespace {{ .Release.Namespace }} -o jsonpath="{.items[0].status.addresses[0].address}")
+  echo http://$NODE_IP:$NODE_PORT
+{{- else if contains "LoadBalancer" .Values.service.type }}
+  kubectl get --namespace {{ .Release.Namespace }} svc {{ include "spms.fullname" . }}
+{{- else }}
+  kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "spms.fullname" . }} 8000:{{ .Values.service.port }}
+  echo http://127.0.0.1:8000
+{{- end }}
+
+IMPORTANT (SQLite): this chart runs a single replica with `--workers 1` and Recreate strategy.
+Persist data with `persistence.enabled=true` and set a strong `PM_WEB_SECRET_KEY` (via secret.webSecretKey or existingSecret).
+Use HTTPS/TLS at ingress/reverse proxy for non-local access.

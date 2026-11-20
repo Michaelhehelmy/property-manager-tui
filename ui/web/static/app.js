@@ -69,4 +69,12 @@
   document.body.addEventListener('htmx:afterRequest', function () { markLoading(false); });
   document.body.addEventListener('htmx:responseError', function () { markLoading(false); });
   window.addEventListener('pageshow', setActiveNav);
+
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('/static/sw.js', { scope: '/' }).catch(function () {
+        // Ignore registration failures (e.g. non-HTTPS contexts where SW is unsupported)
+      });
+    });
+  }
 })();

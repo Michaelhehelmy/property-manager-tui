@@ -1,0 +1,63 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/michaelhehelmy/spms
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: false
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  fsGroup: 10001
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+
+service:
+  type: ClusterIP
+  port: 8000
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: spms.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+resources: {}
+
+persistence:
+  enabled: true
+  existingClaim: ""
+  accessModes:
+    - ReadWriteOnce
+  size: 5Gi
+  storageClass: ""
+
+env:
+  PM_WEB_COOKIE_SECURE: "1"
+  # Set PM_WEB_SECRET_KEY via secret.existingSecret or secret.webSecretKey for non-local deployments
+
+secret:
+  create: true
+  existingSecret: ""
+  webSecretKey: "" # set to a strong random value (or use existingSecret)
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

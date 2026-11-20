@@ -225,9 +225,19 @@ python -m pip install -r requirements.txt -r requirements-dev.txt && python -m p
 
 See `docs/TROUBLESHOOTING.md`.
 
+## Packaging & install formats
+
+- **Python package (wheel/sdist):** `pyproject.toml` builds distributable packages including web UI assets (`ui/web/templates`, `ui/web/static`, PWA manifest/icons/service worker). CI workflow: `.github/workflows/release-python-package.yml` (artifacts on tags/dispatch; optional PyPI publish via `PYPI_API_TOKEN`).
+- **Container image (GHCR):** multi-arch image published by `.github/workflows/release-container.yml` to `ghcr.io/michaelhehelmy/spms` (run with `--workers 1`, persistent `PM_DATA_DIR`).
+- **Native binaries:** Nuitka builds via `.github/workflows/release-native.yml` (Windows `.exe`, Linux binary/AppImage path, macOS `.dmg`). See `docs/NATIVE_BUILDS.md`.
+- **PWA / installable web app:** manifest, icons, and a minimal service worker are served from `ui/web/static/` for “Add to Home Screen / Install app” (best over HTTPS for non-localhost).
+- **Kubernetes/Helm:** chart skeleton in `deploy/helm/spms` (single-replica, SQLite-safe `--workers 1`, persistent data volume, probes).
+- **Planned/optional:** `.deb`/RPM + systemd appliance packages, Windows/macOS installers, Android WebView/TWA wrapper. Details and roadmap: `docs/PACKAGING.md`.
+
 ## More documentation
 
 - `assistant.md` — assistant capabilities, grounded/read-only behavior, evolution and plan.
+- `docs/PACKAGING.md` — packaging/distribution formats, modularization boundaries, and implementation roadmap/status.
 - `docs/NATIVE_BUILDS.md` — Nuitka/native standalone build and release packaging guidance (GitHub Releases assets auto-detected by landing page). Landing page can also accept uploaded JSON issue reports via Cloudflare Pages Function (`functions/api/report.js`) when configured with secrets (e.g. `REPORT_GITHUB_TOKEN`, optional `REPORT_GITHUB_REPO`/`REPORT_GITHUB_LABELS`) to create GitHub issues for maintainers.
 - `docs/PRODUCTION_ROADMAP.md` — phased P0–P3 production hardening/operations roadmap and checklist.
 - `docs/DEPLOYMENT.md` — local/LAN/remote deployment, reverse proxy + HTTPS, systemd/Docker guidance.
