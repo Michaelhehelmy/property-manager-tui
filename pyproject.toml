@@ -56,6 +56,9 @@ dev = [
   "httpx>=0.24",
   "pytest-cov>=4.0",
   "ruff>=0.8.0",
+  "pytest-timeout>=2.3",
+  "pytest-randomly>=3.15",
+  "pytest-xdist>=3.5",
 ]
 # Label/barcode printing uses configured system/default printers (and text/PDF exports);
 # no extra Python deps required by default.
@@ -114,3 +117,8 @@ ignore = []
 "tests/**" = ["F401", "F841"]
 "scripts/**" = ["F401", "F841"]
 "ui/**" = ["F401", "F841"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"

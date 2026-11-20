@@ -58,7 +58,10 @@ trivy-report*
 bandit-report*
 bandit*.json
 bandit*.sarif
-semgrep*
+semgrep.sarif
+semgrep*.sarif
+semgrep-report*
+semgrep-results*
 safety-report*
 pip-audit*.json
 syft*.json
