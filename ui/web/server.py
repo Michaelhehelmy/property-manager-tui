@@ -213,7 +213,7 @@ def create_app(*, init_db: bool = True, run_startup: bool = True) -> FastAPI:
             logger.debug("web_request_log_failed", exc_info=True)
         return response
 
-    from ui.web.routes import accounting, assistant, dashboard, files, guests, housekeeping, pos_inventory, reports_analytics, reservations, settings_branding, support
+    from ui.web.routes import accounting, dashboard, files, guests, housekeeping, pos_inventory, reports_analytics, reservations, settings_branding, support
 
     app.include_router(dashboard.router)
     app.include_router(reservations.router)
@@ -222,7 +222,11 @@ def create_app(*, init_db: bool = True, run_startup: bool = True) -> FastAPI:
     app.include_router(housekeeping.router)
     app.include_router(accounting.router)
     app.include_router(reports_analytics.router)
-    app.include_router(assistant.router)
+    try:
+        from ui.web.routes import assistant as assistant_routes
+        app.include_router(assistant_routes.router)
+    except Exception:
+        logger.warning("Assistant module unavailable; /assistant routes disabled", exc_info=True)
     app.include_router(settings_branding.router)
     app.include_router(files.router)
     app.include_router(support.router)

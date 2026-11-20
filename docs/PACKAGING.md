@@ -21,8 +21,8 @@ This document defines the practical packaging and modularization strategy for **
 | **Native binaries (Nuitka)** | ✅ Existing | `.github/workflows/release-native.yml` and `docs/NATIVE_BUILDS.md` (Windows `.exe`, Linux binary/AppImage path, macOS `.dmg`). |
 | **PWA installability** | ✅ Implemented/Existing | `ui/web/static/manifest.webmanifest`, icons, base template meta/links, and minimal service worker (`ui/web/static/sw.js`) registered for static app-shell caching (network-first for navigations; no caching of transactional POST/HTML data). |
 | **Android app package** | ✅ Implemented (scaffold) | `deploy/mobile/android-webview/` minimal WebView wrapper app pointing to configurable SPMS URL (reuses web UI). Can be extended to TWA/signing/distribution. |
-| **Linux OS packages (`.deb`)** | ✅ Implemented (scaffold) | `deploy/packaging/deb/build-deb.sh` builds a `.deb` installing app under `/opt/spms` with `spms-web` systemd unit and `/etc/spms/spms.env`. RPM planned. |
-| **Windows/macOS installers** | Planned | MSI/Inno Setup for Windows, signed/notarized `.pkg`/improved `.dmg` for macOS. |
+| **Linux OS packages (`.deb` / `.rpm`)** | ✅ Implemented (scaffold) | `.deb`: `deploy/packaging/deb/build-deb.sh` (installs under `/opt/spms`, `spms-web` systemd unit, `/etc/spms/spms.env`). `.rpm`: `deploy/packaging/rpm/build-rpm.sh` + `SPECS/spms.spec`. |
+| **Windows/macOS installers** | Planned (external tooling/signing) | MSI/Inno Setup for Windows, signed/notarized `.pkg`/improved `.dmg` for macOS. |
 | **Helm chart (Kubernetes)** | ✅ Implemented (skeleton) | `deploy/helm/spms` chart for single-replica SQLite-safe deployment (Recreate strategy, `--workers 1`, PVC, health/readiness probes, secret/config). |
 
 ## Logical implementation order
@@ -39,7 +39,7 @@ This document defines the practical packaging and modularization strategy for **
 
 - **Core (`app_core`)**: domain logic, DB/migrations, config/paths, services, integrity/backup primitives, assistant core interfaces/tools.
 - **Web UI (`ui/web`)**: FastAPI routes, templates/static/PWA assets, web auth/session/CSRF integration; depends on core.
-- **Optional assistant capabilities**: base assistant remains lightweight; ML/LLM runtime/models shipped as opt-in extras (`assistant-ml`, `assistant-llm`) and/or external model/data packages.
+- **Optional assistant capabilities**: base assistant remains lightweight; ML/LLM runtime/models shipped as opt-in extras (`assistant-ml`, `assistant-llm`) and/or external model/data packages. Web server now loads assistant routes best-effort (if unavailable, other routes still start).
 - **Optional hardware/integration adapters**: printing (file/CUPS/raw TCP), barcode/label formats, future device bridges behind small interfaces.
 - **Delivery bundles** (container/native/OS packages/PWA/Android wrapper): package selected components per target; do not duplicate business logic.
 

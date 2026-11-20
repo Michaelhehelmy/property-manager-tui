@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Build a simple .deb package scaffold for SPMS (web UI).
 # Usage: ./deploy/packaging/deb/build-deb.sh [version] [arch]
-# Example: ./deploy/packaging/deb/build-deb.sh 1.2.0 amd64
+# Example: ./deploy/packaging/deb/build-deb.sh 1.2.1 amd64
 # Notes:
 # - Copies application source into /opt/spms (excluding dev/runtime data).
 # - Does NOT bundle a Python venv or install pip deps; create venv and install requirements on target.
@@ -12,7 +12,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 PKG_ROOT="$ROOT_DIR/deploy/packaging/deb/spms"
 BUILD_DIR="$ROOT_DIR/dist/deb"
-VERSION="${1:-${SPMS_VERSION:-1.2.0}}"
+VERSION="${1:-${SPMS_VERSION:-1.2.1}}"
 ARCH="${2:-amd64}"
 PKG_NAME="spms"
 OUT_FILE="$BUILD_DIR/${PKG_NAME}_${VERSION}_${ARCH}.deb"
