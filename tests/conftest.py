@@ -1,7 +1,13 @@
 """Fixtures: fresh DB + password per test (restructured package)."""
 
+import os
 import sys
 from pathlib import Path
+
+# Ensure web session signing key is stable across test collection/import order.
+# ui.web.deps initializes its serializer at import time; some non-web tests
+# import ui.web modules, so set this early to avoid key mismatches.
+os.environ.setdefault("PM_WEB_SECRET_KEY", "test-secret")
 
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "src"

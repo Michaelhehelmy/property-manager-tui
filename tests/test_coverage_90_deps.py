@@ -4,6 +4,9 @@ import os
 import time
 from types import SimpleNamespace
 
+# Ensure stable key if this module is collected/imported before web conftest.
+os.environ.setdefault("PM_WEB_SECRET_KEY", "test-secret")
+
 import pytest
 from fastapi import HTTPException
 from starlette.requests import Request
