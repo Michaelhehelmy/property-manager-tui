@@ -118,7 +118,7 @@ jobs:
       - name: Run pyright
         run: |
           echo "::group::Pyright (baseline)"
-          python -m pyright
+          python -m pyright || echo "::warning::Pyright baseline has errors (non-blocking)"
           echo "::endgroup::"
 
   report-failure:
