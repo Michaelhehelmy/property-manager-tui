@@ -1133,7 +1133,7 @@ def get_all_guests(search=""):
         rows = (
             db.connect()
             .execute(
-                base_sql.format(where=""),
+                base_sql.format(where=""),  # nosemgrep: python.lang.security.audit.formatted-sql-query.formatted-sql-query - where clause is hardcoded internal string, params remain parameterized
             )
             .fetchall()
         )

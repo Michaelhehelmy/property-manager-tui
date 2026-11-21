@@ -177,14 +177,14 @@ def _table_exists(conn, name: str) -> bool:
 
 
 def _table_columns(conn, name: str) -> list[str]:
-    return [r[1] for r in conn.execute(f"PRAGMA table_info({name})").fetchall()]
+    return [r[1] for r in conn.execute(f"PRAGMA table_info({name})").fetchall()]  # nosemgrep: python.lang.security.audit.formatted-sql-query.formatted-sql-query - internal table name identifier, not user input
 
 
 def _ensure_column(conn, table: str, col: str, decl: str, cols: list[str] | None = None):
     if cols is None:
         cols = _table_columns(conn, table)
     if col not in cols:
-        conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")  # nosemgrep: python.lang.security.audit.formatted-sql-query.formatted-sql-query - internal schema identifiers/constants, not user input
         cols.append(col)
     return cols
 
@@ -1500,7 +1500,7 @@ def migrate():
         if version == 0:
             try:
                 conn.executescript(_SCHEMA)
-                conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+                conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")  # nosemgrep: python.lang.security.audit.formatted-sql-query.formatted-sql-query - SCHEMA_VERSION is internal int constant
                 ensure_runtime_indexes(conn)
                 _record_migration_meta(conn, status="created", from_version=0, to_version=SCHEMA_VERSION)
             except Exception:
@@ -1547,7 +1547,7 @@ def migrate():
                     _migrate_to_20(conn)
                 if version < 21:
                     _migrate_to_21(conn)
-                conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+                conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")  # nosemgrep: python.lang.security.audit.formatted-sql-query.formatted-sql-query - SCHEMA_VERSION is internal int constant
                 ensure_runtime_indexes(conn)
                 _record_migration_meta(conn, status="upgraded", from_version=from_version, to_version=SCHEMA_VERSION)
                 try:
