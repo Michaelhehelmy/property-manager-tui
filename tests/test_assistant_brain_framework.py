@@ -472,3 +472,73 @@ def test_workflow_engine_more_branches():
     assert eng.advance(brain, st2).status == "completed"
     step = eng.current_step(brain, st2)
     assert step is None or isinstance(step, dict)
+
+
+def test_brain_load_validation_warning_and_cache(tmp_path, monkeypatch):
+    p = tmp_path / "brain.json"
+    # invalid version triggers validation warning path but normalize still returns brain
+    p.write_text(json.dumps({"version": 999, "agent": {"name": "X"}, "tools": [], "skills": [], "knowledge": [], "workflows": {}}), encoding="utf-8")
+    monkeypatch.setattr(brain_mod, "BRAIN_PATH", p)
+    monkeypatch.setattr(brain_mod, "_BRAIN_CACHE", None)
+    monkeypatch.setattr(brain_mod, "_BRAIN_MTIME", None)
+    b = load_brain(path=p, tools={}, force=True)
+    assert b.name == "X"
+    b2 = load_brain(path=p, tools={}, force=False)
+    assert b2 is b
+
+
+def test_executor_scoring_and_template_paths(tmp_path, monkeypatch):
+    tools = _sample_tools()
+    reg = ToolRegistry()
+    for tid, spec in tools.items():
+        reg.register(tid, spec["fn"], meta={"parameters": spec.get("parameters", {})})
+    reg.register("ctx_tool", lambda args=None, ctx=None: {"ok": True, "ctx": ctx, "args": args})
+    monkeypatch.setattr(executor, "REGISTRY", reg)
+    p = tmp_path / "brain.json"
+    b = build_default_brain(tools)
+    b["tools"].append({"id":"ctx_tool","type":"native","handler":"ctx_tool","enabled":True,"read_only":True,"args_schema":{"type":"object","properties":{}}})
+    b["knowledge"] = [
+        {"id":"k1","title":"Same","content":"Same","tags":[],"keywords":[]},
+        {"id":"k2","title":"Backup guide","content":"restore backup db","tags":["backup"],"keywords":["restore"]},
+    ]
+    b["tools"].append({"id":"comp4","type":"composite","enabled":True,"read_only":True,"steps":[
+        {"tool":"ctx_tool","args":{"v":"${ctx.user}","missing":"${args.nope}"}},
+        "bad",
+        {"tool":"echo_tool","args":"bad"}
+    ]})
+    save_brain(b, path=p)
+    monkeypatch.setattr(brain_mod, "BRAIN_PATH", p)
+    monkeypatch.setattr(brain_mod, "_BRAIN_CACHE", None)
+    monkeypatch.setattr(brain_mod, "_BRAIN_MTIME", None)
+    br = load_brain(path=p, tools=tools, force=True)
+    # scoring paths
+    r1 = executor.search_knowledge("Same", brain=br)
+    assert r1["ok"] and r1["count"] >= 1
+    r2 = executor.search_knowledge("backup restore db", brain=br)
+    assert r2["ok"]
+    # composite template branches
+    res = executor.execute("comp4", {}, brain=br, ctx={"user": "u1"})
+    assert res["ok"] is True
+    # _template_value direct
+    assert executor._template_value({"a":["${args.x}"]}, args={"x":1}, steps={}, ctx={}) == {"a":[1]}
+
+
+def test_workflow_engine_current_step_and_failures():
+    eng = WorkflowEngine()
+    brain = {"skills":[{"id":"wf","entry_state":"a","states":{"a":{"gate":"always_pass"}}}]}
+    st = eng.start(brain, "wf")
+    step = eng.current_step(brain, st)
+    assert step and step["name"] == "a"
+    assert eng.current_step({"skills":[]}, st) is None
+    st.current_state = "missing"
+    assert eng.current_step(brain, st) is None
+    st2 = eng.start(brain, "wf")
+    st2 = eng.advance(brain, st2)
+    assert st2.status == "failed"  # no transition
+    st3 = eng.start(brain, "wf")
+    st3.current_state = "missing"
+    st3 = eng.advance(brain, st3)
+    assert st3.status == "failed"
+    st4 = eng.start(brain, "wf")
+    st4.status = "completed"
+    assert eng.advance(brain, st4).status == "completed"
