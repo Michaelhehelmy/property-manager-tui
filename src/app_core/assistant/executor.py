@@ -91,13 +91,16 @@ def _validate_args_basic(args_schema: dict[str, Any] | None, args: dict[str, Any
         if not isinstance(p, dict):
             continue
         expected = p.get("type")
+        if not isinstance(expected, str):
+            continue
         py_t = type_map.get(expected)
-        if py_t and val is not None and not isinstance(val, py_t):
-            # allow int for number
-            if expected == "integer" and isinstance(val, bool):
-                errors.append(f"arg {key} must be integer")
-            elif expected != "number":
+        if py_t and val is not None:
+            if expected in {"integer", "number"} and isinstance(val, bool):
                 errors.append(f"arg {key} must be {expected}")
+            elif not isinstance(val, py_t):
+                errors.append(f"arg {key} must be {expected}")
+            elif expected == "integer" and isinstance(val, bool):
+                errors.append(f"arg {key} must be integer")
     return errors
 
 

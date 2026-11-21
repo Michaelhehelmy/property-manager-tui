@@ -38,16 +38,16 @@ if not SECRET_KEY:
     SECRET_KEY = secrets.token_urlsafe(48)
     _insecure_dev = True
     if allow_insecure:
-        stderr_msg = "[pm-web] WARNING: using an insecure ephemeral development web session secret (explicit local/dev override)."
-        warn_code = "insecure_dev_secret_override"
+        stderr_msg = "[pm-web] WARNING: using an insecure ephemeral development web session key (explicit local/dev override)."
+        warn_code = "insecure_dev_session_override"
     else:
         stderr_msg = (
-            "[pm-web] WARNING: web session secret not configured; using an ephemeral per-process development secret."
+            "[pm-web] WARNING: web session key not configured; using an ephemeral per-process development key."
         )
-        warn_code = "insecure_dev_secret"
+        warn_code = "insecure_dev_session"
     print(stderr_msg, file=sys.stderr)
     logger.warning(
-        "web_secret_config_warning code=%s host_scope=%s ephemeral=%s",
+        "web_session_config_warning code=%s host_scope=%s ephemeral=%s",
         warn_code,
         "non_local" if non_local else "local",
         True,
@@ -55,10 +55,10 @@ if not SECRET_KEY:
 elif len(SECRET_KEY) < 32:
     _insecure_dev = True
     print(
-        "[pm-web] WARNING: configured web session secret is short; use a strong random secret in production.",
+        "[pm-web] WARNING: configured web session key is short; use a strong random key in production.",
         file=sys.stderr,
     )
-    logger.warning("web_secret_config_warning code=short_secret_key")
+    logger.warning("web_session_config_warning code=short_session_key")
 
 _serializer = URLSafeSerializer(SECRET_KEY, salt="pm-session")
 

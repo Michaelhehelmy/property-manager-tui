@@ -28,7 +28,7 @@ def _svc_attr(name, default=None):
             return getattr(svc, name)
     except Exception:
         pass
-    return globals().get(name, default)
+    return globals().get(name, default)  # nosemgrep: python.lang.security.dangerous-globals-use.dangerous-globals-use - intentional internal service attribute lookup
 
 
 BASE_DIR = paths.BASE_DIR

@@ -10,6 +10,7 @@
         android:supportsRtl="true"
         android:usesCleartextTraffic="true"
         android:theme="@style/Theme.SPMSWebView">
+        <!-- nosemgrep: java.android.security.exported_activity.exported_activity - launcher activity requires exported=true -->
         <activity
             android:name=".MainActivity"
             android:exported="true"

@@ -113,7 +113,9 @@ jobs:
         run: |
           python -m pip install --require-hashes -r requirements/ci-bootstrap-tools.txt
           python -m pip install --require-hashes -r requirements/runtime-linux-cp312.txt -r requirements/dev-linux-cp312.txt
-          python -m pip install "pyright==1.1.414"
+          python -m pip install --require-hashes \
+            --hash=sha256:2a6b4b3298c9eec174c5ed83bd338de6eee82df2992f3e1930e6199d381be36f \
+            pyright==1.1.414
 
       - name: Run pyright
         run: |

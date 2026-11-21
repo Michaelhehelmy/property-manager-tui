@@ -119,7 +119,7 @@ def settings(request: Request, tab: str = "general"):
         req_port = request.url.port or (443 if request.url.scheme == "https" else 80)
     except Exception:
         req_host, req_port = "", 8000
-    lan_urls = [f"http://{ip}:{req_port}" for ip in lan_ips]
+    lan_urls = [f"http://{ip}:{req_port}" for ip in lan_ips]  # nosemgrep: python.django.security.injection.tainted-url-host.tainted-url-host - IPs from local interface detection, not user-controlled request host
     is_local_access = req_host in {"127.0.0.1", "localhost", "::1", ""}
     return render(
         request,

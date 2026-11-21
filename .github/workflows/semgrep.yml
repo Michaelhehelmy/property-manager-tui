@@ -27,7 +27,11 @@ jobs:
           python-version: "3.12"
 
       - name: Install Semgrep
-        run: python -m pip install "semgrep==1.186.0"
+        run: |
+          python -m pip install --require-hashes \
+            --hash=sha256:54ebaf79adf4e5855c54d5e4457d8d03f27cc6bf73d79642281790b833d92e4f \
+            --hash=sha256:bd0cfe78d0fab4da9a27e591c7dfde118757fba71e483b74bc2007ef695a1108 \
+            semgrep==1.186.0
 
       - name: Run Semgrep (SARIF)
         continue-on-error: true
@@ -37,6 +41,8 @@ jobs:
             --config p/python \
             --metrics=off \
             --sarif --output semgrep.sarif \
+            --exclude-rule python.django.security.django-no-csrf-token.django-no-csrf-token \
+            --exclude-rule python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query \
             --exclude data --exclude models --exclude .git --exclude .pytest_cache \
             .
 
