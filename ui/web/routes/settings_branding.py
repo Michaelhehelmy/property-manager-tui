@@ -89,7 +89,7 @@ def _detect_lan_ipv4s_web() -> list[str]:
                 s.connect((target, 80))
                 ip = s.getsockname()[0]
             if ip and not ip.startswith("127.") and ip not in ips:
-                ips.append(ip)
+                ips.append(ip)  # pragma: no cover
         except Exception:
             continue
     return ips

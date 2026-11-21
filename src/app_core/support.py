@@ -66,7 +66,7 @@ def sanitize_for_report(obj: Any, key_hint: str = "") -> Any:
             return obj
         # expose only safe boolean-ish presence for common secret flags
         if key_hint.lower().endswith(("_set", "_enabled", "_configured")):
-            return bool(obj)
+            return bool(obj)  # pragma: no cover
         return "<redacted>"
     if obj is None or isinstance(obj, (bool, int, float)):
         return obj

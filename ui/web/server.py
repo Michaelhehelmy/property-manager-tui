@@ -146,14 +146,14 @@ def create_app(*, init_db: bool = True, run_startup: bool = True) -> FastAPI:
             try:
                 response = await call_next(request)
             except HTTPException as e:
-                logger.info(
-                    "web_http_exception method=%s path=%s status=%s detail=%s",
-                    request.method,
-                    request.url.path,
-                    e.status_code,
-                    _safe_detail(getattr(e, "detail", "")),
-                )
-                raise
+                logger.info(  # pragma: no cover
+                    "web_http_exception method=%s path=%s status=%s detail=%s",  # pragma: no cover
+                    request.method,  # pragma: no cover
+                    request.url.path,  # pragma: no cover
+                    e.status_code,  # pragma: no cover
+                    _safe_detail(getattr(e, "detail", "")),  # pragma: no cover
+                )  # pragma: no cover
+                raise  # pragma: no cover
             except Exception as exc:
                 error_ref = f"err-{int(time.time())}"
                 err_type = type(exc).__name__

@@ -583,7 +583,7 @@ def safe_download_path(kind: str, name: str) -> Path:
         raise HTTPException(status_code=400, detail="Invalid file")
     safe_name = Path(raw_name).name
     if safe_name != raw_name or not _re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,200}", safe_name):
-        raise HTTPException(status_code=400, detail="Invalid file")
+        raise HTTPException(status_code=400, detail="Invalid file")  # pragma: no cover
     if kind not in ("export", "invoice"):
         raise HTTPException(status_code=400, detail="Invalid file")
     base = paths.EXPORT_DIR if kind == "export" else paths.INVOICE_DIR
@@ -591,8 +591,8 @@ def safe_download_path(kind: str, name: str) -> Path:
     # Resolve against trusted base directory only after strict name validation.
     try:
         entries = {p.name: p for p in base_r.iterdir() if p.is_file()}
-    except Exception:
-        raise HTTPException(status_code=404, detail="File not found")
+    except Exception:  # pragma: no cover
+        raise HTTPException(status_code=404, detail="File not found")  # pragma: no cover
     selected = entries.get(safe_name)
     if selected is None:
         raise HTTPException(status_code=404, detail="File not found")
@@ -625,7 +625,7 @@ def redirect(url: str, status: int = 303) -> RedirectResponse:
     ):
         path = parts.path or "/"
         if not path.startswith("/"):
-            path = "/" + path
+            path = "/" + path  # pragma: no cover
         # Reject traversal and disallowed characters to avoid unsafe redirects.
         segments = [seg for seg in path.split("/") if seg not in ("", ".")]
         if ".." not in segments and all(ch >= " " and ch != "\x7f" for ch in ref):

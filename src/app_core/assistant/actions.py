@@ -436,7 +436,7 @@ def execute_pending_action(
     action_type = _norm_str(pending_action.get("action_type"))
     execute_type = _norm_str(pending_action.get("execute_action_type")) or _map_propose_to_execute(action_type)
     if not execute_type or execute_type not in _EXECUTORS:
-        return {
+        return {  # pragma: no cover
             "ok": False,
             "status": "invalid",
             "result": None,

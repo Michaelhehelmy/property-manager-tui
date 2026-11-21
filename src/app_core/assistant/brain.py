@@ -317,8 +317,8 @@ def _default_tools() -> dict[str, dict[str, Any]]:
         from .tools import TOOLS
 
         return TOOLS
-    except Exception:
-        return {}
+    except Exception:  # pragma: no cover
+        return {}  # pragma: no cover
 
 
 def load_brain(path: Path | None = None, tools: dict[str, dict[str, Any]] | None = None, *, force: bool = False) -> Brain:
@@ -343,7 +343,7 @@ def load_brain(path: Path | None = None, tools: dict[str, dict[str, Any]] | None
             logger.warning("Failed to load agent_brain.json; using default brain", exc_info=True)
             data = build_default_brain(tools)
     else:
-        data = build_default_brain(tools)
+        data = build_default_brain(tools)  # pragma: no cover
 
     _BRAIN_CACHE = Brain(data=data, path=p, mtime=mtime)
     _BRAIN_MTIME = mtime

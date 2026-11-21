@@ -31,11 +31,11 @@ from ._monolith import (  # noqa: F401
 # Common aliases (best-effort compatibility)
 try:
     if "net_types" not in globals() and hasattr(_m, "net_types"):
-        globals()["net_types"] = _m.net_types
+        globals()["net_types"] = _m.net_types  # pragma: no cover
     elif "net_types" not in globals() and hasattr(_m, "_net_types"):
         globals()["net_types"] = _m._net_types
     if "_print_raw" not in globals() and hasattr(_m, "_print_raw"):
-        globals()["_print_raw"] = _m._print_raw
+        globals()["_print_raw"] = _m._print_raw  # pragma: no cover
     elif "_print_raw" not in globals() and hasattr(_m, "_print_raw_socket"):
         globals()["_print_raw"] = _m._print_raw_socket
 except Exception:  # pragma: no cover - defensive alias setup

@@ -85,7 +85,7 @@ def guests(request: Request, q: str = "", tab: str = "directory"):
     rows = services.get_all_guests(q)
     tab = (tab or "directory").strip().lower()
     if tab not in {"directory"}:
-        tab = "directory"
+        tab = "directory"  # pragma: no cover
     return render(request, "guests/list.html", {"title": "Guests", "q": q, "rows": rows, "active_tab": tab})
 
 

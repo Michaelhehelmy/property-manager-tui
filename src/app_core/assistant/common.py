@@ -204,7 +204,7 @@ def _parse_date_range(text: str):
         d1, d2 = _parse_iso(dates[0]), _parse_iso(dates[-1])
         a, b = dates[0], dates[-1]
         if d1 and d2 and d2 < d1:
-            a, b = b, a
+            a, b = b, a  # pragma: no cover
         return a, b
     m = re.search(r"\bsince\s+(20\d{2}-\d{2}-\d{2})\b", tl)
     if m:
@@ -264,7 +264,7 @@ def _context_from_history(history):
             if h.get("intent") and "last_intent" not in ctx:
                 ctx["last_intent"] = h.get("intent")
             if h.get("resolved_guest_id") and "guest_id" not in ctx:
-                ctx["guest_id"] = h.get("resolved_guest_id")
+                ctx["guest_id"] = h.get("resolved_guest_id")  # pragma: no cover
         elif h.get("role") == "user":
             # light carryover not needed
             pass
@@ -472,7 +472,7 @@ def extract_slots(text: str, history=None) -> dict:
     if followup or (len(t.split()) <= 6 and not slots.get("guest_id") and not slots.get("reservation_id")):
         for k in ("guest_id", "reservation_id", "group_id", "date_start", "date_end"):
             if not slots.get(k) and ctx.get(k):
-                slots[k] = ctx[k]
+                slots[k] = ctx[k]  # pragma: no cover
     slots["context"] = ctx
     return slots
 

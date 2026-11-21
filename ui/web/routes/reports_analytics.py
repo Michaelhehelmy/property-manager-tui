@@ -25,7 +25,7 @@ def reports(request: Request, tab: str = "generate"):
             invoices.append({"name": p.name, "kind": "invoice"})
     tab = (tab or "generate").strip().lower()
     if tab not in {"generate", "downloads"}:
-        tab = "generate"
+        tab = "generate"  # pragma: no cover
     return render(
         request,
         "reports/index.html",

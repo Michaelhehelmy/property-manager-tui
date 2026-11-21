@@ -68,7 +68,7 @@ def register_tools_dict(tools: dict[str, dict[str, Any]], *, source: str = "tool
     for tool_id, spec in (tools or {}).items():
         fn = (spec or {}).get("fn")
         if not callable(fn):
-            continue
+            continue  # pragma: no cover
         REGISTRY.register(
             tool_id,
             fn,

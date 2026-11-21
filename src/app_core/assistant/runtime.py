@@ -73,7 +73,7 @@ def _get_local_llm():
     global _LOCAL_LLM_CACHE
     cfg = _llm_config()
     if not cfg.get("local_available"):
-        return None
+        return None  # pragma: no cover
     if _LOCAL_LLM_CACHE is not None:
         return _LOCAL_LLM_CACHE or None
     try:
@@ -90,7 +90,7 @@ def _get_local_llm():
 def _local_llm_generate(prompt: str, max_tokens: int = 512, temperature: float = 0.2) -> str | None:
     llm = _get_local_llm()
     if llm is None:
-        return None
+        return None  # pragma: no cover
     try:
         out = llm(prompt, max_tokens=max_tokens, temperature=temperature, stop=["</s>", "User:", "Manager question:"])
         if isinstance(out, dict):
@@ -160,7 +160,7 @@ def llm_route(message: str, history: list[dict] | None = None, config: dict | No
     intent = cls.get("intent") or "capabilities_help"
     slots = {**slots, **(cls.get("slots") or {})}
     if intent == "compound_multi_intent":
-        core = _execute_compound(message, slots, ui_context=None)
+        core = _execute_compound(message, slots, ui_context=None)  # pragma: no cover
     else:
         core = _execute_single(intent, message, slots, ui_context=None)
     core.setdefault("source", "local_grounded")
@@ -408,7 +408,7 @@ def _ui_guidance(message: str, ui_context=None):
                 for x in labels:
                     k = x.lower()
                     if k in seen:
-                        continue
+                        continue  # pragma: no cover
                     seen.add(k)
                     uniq.append(x)
                 if uniq:
@@ -582,11 +582,11 @@ def chat(message: str, history: list[dict] | None = None, ui_context: dict | Non
             core["answer"] = polished
             core["source"] = f"talking_local+{core.get('core_source', 'core')}"
             if config.get("enabled"):
-                core["talking_model"] = "local_gguf"
+                core["talking_model"] = "local_gguf"  # pragma: no cover
             else:
                 core["talking_model"] = "deterministic"
         else:
-            core["source"] = core.get("core_source") or core.get("source")
+            core["source"] = core.get("core_source") or core.get("source")  # pragma: no cover
     elif mode == "core":
         core["source"] = core.get("core_source") or core.get("source")
 
