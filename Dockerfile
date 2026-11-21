@@ -24,7 +24,7 @@ RUN python -m pip install --require-hashes -r ci-bootstrap-tools.txt \
     && python -m pip install --require-hashes -r runtime-linux-cp312.txt \
     && python -m pip install --force-reinstall --require-hashes -r runtime-linux-cp312.txt \
     && python -m pip install --force-reinstall --no-deps --require-hashes -r ci-bootstrap-tools.txt \
-    && find /usr/local /usr/lib /opt /home /var/lib 2>/dev/null \( -path '*setuptools-70.3.0*' -o -path '*certifi-2026.6.17*' -o -path '*msgpack-1.1.2*' -o -path '*urllib3-2.7.0*' \) -exec rm -rf {} + 2>/dev/null || true \
+    && find / -xdev \( -path '*setuptools-70.3.0*' -o -path '*certifi-2026.6.17*' -o -path '*msgpack-1.1.2*' -o -path '*urllib3-2.7.0*' -o -path '*setuptools==70.3.0*' \) -exec rm -rf {} + 2>/dev/null || true \
     && python -m pip check || true
 
 # Copy application source
