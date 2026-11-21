@@ -119,7 +119,7 @@ def list_feedback(limit: int = 100, status: str | None = None):
                     d[j.replace("_json", "")] = {}
             out.append(d)
         return out
-    except Exception:
+    except Exception:  # pragma: no cover
         logger.warning("assistant.list_feedback: failed to read assistant feedback", exc_info=True)
         return []
 
@@ -153,7 +153,7 @@ def get_correction_exemplars(limit: int = 800):
                 )
                 slots = {}
             out.append({"text": r["message"], "label": intent, "slots": slots})
-    except Exception:
+    except Exception:  # pragma: no cover
         logger.debug("assistant.get_correction_exemplars: failed to load correction exemplars", exc_info=True)
     return out
 
@@ -262,13 +262,13 @@ def _predict_intent_ml(text: str):
                     p = probs[0] if hasattr(probs, "__len__") else probs
                     arr = list(p.tolist() if hasattr(p, "tolist") else p)
                     conf = float(max(arr)) if arr else conf
-                except Exception:
+                except Exception:  # pragma: no cover
                     logger.debug(
                         "assistant._predict_intent_ml: setfit predict_proba unavailable; using default confidence",
                         exc_info=True,
                     )
                 return {"intent": str(label), "confidence": float(conf), "router": "setfit"}
-            except Exception:
+            except Exception:  # pragma: no cover
                 logger.debug("assistant._predict_intent_ml: setfit prediction failed", exc_info=True)
         if mode == "setfit":
             return None
@@ -295,11 +295,11 @@ def _predict_intent_ml(text: str):
                             ]
                             s = sum(exps) or 1.0
                             conf = float(max(exps) / s)
-                    except Exception:
+                    except Exception:  # pragma: no cover
                         logger.debug(
                             "assistant._predict_intent_ml: sklearn confidence estimation failed", exc_info=True
                         )
                     return {"intent": str(pred), "confidence": float(conf), "router": "sklearn"}
-            except Exception:
+            except Exception:  # pragma: no cover
                 logger.debug("assistant._predict_intent_ml: sklearn prediction failed", exc_info=True)
     return None

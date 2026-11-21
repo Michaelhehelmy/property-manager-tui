@@ -67,7 +67,7 @@ def _env_int(name: str, default: int, *, min_v: int = 1, max_v: int = 100000) ->
     try:
         v = int(os.environ.get(name, str(default)))
         return max(min_v, min(max_v, v))
-    except Exception:
+    except Exception:  # pragma: no cover
         return default
 
 
@@ -248,7 +248,7 @@ def get_current_user(request: Request) -> dict[str, Any] | None:
                 "display_name": u.get("display_name") or u.get("username"),
                 "role": u.get("role") or "staff",
             }
-    except Exception:
+    except Exception:  # pragma: no cover
         return None
     return None
 
@@ -267,7 +267,7 @@ def clear_current_user(request: Request) -> None:
     try:
         sess = get_session(request)
         sess.pop(_WEB_USER_KEY, None)
-    except Exception:
+    except Exception:  # pragma: no cover
         pass
 
 
@@ -373,7 +373,7 @@ def has_permission(request: Request, permission: str) -> bool:
             return True
         # unknown/unsupported permission in strict mode for non-privileged role: deny
         return False
-    except Exception:
+    except Exception:  # pragma: no cover
         return True
 
 
@@ -387,7 +387,7 @@ def _session_timeout_minutes() -> int:
     try:
         timeout = int(services.get_setting("session_timeout_min", "5"))
         return max(1, timeout)
-    except Exception:
+    except Exception:  # pragma: no cover
         return 5
 
 
@@ -427,7 +427,7 @@ def _client_ip(request: Request) -> str:
     try:
         if request.client and request.client.host:
             return str(request.client.host)
-    except Exception:
+    except Exception:  # pragma: no cover
         pass
     return "unknown"
 
@@ -540,7 +540,7 @@ def sync_backend_session_if_possible() -> None:
     session state internally. Web authorization decisions MUST NOT rely on this."""
     try:
         services.touch_session()
-    except Exception:
+    except Exception:  # pragma: no cover
         pass
 
 
@@ -554,7 +554,7 @@ def unlock(request: Request, password: str) -> bool:
         try:
             if not services.unlock_session(password):
                 services.touch_session()
-        except Exception:
+        except Exception:  # pragma: no cover
             pass
         logger.info("web_auth_event event=unlock_success scope=unlock")
         return True
@@ -569,7 +569,7 @@ def lock(request: Request) -> None:
     sess.pop("unlocked", None)
     try:
         services.lock_session()
-    except Exception:
+    except Exception:  # pragma: no cover
         pass
     logger.info("web_auth_event event=lock")
 

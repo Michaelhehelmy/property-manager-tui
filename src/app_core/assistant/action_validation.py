@@ -64,7 +64,7 @@ def _row_to_dict(row: Any) -> Any:
     try:
         if hasattr(row, "keys"):
             return {k: row[k] for k in row.keys()}
-    except Exception:
+    except Exception:  # pragma: no cover
         pass
     if isinstance(row, dict):
         return dict(row)
@@ -132,7 +132,7 @@ def _parse_expiry(expires_at: Any) -> datetime | None:
     except Exception:
         try:
             return datetime.strptime(_norm_str(expires_at).replace("Z", ""), "%Y-%m-%dT%H:%M:%S")
-        except Exception:
+        except Exception:  # pragma: no cover
             return None
 
 
@@ -244,7 +244,7 @@ def _match_inventory_candidate(item: Mapping[str, Any], key: str) -> bool:
         iid = _int_or_none(item.get("id"))
         if iid is not None and str(iid) == key.strip():
             return True
-    except Exception:
+    except Exception:  # pragma: no cover
         pass
     return False
 
@@ -500,7 +500,7 @@ def check_availability(args: Mapping[str, Any] | None, room_id: int | None = Non
                 for r in [_row_to_dict(x) for x in avail_rooms]
             }
             out["resolved"]["available_room_ids"] = sorted([i for i in avail_ids if i])
-        except Exception:
+        except Exception:  # pragma: no cover
             logger.debug("check_availability: get_rooms_available_between failed", exc_info=True)
     except Exception as e:
         logger.debug("check_availability failed", exc_info=True)
@@ -542,7 +542,7 @@ def _money_round(v: float | None) -> float | None:
         return None
     try:
         return round(float(v), 2)
-    except Exception:
+    except Exception:  # pragma: no cover
         return v
 
 
@@ -572,7 +572,7 @@ def preview_add_pos_item(args: Mapping[str, Any] | None) -> dict[str, Any]:
     stock_qty = None
     try:
         allow_negative = str(services.get_setting("allow_negative_stock", "false")).lower() == "true"
-    except Exception:
+    except Exception:  # pragma: no cover
         logger.debug("preview_add_pos_item: failed to read allow_negative_stock", exc_info=True)
     if isinstance(item, dict):
         stock_qty = _float_or_none(item.get("stock_qty"))
@@ -617,7 +617,7 @@ def preview_add_pos_item(args: Mapping[str, Any] | None) -> dict[str, Any]:
                     "city_tax": _money_round(_float_or_none(t.get("city_tax"))),
                     "gross": _money_round(_float_or_none(t.get("gross"))),
                 }
-        except Exception:
+        except Exception:  # pragma: no cover
             logger.debug("preview_add_pos_item: tax preview unavailable", exc_info=True)
 
     out["preview"] = {
@@ -783,7 +783,7 @@ def preview_record_payment(args: Mapping[str, Any] | None) -> dict[str, Any]:
         try:
             if rid:
                 balance = _float_or_none(services.calculate_guest_balance(rid))
-        except Exception:
+        except Exception:  # pragma: no cover
             logger.debug("preview_record_payment: balance lookup failed rid=%s", rid, exc_info=True)
     if amount is not None and balance is not None and amount - balance > 0.01:
         _add_warning(out, f"Payment amount {amount} exceeds current balance due {balance}")

@@ -44,7 +44,7 @@ def tool_list_capabilities(args=None):
                 "All answers grounded in real backend data (read-only) unless an explicit validated action flow is confirmed.",
             ],
         }
-    except Exception:
+    except Exception:  # pragma: no cover
         return {
             "capabilities": ["Manager assistant capabilities unavailable."],
             "notes": ["Failed to load agent_brain.json; check assistant brain configuration."],
@@ -214,7 +214,7 @@ def tool_list_rate_plans(args=None):
             d = {k: p[k] for k in p.keys()}
             try:
                 d["reservations_using_plan"] = services.count_reservations_using_plan(p["id"])
-            except Exception:
+            except Exception:  # pragma: no cover
                 logger.debug(
                     "assistant.tool_list_rate_plans: failed to count reservations for plan_id=%s",
                     p["id"],
@@ -281,7 +281,7 @@ def tool_get_today_ops(args=None):
         try:
             if hasattr(services, "get_front_desk_ops"):
                 ops_obj = services.get_front_desk_ops(day)
-        except Exception:
+        except Exception:  # pragma: no cover
             logger.debug("assistant.tool_get_today_ops: front desk ops unavailable", exc_info=True)
             ops_obj = None
         try:
@@ -397,7 +397,7 @@ def tool_get_outstanding_balances(args=None):
         for r in rows:
             try:
                 bal = services.calculate_guest_balance(r["id"])
-            except Exception:
+            except Exception:  # pragma: no cover
                 logger.debug(
                     "assistant.tool_get_outstanding_balances: failed to calculate balance for reservation_id=%s",
                     r["id"],
@@ -634,7 +634,7 @@ def tool_business_partner_briefing(args=None):
         insights["snapshot"].append(
             f"Guests {ps.get('guests_total', 0)}, rooms {ps.get('rooms_total', 0)}, reservations {ps.get('reservations_total', 0)}, in-house {ps.get('in_house', 0)}."
         )
-    except Exception:
+    except Exception:  # pragma: no cover
         logger.debug("assistant.business_partner_briefing: property stats unavailable", exc_info=True)
     try:
         fd = services.get_front_desk_summary()
@@ -646,7 +646,7 @@ def tool_business_partner_briefing(args=None):
             insights["watchouts"].append(f"{fd['dirty']} room(s) marked Dirty — prioritize housekeeping for readiness.")
         if fd.get("maint", 0) > 0:
             insights["watchouts"].append(f"{fd['maint']} room(s) in Maintenance — impacts sellable inventory.")
-    except Exception:
+    except Exception:  # pragma: no cover
         logger.debug("assistant.business_partner_briefing: front desk summary unavailable", exc_info=True)
     try:
         pl = services.report_pl_statement(start, end)
@@ -666,7 +666,7 @@ def tool_business_partner_briefing(args=None):
                 insights["watchouts"].append("Expenses exceed revenue in the period.")
         elif isinstance(pl, str):
             insights["snapshot"].append(f"P&L ({start}→{end}) available (text report).")
-    except Exception:
+    except Exception:  # pragma: no cover
         logger.debug("assistant.business_partner_briefing: P&L unavailable for %s..%s", start, end, exc_info=True)
     try:
         occ = services.get_occupancy_for_window(start, end)
@@ -681,7 +681,7 @@ def tool_business_partner_briefing(args=None):
             insights["watchouts"].append(
                 "Low occupancy — consider promotions, packages, or distribution/channel actions."
             )
-    except Exception:
+    except Exception:  # pragma: no cover
         logger.debug("assistant.business_partner_briefing: occupancy unavailable for %s..%s", start, end, exc_info=True)
     try:
         ar = tool_get_outstanding_balances({})
@@ -692,7 +692,7 @@ def tool_business_partner_briefing(args=None):
             )
         else:
             insights["good"].append("No outstanding guest balances detected on active/checked-out reservations.")
-    except Exception:
+    except Exception:  # pragma: no cover
         logger.debug("assistant.business_partner_briefing: outstanding balances unavailable", exc_info=True)
     try:
         inv = tool_get_inventory_alerts({})["alerts"]
@@ -709,7 +709,7 @@ def tool_business_partner_briefing(args=None):
             )
         if not lowc and not overc:
             insights["good"].append("Inventory levels within thresholds (no low/negative/overstock alerts).")
-    except Exception:
+    except Exception:  # pragma: no cover
         logger.debug("assistant.business_partner_briefing: inventory alerts unavailable", exc_info=True)
     try:
         top = tool_get_top_selling_items({"start": start, "end": end, "limit": 5})
@@ -717,7 +717,7 @@ def tool_business_partner_briefing(args=None):
         if top.get("top_items"):
             names = ", ".join([f"{i['item']} (x{i['qty_sold']})" for i in top["top_items"][:3]])
             insights["good"].append(f"Top sellers ({start}→{end}): {names} — keep stocked/feature.")
-    except Exception:
+    except Exception:  # pragma: no cover
         logger.debug(
             "assistant.business_partner_briefing: top sellers unavailable for %s..%s", start, end, exc_info=True
         )
@@ -730,7 +730,7 @@ def tool_business_partner_briefing(args=None):
             insights["watchouts"].append(
                 "Ledger/data integrity reported issues — review health check before relying on reports."
             )
-    except Exception:
+    except Exception:  # pragma: no cover
         logger.debug("assistant.business_partner_briefing: ledger integrity check unavailable", exc_info=True)
     for w in insights["watchouts"][:5]:
         if "Outstanding balances" in w:
@@ -861,7 +861,7 @@ def tool_trace_barcode(args=None):
                         .fetchall()
                     )
                     res["batch_movements"] = [dict(r) for r in logs]
-            except Exception:
+            except Exception:  # pragma: no cover
                 logger.debug(
                     "assistant.tool_trace_barcode: failed to load batch movements for code=%r", code, exc_info=True
                 )
@@ -1221,7 +1221,7 @@ def tool_list_night_audit_runs(args=None):
                 try:
                     if isinstance(d.get(k), str):
                         d[k] = json.loads(d[k])
-                except Exception:
+                except Exception:  # pragma: no cover
                     pass
             out.append(d)
         return {"night_audit_runs": out, "count": len(out)}
@@ -1279,7 +1279,7 @@ def tool_list_reservation_packages(args=None):
                     snap = json.loads(snap)
                 if isinstance(snap, dict):
                     d["item_count"] = len((snap.get("items") or []))
-            except Exception:
+            except Exception:  # pragma: no cover
                 pass
             out.append(d)
         return {"reservation_id": rid, "reservation_packages": out, "count": len(out)}

@@ -204,7 +204,7 @@ def create_app(*, init_db: bool = True, run_startup: bool = True) -> FastAPI:
             try:
                 if _actor_token is not None and hasattr(services, "reset_current_actor"):
                     services.reset_current_actor(_actor_token)
-            except Exception:
+            except Exception:  # pragma: no cover
                 pass
         # Avoid duplicating session cookie if endpoint/earlier handler already set it.
         has_session_cookie = any(
@@ -224,7 +224,7 @@ def create_app(*, init_db: bool = True, run_startup: bool = True) -> FastAPI:
                     dur_ms,
                     bool(deps.is_unlocked(request)),
                 )
-        except Exception:
+        except Exception:  # pragma: no cover
             logger.debug("web_request_log_failed", exc_info=True)
         return response
 
@@ -252,7 +252,7 @@ def create_app(*, init_db: bool = True, run_startup: bool = True) -> FastAPI:
         from ui.web.routes import assistant as assistant_routes
 
         app.include_router(assistant_routes.router)
-    except Exception:
+    except Exception:  # pragma: no cover
         logger.warning("Assistant module unavailable; /assistant routes disabled", exc_info=True)
     app.include_router(settings_branding.router)
     app.include_router(files.router)

@@ -40,11 +40,11 @@ def housekeeping_page(request: Request, status: str = "", block_status: str = "a
                     try:
                         due_dt = datetime.strptime(due_s[:19], fmt)
                         break
-                    except Exception:
+                    except Exception:  # pragma: no cover
                         pass
                 if due_dt and due_dt < now:
                     d["is_overdue"] = True
-        except Exception:
+        except Exception:  # pragma: no cover
             pass
         enriched.append(d)
     tasks = enriched

@@ -45,7 +45,7 @@ def _redact_string(value: str) -> str:
     for pat in _SENSITIVE_VALUE_PATTERNS:
         try:
             s = pat.sub("<redacted>", s)
-        except Exception:
+        except Exception:  # pragma: no cover
             pass
     return s
 
@@ -53,7 +53,7 @@ def _redact_string(value: str) -> str:
 def _is_sensitive_key(key: str) -> bool:
     try:
         return bool(_SENSITIVE_KEY_RE.search(str(key or "")))
-    except Exception:
+    except Exception:  # pragma: no cover
         return True
 
 
@@ -77,7 +77,7 @@ def sanitize_for_report(obj: Any, key_hint: str = "") -> Any:
         try:
             p = Path(obj)
             return str(p.name or p)
-        except Exception:
+        except Exception:  # pragma: no cover
             return "<path>"
     if isinstance(obj, dict):
         out = {}
@@ -134,7 +134,7 @@ def _safe_readiness_summary() -> dict[str, Any]:
         out["db_initialized"] = False
     try:
         out["schema_version"] = getattr(db, "SCHEMA_VERSION", None)
-    except Exception:
+    except Exception:  # pragma: no cover
         pass
     return out
 

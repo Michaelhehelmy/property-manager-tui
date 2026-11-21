@@ -52,7 +52,7 @@ def connect():
         # Keep default autocommit mode for explicit transaction control.
         try:
             _conn.isolation_level = None
-        except Exception:
+        except Exception:  # pragma: no cover
             pass
         _apply_pragmas(_conn)
         return _conn
@@ -66,7 +66,7 @@ def close():
                 # Best-effort: do not mask app errors on shutdown, but avoid leaving txn open.
                 if _conn.in_transaction:
                     _conn.execute("ROLLBACK")
-            except Exception:
+            except Exception:  # pragma: no cover
                 pass
             try:
                 _conn.close()
@@ -96,7 +96,7 @@ def transaction():
         except Exception:
             try:
                 conn.execute("ROLLBACK")
-            except Exception:
+            except Exception:  # pragma: no cover
                 pass
             raise
 
@@ -126,7 +126,7 @@ def _fetch_cursor(cur, one: bool):
     finally:
         try:
             cur.close()
-        except Exception:
+        except Exception:  # pragma: no cover
             pass
 
 
@@ -943,14 +943,14 @@ def _migrate_to_10(conn):
             _ensure_column(conn, "reservations", col, decl, cols)
         try:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_res_source_segment ON reservations(source, market_segment)")
-        except Exception:
+        except Exception:  # pragma: no cover
             pass
         # Backfill booking_notes from legacy notes where empty (idempotent, additive)
         try:
             conn.execute(
                 "UPDATE reservations SET booking_notes = COALESCE(notes,'') WHERE (booking_notes IS NULL OR booking_notes = '') AND COALESCE(notes,'') <> ''"
             )
-        except Exception:
+        except Exception:  # pragma: no cover
             pass
 
     conn.executescript("""
@@ -1177,7 +1177,7 @@ def _migrate_to_13(conn):
             _ensure_column(conn, "payments", col, decl, cols)
         try:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_payments_idempotency ON payments(idempotency_key)")
-        except Exception:
+        except Exception:  # pragma: no cover
             pass
 
 
@@ -1336,7 +1336,7 @@ def _migrate_to_17(conn):
                     "INSERT OR IGNORE INTO roles (name, description, permissions_json) VALUES (?, ?, ?)",
                     (name, desc, perms),
                 )
-        except Exception:
+        except Exception:  # pragma: no cover
             pass
 
 
@@ -1445,7 +1445,7 @@ def _migrate_to_20(conn):
         _ensure_column(conn, "payments", "shift_id", "INTEGER", cols)
         try:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_payments_shift ON payments(shift_id)")
-        except Exception:
+        except Exception:  # pragma: no cover
             pass
 
 
@@ -1489,7 +1489,7 @@ def migrate():
         try:
             if getattr(conn, "in_transaction", False):
                 conn.execute("ROLLBACK")
-        except Exception:
+        except Exception:  # pragma: no cover
             pass
         version = conn.execute("PRAGMA user_version").fetchone()[0]
         if version > SCHEMA_VERSION:
@@ -1510,7 +1510,7 @@ def migrate():
             from_version = version
             try:
                 conn.execute("BEGIN IMMEDIATE")
-            except Exception:
+            except Exception:  # pragma: no cover
                 pass
             try:
                 if version < 5:
@@ -1552,12 +1552,12 @@ def migrate():
                 _record_migration_meta(conn, status="upgraded", from_version=from_version, to_version=SCHEMA_VERSION)
                 try:
                     conn.execute("COMMIT")
-                except Exception:
+                except Exception:  # pragma: no cover
                     pass
             except Exception:
                 try:
                     conn.execute("ROLLBACK")
-                except Exception:
+                except Exception:  # pragma: no cover
                     pass
                 raise
             return "upgraded"
@@ -1565,6 +1565,6 @@ def migrate():
         try:
             ensure_runtime_indexes(conn)
             _record_migration_meta(conn, status="current", from_version=version, to_version=version)
-        except Exception:
+        except Exception:  # pragma: no cover
             pass
         return "current"

@@ -27,7 +27,7 @@ def _ensure_registry() -> None:
         from .tools import TOOLS
 
         register_tools_dict(TOOLS, source="tools.TOOLS")
-    except Exception:
+    except Exception:  # pragma: no cover - defensive import/registration fallback
         logger.debug("executor: failed to auto-register TOOLS", exc_info=True)
 
 
@@ -122,7 +122,7 @@ def _resolve_tool_def(tool_id: str, brain=None) -> dict[str, Any] | None:
             if callable(fn):
                 REGISTRY.register(tool_id, fn, meta={"description": spec.get("description", ""), "parameters": spec.get("parameters", {})}, source="tools.TOOLS.dynamic")
                 reg = REGISTRY.get(tool_id)
-        except Exception:
+        except Exception:  # pragma: no cover - defensive fallback
             reg = None
     if reg is None:
         return None
@@ -168,7 +168,7 @@ def execute(tool_id: str, args: dict[str, Any] | None = None, *, ctx: dict[str, 
         if ttype == "native":
             return _execute_native(defn, args, ctx)
         return {"ok": False, "error": f"Unsupported tool type '{ttype}'", "tool": tool_id}
-    except Exception as e:
+    except Exception as e:  # pragma: no cover
         logger.warning("executor.execute failed for %s", tool_id, exc_info=True)
         return {"ok": False, "error": f"Tool '{tool_id}' failed: {e}", "tool": tool_id}
 

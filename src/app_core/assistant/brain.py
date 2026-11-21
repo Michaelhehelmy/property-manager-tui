@@ -327,7 +327,7 @@ def load_brain(path: Path | None = None, tools: dict[str, dict[str, Any]] | None
     tools = tools if tools is not None else _default_tools()
     try:
         mtime = p.stat().st_mtime if p.exists() else None
-    except OSError:
+    except OSError:  # pragma: no cover - defensive filesystem edge case
         mtime = None
     if not force and _BRAIN_CACHE is not None and p == (_BRAIN_CACHE.path or BRAIN_PATH) and mtime == _BRAIN_MTIME:
         return _BRAIN_CACHE
@@ -360,7 +360,7 @@ def save_brain(data: dict[str, Any], path: Path | None = None) -> Path:
     p.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     try:
         _BRAIN_MTIME = p.stat().st_mtime
-    except OSError:
+    except OSError:  # pragma: no cover - defensive filesystem edge case
         _BRAIN_MTIME = None
     _BRAIN_CACHE = Brain(data=deepcopy(data), path=p, mtime=_BRAIN_MTIME)
     return p

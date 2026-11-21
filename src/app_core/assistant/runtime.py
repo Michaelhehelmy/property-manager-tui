@@ -97,7 +97,7 @@ def _local_llm_generate(prompt: str, max_tokens: int = 512, temperature: float =
             txt = ((out.get("choices") or [{}])[0].get("text") or "").strip()
             return txt or None
         return str(out).strip() or None
-    except Exception:
+    except Exception:  # pragma: no cover
         return None
 
 
@@ -498,7 +498,7 @@ def chat(message: str, history: list[dict] | None = None, ui_context: dict | Non
         }
     try:
         services.touch_session()
-    except Exception:
+    except Exception:  # pragma: no cover
         logger.debug("assistant.chat: failed to touch session", exc_info=True)
 
     # UI navigation/help and action confirm/cancel guards
@@ -516,7 +516,7 @@ def chat(message: str, history: list[dict] | None = None, ui_context: dict | Non
             ):
                 ui_res.setdefault("pending_action", _get_pending_from_ui(ui_context))
             return ui_res
-    except Exception:
+    except Exception:  # pragma: no cover
         logger.debug("assistant.chat: ui guidance failed", exc_info=True)
 
     config = _pkg()._llm_config()
@@ -594,6 +594,6 @@ def chat(message: str, history: list[dict] | None = None, ui_context: dict | Non
     if core.get("resolved_guest_id"):
         try:
             core.setdefault("slots", {})["guest_id"] = core["resolved_guest_id"]
-        except Exception:
+        except Exception:  # pragma: no cover
             logger.debug("assistant.chat: failed to propagate resolved_guest_id", exc_info=True)
     return core

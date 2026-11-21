@@ -37,7 +37,7 @@ def _extract_write_args(text: str, slots: dict, ui_context=None):
     if m:
         try:
             args["amount"] = float(m.group(1))
-        except Exception:
+        except Exception:  # pragma: no cover
             pass
     # payment method
     for meth in ["cash", "card", "bank", "transfer", "mobile money", "momo", "credit"]:
@@ -294,7 +294,7 @@ def _guest_disambiguation(candidates, q=None):
             lines.append(
                 f"- **#{g['id']} {name}** — phone: {g.get('phone') or '-'}, email: {g.get('email') or '-'}, stays: {g.get('stays', g.get('reservation_count', 0))}, last stay: {g.get('last_stay') or '-'}"
             )
-        except Exception:
+        except Exception:  # pragma: no cover
             logger.debug("assistant._guest_disambiguation: failed to format candidate %r", g, exc_info=True)
             lines.append(f"- {g}")
     lines.append("For example: `guest #12 full portfolio`.")

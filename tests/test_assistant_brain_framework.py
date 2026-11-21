@@ -542,3 +542,63 @@ def test_workflow_engine_current_step_and_failures():
     st4 = eng.start(brain, "wf")
     st4.status = "completed"
     assert eng.advance(brain, st4).status == "completed"
+
+
+def test_brain_validation_warning_path(tmp_path, monkeypatch):
+    p = tmp_path / "brain.json"
+    bad = build_default_brain({})
+    bad["version"] = 999  # validation warning
+    p.write_text(json.dumps(bad), encoding="utf-8")
+    monkeypatch.setattr(brain_mod, "BRAIN_PATH", p)
+    monkeypatch.setattr(brain_mod, "_BRAIN_CACHE", None)
+    monkeypatch.setattr(brain_mod, "_BRAIN_MTIME", None)
+    b = load_brain(path=p, tools={}, force=True)
+    assert b.name
+    # agent name empty validation
+    errs = validate_brain({"version": 1, "agent": {"name": "  "}, "tools": [], "skills": [], "knowledge": [], "workflows": {}, "boundaries": []})
+    assert any("agent.name" in e for e in errs)
+
+
+def test_executor_more_branches(tmp_path, monkeypatch):
+    tools = _sample_tools()
+    reg = ToolRegistry()
+    for tid, spec in tools.items():
+        reg.register(tid, spec["fn"], meta={"parameters": spec.get("parameters", {})})
+    reg.register("typed2", lambda args=None: {"ok": True})
+    monkeypatch.setattr(executor, "REGISTRY", reg)
+    p = tmp_path / "brain.json"
+    b = build_default_brain(tools)
+    b["tools"].append({"id":"typed2","type":"native","handler":"typed2","enabled":True,"read_only":True,
+        "args_schema":{"type":"object","properties":{"n":{"type":"number"},"i":{"type":"integer"}}}})
+    b["tools"].append({"id":"comp5","type":"composite","enabled":True,"read_only":True,"steps":[{"tool":"echo_tool","args":"not-a-dict"}]})
+    save_brain(b, path=p)
+    monkeypatch.setattr(brain_mod, "BRAIN_PATH", p)
+    monkeypatch.setattr(brain_mod, "_BRAIN_CACHE", None)
+    monkeypatch.setattr(brain_mod, "_BRAIN_MTIME", None)
+    br = load_brain(path=p, tools=tools, force=True)
+    assert executor._score_text("", "x") == 0.0
+    assert executor._score_text("q", "", "q") >= 1.0
+    bad = executor.execute("typed2", {"n": True}, brain=br)  # bool rejected as number
+    assert bad.get("error") == "invalid_args"
+    res = executor.execute("comp5", {}, brain=br)
+    assert res["ok"] is True
+
+
+def test_workflow_more_missing_paths():
+    eng = WorkflowEngine()
+    brain = {"skills":[{"id":"wf","entry_state":"a","states":{"a":{"gate":"always_pass","next":"b"},"b":{}}}]}
+    st = eng.start(brain, "wf")
+    # current_step missing workflow
+    st.skill_id = "missing"
+    assert eng.current_step(brain, st) is None
+    st.skill_id = "wf"
+    st.current_state = "zzz"
+    assert eng.current_step(brain, st) is None
+    st2 = eng.start(brain, "wf")
+    st2.skill_id = "missing"
+    st2 = eng.advance(brain, st2)
+    assert st2.status == "failed"
+    st3 = eng.start(brain, "wf")
+    st3.current_state = "zzz"
+    st3 = eng.advance(brain, st3)
+    assert st3.status == "failed"

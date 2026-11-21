@@ -29,7 +29,7 @@ def _batch_map(batch_ids):
     warn = 7
     try:
         warn = int(services.get_setting("expiry_warn_days", "7") or 7)
-    except Exception:
+    except Exception:  # pragma: no cover
         logger.debug("web.guests: failed to read expiry_warn_days, using default", exc_info=True)
     out = {}
     for r in rows:

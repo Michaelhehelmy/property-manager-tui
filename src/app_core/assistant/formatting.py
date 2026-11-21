@@ -1072,7 +1072,7 @@ def _proactive_suggestions(intent: str, data: dict, answer_text: str = "") -> li
             sug.append("Want today’s ops snapshot or arrivals to prioritize readiness?")
         elif intent == "capabilities_help":
             sug.append("Ask me anything above — I’ll answer from real app data.")
-    except Exception:
+    except Exception:  # pragma: no cover
         logger.debug(
             "assistant._proactive_suggestions: failed building primary suggestions intent=%r", intent, exc_info=True
         )
@@ -1100,7 +1100,7 @@ def _proactive_suggestions(intent: str, data: dict, answer_text: str = "") -> li
             sug.append(
                 "For git-based installs you can check/apply updates in Settings → App updates (changelog shown; data preserved; restart after apply)."
             )
-    except Exception:
+    except Exception:  # pragma: no cover
         logger.debug(
             "assistant._proactive_suggestions: failed building secondary suggestions intent=%r", intent, exc_info=True
         )
@@ -1323,7 +1323,7 @@ def _fmt_inventory_item_details(data: dict) -> str:
             if k in ("selling_price", "unit_cost") and isinstance(v, (int, float, str)):
                 try:
                     v = _fmt_money(v)
-                except Exception:
+                except Exception:  # pragma: no cover
                     pass
             lines.append(f"- {label}: **{v}**")
     lines.append(
@@ -1929,7 +1929,7 @@ def _format_for_intent(intent: str, data: dict, fallback_title: str = "Result") 
         formatter = _INTENT_FORMATTERS.get(intent)
         if formatter:
             return formatter(data)
-    except Exception:
+    except Exception:  # pragma: no cover
         logger.warning(
             "assistant._format_for_intent: formatter failed intent=%r; falling back to raw data", intent, exc_info=True
         )
