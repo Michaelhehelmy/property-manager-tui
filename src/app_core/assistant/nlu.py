@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import difflib
 import logging
 import re
 from collections import defaultdict
@@ -308,7 +309,26 @@ _INTENT_CUES = {
     ),
     "room_availability": (
         1.3,
-        ["available rooms", "room availability", "any rooms free", "rooms free", "vacant rooms", "availability for"],
+        [
+            "available rooms",
+            "room availability",
+            "any rooms free",
+            "rooms free",
+            "vacant rooms",
+            "availability for",
+            "any suites open",
+            "suites open",
+            "rooms open",
+            "any room open",
+            "vacancies",
+            "vacancy",
+            "free room tonight",
+            "rooms available tonight",
+            "any room available",
+            "suite available",
+            "open tonight",
+            "available tonight",
+        ],
     ),
     "menu_info": (1.2, ["menu", "meals", "what meals", "dishes", "meal list", "recipes"]),
     "rate_plans": (1.3, ["rate plan", "pricing plan", "plans/packages", "catalog of rate plans"]),
@@ -858,12 +878,20 @@ def rule_classify(text: str, slots: dict | None = None) -> dict:
         for c in cues:
             if _cue_match(c, tl):
                 scores[intent] += w
-        for c in cues[:6]:
-            if len(c) >= 6 and not _cue_match(c, tl):
+        for c in cues[:8]:
+            if len(c) >= 5 and not _cue_match(c, tl):
                 cs = set(c.split())
                 ts = _token_set(tl)
-                if cs and len(cs & ts) / len(cs) >= 0.8:
-                    scores[intent] += w * 0.6
+                if cs:
+                    overlap = len(cs & ts) / len(cs)
+                    if overlap >= 0.8:
+                        scores[intent] += w * 0.6
+                        continue
+                    if overlap >= 0.5:
+                        # lightweight fuzzy similarity for unseen paraphrases
+                        sim = difflib.SequenceMatcher(None, c, tl).ratio()
+                        if sim >= 0.72 or (overlap >= 0.5 and sim >= 0.6):
+                            scores[intent] += w * 0.45
     # structural boosts
     if gid or gq or "guest #" in tl or "customer" in tl or "visitor" in tl:
         for k in (
@@ -1020,7 +1048,8 @@ def rule_classify(text: str, slots: dict | None = None) -> dict:
     low = conf < 0.45 and not (rid or gid)
     if best == "capabilities_help" and conf < 0.55:
         low = True
-    return {
+    sub_intents = [k for k, s in ranked if k != "compound_multi_intent" and s > 0][:4]
+    result = {
         "intent": best,
         "confidence": round(conf, 3),
         "slots": slots,
@@ -1029,10 +1058,126 @@ def rule_classify(text: str, slots: dict | None = None) -> dict:
         "low_confidence": low,
         "candidates": ranked[:3],
     }
+    if best == "compound_multi_intent" or scores.get("compound_multi_intent", 0) > 0:
+        result["sub_intents"] = sub_intents
+        result["intents"] = sub_intents
+    return result
+
+
+# ── Optional local semantic router (Tier 3) ─────────────────────────────────
+_SEMANTIC_MODEL = None
+_SEMANTIC_INDEX = None  # {"labels": [...], "texts": [...], "embeddings": np.ndarray}
+
+
+def _semantic_available() -> bool:
+    try:
+        import sentence_transformers  # noqa: F401
+        import numpy  # noqa: F401
+
+        return True
+    except Exception:
+        return False
+
+
+def _get_semantic_index():
+    global _SEMANTIC_MODEL, _SEMANTIC_INDEX
+    if _SEMANTIC_INDEX is not None:
+        return _SEMANTIC_INDEX
+    if not _semantic_available():
+        return None
+    try:
+        from sentence_transformers import SentenceTransformer
+        import numpy as np
+
+        model_name = "all-MiniLM-L6-v2"
+        _SEMANTIC_MODEL = SentenceTransformer(model_name)
+        labels, texts = [], []
+        for intent, (_w, cues) in _INTENT_CUES.items():
+            for cue in cues:
+                c = (cue or "").strip()
+                if c:
+                    labels.append(intent)
+                    texts.append(c)
+        if not texts:
+            return None
+        emb = _SEMANTIC_MODEL.encode(texts, normalize_embeddings=True, show_progress_bar=False)
+        _SEMANTIC_INDEX = {"labels": labels, "texts": texts, "embeddings": np.asarray(emb)}
+        return _SEMANTIC_INDEX
+    except Exception:
+        logger.debug("semantic router unavailable", exc_info=True)
+        return None
+
+
+def semantic_classify(text: str, top_k: int = 3) -> dict | None:
+    idx = _get_semantic_index()
+    if idx is None or _SEMANTIC_MODEL is None:
+        return None
+    try:
+        import numpy as np
+
+        q = _SEMANTIC_MODEL.encode([text], normalize_embeddings=True, show_progress_bar=False)
+        q = np.asarray(q)[0]
+        sims = idx["embeddings"] @ q
+        best_i = int(np.argmax(sims))
+        ranked_idx = np.argsort(-sims)[: max(1, top_k)]
+        ranked = []
+        for i in ranked_idx:
+            ranked.append({"intent": idx["labels"][int(i)], "score": float(sims[int(i)]), "cue": idx["texts"][int(i)]})
+        best = ranked[0]
+        second = ranked[1]["score"] if len(ranked) > 1 else 0.0
+        margin = float(best["score"] - second)
+        # map cosine sim to confidence conservatively
+        conf = max(0.0, min(0.95, 0.25 + best["score"] * 0.75))
+        if margin < 0.05:
+            conf = min(conf, 0.65)
+        return {
+            "intent": best["intent"],
+            "confidence": round(conf, 3),
+            "router": "semantic",
+            "margin": round(margin, 3),
+            "candidates": ranked,
+        }
+    except Exception:
+        logger.debug("semantic classify failed", exc_info=True)
+        return None
+
+
+def _fuse_rule_semantic(rl: dict, sem: dict, slots: dict) -> dict:
+    r_intent = rl.get("intent")
+    s_intent = sem.get("intent")
+    r_conf = float(rl.get("confidence") or 0.0)
+    s_conf = float(sem.get("confidence") or 0.0)
+    if r_intent == s_intent:
+        conf = min(0.98, max(r_conf, s_conf) + 0.08)
+        out = {**rl, "intent": r_intent, "confidence": round(conf, 3), "router": "rule+semantic", "semantic": sem}
+        if rl.get("sub_intents"):
+            out["sub_intents"] = rl["sub_intents"]
+        return out
+    # if rule is strong enough, keep it
+    if r_conf >= 0.72 and not rl.get("low_confidence"):
+        return rl
+    # if semantic is clearly stronger
+    if s_conf >= 0.72 and s_conf > r_conf + 0.10:
+        return {**sem, "slots": slots, "router": "semantic", "rule": rl}
+    # close call - clarify
+    return {
+        "intent": "ambiguous_needs_clarification",
+        "confidence": round(max(r_conf, s_conf), 3),
+        "slots": slots,
+        "router": "rule+semantic",
+        "low_confidence": True,
+        "candidates": (rl.get("candidates") or [])[:2] + (sem.get("candidates") or [])[:2],
+        "rule": {"intent": r_intent, "confidence": r_conf},
+        "semantic": {"intent": s_intent, "confidence": s_conf},
+    }
 
 
 def classify_intent(text: str, history=None) -> dict:
     slots = extract_slots(text, history)
+    # Tier 1: guardrails/safety + exemplars
+    unsafe = rule_classify(text, slots)
+    if unsafe.get("intent") == "unsupported_or_unsafe":
+        return unsafe
     ex = feedback_mod.exemplar_match(text)
     if ex:
         ex_slots = dict(ex.get("slots") or {})
@@ -1044,24 +1189,50 @@ def classify_intent(text: str, history=None) -> dict:
             "slots": ex_slots,
             "router": ex.get("source", "exemplar"),
         }
+
+    rl = unsafe  # already computed
     ml = feedback_mod._predict_intent_ml(text)
-    rl = rule_classify(text, slots)
+
+    # Tier 2: high-confidence rules win quickly
+    r_conf = float(rl.get("confidence") or 0.0)
+    r_margin = float(rl.get("margin") or 0.0)
+    if r_conf >= 0.72 and not rl.get("low_confidence") and rl.get("intent") not in ("capabilities_help", "ambiguous_needs_clarification"):
+        # don't let weaker ML override strong rule
+        if ml and ml.get("intent") in INTENT_LABELS and float(ml.get("confidence") or 0) > r_conf + 0.15:
+            if rl.get("intent") != "unsupported_or_unsafe":
+                return {"intent": ml["intent"], "confidence": float(ml.get("confidence")), "slots": slots, "router": ml.get("router", "ml")}
+        return rl
+
+    # Tier 3: semantic router when rule is weak/ambiguous
+    use_semantic = r_conf < 0.72 or r_margin < 0.25 or rl.get("low_confidence") or rl.get("intent") == "capabilities_help"
+    sem = semantic_classify(text) if use_semantic else None
+    if sem and sem.get("intent") in INTENT_LABELS:
+        # combine with rules
+        fused = _fuse_rule_semantic(rl, sem, slots)
+        # ML can still help if it strongly agrees
+        if ml and ml.get("intent") in INTENT_LABELS:
+            m_conf = float(ml.get("confidence") or 0.0)
+            if ml.get("intent") == fused.get("intent") and m_conf >= 0.6:
+                fused["confidence"] = round(min(0.99, max(float(fused.get("confidence") or 0), m_conf) + 0.05), 3)
+                fused["router"] = fused.get("router", "rules") + "+ml"
+            elif m_conf > float(fused.get("confidence") or 0) + 0.15 and fused.get("intent") != "unsupported_or_unsafe":
+                fused = {"intent": ml["intent"], "confidence": m_conf, "slots": slots, "router": ml.get("router", "ml")}
+        return fused
+
+    # No semantic available: ML arbitration with bug fix
     if ml and ml.get("intent") in INTENT_LABELS:
         if rl.get("intent") == "unsupported_or_unsafe":
             return rl
-        if ml.get("confidence", 0) >= 0.6 and not rl.get("low_confidence"):
-            return {
-                "intent": ml["intent"],
-                "confidence": float(ml.get("confidence", 0.7)),
-                "slots": slots,
-                "router": ml.get("router", "ml"),
-            }
-        if rl.get("confidence", 0) >= ml.get("confidence", 0):
+        m_conf = float(ml.get("confidence") or 0.0)
+        # Fix: do not override strong/high-confidence rules with ML
+        if r_conf >= 0.72 and not rl.get("low_confidence"):
+            if m_conf > r_conf + 0.15:
+                return {"intent": ml["intent"], "confidence": m_conf, "slots": slots, "router": ml.get("router", "ml")}
             return rl
-        return {
-            "intent": ml["intent"],
-            "confidence": float(ml.get("confidence", 0.6)),
-            "slots": slots,
-            "router": ml.get("router", "ml"),
-        }
+        if m_conf >= 0.6 and not rl.get("low_confidence") and r_conf < 0.75:
+            # allow ML only when rule isn't already strong
+            return {"intent": ml["intent"], "confidence": m_conf, "slots": slots, "router": ml.get("router", "ml")}
+        if r_conf >= m_conf:
+            return rl
+        return {"intent": ml["intent"], "confidence": m_conf, "slots": slots, "router": ml.get("router", "ml")}
     return rl
