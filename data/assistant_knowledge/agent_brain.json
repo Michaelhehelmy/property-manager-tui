@@ -1,0 +1,1391 @@
+{
+  "version": 1,
+  "generated_at": null,
+  "agent": {
+    "name": "Manager Assistant",
+    "character": "Warm, clear, professional property-management business partner for SPMS.",
+    "tone": [
+      "friendly",
+      "concise",
+      "answer-first",
+      "grounded"
+    ],
+    "boundaries": [
+      "Use only grounded app data/tools and curated knowledge in this file.",
+      "Never invent IDs, amounts, dates, guests, bookings, or actions.",
+      "Read-only by default; mutating actions require explicit validated confirmation/proof.",
+      "No external AI calls/endpoints/keys; local-only runtime."
+    ]
+  },
+  "boundaries": [
+    "Use only grounded app data/tools and curated knowledge in this file.",
+    "Never invent IDs, amounts, dates, guests, bookings, or actions.",
+    "Read-only by default; mutating actions require explicit validated confirmation/proof.",
+    "No external AI calls/endpoints/keys; local-only runtime."
+  ],
+  "workflows": {
+    "answer_flow": [
+      "Understand request and extract slots/intent.",
+      "Check approved interaction knowledge for strong sanitized match.",
+      "Retrieve relevant curated knowledge when app how-to/policy/setup is needed.",
+      "Call read-only app tools when live data is needed.",
+      "Compose grounded answer with citations/sources; no invented facts.",
+      "Propose validated action only for supported mutating flows; require confirmation/proof.",
+      "Record interaction and apply thumb up/down/correction learning."
+    ],
+    "feedback_flow": {
+      "thumb_up": "Mark correct; sanitize and promote to approved internal knowledge for fast reuse.",
+      "thumb_down": "Mark wrong; do not promote to approved knowledge; optionally collect correction/expected answer.",
+      "full_evaluation": "Store corrected intent/slots/expected answer as correction/training data."
+    }
+  },
+  "skills": [
+    {
+      "id": "app_knowledge_lookup",
+      "name": "App Knowledge Lookup",
+      "enabled": true,
+      "description": "Answer SPMS how-to/policy/setup/troubleshooting questions from curated knowledge.",
+      "uses_tools": [
+        "search_app_knowledge"
+      ],
+      "workflow": [
+        "Search curated knowledge entries by query/tags.",
+        "Answer using only retrieved grounded entries.",
+        "Cite source_path and section."
+      ],
+      "tags": [
+        "docs",
+        "policy",
+        "how-to",
+        "knowledge"
+      ]
+    },
+    {
+      "id": "tool_builder",
+      "name": "Tool Builder",
+      "enabled": false,
+      "type": "workflow_skill",
+      "description": "Guarded workflow for creating/extending assistant tools via clear validated steps.",
+      "entry_state": "spec_collect",
+      "states": {
+        "spec_collect": {
+          "required": [
+            "id",
+            "purpose",
+            "args_schema",
+            "read_only"
+          ],
+          "next": "reuse_check",
+          "gate": "required_fields_present"
+        },
+        "reuse_check": {
+          "next": "type_decide",
+          "gate": "no_duplicate_or_confirm_replace"
+        },
+        "type_decide": {
+          "next": "plan",
+          "gate": "type_allowed"
+        },
+        "plan": {
+          "next": "generate",
+          "gate": "plan_has_files_tests_risks"
+        },
+        "generate": {
+          "next": "register",
+          "gate": "allowed_paths_and_safe_code"
+        },
+        "register": {
+          "next": "validate",
+          "gate": "handler_resolves"
+        },
+        "validate": {
+          "next_on_pass": "approve",
+          "next_on_fail": "generate",
+          "gate": "checks_pass"
+        },
+        "approve": {
+          "next_on_approved": "enable",
+          "next_on_rejected": "spec_collect",
+          "gate": "owner_approved"
+        },
+        "enable": {
+          "next": "learn",
+          "gate": "manifest_enabled_and_loaded"
+        },
+        "learn": {
+          "terminal": true
+        }
+      },
+      "tags": [
+        "builder",
+        "workflow",
+        "dev"
+      ]
+    }
+  ],
+  "tools": [
+    {
+      "id": "search_app_knowledge",
+      "type": "knowledge",
+      "handler": "builtin.search_app_knowledge",
+      "enabled": true,
+      "read_only": true,
+      "description": "Search curated SPMS app knowledge entries in agent_brain.json.",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string"
+          },
+          "top_k": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "additionalProperties": false
+      },
+      "tags": [
+        "knowledge",
+        "docs",
+        "policy",
+        "how-to"
+      ]
+    },
+    {
+      "id": "business_partner_briefing",
+      "type": "native",
+      "handler": "business_partner_briefing",
+      "enabled": true,
+      "read_only": true,
+      "description": "Business-partner briefing: KPIs, risks, opportunities, suggested actions for a period.",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string"
+          },
+          "end": {
+            "type": "string"
+          },
+          "range": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "compare_periods",
+      "type": "native",
+      "handler": "compare_periods",
+      "enabled": true,
+      "read_only": true,
+      "description": "Compare current period vs previous period (P&L, occupancy, cash flow).",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string"
+          },
+          "end": {
+            "type": "string"
+          },
+          "range": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "get_activity_stats",
+      "type": "native",
+      "handler": "get_activity_stats",
+      "enabled": true,
+      "read_only": true,
+      "description": "Per-activity/trip booking statistics (bookings, qty, revenue) grounded in real bookings.",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "activity_id": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "get_app_update_status",
+      "type": "native",
+      "handler": "get_app_update_status",
+      "enabled": true,
+      "read_only": true,
+      "description": "Get local app version/commit/update state and how to check/apply updates (data preserved).",
+      "args_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "get_approval",
+      "type": "native",
+      "handler": "get_approval",
+      "enabled": true,
+      "read_only": true,
+      "description": "Get a specific approval request by id (read-only).",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "approval_id": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "approval_id"
+        ],
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "get_cash_shifts",
+      "type": "native",
+      "handler": "get_cash_shifts",
+      "enabled": true,
+      "read_only": true,
+      "description": "Cash shift/register status: open shift, movements, and recent shifts (read-only).",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "get_decision_support",
+      "type": "native",
+      "handler": "get_decision_support",
+      "enabled": true,
+      "read_only": true,
+      "description": "Decision-support KPIs/signals + financial summary.",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string"
+          },
+          "end": {
+            "type": "string"
+          },
+          "range": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "get_expenses_summary",
+      "type": "native",
+      "handler": "get_expenses_summary",
+      "enabled": true,
+      "read_only": true,
+      "description": "Operational expenses summary by category for a period.",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string"
+          },
+          "end": {
+            "type": "string"
+          },
+          "range": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "get_expiring_batches",
+      "type": "native",
+      "handler": "get_expiring_batches",
+      "enabled": true,
+      "read_only": true,
+      "description": "List expiring/expired inventory batches (traceable lots) within days.",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "within_days": {
+            "type": "integer"
+          },
+          "include_expired": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "get_front_desk_arrivals",
+      "type": "native",
+      "handler": "get_front_desk_arrivals",
+      "enabled": true,
+      "read_only": true,
+      "description": "Arrivals list for a business day with room/HK/balance/exception details.",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string"
+          },
+          "day": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "get_front_desk_departures",
+      "type": "native",
+      "handler": "get_front_desk_departures",
+      "enabled": true,
+      "read_only": true,
+      "description": "Departures list for a business day with room/HK/balance/exception details.",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string"
+          },
+          "day": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "get_front_desk_in_house",
+      "type": "native",
+      "handler": "get_front_desk_in_house",
+      "enabled": true,
+      "read_only": true,
+      "description": "In-house/stayovers list for a business day with room/HK/balance/exception details.",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string"
+          },
+          "day": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "get_front_desk_ops",
+      "type": "native",
+      "handler": "get_front_desk_ops",
+      "enabled": true,
+      "read_only": true,
+      "description": "Front-desk operations for a day with arrivals/in-house/departures, room/HK, balances, and exception flags (unpaid, dirty, due to arrive/depart not checked in/out).",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string"
+          },
+          "day": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "get_guest_balance",
+      "type": "native",
+      "handler": "get_guest_balance",
+      "enabled": true,
+      "read_only": true,
+      "description": "Reservation/guest balance and breakdown.",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "reservation_id": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "reservation_id"
+        ],
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "get_guest_last_visit",
+      "type": "native",
+      "handler": "get_guest_last_visit",
+      "enabled": true,
+      "read_only": true,
+      "description": "Guest's last visit (most recent Checked Out, else most recent non-deleted).",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "guest_id": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "guest_id"
+        ],
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "get_guest_last_visit_spend",
+      "type": "native",
+      "handler": "get_guest_last_visit_spend",
+      "enabled": true,
+      "read_only": true,
+      "description": "Guest's last visit with spend/balance and top items.",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "guest_id": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "guest_id"
+        ],
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "get_guest_portfolio",
+      "type": "native",
+      "handler": "get_guest_portfolio",
+      "enabled": true,
+      "read_only": true,
+      "description": "Full guest 360° portfolio: profile, lifetime stats, all trips/stays with folio/charges/paid/due, all POS/activity orders per trip and overall, all payments, invoices, top items.",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "guest_id": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "guest_id"
+        ],
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "get_guest_profile",
+      "type": "native",
+      "handler": "get_guest_profile",
+      "enabled": true,
+      "read_only": true,
+      "description": "Guest profile and recent reservations.",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "guest_id": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "guest_id"
+        ],
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "get_guest_top_items_last_visit",
+      "type": "native",
+      "handler": "get_guest_top_items_last_visit",
+      "enabled": true,
+      "read_only": true,
+      "description": "Most ordered items on guest's last visit (non-voided POS).",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "guest_id": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "guest_id"
+        ],
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "get_health_diagnostics",
+      "type": "native",
+      "handler": "get_health_diagnostics",
+      "enabled": true,
+      "read_only": true,
+      "description": "Read-only doctor/health diagnostics: schema/integrity, batch-stock consistency, printer/update readiness, and backup/restore guidance.",
+      "args_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "get_housekeeping_ops_report",
+      "type": "native",
+      "handler": "get_housekeeping_ops_report",
+      "enabled": true,
+      "read_only": true,
+      "description": "Grounded housekeeping operations report: room/task/block status, overdue/open tasks, and active blocks (read-only).",
+      "args_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "get_housekeeping_summary",
+      "type": "native",
+      "handler": "get_housekeeping_summary",
+      "enabled": true,
+      "read_only": true,
+      "description": "Room housekeeping status summary.",
+      "args_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "get_inventory_alerts",
+      "type": "native",
+      "handler": "get_inventory_alerts",
+      "enabled": true,
+      "read_only": true,
+      "description": "Inventory alerts: low/negative/overstock items.",
+      "args_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "get_inventory_item",
+      "type": "native",
+      "handler": "get_inventory_item",
+      "enabled": true,
+      "read_only": true,
+      "description": "Get inventory item/product details and stock by item id.",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "item_id"
+        ],
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "get_menu_info",
+      "type": "native",
+      "handler": "get_menu_info",
+      "enabled": true,
+      "read_only": true,
+      "description": "Meals/menu information.",
+      "args_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "get_occupancy_summary",
+      "type": "native",
+      "handler": "get_occupancy_summary",
+      "enabled": true,
+      "read_only": true,
+      "description": "Occupancy summary for a date range.",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string"
+          },
+          "end": {
+            "type": "string"
+          },
+          "range": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "get_outstanding_balances",
+      "type": "native",
+      "handler": "get_outstanding_balances",
+      "enabled": true,
+      "read_only": true,
+      "description": "Reservations with unpaid/outstanding balances (who owes money).",
+      "args_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "get_payments_summary",
+      "type": "native",
+      "handler": "get_payments_summary",
+      "enabled": true,
+      "read_only": true,
+      "description": "Payments summary for a period by method, including walk-in payment totals.",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string"
+          },
+          "end": {
+            "type": "string"
+          },
+          "range": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "get_property_stats",
+      "type": "native",
+      "handler": "get_property_stats",
+      "enabled": true,
+      "read_only": true,
+      "description": "Property counts/stats (guests, rooms, reservations by status, in-house, arrivals/departures today).",
+      "args_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "get_recent_activity",
+      "type": "native",
+      "handler": "get_recent_activity",
+      "enabled": true,
+      "read_only": true,
+      "description": "Recent audit/activity log.",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "get_report",
+      "type": "native",
+      "handler": "get_report",
+      "enabled": true,
+      "read_only": true,
+      "description": "Run report: pl, cash_flow, vat, payment_methods, occupancy, daily_ops.",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "start": {
+            "type": "string"
+          },
+          "end": {
+            "type": "string"
+          },
+          "range": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "get_reservation_group",
+      "type": "native",
+      "handler": "get_reservation_group",
+      "enabled": true,
+      "read_only": true,
+      "description": "Get reservation group details, members, and aggregated folio totals (read-only).",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "group_id"
+        ],
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "get_reservation_pipeline",
+      "type": "native",
+      "handler": "get_reservation_pipeline",
+      "enabled": true,
+      "read_only": true,
+      "description": "Reservation counts by status and upcoming arrivals (7 days).",
+      "args_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "get_reservation_summary",
+      "type": "native",
+      "handler": "get_reservation_summary",
+      "enabled": true,
+      "read_only": true,
+      "description": "Reservation details, balance, POS count.",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "reservation_id": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "reservation_id"
+        ],
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "get_room_availability",
+      "type": "native",
+      "handler": "get_room_availability",
+      "enabled": true,
+      "read_only": true,
+      "description": "Available rooms for a date range.",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string"
+          },
+          "end": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "get_sales_breakdown",
+      "type": "native",
+      "handler": "get_sales_breakdown",
+      "enabled": true,
+      "read_only": true,
+      "description": "Sales/POS and payment/reservation-source breakdown for a period.",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string"
+          },
+          "end": {
+            "type": "string"
+          },
+          "range": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "get_today_ops",
+      "type": "native",
+      "handler": "get_today_ops",
+      "enabled": true,
+      "read_only": true,
+      "description": "Operations snapshot for a day (arrivals/departures/in-house, front-desk exceptions, housekeeping).",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string"
+          },
+          "day": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "get_top_selling_items",
+      "type": "native",
+      "handler": "get_top_selling_items",
+      "enabled": true,
+      "read_only": true,
+      "description": "Top selling POS items by quantity/revenue in a period.",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string"
+          },
+          "end": {
+            "type": "string"
+          },
+          "range": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "get_walkin_sales_summary",
+      "type": "native",
+      "handler": "get_walkin_sales_summary",
+      "enabled": true,
+      "read_only": true,
+      "description": "Recent walk-in (non-reservation) POS sales and payments summary/totals; works without room reservations.",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "limit_pos": {
+            "type": "integer"
+          },
+          "limit_payments": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "list_activities",
+      "type": "native",
+      "handler": "list_activities",
+      "enabled": true,
+      "read_only": true,
+      "description": "List registered guest activities/trips/excursions catalog.",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "active_only": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "list_activity_bookings",
+      "type": "native",
+      "handler": "list_activity_bookings",
+      "enabled": true,
+      "read_only": true,
+      "description": "List booked/ordered guest activities-trips (POS-linked bookings) with reservation/guest context; filter by guest_id, reservation_id, or activity_id.",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "guest_id": {
+            "type": "integer"
+          },
+          "reservation_id": {
+            "type": "integer"
+          },
+          "activity_id": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "list_approvals",
+      "type": "native",
+      "handler": "list_approvals",
+      "enabled": true,
+      "read_only": true,
+      "description": "List approval requests and their status/decision/execution metadata (read-only).",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "list_capabilities",
+      "type": "native",
+      "handler": "list_capabilities",
+      "enabled": true,
+      "read_only": true,
+      "description": "List assistant capabilities.",
+      "args_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "list_discount_vouchers",
+      "type": "native",
+      "handler": "list_discount_vouchers",
+      "enabled": true,
+      "read_only": true,
+      "description": "List discount voucher definitions and usage/validity status (read-only).",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "active_only": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "list_housekeeping_tasks",
+      "type": "native",
+      "handler": "list_housekeeping_tasks",
+      "enabled": true,
+      "read_only": true,
+      "description": "List housekeeping tasks and workflow status (read-only).",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "room_id": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "list_inventory_batches",
+      "type": "native",
+      "handler": "list_inventory_batches",
+      "enabled": true,
+      "read_only": true,
+      "description": "List inventory batches/lots with received/expiry/remaining/cost for an item or all.",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          },
+          "expiring_within_days": {
+            "type": "integer"
+          },
+          "include_depleted": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "list_night_audit_runs",
+      "type": "native",
+      "handler": "list_night_audit_runs",
+      "enabled": true,
+      "read_only": true,
+      "description": "List advisory night-audit run snapshots and exceptions (read-only).",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "list_packages",
+      "type": "native",
+      "handler": "list_packages",
+      "enabled": true,
+      "read_only": true,
+      "description": "List package/bundle definitions and items (read-only).",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "active_only": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "list_rate_plans",
+      "type": "native",
+      "handler": "list_rate_plans",
+      "enabled": true,
+      "read_only": true,
+      "description": "List rate plans and usage.",
+      "args_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "list_rate_rules",
+      "type": "native",
+      "handler": "list_rate_rules",
+      "enabled": true,
+      "read_only": true,
+      "description": "List pricing/rate rules (conditions and adjustments) (read-only).",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "active_only": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "list_reservation_groups",
+      "type": "native",
+      "handler": "list_reservation_groups",
+      "enabled": true,
+      "read_only": true,
+      "description": "List reservation groups with members and aggregated folio totals (read-only).",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "list_reservation_packages",
+      "type": "native",
+      "handler": "list_reservation_packages",
+      "enabled": true,
+      "read_only": true,
+      "description": "List packages/bundles applied to a reservation with posted amounts/status (read-only).",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "reservation_id": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "reservation_id"
+        ],
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "list_room_blocks",
+      "type": "native",
+      "handler": "list_room_blocks",
+      "enabled": true,
+      "read_only": true,
+      "description": "List room blocks (OOO/OOS) affecting availability (read-only).",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "room_id": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          },
+          "include_past": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "list_service_catalog",
+      "type": "native",
+      "handler": "list_service_catalog",
+      "enabled": true,
+      "read_only": true,
+      "description": "List extra-service catalog items with pricing/taxable status (read-only).",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "active_only": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "search_guests",
+      "type": "native",
+      "handler": "search_guests",
+      "enabled": true,
+      "read_only": true,
+      "description": "Search guests by name/phone/email fragment.",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "search_inventory",
+      "type": "native",
+      "handler": "search_inventory",
+      "enabled": true,
+      "read_only": true,
+      "description": "Search/list inventory products with stock, pricing, SKU/barcode, and category.",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "stock_filter": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "search_reservations",
+      "type": "native",
+      "handler": "search_reservations",
+      "enabled": true,
+      "read_only": true,
+      "description": "Search/list reservations by guest name, id, status, source/segment, or date range (read-only).",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string"
+          },
+          "reservation_id": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "market_segment": {
+            "type": "string"
+          },
+          "start": {
+            "type": "string"
+          },
+          "end": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "trace_barcode",
+      "type": "native",
+      "handler": "trace_barcode",
+      "enabled": true,
+      "read_only": true,
+      "description": "Trace a barcode/SKU/lot code to the inventory item or batch (lot, received, expiry, remaining, movements).",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "barcode": {
+            "type": "string"
+          },
+          "sku": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "verify_ledger_integrity",
+      "type": "native",
+      "handler": "verify_ledger_integrity",
+      "enabled": true,
+      "read_only": true,
+      "description": "Read-only ledger/data integrity health check.",
+      "args_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "tags": []
+    },
+    {
+      "id": "verify_reservation_financials",
+      "type": "native",
+      "handler": "verify_reservation_financials",
+      "enabled": true,
+      "read_only": true,
+      "description": "Read-only reservation-level financial integrity/invariant check (charges, payments, allocations, ledger consistency).",
+      "args_schema": {
+        "type": "object",
+        "properties": {
+          "reservation_id": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "reservation_id"
+        ],
+        "additionalProperties": false
+      },
+      "tags": []
+    }
+  ],
+  "knowledge": []
+}

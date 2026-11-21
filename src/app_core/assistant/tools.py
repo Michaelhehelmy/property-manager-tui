@@ -22,33 +22,33 @@ logger = logging.getLogger(__name__)
 
 
 def tool_list_capabilities(args=None):
-    return {
-        "capabilities": [
-            "Business partner briefing & decision support (KPIs, risks, opportunities, suggested actions)",
-            "Property/ops stats and front-desk operations (arrivals, in-house/stayovers, departures) with room/HK/balance and exception flags (unpaid, dirty, due to arrive/depart not checked in/out)",
-            "Reports: P&L, cash flow, VAT, payment methods, occupancy, daily ops; compare periods",
-            "Guests: search, profile, full 360° portfolio (all trips/stays, POS activity, payments, invoices, totals/stats), last visit, most-ordered items and spend on last visit, booked activities/trips",
-            "Activities/Trips (excursions/experiences): registered catalog, booking/order stats, and guest/reservation bookings (booked like POS to folio/invoice)",
-            "Reservations: search/list, summary/details, balance, outstanding balances/AR, pipeline; reservation groups with member/folio totals",
-            "POS & sales: walk-in sales summary (recent walk-in POS lines/payments/totals), sales breakdown, top sellers (works without room reservations)",
-            "Inventory & products: search/list items, item details/stock/pricing, alerts (low/over/negative), expiring/expired batches and batch/lot lists, barcode/SKU/lot traceability (resolved item or lot with received/expiry/remaining and recent movements); menu/meals",
-            "Payments & finance: payment summary by period/method, expenses, cash shifts/register status and movements, and financial reports",
-            "Packages/bundles: list package definitions and items (read-only)",
-            "Housekeeping & rooms: housekeeping status summary, housekeeping tasks/workflow, and room blocks (OOO/OOS)",
-            "Night audit: advisory night-audit run snapshots/exceptions (read-only)",
-            "Integrity, doctor & readiness: read-only ledger/data integrity checks and doctor/health diagnostics (schema, SQLite/FK integrity, batch-stock consistency, printer/update readiness, backup/restore readiness guidance)",
-            "App version & updates: local app version/commit state and safe update guidance (in-app git-based fast-forward check/apply with changelog/details; runtime data DB/exports/invoices preserved, restart after apply)",
-            "Expenses and sales breakdown; rate plans; room availability",
-        ],
-        "notes": [
-            "All answers grounded in real backend data (read-only).",
-            "Doctor/health diagnostics are read-only and never delete or modify runtime data.",
-            "Last visit = most recent Checked Out, else most recent non-deleted.",
-            "Booked activities/trips are posted as POS charges to the reservation folio/invoice.",
-            "Walk-in POS/products/meals can be sold without room reservations; walk-in sales and inventory tools work independently of stays.",
-            "Inventory traceability is batch/lot-aware when enabled: you can review expiring batches, list lots, and trace barcodes/SKUs/lot codes to see received, expiry, remaining quantity, and movements.",
-        ],
-    }
+    try:
+        from .brain import load_brain
+
+        b = load_brain()
+        tools = [
+            {"id": t.get("id"), "description": t.get("description", ""), "type": t.get("type", "native")}
+            for t in b.tools(enabled_only=True)
+        ]
+        skills = [
+            {"id": s.get("id"), "name": s.get("name", s.get("id")), "description": s.get("description", "")}
+            for s in b.skills(enabled_only=True)
+        ]
+        return {
+            "agent": {"name": b.name, "boundaries": b.boundaries},
+            "tools": tools,
+            "skills": skills,
+            "capabilities": [t.get("description", "") for t in b.tools(enabled_only=True) if t.get("description")],
+            "notes": [
+                "Capabilities, tools, skills, and workflows are declared in agent_brain.json (single control file).",
+                "All answers grounded in real backend data (read-only) unless an explicit validated action flow is confirmed.",
+            ],
+        }
+    except Exception:
+        return {
+            "capabilities": ["Manager assistant capabilities unavailable."],
+            "notes": ["Failed to load agent_brain.json; check assistant brain configuration."],
+        }
 
 
 def tool_search_guests(args):
@@ -1951,11 +1951,8 @@ TOOLS = {
 }
 
 
-def execute_tool(name: str, args: dict | None = None) -> dict:
-    spec = TOOLS.get(name)
-    if not spec:
-        return {"error": f"Unknown tool '{name}'", "available_tools": sorted(TOOLS.keys())}
-    try:
-        return spec["fn"](args or {})
-    except Exception as e:
-        return {"error": f"Tool '{name}' failed: {e}"}
+def execute_tool(name: str, args: dict | None = None, ctx: dict | None = None) -> dict:
+    """Execute a tool by id through the dynamic executor (manifest/registry aware)."""
+    from .executor import execute
+
+    return execute(name, args or {}, ctx=ctx)

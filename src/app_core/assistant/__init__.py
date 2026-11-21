@@ -8,7 +8,7 @@ from datetime import datetime as _dt_class, timedelta  # exported names used his
 # Expose module-like datetime for tests that monkeypatch `assistant.datetime`
 datetime = _datetime_mod
 
-from . import common, feedback, formatting, nlu, tools, engine, runtime
+from . import brain, common, executor, feedback, formatting, nlu, tool_registry, tools, engine, runtime, workflow_engine
 
 # star imports (won't include underscore names, but include public API)
 from .common import *  # noqa: F401,F403
@@ -66,6 +66,9 @@ from .runtime import (
     talking_rephrase,
 )
 from .tools import TOOLS, execute_tool
+from .brain import BRAIN_PATH, Brain, build_default_brain, load_brain, save_brain, validate_brain
+from .tool_registry import REGISTRY, ToolRegistry, tool_handler
+from .workflow_engine import WorkflowEngine, WorkflowState
 
 
 # Patchable helpers: ensure they observe assistant.datetime monkeypatches
