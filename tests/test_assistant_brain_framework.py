@@ -418,3 +418,57 @@ def test_workflow_engine_gates_and_branches():
     st3 = eng.start(brain3, "wf3")
     st3 = eng.advance(brain3, st3)
     assert st3.status == "failed"
+
+
+def test_brain_get_brain_and_sync_paths(tmp_path, monkeypatch):
+    p = tmp_path / "brain.json"
+    b = build_default_brain({"a": {"fn": lambda args=None: {}, "description": "a", "parameters": {"type":"object","properties":{}}}})
+    save_brain(b, path=p)
+    monkeypatch.setattr(brain_mod, "BRAIN_PATH", p)
+    got = brain_mod.get_brain(force=True)
+    assert got.get_tool("missing") is None
+    assert got.get_skill("missing") is None
+    merged = sync_tools_into_brain({"a": {"fn": lambda args=None: {}, "description": "a", "parameters": {}}, "b": {"fn": lambda args=None: {}, "description": "b", "parameters": {}}}, path=p, enable_new=True)
+    ids = {t["id"] for t in merged["tools"]}
+    assert "b" in ids
+
+
+def test_executor_composite_and_template_paths(tmp_path, monkeypatch):
+    tools = _sample_tools()
+    reg = ToolRegistry()
+    for tid, spec in tools.items():
+        reg.register(tid, spec["fn"], meta={"parameters": spec.get("parameters", {})})
+    reg.register("plain", lambda args=None: 5)
+    monkeypatch.setattr(executor, "REGISTRY", reg)
+    p = tmp_path / "agent_brain.json"
+    b = build_default_brain(tools)
+    b["tools"].append({"id":"plain","type":"native","handler":"plain","enabled":True,"read_only":True,"args_schema":{"type":"object","properties":{}}})
+    b["tools"].append({
+        "id":"comp3","type":"composite","enabled":True,"read_only":True,
+        "steps":[
+            {"as":"s1","tool":"echo_tool","args":{"x":"${args.q}","arr":["${args.q}"],"obj":{"k":"${args.q}"}}},
+            {"as":"s2","tool":"plain","args":{}},
+        ]
+    })
+    save_brain(b, path=p)
+    monkeypatch.setattr(brain_mod, "BRAIN_PATH", p)
+    monkeypatch.setattr(brain_mod, "_BRAIN_CACHE", None)
+    monkeypatch.setattr(brain_mod, "_BRAIN_MTIME", None)
+    br = load_brain(path=p, tools=tools, force=True)
+    res = executor.execute("comp3", {"q": "Z"}, brain=br)
+    assert res["ok"] is True
+    assert res["outputs"]["s1"]["echo"]["arr"] == ["Z"]
+    assert res["outputs"]["s2"]["ok"] is True and res["outputs"]["s2"]["result"] == 5
+
+
+def test_workflow_engine_more_branches():
+    eng = WorkflowEngine()
+    brain = {"skills":[{"id":"wf","entry_state":"a","states":{"a":{"gate":"always_pass","next_on_pass":"b"},"b":{"terminal":True}}}]}
+    st = eng.start(brain, "wf")
+    st = eng.advance(brain, st)
+    assert st.status == "completed"
+    st2 = eng.start(brain, "wf")
+    st2.status = "completed"
+    assert eng.advance(brain, st2).status == "completed"
+    step = eng.current_step(brain, st2)
+    assert step is None or isinstance(step, dict)
